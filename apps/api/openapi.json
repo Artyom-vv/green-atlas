@@ -995,6 +995,136 @@
         }
       }
     },
+    "/api/projects/{project_id}/plan/change-sets/preview": {
+      "post": {
+        "summary": "Preview Plan Change Set",
+        "operationId": "preview_plan_change_set_api_projects__project_id__plan_change_sets_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanChangeSetDraft"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/plan/change-sets/apply": {
+      "post": {
+        "summary": "Apply Plan Change Set",
+        "operationId": "apply_plan_change_set_api_projects__project_id__plan_change_sets_apply_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanChangeSetApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanMutationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/plan/objects": {
       "post": {
         "summary": "Add Plan Object",
@@ -1498,6 +1628,135 @@
         ],
         "title": "Body_upload_dxf_api_projects__project_id__source_dxf_post"
       },
+      "ChangeSetCandidateResult": {
+        "properties": {
+          "operation_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Operation Index"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ],
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "allowed",
+              "blocked",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "object_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation_index",
+          "type",
+          "status",
+          "reason"
+        ],
+        "title": "ChangeSetCandidateResult"
+      },
+      "ChangeSetPreview": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "digest": {
+            "type": "string",
+            "title": "Digest"
+          },
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "group",
+              "pattern",
+              "recommendation",
+              "brush",
+              "system"
+            ],
+            "title": "Source"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "can_apply": {
+            "type": "boolean",
+            "title": "Can Apply"
+          },
+          "additions": {
+            "items": {
+              "$ref": "#/components/schemas/PlanObject"
+            },
+            "type": "array",
+            "title": "Additions"
+          },
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/PlanObject"
+            },
+            "type": "array",
+            "title": "Updates"
+          },
+          "deletion_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deletion Ids"
+          },
+          "candidate_results": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeSetCandidateResult"
+            },
+            "type": "array",
+            "title": "Candidate Results"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "digest",
+          "base_plan_version",
+          "source",
+          "label",
+          "can_apply",
+          "expires_at"
+        ],
+        "title": "ChangeSetPreview"
+      },
       "CoordinateReference": {
         "properties": {
           "status": {
@@ -1681,6 +1940,54 @@
           "feature_collection"
         ],
         "title": "GeometrySnapshot"
+      },
+      "GrowthEnvelopeForecast": {
+        "properties": {
+          "horizon_year": {
+            "type": "integer",
+            "enum": [
+              5,
+              10,
+              20
+            ],
+            "title": "Horizon Year"
+          },
+          "radius_min_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Radius Min M"
+          },
+          "radius_max_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Radius Max M"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Confidence"
+          },
+          "basis": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Basis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "horizon_year",
+          "radius_min_m",
+          "radius_max_m",
+          "confidence",
+          "basis"
+        ],
+        "title": "GrowthEnvelopeForecast",
+        "description": "A bounded biological forecast, never a regulatory exclusion zone."
       },
       "HTTPValidationError": {
         "properties": {
@@ -2007,6 +2314,98 @@
         "type": "object",
         "title": "Plan"
       },
+      "PlanChangeSetApplyRequest": {
+        "properties": {
+          "preview_id": {
+            "type": "string",
+            "title": "Preview Id"
+          },
+          "digest": {
+            "type": "string",
+            "title": "Digest"
+          },
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preview_id",
+          "digest",
+          "base_plan_version"
+        ],
+        "title": "PlanChangeSetApplyRequest"
+      },
+      "PlanChangeSetDraft": {
+        "properties": {
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "group",
+              "pattern",
+              "recommendation",
+              "brush",
+              "system"
+            ],
+            "title": "Source",
+            "default": "manual"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "policy": {
+            "type": "string",
+            "const": "all_or_nothing",
+            "title": "Policy",
+            "default": "all_or_nothing"
+          },
+          "operations": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/PlanObjectAddOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/PlanObjectUpdateOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/PlanObjectDeleteOperation"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "add": "#/components/schemas/PlanObjectAddOperation",
+                  "delete": "#/components/schemas/PlanObjectDeleteOperation",
+                  "update": "#/components/schemas/PlanObjectUpdateOperation"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Operations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_plan_version",
+          "label",
+          "operations"
+        ],
+        "title": "PlanChangeSetDraft"
+      },
       "PlanHistoryState": {
         "properties": {
           "can_undo": {
@@ -2045,6 +2444,70 @@
         "type": "object",
         "title": "PlanHistoryState"
       },
+      "PlanMutationResult": {
+        "properties": {
+          "change_set_id": {
+            "type": "string",
+            "title": "Change Set Id"
+          },
+          "plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Plan Version"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "added_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Added Ids"
+          },
+          "updated_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Updated Ids"
+          },
+          "deleted_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deleted Ids"
+          },
+          "affected_bounds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affected Bounds"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "change_set_id",
+          "plan_version",
+          "state_version",
+          "plan"
+        ],
+        "title": "PlanMutationResult"
+      },
       "PlanObject": {
         "properties": {
           "id": {
@@ -2072,6 +2535,79 @@
             "maximum": 25.0,
             "exclusiveMinimum": 0.0,
             "title": "Radius"
+          },
+          "layout_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 25.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout Radius M"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "unspecified",
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "unspecified"
+          },
+          "species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Revision Id"
+          },
+          "pattern_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern Id"
+          },
+          "group_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Group Ids"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked",
+            "default": false
+          },
+          "canopy_forecast": {
+            "items": {
+              "$ref": "#/components/schemas/GrowthEnvelopeForecast"
+            },
+            "type": "array",
+            "title": "Canopy Forecast"
+          },
+          "root_forecast": {
+            "items": {
+              "$ref": "#/components/schemas/GrowthEnvelopeForecast"
+            },
+            "type": "array",
+            "title": "Root Forecast"
           },
           "status": {
             "type": "string",
@@ -2104,6 +2640,24 @@
         ],
         "title": "PlanObject"
       },
+      "PlanObjectAddOperation": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "add",
+            "title": "Type",
+            "default": "add"
+          },
+          "object": {
+            "$ref": "#/components/schemas/PlanObjectCreate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "object"
+        ],
+        "title": "PlanObjectAddOperation"
+      },
       "PlanObjectCreate": {
         "properties": {
           "kind": {
@@ -2134,6 +2688,65 @@
               }
             ],
             "title": "Radius"
+          },
+          "layout_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 25.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout Radius M"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "unspecified",
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "unspecified"
+          },
+          "species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Revision Id"
+          },
+          "pattern_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern Id"
+          },
+          "group_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Group Ids"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked",
+            "default": false
           }
         },
         "type": "object",
@@ -2143,6 +2756,25 @@
           "y"
         ],
         "title": "PlanObjectCreate"
+      },
+      "PlanObjectDeleteOperation": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "delete",
+            "title": "Type",
+            "default": "delete"
+          },
+          "object_id": {
+            "type": "string",
+            "title": "Object Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "object_id"
+        ],
+        "title": "PlanObjectDeleteOperation"
       },
       "PlanObjectUpdate": {
         "properties": {
@@ -2180,10 +2812,111 @@
               }
             ],
             "title": "Radius"
+          },
+          "layout_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 25.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout Radius M"
+          },
+          "size_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "unspecified",
+                  "sapling",
+                  "standard",
+                  "large"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Class"
+          },
+          "species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Revision Id"
+          },
+          "pattern_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern Id"
+          },
+          "group_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Ids"
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked"
           }
         },
         "type": "object",
         "title": "PlanObjectUpdate"
+      },
+      "PlanObjectUpdateOperation": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "update",
+            "title": "Type",
+            "default": "update"
+          },
+          "object_id": {
+            "type": "string",
+            "title": "Object Id"
+          },
+          "changes": {
+            "$ref": "#/components/schemas/PlanObjectUpdate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "object_id",
+          "changes"
+        ],
+        "title": "PlanObjectUpdateOperation"
       },
       "PlanObjectsDeleteRequest": {
         "properties": {

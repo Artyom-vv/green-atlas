@@ -4,6 +4,15 @@ from math import ceil, floor, hypot
 from app.contracts import PlanObject
 
 
+class PlanVersionConflict(Exception):
+    def __init__(self, expected_version: int, current_version: int) -> None:
+        self.expected_version = expected_version
+        self.current_version = current_version
+        super().__init__(
+            f"План изменился: ожидалась версия {expected_version}, текущая версия {current_version}"
+        )
+
+
 def required_spacing(first: PlanObject, second: PlanObject) -> float:
     """Minimum crown-to-crown distance used while an operator places objects."""
     if first.kind == "tree" and second.kind == "tree":

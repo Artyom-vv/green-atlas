@@ -806,3 +806,94 @@ def test_projects_can_be_deleted() -> None:
     project_id = client.post("/api/projects", json={"name": "Удаляемый проект"}).json()["id"]
     assert client.delete(f"/api/projects/{project_id}").status_code == 204
     assert client.get(f"/api/projects/{project_id}").status_code == 404
+
+
+def test_change_set_previews_and_applies_several_objects_as_one_revision() -> None:
+    project_id = prepare_project("Атомарный набор")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
+    base_version = opened["plan"]["version"]
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": base_version,
+        "source": "group",
+        "label": "Две посадки",
+        "operations": [
+            {"type": "add", "object": {"kind": "tree", "x": 20, "y": 20}},
+            {"type": "add", "object": {"kind": "tree", "x": 30, "y": 20}},
+        ],
+    })
+
+    assert preview.status_code == 200, preview.json()
+    assert preview.json()["can_apply"] is True
+    assert len(preview.json()["additions"]) == 2
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
+
+    payload = {
+        "preview_id": preview.json()["id"],
+        "digest": preview.json()["digest"],
+        "base_plan_version": base_version,
+    }
+    applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json=payload)
+    repeated = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json=payload)
+
+    assert applied.status_code == 200, applied.json()
+    assert repeated.status_code == 200, repeated.json()
+    assert repeated.json() == applied.json()
+    assert applied.json()["plan_version"] == base_version + 1
+    assert len(applied.json()["added_ids"]) == 2
+    assert len(client.get(f"/api/projects/{project_id}").json()["plan"]["objects"]) == 2
+    undone = client.post(f"/api/projects/{project_id}/plan/history/undo")
+    assert undone.status_code == 200
+    assert undone.json()["plan"]["objects"] == []
+
+
+def test_blocked_change_set_reports_each_candidate_without_partial_save() -> None:
+    project_id = prepare_project("Заблокированный набор")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": base_version,
+        "source": "group",
+        "label": "Одна допустимая и одна ошибочная посадка",
+        "operations": [
+            {"type": "add", "object": {"kind": "tree", "x": 20, "y": 20}},
+            {"type": "add", "object": {"kind": "tree", "x": -10, "y": -10}},
+        ],
+    })
+
+    assert preview.status_code == 200
+    assert preview.json()["can_apply"] is False
+    assert [item["status"] for item in preview.json()["candidate_results"]] == ["allowed", "blocked"]
+    rejected = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
+        "preview_id": preview.json()["id"],
+        "digest": preview.json()["digest"],
+        "base_plan_version": base_version,
+    })
+    assert rejected.status_code == 400
+    project = client.get(f"/api/projects/{project_id}").json()
+    assert project["plan"]["version"] == base_version
+    assert project["plan"]["objects"] == []
+
+
+def test_change_set_rejects_a_preview_after_the_plan_version_changes() -> None:
+    project_id = prepare_project("Устаревший предпросмотр")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": base_version,
+        "source": "manual",
+        "label": "Будущая посадка",
+        "operations": [{"type": "add", "object": {"kind": "tree", "x": 30, "y": 20}}],
+    }).json()
+    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
+
+    stale = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
+        "preview_id": preview["id"],
+        "digest": preview["digest"],
+        "base_plan_version": base_version,
+    })
+
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "PLAN_VERSION_CONFLICT"
+    assert len(client.get(f"/api/projects/{project_id}").json()["plan"]["objects"]) == 1

@@ -10,10 +10,14 @@ from app.contracts import (
     ApiError,
     ExportArtifact,
     GeometrySnapshot,
+    ChangeSetPreview,
     LayerMappingRequest,
     OperationKind,
     Plan,
+    PlanChangeSetApplyRequest,
+    PlanChangeSetDraft,
     PlanHistoryState,
+    PlanMutationResult,
     PlanObjectCreate,
     PlanObjectUpdate,
     PlanObjectsDeleteRequest,
@@ -30,8 +34,9 @@ from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, dxf_size_error, validat
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.query_adapters import IndexedGeometryQuery
-from app.history.adapters import InMemoryProjectHistory
+from app.history.adapters import SqliteProjectHistory
 from app.operations.adapters import SqliteOperationRepository
+from app.planning.domain import PlanVersionConflict
 from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.validation.adapters import RuleBasedPlanValidator
@@ -42,7 +47,7 @@ project_repository = SqliteProjectRepository(database_path)
 application = ProjectApplication(
     repository=project_repository,
     operation_repository=SqliteOperationRepository(database_path),
-    history=InMemoryProjectHistory(),
+    history=SqliteProjectHistory(project_repository),
     dxf_reader=EzdxfReader(),
     geometry=ShapelyGeometryEngine(),
     geometry_query=IndexedGeometryQuery(),
@@ -82,6 +87,15 @@ def handle(error: Exception) -> HTTPException:
                 code="PROJECT_VERSION_CONFLICT",
                 message="Проект изменён в другой вкладке. Обновите данные перед повтором действия.",
                 details={"project_id": error.project_id, "expected_version": error.expected_version, "current_version": error.current_version},
+            ).model_dump(),
+        )
+    if isinstance(error, PlanVersionConflict):
+        return HTTPException(
+            status_code=409,
+            detail=ApiError(
+                code="PLAN_VERSION_CONFLICT",
+                message="План изменился после предпросмотра. Рассчитайте изменения ещё раз.",
+                details={"expected_version": error.expected_version, "current_version": error.current_version},
             ).model_dump(),
         )
     if isinstance(error, KeyError):
@@ -245,6 +259,22 @@ def create_manual_plan(project_id: str) -> Project:
 def check_plan_placement(project_id: str, payload: PlacementCheckRequest) -> PlacementCheck:
     try:
         return application.check_placement(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/plan/change-sets/preview", response_model=ChangeSetPreview)
+def preview_plan_change_set(project_id: str, payload: PlanChangeSetDraft) -> ChangeSetPreview:
+    try:
+        return application.preview_change_set(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/plan/change-sets/apply", response_model=PlanMutationResult)
+def apply_plan_change_set(project_id: str, payload: PlanChangeSetApplyRequest) -> PlanMutationResult:
+    try:
+        return application.apply_change_set(project_id, payload)
     except Exception as error:
         raise handle(error) from error
 

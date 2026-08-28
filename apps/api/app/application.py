@@ -1,5 +1,8 @@
 from collections import OrderedDict
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+import json
 from math import isfinite
 from threading import RLock
 
@@ -14,7 +17,12 @@ from app.contracts import (
     OperationKind,
     OperationStatus,
     Plan,
+    ChangeSetCandidateResult,
+    ChangeSetPreview,
     PlanHistoryState,
+    PlanChangeSetApplyRequest,
+    PlanChangeSetDraft,
+    PlanMutationResult,
     PlanObject,
     PlanObjectCreate,
     PlanObjectUpdate,
@@ -35,13 +43,19 @@ from app.geometry.ports import GeometryEnginePort, GeometryQueryPort
 from app.history.ports import ProjectHistoryPort
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
-from app.planning.domain import PlantSpacingIndex
+from app.planning.domain import PlanVersionConflict, PlantSpacingIndex
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.projects.ports import ProjectRepository
 from app.validation.ports import PlanValidatorPort
 
 
 _OPERATION_VALUE_UNSET = object()
+
+
+@dataclass
+class _CachedChangeSet:
+    preview: ChangeSetPreview
+    plan: Plan
 
 
 class ProjectApplication:
@@ -75,6 +89,9 @@ class ProjectApplication:
         self._manual_edit_lock = RLock()
         self._spacing_indexes: OrderedDict[str, tuple[int, PlantSpacingIndex]] = OrderedDict()
         self._spacing_index_lock = RLock()
+        self._change_set_previews: OrderedDict[str, _CachedChangeSet] = OrderedDict()
+        self._applied_change_sets: OrderedDict[str, PlanMutationResult] = OrderedDict()
+        self._change_set_preview_lock = RLock()
 
     def _update_operation(
         self,
@@ -236,6 +253,20 @@ class ProjectApplication:
             "plan": project.plan.model_copy(deep=True) if project.plan else None,
             "status": project.status,
         })
+
+    def _commit_plan_change(
+        self,
+        project: Project,
+        before: Project,
+        label: str,
+        change_set_id: str | None = None,
+    ) -> Project:
+        commit = getattr(self.history, "commit", None)
+        if callable(commit):
+            return commit(project, before, label, change_set_id)
+        saved = self.repository.save(project)
+        self.history.record(before, label)
+        return saved
 
     @staticmethod
     def _attach_planting_zone_features(project: Project) -> None:
@@ -535,88 +566,270 @@ class ProjectApplication:
 
     def add_object(self, project_id: str, payload: PlanObjectCreate) -> Plan:
         with self._manual_edit_lock:
-            return self._add_object(project_id, payload)
-
-    def _add_object(self, project_id: str, payload: PlanObjectCreate) -> Plan:
-        project = self.get(project_id)
-        if project.plan is None:
-            raise ValueError("План ещё не создан")
-        radius = payload.radius or (1.6 if payload.kind == "tree" else 0.65)
-        self.geometry.validate_position(project, payload.x, payload.y, radius, payload.kind)
-        zone = self._planting_zone_at(project, payload.x, payload.y, radius)
-        if project.planting_zones and zone is None:
-            raise ValueError("Выберите позицию внутри одного из участков задания")
-        object_ = PlanObject(kind=payload.kind, x=payload.x, y=payload.y, radius=radius, status="warning" if self.geometry.placement_advisory(project, payload.x, payload.y, radius) else "valid", planting_zone_id=zone.id if zone else None)
-        if not self._respects_plan_spacing(project, object_):
-            raise ValueError("Объект расположен слишком близко к существующим посадкам")
-        before = self._history_basis(project)
-        project.plan.objects.append(object_)
-        self._refresh_plan(project, project.plan, increment_version=True)
-        # Export is an immutable artifact, while the draft remains editable.
-        # Any edit after export therefore makes the project draft current
-        # again; otherwise the project list lies about the saved DXF version.
-        project.status = ProjectStatus.EDITING
-        self.repository.save(project)
-        self._discard_plan_spacing_index(project.id)
-        self.history.record(before, "Добавление дерева" if payload.kind == "tree" else "Добавление кустарника")
-        return project.plan
+            project = self.get(project_id)
+            if project.plan is None:
+                raise ValueError("План ещё не создан")
+            draft = PlanChangeSetDraft(
+                base_plan_version=project.plan.version,
+                source="manual",
+                label="Добавление дерева" if payload.kind == "tree" else "Добавление кустарника",
+                operations=[{"type": "add", "object": payload.model_dump()}],
+            )
+            preview = self.preview_change_set(project_id, draft)
+            if not preview.can_apply:
+                raise ValueError(next(item.reason for item in preview.candidate_results if item.status == "blocked"))
+            return self.apply_change_set(project_id, PlanChangeSetApplyRequest(
+                preview_id=preview.id,
+                digest=preview.digest,
+                base_plan_version=preview.base_plan_version,
+            )).plan
 
     def update_object(self, project_id: str, object_id: str, payload: PlanObjectUpdate) -> Plan:
         with self._manual_edit_lock:
-            return self._update_object(project_id, object_id, payload)
-
-    def _update_object(self, project_id: str, object_id: str, payload: PlanObjectUpdate) -> Plan:
-        project = self.get(project_id)
-        if project.plan is None:
-            raise ValueError("План ещё не создан")
-        object_ = next((item for item in project.plan.objects if item.id == object_id), None)
-        if object_ is None:
-            raise KeyError("Объект плана не найден")
-        updates = payload.model_dump(exclude_none=True)
-        next_x = float(updates.get("x", object_.x))
-        next_y = float(updates.get("y", object_.y))
-        next_radius = float(updates.get("radius", object_.radius))
-        self.geometry.validate_position(project, next_x, next_y, next_radius, object_.kind)
-        zone = self._planting_zone_at(project, next_x, next_y, next_radius)
-        if project.planting_zones and zone is None:
-            raise ValueError("Выберите позицию внутри одного из участков задания")
-        candidate = object_.model_copy(update={"x": next_x, "y": next_y, "radius": next_radius, "planting_zone_id": zone.id if zone else None})
-        if not self._respects_plan_spacing(project, candidate, ignore_id=object_.id):
-            raise ValueError("Объект расположен слишком близко к существующим посадкам")
-        before = self._history_basis(project)
-        for field, value in updates.items():
-            setattr(object_, field, value)
-        object_.planting_zone_id = zone.id if zone else None
-        object_.status = "warning" if self.geometry.placement_advisory(project, next_x, next_y, next_radius) else "valid"
-        self._refresh_plan(project, project.plan, increment_version=True)
-        project.status = ProjectStatus.EDITING
-        self.repository.save(project)
-        self._discard_plan_spacing_index(project.id)
-        self.history.record(before, "Перемещение объекта" if {"x", "y"} & updates.keys() else "Изменение объекта")
-        return project.plan
+            project = self.get(project_id)
+            if project.plan is None:
+                raise ValueError("План ещё не создан")
+            updates = payload.model_dump(exclude_unset=True)
+            draft = PlanChangeSetDraft(
+                base_plan_version=project.plan.version,
+                source="manual",
+                label="Перемещение объекта" if {"x", "y"} & updates.keys() else "Изменение объекта",
+                operations=[{"type": "update", "object_id": object_id, "changes": updates}],
+            )
+            preview = self.preview_change_set(project_id, draft)
+            if not preview.can_apply:
+                raise ValueError(next(item.reason for item in preview.candidate_results if item.status == "blocked"))
+            return self.apply_change_set(project_id, PlanChangeSetApplyRequest(
+                preview_id=preview.id,
+                digest=preview.digest,
+                base_plan_version=preview.base_plan_version,
+            )).plan
 
     def delete_object(self, project_id: str, object_id: str) -> Plan:
         return self.delete_objects(project_id, PlanObjectsDeleteRequest(ids=[object_id]))
 
     def delete_objects(self, project_id: str, payload: PlanObjectsDeleteRequest) -> Plan:
         with self._manual_edit_lock:
-            return self._delete_objects(project_id, payload)
+            project = self.get(project_id)
+            if project.plan is None:
+                raise ValueError("План ещё не создан")
+            ids = list(dict.fromkeys(payload.ids))
+            draft = PlanChangeSetDraft(
+                base_plan_version=project.plan.version,
+                source="group" if len(ids) > 1 else "manual",
+                label="Удаление объекта" if len(ids) == 1 else f"Удаление объектов ({len(ids)})",
+                operations=[{"type": "delete", "object_id": object_id} for object_id in ids],
+            )
+            preview = self.preview_change_set(project_id, draft)
+            if not preview.can_apply:
+                raise ValueError(next(item.reason for item in preview.candidate_results if item.status == "blocked"))
+            return self.apply_change_set(project_id, PlanChangeSetApplyRequest(
+                preview_id=preview.id,
+                digest=preview.digest,
+                base_plan_version=preview.base_plan_version,
+            )).plan
 
-    def _delete_objects(self, project_id: str, payload: PlanObjectsDeleteRequest) -> Plan:
+    @staticmethod
+    def _default_layout_radius(kind: str) -> float:
+        return 1.6 if kind == "tree" else 0.65
+
+    def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate) -> tuple[PlanObject, str | None]:
+        radius = payload.layout_radius_m or payload.radius or self._default_layout_radius(payload.kind)
+        self.geometry.validate_position(project, payload.x, payload.y, radius, payload.kind)
+        zone = self._planting_zone_at(project, payload.x, payload.y, radius)
+        if project.planting_zones and zone is None:
+            raise ValueError("Выберите позицию внутри одного из участков задания")
+        advisory = self.geometry.placement_advisory(project, payload.x, payload.y, radius)
+        object_ = PlanObject(
+            **payload.model_dump(exclude={"radius", "layout_radius_m"}),
+            radius=radius,
+            layout_radius_m=radius,
+            status="warning" if advisory else "valid",
+            planting_zone_id=zone.id if zone else None,
+        )
+        if not PlantSpacingIndex(plan.objects).respects(object_):
+            raise ValueError("Объект расположен слишком близко к существующим посадкам")
+        return object_, advisory
+
+    def _preview_update(self, project: Project, plan: Plan, object_id: str, payload: PlanObjectUpdate) -> tuple[PlanObject, str | None]:
+        current = next((item for item in plan.objects if item.id == object_id), None)
+        if current is None:
+            raise KeyError("Объект плана не найден")
+        updates = payload.model_dump(exclude_unset=True)
+        if not updates:
+            raise ValueError("Не указаны изменения объекта")
+        if current.locked and not (set(updates) == {"locked"} and updates["locked"] is False):
+            raise ValueError("Сначала снимите закрепление объекта")
+        radius_value = updates.get("layout_radius_m", updates.get("radius", current.layout_radius_m or current.radius))
+        if radius_value is None:
+            radius_value = current.radius
+        next_radius = float(radius_value)
+        next_x = float(updates.get("x", current.x))
+        next_y = float(updates.get("y", current.y))
+        self.geometry.validate_position(project, next_x, next_y, next_radius, current.kind)
+        zone = self._planting_zone_at(project, next_x, next_y, next_radius)
+        if project.planting_zones and zone is None:
+            raise ValueError("Выберите позицию внутри одного из участков задания")
+        updates["x"] = next_x
+        updates["y"] = next_y
+        updates["radius"] = next_radius
+        updates["layout_radius_m"] = next_radius
+        updates["planting_zone_id"] = zone.id if zone else None
+        advisory = self.geometry.placement_advisory(project, next_x, next_y, next_radius)
+        updates["status"] = "warning" if advisory else "valid"
+        candidate = PlanObject.model_validate({**current.model_dump(), **updates})
+        if not PlantSpacingIndex(plan.objects).respects(candidate, ignore_id=current.id):
+            raise ValueError("Объект расположен слишком близко к существующим посадкам")
+        return candidate, advisory
+
+    @staticmethod
+    def _change_set_digest(draft: PlanChangeSetDraft, additions: list[PlanObject], updates: list[PlanObject], deletion_ids: list[str]) -> str:
+        value = {
+            "draft": draft.model_dump(mode="json"),
+            "additions": [item.model_dump(mode="json") for item in additions],
+            "updates": [item.model_dump(mode="json") for item in updates],
+            "deletion_ids": deletion_ids,
+        }
+        return sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    def preview_change_set(self, project_id: str, draft: PlanChangeSetDraft) -> ChangeSetPreview:
         project = self.get(project_id)
         if project.plan is None:
             raise ValueError("План ещё не создан")
-        ids = set(payload.ids)
-        if ids - {item.id for item in project.plan.objects}:
-            raise KeyError("Часть объектов плана не найдена")
-        before = self._history_basis(project)
-        project.plan.objects = [item for item in project.plan.objects if item.id not in ids]
-        self._refresh_plan(project, project.plan, increment_version=True)
-        project.status = ProjectStatus.EDITING
-        self.repository.save(project)
-        self._discard_plan_spacing_index(project.id)
-        self.history.record(before, "Удаление объекта" if len(ids) == 1 else f"Удаление объектов ({len(ids)})")
-        return project.plan
+        if project.plan.version != draft.base_plan_version:
+            raise PlanVersionConflict(draft.base_plan_version, project.plan.version)
+        working = project.plan.model_copy(deep=True)
+        additions: list[PlanObject] = []
+        updates: list[PlanObject] = []
+        deletion_ids: list[str] = []
+        results: list[ChangeSetCandidateResult] = []
+        for index, operation in enumerate(draft.operations):
+            try:
+                if operation.type == "add":
+                    candidate, advisory = self._preview_addition(project, working, operation.object)
+                    working.objects.append(candidate)
+                    additions.append(candidate.model_copy(deep=True))
+                    results.append(ChangeSetCandidateResult(
+                        operation_index=index,
+                        type="add",
+                        status="unknown" if advisory else "allowed",
+                        reason=advisory or "Позиция проходит текущую проверку",
+                        object_id=candidate.id,
+                    ))
+                elif operation.type == "update":
+                    candidate, advisory = self._preview_update(project, working, operation.object_id, operation.changes)
+                    working.objects = [candidate if item.id == candidate.id else item for item in working.objects]
+                    updates.append(candidate.model_copy(deep=True))
+                    results.append(ChangeSetCandidateResult(
+                        operation_index=index,
+                        type="update",
+                        status="unknown" if advisory else "allowed",
+                        reason=advisory or "Изменение проходит текущую проверку",
+                        object_id=candidate.id,
+                    ))
+                else:
+                    current = next((item for item in working.objects if item.id == operation.object_id), None)
+                    if current is None:
+                        raise KeyError("Объект плана не найден")
+                    if current.locked:
+                        raise ValueError("Сначала снимите закрепление объекта")
+                    working.objects = [item for item in working.objects if item.id != operation.object_id]
+                    deletion_ids.append(operation.object_id)
+                    results.append(ChangeSetCandidateResult(
+                        operation_index=index,
+                        type="delete",
+                        status="allowed",
+                        reason="Объект будет удалён",
+                        object_id=operation.object_id,
+                    ))
+            except (KeyError, ValueError) as error:
+                results.append(ChangeSetCandidateResult(
+                    operation_index=index,
+                    type=operation.type,
+                    status="blocked",
+                    reason=str(error).strip("'"),
+                    object_id=getattr(operation, "object_id", None),
+                ))
+        can_apply = all(item.status != "blocked" for item in results)
+        self._refresh_plan(project, working, increment_version=True)
+        digest = self._change_set_digest(draft, additions, updates, deletion_ids)
+        preview = ChangeSetPreview(
+            digest=digest,
+            base_plan_version=draft.base_plan_version,
+            source=draft.source,
+            label=draft.label,
+            can_apply=can_apply,
+            additions=additions,
+            updates=updates,
+            deletion_ids=deletion_ids,
+            candidate_results=results,
+            expires_at=(datetime.now(UTC) + timedelta(minutes=15)).isoformat(),
+        )
+        with self._change_set_preview_lock:
+            now = datetime.now(UTC)
+            expired = [key for key, cached in self._change_set_previews.items() if datetime.fromisoformat(cached.preview.expires_at) <= now]
+            for key in expired:
+                self._change_set_previews.pop(key, None)
+            self._change_set_previews[preview.id] = _CachedChangeSet(preview=preview.model_copy(deep=True), plan=working.model_copy(deep=True))
+            while len(self._change_set_previews) > 128:
+                self._change_set_previews.popitem(last=False)
+        return preview
+
+    @staticmethod
+    def _affected_bounds(before: Plan, after: Plan, preview: ChangeSetPreview) -> list[float] | None:
+        ids = set(preview.deletion_ids) | {item.id for item in preview.updates}
+        objects = [item for item in before.objects if item.id in ids] + preview.additions + preview.updates
+        if not objects:
+            return None
+        return [
+            min(item.x - item.radius for item in objects),
+            min(item.y - item.radius for item in objects),
+            max(item.x + item.radius for item in objects),
+            max(item.y + item.radius for item in objects),
+        ]
+
+    def apply_change_set(self, project_id: str, payload: PlanChangeSetApplyRequest) -> PlanMutationResult:
+        with self._manual_edit_lock:
+            with self._change_set_preview_lock:
+                applied = self._applied_change_sets.get(payload.preview_id)
+                if applied is not None:
+                    return applied.model_copy(deep=True)
+                cached = self._change_set_previews.get(payload.preview_id)
+            if cached is None or datetime.fromisoformat(cached.preview.expires_at) <= datetime.now(UTC):
+                raise ValueError("Предпросмотр устарел. Рассчитайте изменения ещё раз")
+            preview = cached.preview
+            if payload.digest != preview.digest:
+                raise ValueError("Предпросмотр изменений повреждён или был изменён")
+            if payload.base_plan_version != preview.base_plan_version:
+                raise PlanVersionConflict(payload.base_plan_version, preview.base_plan_version)
+            if not preview.can_apply:
+                raise ValueError("Набор содержит заблокированные изменения")
+            project = self.get(project_id)
+            if project.plan is None:
+                raise ValueError("План ещё не создан")
+            if project.plan.version != preview.base_plan_version:
+                raise PlanVersionConflict(preview.base_plan_version, project.plan.version)
+            before = self._history_basis(project)
+            before_plan = project.plan.model_copy(deep=True)
+            project.plan = cached.plan.model_copy(deep=True)
+            project.status = ProjectStatus.EDITING
+            saved = self._commit_plan_change(project, before, preview.label, preview.id)
+            self._discard_plan_spacing_index(project.id)
+            result = PlanMutationResult(
+                change_set_id=preview.id,
+                plan_version=saved.plan.version,
+                state_version=saved.state_version,
+                added_ids=[item.id for item in preview.additions],
+                updated_ids=[item.id for item in preview.updates],
+                deleted_ids=preview.deletion_ids,
+                affected_bounds=self._affected_bounds(before_plan, saved.plan, preview),
+                plan=saved.plan.model_copy(deep=True),
+            )
+            with self._change_set_preview_lock:
+                self._applied_change_sets[payload.preview_id] = result.model_copy(deep=True)
+                while len(self._applied_change_sets) > 128:
+                    self._applied_change_sets.popitem(last=False)
+            return result
 
     def get_plan_history(self, project_id: str) -> PlanHistoryState:
         self.get(project_id)
@@ -628,6 +841,10 @@ class ProjectApplication:
 
     def _undo_plan_change(self, project_id: str) -> Project:
         project = self.get(project_id)
+        if getattr(self.history, "durable", False):
+            saved = self.history.undo(project)
+            self._discard_plan_spacing_index(project.id)
+            return saved
         restored = self.history.undo(project)
         try:
             saved = self.repository.save(restored)
@@ -646,6 +863,10 @@ class ProjectApplication:
 
     def _redo_plan_change(self, project_id: str) -> Project:
         project = self.get(project_id)
+        if getattr(self.history, "durable", False):
+            saved = self.history.redo(project)
+            self._discard_plan_spacing_index(project.id)
+            return saved
         restored = self.history.redo(project)
         try:
             saved = self.repository.save(restored)

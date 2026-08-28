@@ -3,12 +3,12 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 from app.application import ProjectApplication
-from app.contracts import GeometrySnapshot, LayerMapping, PlanObjectCreate, PlantingZoneAssignment, Project, ProjectStatus
+from app.contracts import GeometrySnapshot, LayerMapping, Plan, PlanObject, PlanObjectCreate, PlantingZoneAssignment, Project, ProjectStatus
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.query_adapters import IndexedGeometryQuery
-from app.history.adapters import InMemoryProjectHistory
+from app.history.adapters import InMemoryProjectHistory, SqliteProjectHistory
 from app.operations.adapters import SqliteOperationRepository
 from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import ProjectVersionConflict
@@ -130,6 +130,34 @@ def test_repository_migrates_legacy_project_status_on_read(tmp_path: Path) -> No
     restored = repository.get(project.id)
 
     assert restored.status == ProjectStatus.EDITING
+
+
+def test_sqlite_plan_history_survives_restart_with_undo_and_redo(tmp_path: Path) -> None:
+    database = tmp_path / "durable-history.sqlite3"
+    repository = SqliteProjectRepository(database)
+    history = SqliteProjectHistory(repository)
+    project = repository.create(Project(name="Устойчивая история", status=ProjectStatus.EDITING, plan=Plan()))
+    before = project.model_copy(deep=True)
+    project.plan.objects.append(PlanObject(kind="tree", x=20, y=20, radius=1.6))
+    project.plan.version += 1
+
+    saved = history.commit(project, before, "Добавление группы", "change-set-1")
+
+    reopened_repository = SqliteProjectRepository(database)
+    reopened_history = SqliteProjectHistory(reopened_repository)
+    assert reopened_history.state(project.id).can_undo is True
+    undone = reopened_history.undo(reopened_repository.get(project.id))
+    assert undone.plan is not None
+    assert undone.plan.objects == []
+
+    restarted_repository = SqliteProjectRepository(database)
+    restarted_history = SqliteProjectHistory(restarted_repository)
+    state = restarted_history.state(project.id)
+    assert state.can_undo is False
+    assert state.can_redo is True
+    redone = restarted_history.redo(restarted_repository.get(project.id))
+    assert redone.plan is not None
+    assert [item.id for item in redone.plan.objects] == [saved.plan.objects[0].id]
 
 
 def test_real_manual_project_survives_application_recreation_without_losing_its_dxf(tmp_path: Path) -> None:

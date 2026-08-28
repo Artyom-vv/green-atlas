@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -137,14 +137,48 @@ class DxfImportResult(BaseModel):
     coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
 
 
+class GrowthEnvelopeForecast(BaseModel):
+    """A bounded biological forecast, never a regulatory exclusion zone."""
+
+    horizon_year: Literal[5, 10, 20]
+    radius_min_m: float = Field(ge=0, allow_inf_nan=False)
+    radius_max_m: float = Field(ge=0, allow_inf_nan=False)
+    confidence: Literal["low", "medium", "high"]
+    basis: str = Field(min_length=1, max_length=240)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "GrowthEnvelopeForecast":
+        if self.radius_max_m < self.radius_min_m:
+            raise ValueError("Верхняя граница прогноза должна быть не меньше нижней")
+        return self
+
+
 class PlanObject(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     kind: Literal["tree", "shrub"]
     x: float = Field(allow_inf_nan=False)
     y: float = Field(allow_inf_nan=False)
     radius: float = Field(gt=0, le=25, allow_inf_nan=False)
+    layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+    species_revision_id: str | None = None
+    pattern_id: str | None = None
+    group_ids: list[str] = Field(default_factory=list, max_length=50)
+    locked: bool = False
+    canopy_forecast: list[GrowthEnvelopeForecast] = Field(default_factory=list)
+    root_forecast: list[GrowthEnvelopeForecast] = Field(default_factory=list)
     status: Literal["valid", "warning", "error"] = "valid"
     planting_zone_id: str | None = None
+
+    @model_validator(mode="after")
+    def migrate_layout_radius(self) -> "PlanObject":
+        # ``radius`` described the footprint used by the early manual editor.
+        # Preserve it for old clients and DXF exports, while making the
+        # layout meaning explicit. It must never be presented as an adult
+        # crown or root forecast.
+        if self.layout_radius_m is None:
+            self.layout_radius_m = self.radius
+        return self
 
 
 class ValidationIssue(BaseModel):
@@ -281,12 +315,93 @@ class PlanObjectCreate(BaseModel):
     x: float = Field(allow_inf_nan=False)
     y: float = Field(allow_inf_nan=False)
     radius: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+    species_revision_id: str | None = None
+    pattern_id: str | None = None
+    group_ids: list[str] = Field(default_factory=list, max_length=50)
+    locked: bool = False
 
 
 class PlanObjectUpdate(BaseModel):
     x: float | None = Field(default=None, allow_inf_nan=False)
     y: float | None = Field(default=None, allow_inf_nan=False)
     radius: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    size_class: Literal["unspecified", "sapling", "standard", "large"] | None = None
+    species_revision_id: str | None = None
+    pattern_id: str | None = None
+    group_ids: list[str] | None = Field(default=None, max_length=50)
+    locked: bool | None = None
+
+
+class PlanObjectAddOperation(BaseModel):
+    type: Literal["add"] = "add"
+    object: PlanObjectCreate
+
+
+class PlanObjectUpdateOperation(BaseModel):
+    type: Literal["update"] = "update"
+    object_id: str
+    changes: PlanObjectUpdate
+
+
+class PlanObjectDeleteOperation(BaseModel):
+    type: Literal["delete"] = "delete"
+    object_id: str
+
+
+PlanChangeOperation = Annotated[
+    PlanObjectAddOperation | PlanObjectUpdateOperation | PlanObjectDeleteOperation,
+    Field(discriminator="type"),
+]
+
+
+class PlanChangeSetDraft(BaseModel):
+    base_plan_version: int = Field(ge=1)
+    source: Literal["manual", "group", "pattern", "recommendation", "brush", "system"] = "manual"
+    label: str = Field(min_length=1, max_length=160)
+    policy: Literal["all_or_nothing"] = "all_or_nothing"
+    operations: list[PlanChangeOperation] = Field(min_length=1, max_length=5000)
+
+
+class ChangeSetCandidateResult(BaseModel):
+    operation_index: int = Field(ge=0)
+    type: Literal["add", "update", "delete"]
+    status: Literal["allowed", "blocked", "unknown"]
+    reason: str
+    object_id: str | None = None
+
+
+class ChangeSetPreview(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    digest: str
+    base_plan_version: int = Field(ge=1)
+    source: Literal["manual", "group", "pattern", "recommendation", "brush", "system"]
+    label: str
+    can_apply: bool
+    additions: list[PlanObject] = Field(default_factory=list)
+    updates: list[PlanObject] = Field(default_factory=list)
+    deletion_ids: list[str] = Field(default_factory=list)
+    candidate_results: list[ChangeSetCandidateResult] = Field(default_factory=list)
+    expires_at: str
+
+
+class PlanChangeSetApplyRequest(BaseModel):
+    preview_id: str
+    digest: str
+    base_plan_version: int = Field(ge=1)
+
+
+class PlanMutationResult(BaseModel):
+    change_set_id: str
+    plan_version: int = Field(ge=1)
+    state_version: int = Field(ge=1)
+    added_ids: list[str] = Field(default_factory=list)
+    updated_ids: list[str] = Field(default_factory=list)
+    deleted_ids: list[str] = Field(default_factory=list)
+    affected_bounds: list[float] | None = None
+    plan: Plan
 
 
 class PlanObjectsDeleteRequest(BaseModel):

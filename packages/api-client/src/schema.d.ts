@@ -244,6 +244,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/plan/change-sets/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Plan Change Set */
+        post: operations["preview_plan_change_set_api_projects__project_id__plan_change_sets_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/plan/change-sets/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Plan Change Set */
+        post: operations["apply_plan_change_set_api_projects__project_id__plan_change_sets_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/plan/objects": {
         parameters: {
             query?: never;
@@ -389,6 +423,53 @@ export interface components {
             /** File */
             file: string;
         };
+        /** ChangeSetCandidateResult */
+        ChangeSetCandidateResult: {
+            /** Operation Index */
+            operation_index: number;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "add" | "update" | "delete";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "allowed" | "blocked" | "unknown";
+            /** Reason */
+            reason: string;
+            /** Object Id */
+            object_id?: string | null;
+        };
+        /** ChangeSetPreview */
+        ChangeSetPreview: {
+            /** Id */
+            id?: string;
+            /** Digest */
+            digest: string;
+            /** Base Plan Version */
+            base_plan_version: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "manual" | "group" | "pattern" | "recommendation" | "brush" | "system";
+            /** Label */
+            label: string;
+            /** Can Apply */
+            can_apply: boolean;
+            /** Additions */
+            additions?: components["schemas"]["PlanObject"][];
+            /** Updates */
+            updates?: components["schemas"]["PlanObject"][];
+            /** Deletion Ids */
+            deletion_ids?: string[];
+            /** Candidate Results */
+            candidate_results?: components["schemas"]["ChangeSetCandidateResult"][];
+            /** Expires At */
+            expires_at: string;
+        };
         /** CoordinateReference */
         CoordinateReference: {
             /**
@@ -461,6 +542,28 @@ export interface components {
             planning_area_m2?: number | null;
             /** Allowed Area M2 */
             allowed_area_m2?: number | null;
+        };
+        /**
+         * GrowthEnvelopeForecast
+         * @description A bounded biological forecast, never a regulatory exclusion zone.
+         */
+        GrowthEnvelopeForecast: {
+            /**
+             * Horizon Year
+             * @enum {integer}
+             */
+            horizon_year: 5 | 10 | 20;
+            /** Radius Min M */
+            radius_min_m: number;
+            /** Radius Max M */
+            radius_max_m: number;
+            /**
+             * Confidence
+             * @enum {string}
+             */
+            confidence: "low" | "medium" | "high";
+            /** Basis */
+            basis: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -599,6 +702,36 @@ export interface components {
              */
             version: number;
         };
+        /** PlanChangeSetApplyRequest */
+        PlanChangeSetApplyRequest: {
+            /** Preview Id */
+            preview_id: string;
+            /** Digest */
+            digest: string;
+            /** Base Plan Version */
+            base_plan_version: number;
+        };
+        /** PlanChangeSetDraft */
+        PlanChangeSetDraft: {
+            /** Base Plan Version */
+            base_plan_version: number;
+            /**
+             * Source
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "group" | "pattern" | "recommendation" | "brush" | "system";
+            /** Label */
+            label: string;
+            /**
+             * Policy
+             * @default all_or_nothing
+             * @constant
+             */
+            policy: "all_or_nothing";
+            /** Operations */
+            operations: (components["schemas"]["PlanObjectAddOperation"] | components["schemas"]["PlanObjectUpdateOperation"] | components["schemas"]["PlanObjectDeleteOperation"])[];
+        };
         /** PlanHistoryState */
         PlanHistoryState: {
             /**
@@ -616,6 +749,24 @@ export interface components {
             /** Redo Label */
             redo_label?: string | null;
         };
+        /** PlanMutationResult */
+        PlanMutationResult: {
+            /** Change Set Id */
+            change_set_id: string;
+            /** Plan Version */
+            plan_version: number;
+            /** State Version */
+            state_version: number;
+            /** Added Ids */
+            added_ids?: string[];
+            /** Updated Ids */
+            updated_ids?: string[];
+            /** Deleted Ids */
+            deleted_ids?: string[];
+            /** Affected Bounds */
+            affected_bounds?: number[] | null;
+            plan: components["schemas"]["Plan"];
+        };
         /** PlanObject */
         PlanObject: {
             /** Id */
@@ -631,6 +782,29 @@ export interface components {
             y: number;
             /** Radius */
             radius: number;
+            /** Layout Radius M */
+            layout_radius_m?: number | null;
+            /**
+             * Size Class
+             * @default unspecified
+             * @enum {string}
+             */
+            size_class: "unspecified" | "sapling" | "standard" | "large";
+            /** Species Revision Id */
+            species_revision_id?: string | null;
+            /** Pattern Id */
+            pattern_id?: string | null;
+            /** Group Ids */
+            group_ids?: string[];
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            /** Canopy Forecast */
+            canopy_forecast?: components["schemas"]["GrowthEnvelopeForecast"][];
+            /** Root Forecast */
+            root_forecast?: components["schemas"]["GrowthEnvelopeForecast"][];
             /**
              * Status
              * @default valid
@@ -639,6 +813,15 @@ export interface components {
             status: "valid" | "warning" | "error";
             /** Planting Zone Id */
             planting_zone_id?: string | null;
+        };
+        /** PlanObjectAddOperation */
+        PlanObjectAddOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add";
+            object: components["schemas"]["PlanObjectCreate"];
         };
         /** PlanObjectCreate */
         PlanObjectCreate: {
@@ -653,6 +836,35 @@ export interface components {
             y: number;
             /** Radius */
             radius?: number | null;
+            /** Layout Radius M */
+            layout_radius_m?: number | null;
+            /**
+             * Size Class
+             * @default unspecified
+             * @enum {string}
+             */
+            size_class: "unspecified" | "sapling" | "standard" | "large";
+            /** Species Revision Id */
+            species_revision_id?: string | null;
+            /** Pattern Id */
+            pattern_id?: string | null;
+            /** Group Ids */
+            group_ids?: string[];
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+        };
+        /** PlanObjectDeleteOperation */
+        PlanObjectDeleteOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete";
+            /** Object Id */
+            object_id: string;
         };
         /** PlanObjectUpdate */
         PlanObjectUpdate: {
@@ -662,6 +874,29 @@ export interface components {
             y?: number | null;
             /** Radius */
             radius?: number | null;
+            /** Layout Radius M */
+            layout_radius_m?: number | null;
+            /** Size Class */
+            size_class?: ("unspecified" | "sapling" | "standard" | "large") | null;
+            /** Species Revision Id */
+            species_revision_id?: string | null;
+            /** Pattern Id */
+            pattern_id?: string | null;
+            /** Group Ids */
+            group_ids?: string[] | null;
+            /** Locked */
+            locked?: boolean | null;
+        };
+        /** PlanObjectUpdateOperation */
+        PlanObjectUpdateOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "update";
+            /** Object Id */
+            object_id: string;
+            changes: components["schemas"]["PlanObjectUpdate"];
         };
         /** PlanObjectsDeleteRequest */
         PlanObjectsDeleteRequest: {
@@ -1437,6 +1672,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlacementCheck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_plan_change_set_api_projects__project_id__plan_change_sets_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanChangeSetDraft"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeSetPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_plan_change_set_api_projects__project_id__plan_change_sets_apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanChangeSetApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanMutationResult"];
                 };
             };
             /** @description Validation Error */
