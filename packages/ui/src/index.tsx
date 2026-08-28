@@ -11,7 +11,7 @@ import type {
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
-import { ExternalLink, Link2, LoaderCircle, Minus, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, ExternalLink, Link2, LoaderCircle, Minus, Plus, X } from 'lucide-react';
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
 
@@ -133,6 +133,37 @@ export function TextArea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 
 export function Select({ className, children, controlSize, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { controlSize?: ControlSize }) {
   return <select className={cx('ui-select', controlSizeClass(controlSize), className)} data-size={controlSize ?? 'default'} {...props}>{children}</select>;
+}
+
+export function Combobox({ value, options, placeholder = 'Выберите', emptyLabel = 'Ничего не найдено', disabled = false, controlSize, onChange, className }: {
+  value?: string;
+  options: Array<{ value: string; label: string; description?: string }>;
+  placeholder?: string;
+  emptyLabel?: string;
+  disabled?: boolean;
+  controlSize?: ControlSize;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const listboxId = useId();
+  const selected = options.find((option) => option.value === value);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(selected?.label ?? '');
+  const [active, setActive] = useState(0);
+  const normalized = query.trim().toLocaleLowerCase('ru');
+  const filtered = options.filter((option) => !normalized || `${option.label} ${option.description ?? ''}`.toLocaleLowerCase('ru').includes(normalized));
+  useEffect(() => { if (!open) setQuery(selected?.label ?? ''); }, [open, selected?.label]);
+  const choose = (next: string) => { onChange(next); setOpen(false); };
+  return <div className={cx('ui-combobox', controlSizeClass(controlSize), className)} data-size={controlSize ?? 'default'}>
+    <input role="combobox" aria-expanded={open} aria-controls={listboxId} aria-autocomplete="list" disabled={disabled} value={query} placeholder={placeholder} onFocus={(event) => { setOpen(true); setActive(0); event.currentTarget.select(); }} onBlur={() => window.setTimeout(() => setOpen(false), 120)} onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(0); }} onKeyDown={(event) => {
+      if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); setActive((current) => Math.min(filtered.length - 1, current + 1)); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); setActive((current) => Math.max(0, current - 1)); }
+      if (event.key === 'Enter' && open && filtered[active]) { event.preventDefault(); choose(filtered[active].value); }
+      if (event.key === 'Escape') setOpen(false);
+    }} />
+    <ChevronDown aria-hidden="true" />
+    {open ? <div id={listboxId} className="ui-combobox__list" role="listbox">{filtered.length ? filtered.map((option, index) => <button key={option.value} type="button" role="option" aria-selected={option.value === value} className={index === active ? 'is-active' : undefined} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option.value)}><span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>{option.value === value ? <Check aria-hidden="true" /> : null}</button>) : <span className="ui-combobox__empty">{emptyLabel}</span>}</div> : null}
+  </div>;
 }
 
 export function Checkbox({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode }) {

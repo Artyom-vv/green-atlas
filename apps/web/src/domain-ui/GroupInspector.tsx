@@ -1,8 +1,9 @@
 import type { PlanObject } from '@green/api-client';
-import { Copy, Lock, Move, Trash2, Unlock } from 'lucide-react';
+import { Copy, Leaf, Lock, Move, Trash2, Unlock } from 'lucide-react';
 import { Button } from '@green/ui';
+import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
 
-export function GroupInspector({ objects, disabled, onMove, onCopy, onLock, onDelete }: { objects: PlanObject[]; disabled?: boolean; onMove: () => void; onCopy: () => void; onLock: (locked: boolean) => void; onDelete: () => void }) {
+export function GroupInspector({ objects, disabled, growthHorizon, onGrowthHorizon, onSpecies, onMove, onCopy, onLock, onDelete }: { objects: PlanObject[]; disabled?: boolean; growthHorizon?: GrowthHorizon; onGrowthHorizon: (value: GrowthHorizon) => void; onSpecies: () => void; onMove: () => void; onCopy: () => void; onLock: (locked: boolean) => void; onDelete: () => void }) {
   const locked = objects.filter((object) => object.locked).length;
   const trees = objects.filter((object) => object.kind === 'tree').length;
   const shrubs = objects.length - trees;
@@ -13,10 +14,12 @@ export function GroupInspector({ objects, disabled, onMove, onCopy, onLock, onDe
       <dl><dt>Деревья</dt><dd>{trees}</dd><dt>Кустарники</dt><dd>{shrubs}</dd>{locked ? <><dt>Закреплено</dt><dd>{locked}</dd></> : null}</dl>
     </section>
     <section className="group-selection-actions">
+      <Button variant="secondary" icon={Leaf} disabled={disabled || locked > 0} onClick={onSpecies}>Назначить породу</Button>
       <Button variant="secondary" icon={Move} disabled={disabled || locked > 0} onClick={onMove}>Переместить</Button>
       <Button variant="secondary" icon={Copy} disabled={disabled} onClick={onCopy}>Копировать</Button>
       <Button variant="secondary" icon={locked === objects.length ? Unlock : Lock} disabled={disabled} onClick={() => onLock(locked !== objects.length)}>{locked === objects.length ? 'Открепить' : 'Закрепить'}</Button>
       <Button variant="danger" icon={Trash2} disabled={disabled || locked > 0} onClick={onDelete}>Удалить выбранные</Button>
     </section>
+    {objects.some((object) => object.canopy_forecast?.length) ? <GrowthHorizonControl value={growthHorizon} onChange={onGrowthHorizon} /> : null}
   </div>;
 }

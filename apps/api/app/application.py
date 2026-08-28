@@ -38,6 +38,8 @@ from app.contracts import (
     ProjectStatus,
     ProjectSummary,
     SourceFile,
+    SpeciesRevision,
+    SpeciesShortlistItem,
 )
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, dxf_size_error, validate_dxf_filename
 from app.dxf_import.ports import DxfReaderPort
@@ -50,6 +52,7 @@ from app.planning.domain import PlanVersionConflict, PlantSpacingIndex
 from app.planning.ports import CandidateGeneratorPort
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.projects.ports import ProjectRepository
+from app.species.catalog import get_species, growth_forecasts, list_species
 from app.validation.ports import PlanValidatorPort
 
 
@@ -653,6 +656,11 @@ class ProjectApplication:
             status="warning" if advisory else "valid",
             planting_zone_id=zone.id if zone else None,
         )
+        if object_.species_revision_id:
+            revision = get_species(object_.species_revision_id)
+            if revision.kind != object_.kind:
+                raise ValueError("Порода не соответствует типу посадочного места")
+            object_.canopy_forecast, object_.root_forecast = growth_forecasts(revision, object_.size_class)
         if not (spacing_index or PlantSpacingIndex(plan.objects)).respects(object_):
             raise ValueError("Объект расположен слишком близко к существующим посадкам")
         return object_, advisory
@@ -683,6 +691,18 @@ class ProjectApplication:
         updates["planting_zone_id"] = zone.id if zone else None
         advisory = self.geometry.placement_advisory(project, next_x, next_y, next_radius)
         updates["status"] = "warning" if advisory else "valid"
+        next_revision_id = updates.get("species_revision_id", current.species_revision_id)
+        next_size_class = updates.get("size_class", current.size_class)
+        if next_revision_id:
+            revision = get_species(str(next_revision_id))
+            if revision.kind != current.kind:
+                raise ValueError("Порода не соответствует типу посадочного места")
+            canopy, roots = growth_forecasts(revision, str(next_size_class))
+            updates["canopy_forecast"] = canopy
+            updates["root_forecast"] = roots
+        else:
+            updates["canopy_forecast"] = []
+            updates["root_forecast"] = []
         candidate = PlanObject.model_validate({**current.model_dump(), **updates})
         if not PlantSpacingIndex(plan.objects).respects(candidate, ignore_id=current.id):
             raise ValueError("Объект расположен слишком близко к существующим посадкам")
@@ -786,6 +806,38 @@ class ProjectApplication:
             while len(self._change_set_previews) > 128:
                 self._change_set_previews.popitem(last=False)
         return preview
+
+    @staticmethod
+    def species_catalog(kind: str | None = None) -> list[SpeciesRevision]:
+        if kind not in {None, "tree", "shrub"}:
+            raise ValueError("Неизвестный тип посадки")
+        return list_species(kind)
+
+    def shortlist_species(self, project_id: str, object_ids: list[str]) -> list[SpeciesShortlistItem]:
+        project = self.get(project_id)
+        if project.plan is None:
+            raise ValueError("План ещё не создан")
+        requested = set(object_ids)
+        selected = [item for item in project.plan.objects if item.id in requested]
+        if len(selected) != len(requested):
+            raise KeyError("Одна из выбранных посадок не найдена")
+        kinds = {item.kind for item in selected}
+        if len(kinds) != 1:
+            raise ValueError("Для подбора породы выберите посадки одного типа")
+        kind = next(iter(kinds))
+        result: list[SpeciesShortlistItem] = []
+        for revision in list_species(kind):
+            reasons = ["Соответствует типу выбранных посадочных мест"]
+            if revision.territory_policy == "specialist_review":
+                reasons.append("Широкая крона: проектный отступ нужно уточнить по ПП-743")
+            if "shallow_roots" in revision.risk_flags:
+                reasons.append("Поверхностная корневая архитектура требует проверки сетей")
+            result.append(SpeciesShortlistItem(
+                species=revision,
+                status="review" if revision.territory_policy == "specialist_review" or revision.risk_flags else "available",
+                reasons=reasons,
+            ))
+        return result
 
     def preview_pattern(self, project_id: str, request: PatternPreviewRequest) -> PatternPreview:
         project = self.get(project_id)

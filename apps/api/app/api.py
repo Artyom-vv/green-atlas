@@ -30,6 +30,9 @@ from app.contracts import (
     ProjectCreate,
     ProjectOperation,
     ProjectSummary,
+    SpeciesRevision,
+    SpeciesShortlistItem,
+    SpeciesShortlistRequest,
 )
 from app.dxf_import.adapters import EzdxfReader
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, dxf_size_error, validate_dxf_filename
@@ -81,6 +84,14 @@ router = APIRouter(prefix="/api", dependencies=[Depends(project_version_scope)])
 def lightweight(project: Project) -> Project:
     """Keep project reads small; the map endpoint pages geometry on demand."""
     return project.model_copy(update={"source_geometry": None, "geometry": None})
+
+
+@router.get("/species", response_model=list[SpeciesRevision])
+def get_species_catalog(kind: str | None = Query(default=None)) -> list[SpeciesRevision]:
+    try:
+        return application.species_catalog(kind)
+    except Exception as error:
+        raise handle(error) from error
 
 
 def handle(error: Exception) -> HTTPException:
@@ -287,6 +298,14 @@ def apply_plan_change_set(project_id: str, payload: PlanChangeSetApplyRequest) -
 def preview_plan_pattern(project_id: str, payload: PatternPreviewRequest) -> PatternPreview:
     try:
         return application.preview_pattern(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/species/shortlist", response_model=list[SpeciesShortlistItem])
+def shortlist_project_species(project_id: str, payload: SpeciesShortlistRequest) -> list[SpeciesShortlistItem]:
+    try:
+        return application.shortlist_species(project_id, payload.object_ids)
     except Exception as error:
         raise handle(error) from error
 

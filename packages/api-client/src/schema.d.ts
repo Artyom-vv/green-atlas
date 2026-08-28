@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/species": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Species Catalog */
+        get: operations["get_species_catalog_api_species_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -289,6 +306,23 @@ export interface paths {
         put?: never;
         /** Preview Plan Pattern */
         post: operations["preview_plan_pattern_api_projects__project_id__plan_patterns_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/species/shortlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Shortlist Project Species */
+        post: operations["shortlist_project_species_api_projects__project_id__species_shortlist_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1224,6 +1258,80 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** SpeciesRevision */
+        SpeciesRevision: {
+            /** Id */
+            id: string;
+            /** Species Id */
+            species_id: string;
+            /** Revision */
+            revision: number;
+            /** Common Name */
+            common_name: string;
+            /** Scientific Name */
+            scientific_name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tree" | "shrub";
+            /**
+             * Crown Shape
+             * @enum {string}
+             */
+            crown_shape: "columnar" | "conical" | "oval" | "round" | "spreading" | "irregular";
+            /** Mature Height Min M */
+            mature_height_min_m: number;
+            /** Mature Height Max M */
+            mature_height_max_m: number;
+            /** Mature Crown Diameter Min M */
+            mature_crown_diameter_min_m: number;
+            /** Mature Crown Diameter Max M */
+            mature_crown_diameter_max_m: number;
+            /**
+             * Growth Rate
+             * @enum {string}
+             */
+            growth_rate: "slow" | "moderate" | "fast";
+            /**
+             * Root Architecture
+             * @enum {string}
+             */
+            root_architecture: "shallow" | "mixed" | "deep" | "uncertain";
+            /**
+             * Provenance
+             * @enum {string}
+             */
+            provenance: "native" | "introduced" | "cultivar" | "not_assessed";
+            /**
+             * Territory Policy
+             * @default general_draft
+             * @enum {string}
+             */
+            territory_policy: "general_draft" | "specialist_review";
+            /** Risk Flags */
+            risk_flags?: string[];
+            /** Evidence Note */
+            evidence_note: string;
+            /** Source Urls */
+            source_urls: string[];
+        };
+        /** SpeciesShortlistItem */
+        SpeciesShortlistItem: {
+            species: components["schemas"]["SpeciesRevision"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "review";
+            /** Reasons */
+            reasons?: string[];
+        };
+        /** SpeciesShortlistRequest */
+        SpeciesShortlistRequest: {
+            /** Object Ids */
+            object_ids: string[];
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1280,6 +1388,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_species_catalog_api_species_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeciesRevision"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -1932,6 +2073,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PatternPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shortlist_project_species_api_projects__project_id__species_shortlist_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeciesShortlistRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeciesShortlistItem"][];
                 };
             };
             /** @description Validation Error */

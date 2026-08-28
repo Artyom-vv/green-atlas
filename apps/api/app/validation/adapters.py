@@ -75,6 +75,33 @@ class RuleBasedPlanValidator:
                     y=object_.y,
                     suggested_action=advisory.suggested_action,
                 ))
+            if not object_.species_revision_id:
+                if object_.status == "valid":
+                    object_.status = "warning"
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    code="SPECIES_UNASSIGNED",
+                    title="Порода не назначена",
+                    description="Посадочное место можно редактировать, но вид и прогноз роста пока не определены.",
+                    object_id=object_.id,
+                    x=object_.x,
+                    y=object_.y,
+                    suggested_action="Назначить породу одному объекту или выбранной группе",
+                ))
+            elif any(item.horizon_year == 20 and item.radius_max_m > 2.5 for item in object_.canopy_forecast):
+                if object_.status == "valid":
+                    object_.status = "warning"
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    code="CROWN_SETBACK_REVIEW",
+                    title="Нужна проверка широкой кроны",
+                    description="ПП-743 требует увеличить проектные расстояния для кроны шире 5 м, но не задаёт универсальную прибавку.",
+                    object_id=object_.id,
+                    rule_id="PP-743-3.6.3-note-1",
+                    x=object_.x,
+                    y=object_.y,
+                    suggested_action="Уточнить сорт и проектный отступ у дендролога",
+                ))
 
         spacing_index = PlantSpacingIndex()
         for first in plan.objects:

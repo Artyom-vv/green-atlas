@@ -8,6 +8,7 @@ import { AppHeader } from '../domain-ui/AppHeader';
 import { ExportArtifactSection } from '../domain-ui/ExportArtifactSection';
 import { ChangeSetReviewPanel } from '../domain-ui/ChangeSetReviewPanel';
 import { GroupInspector } from '../domain-ui/GroupInspector';
+import { GrowthHorizonControl, type GrowthHorizon } from '../domain-ui/GrowthHorizonControl';
 import { LayerInspector } from '../domain-ui/LayerInspector';
 import { MapToolbar, type MapTool } from '../domain-ui/MapToolbar';
 import { MapViewport, type MapExtent, type MapViewportHandle, type MapHoverTarget } from '../domain-ui/MapViewport';
@@ -19,6 +20,7 @@ import { assignmentFromGeometry } from '../domain-ui/plantingZones';
 import { ProjectConflictNotice } from '../domain-ui/ProjectConflictNotice';
 import { isProjectConflict } from '../domain-ui/projectConflict';
 import { ProjectLayers } from '../domain-ui/ProjectLayers';
+import { SpeciesAssignmentPanel } from '../domain-ui/SpeciesAssignmentPanel';
 import { ValidationPanel } from '../domain-ui/ValidationPanel';
 import { useWorkspaceEditor } from '../features/workspace/useWorkspaceEditor';
 
@@ -76,6 +78,8 @@ export function WorkspacePage() {
   const [exportArtifact, setExportArtifact] = useState<ExportArtifact>();
   const [rowAxis, setRowAxis] = useState<{ type: 'LineString'; coordinates: number[][] }>();
   const [patternPreview, setPatternPreview] = useState<PatternPreview>();
+  const [speciesAssignmentOpen, setSpeciesAssignmentOpen] = useState(false);
+  const [growthHorizon, setGrowthHorizon] = useState<GrowthHorizon>();
 
   const projectQuery = useQuery({ queryKey: ['workspace-project', projectId], queryFn: () => api.getProject(projectId, false), enabled: Boolean(projectId) });
   const project = projectQuery.data;
@@ -91,6 +95,7 @@ export function WorkspacePage() {
   // next process.
   const planLocked = false;
   const historyQuery = useQuery({ queryKey: ['plan-history', projectId], queryFn: () => api.getPlanHistory(projectId), enabled: Boolean(projectId && projectHasPlan && !planLocked), staleTime: 0 });
+  const speciesQuery = useQuery({ queryKey: ['species'], queryFn: () => api.listSpecies(), staleTime: Number.POSITIVE_INFINITY });
   // A route-param update renders once before its cleanup effect runs. Carry
   // the project ID with a viewport request so that brief transition can never
   // ask project B for project A's camera bounds.
@@ -151,6 +156,8 @@ export function WorkspacePage() {
     setExportArtifact(undefined);
     setRowAxis(undefined);
     setPatternPreview(undefined);
+    setSpeciesAssignmentOpen(false);
+    setGrowthHorizon(undefined);
   }, [projectId]);
 
   useEffect(() => {
@@ -176,6 +183,10 @@ export function WorkspacePage() {
     const ids = new Set(selectedIds);
     return planObjects.filter((item) => item.id && ids.has(item.id));
   }, [planObjects, selectedIds]);
+  const selectedIdsKey = [...selectedIds].sort().join(':');
+  const speciesShortlistQuery = useQuery({ queryKey: ['species-shortlist', projectId, selectedIdsKey], queryFn: () => api.shortlistSpecies(projectId, selectedIds), enabled: Boolean(speciesAssignmentOpen && selectedIds.length), staleTime: 30_000 });
+  const speciesNames = useMemo(() => new Map((speciesQuery.data ?? []).map((item) => [item.id, item.common_name])), [speciesQuery.data]);
+  const hasGrowthForecasts = planObjects.some((object) => object.canopy_forecast?.length);
   const issues = project?.plan?.issues ?? [];
   const issueCount = issues.length;
   const placementPreview = useMemo(() => {
@@ -264,7 +275,7 @@ export function WorkspacePage() {
   const applyChanges = useMutation({ mutationFn: () => {
     if (!changePreview) throw new Error('Предпросмотр изменений недоступен');
     return api.applyPlanChanges(projectId, changePreview);
-  }, onSuccess: async (result) => { setPatternPreview(undefined); setRowAxis(undefined); editor.setPreview(undefined); editor.setTool('select'); editor.select([...(result.added_ids ?? []), ...(result.updated_ids ?? [])], 'replace'); await refresh(); } });
+  }, onSuccess: async (result) => { setPatternPreview(undefined); setRowAxis(undefined); setSpeciesAssignmentOpen(false); editor.setPreview(undefined); editor.setTool('select'); editor.select([...(result.added_ids ?? []), ...(result.updated_ids ?? [])], 'replace'); await refresh(); } });
   const deleteObjects = useMutation({ mutationFn: (ids: string[]) => api.deletePlanObjects(projectId, ids), onSuccess: async () => { editor.clearSelection(); await refresh(); } });
   const undoChange = useMutation({ mutationFn: () => api.undoPlanChange(projectId), onSuccess: async () => { editor.clearSelection(); editor.setTool('select'); await refresh(); } });
   const redoChange = useMutation({ mutationFn: () => api.redoPlanChange(projectId), onSuccess: async () => { editor.clearSelection(); editor.setTool('select'); await refresh(); } });
@@ -296,6 +307,7 @@ export function WorkspacePage() {
     setCursor(undefined);
     setRowAxis(undefined);
     setPatternPreview(undefined);
+    setSpeciesAssignmentOpen(false);
     editor.reset();
     await refresh();
   }, [addObject, applyChanges, createManualPlan, deleteObjects, editor, exportPlan, previewChanges, previewPattern, redoChange, refresh, undoChange]);
@@ -315,6 +327,7 @@ export function WorkspacePage() {
     if (!projectHasPlan && ['add_tree', 'add_shrub', 'pattern_row', 'pattern_fill', 'move', 'copy', 'select_box', 'select_lasso'].includes(nextTool)) return;
     patternAbortRef.current?.abort();
     setPatternPreview(undefined);
+    setSpeciesAssignmentOpen(false);
     if (nextTool !== 'pattern_row') setRowAxis(undefined);
     if (nextTool === 'pattern_row' || nextTool === 'pattern_fill') {
       editor.clearSelection();
@@ -368,6 +381,18 @@ export function WorkspacePage() {
     });
   };
 
+  const previewSpeciesAssignment = (revisionId: string, sizeClass: 'sapling' | 'standard' | 'large') => {
+    const plan = project?.plan;
+    if (!plan || !selectedObjects.length) return;
+    previewChanges.mutate({
+      base_plan_version: plan.version,
+      source: selectedObjects.length > 1 ? 'group' : 'manual',
+      label: selectedObjects.length > 1 ? `Порода для группы (${selectedObjects.length})` : 'Назначение породы',
+      policy: 'all_or_nothing',
+      operations: selectedObjects.flatMap((object) => object.id ? [{ type: 'update' as const, object_id: object.id, changes: { species_revision_id: revisionId, size_class: sizeClass } }] : []),
+    });
+  };
+
   const handleCoordinate = (coordinate: [number, number]) => {
     if (editorBusy || planLocked || !projectHasPlan) return;
     if (tool === 'add_tree' || tool === 'add_shrub') {
@@ -393,6 +418,7 @@ export function WorkspacePage() {
         patternAbortRef.current?.abort();
         setPatternPreview(undefined);
         setRowAxis(undefined);
+        setSpeciesAssignmentOpen(false);
         editor.setPreview(undefined);
         editor.setTool('select');
         return;
@@ -439,7 +465,7 @@ export function WorkspacePage() {
       <aside className="workspace-left"><ProjectLayers layers={layers} visibility={visibility} activeLayerId={activeLayerId} onVisibility={(id, visible) => setVisibility((current) => ({ ...current, [id]: visible }))} onSelect={(id) => { setActiveLayerId((current) => current === id ? undefined : id); editor.clearSelection(); setPanel(null); openRightPanel(); }} onClose={() => setLeftOpen(false)} /></aside>
       <aside className="workspace-left-collapsed"><IconButton icon={ChevronRight} label="Развернуть слои" variant="ghost" onClick={openLeftPanel} /><IconButton icon={Layers3} label="Слои" active onClick={openLeftPanel} /></aside>
       <section className={`map-canvas ${rightOpen ? '' : 'has-right-dock'}`}>
-        <MapViewport key={projectId} ref={mapViewport} geometry={mapGeometryQuery.data?.feature_collection as Record<string, unknown> | undefined} geometryRevision={project.geometry_version} initialExtent={initialExtent} objects={planObjects} draftPlantingZones={!projectHasPlan ? draftZones : undefined} hiddenLayerNames={hiddenLayerNames} selectedIds={selectedIds} placementPreview={placementPreview} changePreview={changePreview} tool={tool} onDrawArea={(geometry) => {
+        <MapViewport key={projectId} ref={mapViewport} geometry={mapGeometryQuery.data?.feature_collection as Record<string, unknown> | undefined} geometryRevision={project.geometry_version} initialExtent={initialExtent} objects={planObjects} growthHorizon={growthHorizon} draftPlantingZones={!projectHasPlan ? draftZones : undefined} hiddenLayerNames={hiddenLayerNames} selectedIds={selectedIds} placementPreview={placementPreview} changePreview={changePreview} tool={tool} onDrawArea={(geometry) => {
           if (projectHasPlan || planLocked) return;
           addMapArea(geometry, `Ручной участок ${draftZones.length + 1}`);
           editor.setTool('select');
@@ -476,10 +502,11 @@ export function WorkspacePage() {
         {!panel && activeLayer ? <LayerInspector layer={activeLayer} visible={visibility[activeLayer.id] !== false} onVisibility={(visible) => setVisibility((current) => ({ ...current, [activeLayer.id]: visible }))} onFit={() => mapViewport.current?.fitLayer(activeLayer.source_name)} /> : null}
         {!panel && !activeLayer && sourcePreview ? <div className="project-inspector"><header><span><strong>Исходный DXF</strong><small>Только просмотр</small></span></header><div className="project-inspector__empty"><Layers3 size={20} /><strong>Проверьте слои и геометрию</strong><span>Подтвердите слои, затем выберите или обведите рабочую область на карте.</span>{sourceWarnings.map((warning) => <InlineMessage key={warning} tone="warning">{warning}</InlineMessage>)}<Button variant="secondary" onClick={openLeftPanel}>Открыть слои</Button><Button variant="primary" onClick={() => navigate(`/projects/${projectId}/setup`)}>К сопоставлению</Button></div></div> : null}
         {!panel && !activeLayer && changePreview ? <ChangeSetReviewPanel preview={changePreview} applying={applyChanges.isPending} note={patternPreview ? `${patternPreview.accepted_count} позиций допустимо.${patternPreview.skipped.length ? ` Пропущено: ${patternPreview.skipped.length}. ${patternPreview.skipped[0]?.reason}` : ''}` : undefined} onApply={() => applyChanges.mutate()} onCancel={() => { setPatternPreview(undefined); editor.setPreview(undefined); }} /> : null}
+        {!panel && !activeLayer && !changePreview && speciesAssignmentOpen && selectedObjects.length ? <SpeciesAssignmentPanel objects={selectedObjects} shortlist={speciesShortlistQuery.data} loading={speciesShortlistQuery.isLoading} previewing={previewChanges.isPending} error={speciesShortlistQuery.error ? message(speciesShortlistQuery.error) : undefined} onAssign={previewSpeciesAssignment} onCancel={() => setSpeciesAssignmentOpen(false)} /> : null}
         {!panel && !activeLayer && !changePreview && (tool === 'pattern_row' || tool === 'pattern_fill') && project.plan ? <PatternToolPanel mode={tool === 'pattern_row' ? 'row' : 'fill'} zones={project.planting_zones ?? []} axis={rowAxis} loading={previewPattern.isPending} error={previewPattern.error ? message(previewPattern.error) : undefined} resultNote={patternPreview && !patternPreview.change_set ? `Допустимых позиций нет. Пропущено: ${patternPreview.skipped.length}. ${patternPreview.skipped[0]?.reason ?? 'Измените параметры рисунка.'}` : undefined} onPreview={(draft) => previewPattern.mutate({ ...draft, base_plan_version: project.plan!.version } as PatternPreviewRequest)} onCancel={() => { patternAbortRef.current?.abort(); setPatternPreview(undefined); setRowAxis(undefined); editor.setTool('select'); }} /> : null}
-        {!panel && !activeLayer && !changePreview && selectedObject ? <ObjectInspector object={selectedObject} editable={!planLocked && !editorBusy && !selectedObject.locked} onMove={() => editor.setTool('move')} onDelete={() => setDeleteSelectionOpen(true)} /> : null}
-        {!panel && !activeLayer && !changePreview && selectedIds.length > 1 ? <GroupInspector objects={selectedObjects} disabled={editorBusy || planLocked} onMove={() => editor.setTool('move')} onCopy={() => editor.setTool('copy')} onLock={previewSelectionLock} onDelete={() => setDeleteSelectionOpen(true)} /> : null}
-        {!panel && !activeLayer && !changePreview && !selectedIds.length && tool !== 'pattern_row' && tool !== 'pattern_fill' && project.plan ? <div className="project-inspector"><header><span><strong>Ручной план</strong><small>{planObjects.length} посадок</small></span></header><section className="plan-summary"><strong>Поставьте или выберите посадку</strong><span>Проверка появится сразу.</span>{sourceWarnings.length ? <InlineMessage tone="warning">У исходного DXF есть замечания.</InlineMessage> : null}</section><section className="project-inspector__actions"><Button variant="secondary" icon={Crosshair} onClick={() => mapViewport.current?.fitPlan()}>Показать посадки</Button></section></div> : null}
+        {!panel && !activeLayer && !changePreview && !speciesAssignmentOpen && selectedObject ? <ObjectInspector object={selectedObject} speciesName={selectedObject.species_revision_id ? speciesNames.get(selectedObject.species_revision_id) : undefined} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} editable={!planLocked && !editorBusy && !selectedObject.locked} onSpecies={() => setSpeciesAssignmentOpen(true)} onMove={() => editor.setTool('move')} onDelete={() => setDeleteSelectionOpen(true)} /> : null}
+        {!panel && !activeLayer && !changePreview && !speciesAssignmentOpen && selectedIds.length > 1 ? <GroupInspector objects={selectedObjects} disabled={editorBusy || planLocked} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} onSpecies={() => setSpeciesAssignmentOpen(true)} onMove={() => editor.setTool('move')} onCopy={() => editor.setTool('copy')} onLock={previewSelectionLock} onDelete={() => setDeleteSelectionOpen(true)} /> : null}
+        {!panel && !activeLayer && !changePreview && !speciesAssignmentOpen && !selectedIds.length && tool !== 'pattern_row' && tool !== 'pattern_fill' && project.plan ? <div className="project-inspector"><header><span><strong>Ручной план</strong><small>{planObjects.length} посадок</small></span></header><section className="plan-summary"><strong>Поставьте или выберите посадку</strong><span>Проверка появится сразу.</span>{sourceWarnings.length ? <InlineMessage tone="warning">У исходного DXF есть замечания.</InlineMessage> : null}</section>{hasGrowthForecasts ? <GrowthHorizonControl value={growthHorizon} onChange={setGrowthHorizon} /> : null}<section className="project-inspector__actions"><Button variant="secondary" icon={Crosshair} onClick={() => mapViewport.current?.fitPlan()}>Показать посадки</Button></section></div> : null}
       </aside>
       <Dialog open={deleteSelectionOpen} title={selectedIds.length > 1 ? `Удалить ${selectedIds.length} посадок?` : 'Удалить посадку?'} onClose={() => setDeleteSelectionOpen(false)} footer={<><Button variant="secondary" disabled={editorBusy} onClick={() => setDeleteSelectionOpen(false)}>Отмена</Button><Button variant="danger" icon={Trash2} loading={deleteObjects.isPending} disabled={exportPlan.isPending} onClick={() => deleteObjects.mutate(selectedIds, { onSuccess: () => setDeleteSelectionOpen(false) })}>Удалить</Button></>}><p>Посадки будут убраны из текущей схемы. Это действие можно отменить.</p></Dialog>
     </main>

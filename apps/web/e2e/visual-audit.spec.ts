@@ -602,6 +602,44 @@ test('row tool turns one drawn axis into a confirmed planting group', async ({ p
   await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
 });
 
+test('species assignment adds crown and root horizons without reloading the DXF', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const map = page.getByLabel('Карта проекта озеленения');
+  await page.getByLabel('Показать посадки').click();
+  await page.waitForTimeout(250);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
+  const padding = 72;
+  const resolution = Math.max((planExtent[2] - planExtent[0]) / (box!.width - padding * 2), (planExtent[3] - planExtent[1]) / (box!.height - padding * 2));
+  await page.mouse.click(
+    box!.x + box!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
+    box!.y + box!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
+  );
+
+  await page.getByRole('button', { name: 'Назначить породу' }).click();
+  const species = page.getByRole('combobox', { name: /Порода/ });
+  await species.fill('Липа');
+  await page.getByRole('option', { name: /Липа мелколистная/ }).click();
+  await expect(page.getByText(/не нормативная зона/)).toBeVisible();
+  await page.getByRole('button', { name: 'Показать', exact: true }).click();
+  await expect(page.getByText('Назначение породы', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByText('Липа мелколистная')).toBeVisible();
+
+  let viewportRequests = 0;
+  page.on('request', (request) => { if (request.url().includes('/map-features?')) viewportRequests += 1; });
+  await page.getByRole('button', { name: '10 лет' }).click();
+  await page.waitForTimeout(180);
+  expect(viewportRequests).toBe(0);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const assigned = (await response.json() as { plan: { objects: Array<{ species_revision_id?: string; canopy_forecast?: unknown[]; root_forecast?: unknown[] }> } }).plan.objects.find((object) => object.species_revision_id?.startsWith('tilia-cordata@'));
+  expect(assigned?.canopy_forecast).toHaveLength(3);
+  expect(assigned?.root_forecast).toHaveLength(3);
+});
+
 test('opening another workspace directly drops the prior map selection', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);

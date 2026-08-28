@@ -8,6 +8,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
 
     assert paths == {
         "/api/health",
+        "/api/species",
         "/api/projects",
         "/api/projects/{project_id}",
         "/api/projects/{project_id}/source-dxf",
@@ -24,6 +25,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects/{project_id}/plan/change-sets/preview",
         "/api/projects/{project_id}/plan/change-sets/apply",
         "/api/projects/{project_id}/plan/patterns/preview",
+        "/api/projects/{project_id}/species/shortlist",
         "/api/projects/{project_id}/plan/objects",
         "/api/projects/{project_id}/plan/objects/{object_id}",
         "/api/projects/{project_id}/plan/objects/delete",
@@ -47,7 +49,6 @@ def test_retired_product_modules_are_not_shipped() -> None:
         "commands",
         "generation",
         "spatial_evidence",
-        "species",
         "territories",
         "urban_data",
     }

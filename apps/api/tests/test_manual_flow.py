@@ -967,3 +967,51 @@ def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips()
     assert first.json()["change_set"]["can_apply"] is True
     assert all(any(shape(zone["geometry"]).covers(Point(x, y)) for zone in zones) for x, y in first_coordinates)
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["version"] == current_version
+
+
+def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -> None:
+    catalog = client.get("/api/species", params={"kind": "tree"})
+    assert catalog.status_code == 200
+    assert len(catalog.json()) >= 8
+    lime = next(item for item in catalog.json() if item["species_id"] == "tilia-cordata")
+    assert lime["id"].endswith("@2026-08-28.1")
+    assert len(lime["source_urls"]) >= 2
+
+    project_id = prepare_project("Породы и рост")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
+    added = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
+    object_id = added["objects"][0]["id"]
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": added["version"],
+        "source": "group",
+        "label": "Назначение породы",
+        "operations": [{"type": "update", "object_id": object_id, "changes": {"species_revision_id": lime["id"], "size_class": "standard"}}],
+    })
+    assert preview.status_code == 200, preview.json()
+    forecast = preview.json()["updates"][0]
+    assert [item["horizon_year"] for item in forecast["canopy_forecast"]] == [5, 10, 20]
+    assert [item["horizon_year"] for item in forecast["root_forecast"]] == [5, 10, 20]
+    assert all(item["radius_min_m"] <= item["radius_max_m"] for item in forecast["root_forecast"])
+    assert all("не норматив" in item["basis"] for item in forecast["canopy_forecast"])
+
+    shortlist = client.post(f"/api/projects/{project_id}/species/shortlist", json={"object_ids": [object_id]})
+    assert shortlist.status_code == 200
+    assert any(item["species"]["id"] == lime["id"] and item["status"] == "review" for item in shortlist.json())
+
+
+def test_species_kind_mismatch_is_blocked_without_changing_the_plan() -> None:
+    project_id = prepare_project("Несовместимая порода")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
+    shrub = client.get("/api/species", params={"kind": "shrub"}).json()[0]
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": opened["plan"]["version"],
+        "source": "manual",
+        "label": "Ошибочная порода",
+        "operations": [{"type": "add", "object": {"kind": "tree", "x": 20, "y": 20, "species_revision_id": shrub["id"]}}],
+    })
+    assert preview.status_code == 200
+    assert preview.json()["can_apply"] is False
+    assert "не соответствует" in preview.json()["candidate_results"][0]["reason"]
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []

@@ -275,6 +275,22 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .pattern-tool-panel__zones legend { margin-bottom: 8px; color: var(--color-neutral-700); font-size: 12px; font-weight: 600; }
 .pattern-tool-panel__setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; color: var(--color-neutral-700); font-size: 12px; }
 .pattern-tool-panel > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
+.object-species > strong { font-size: 13px; line-height: 18px; }
+.object-species > span { max-width: 28ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.species-assignment-panel__content { display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow: visible auto; }
+.species-assignment-panel__details { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.species-assignment-panel__details > strong { font-size: 14px; }
+.species-assignment-panel__details > span { color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 10px; }
+.species-assignment-panel__details dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; margin: 8px 0; color: var(--color-neutral-600); font-size: 12px; }
+.species-assignment-panel__details dt, .species-assignment-panel__details dd { margin: 0; }
+.species-assignment-panel__details dd { color: var(--color-neutral-800); font-family: var(--font-mono); }
+.species-assignment-panel__details > p { max-width: 30ch; margin: 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.species-assignment-panel > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
+.growth-horizon-control { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-bottom: 1px solid var(--color-neutral-200); }
+.growth-horizon-control h3, .growth-horizon-control p { margin: 0; }
+.growth-horizon-control > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.growth-horizon-control .ui-button { min-width: 0; padding-inline: 6px; }
+.growth-horizon-control p { max-width: 30ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
 .export-panel .rail-panel__content { padding: 0; }
 .export-artifact-section { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; border-bottom: 1px solid var(--color-neutral-200); }
 .export-artifact-section header { display: grid; gap: 3px; }

@@ -63,6 +63,17 @@ const changePreviewStyle = new Style({
   image: new CircleStyle({ radius: 4, fill: new Fill({ color: '#225CFF' }), stroke: new Stroke({ color: '#FFFFFF', width: 1.5 }) }),
 });
 
+const growthEnvelopeStyles = {
+  canopyMax: new Style({ fill: new Fill({ color: 'rgba(25,135,84,.10)' }), stroke: new Stroke({ color: 'rgba(25,135,84,.72)', width: 1.5 }) }),
+  canopyMin: new Style({ stroke: new Stroke({ color: 'rgba(25,135,84,.9)', width: 1, lineDash: [3, 3] }) }),
+  rootMax: new Style({ stroke: new Stroke({ color: 'rgba(183,100,0,.76)', width: 1.5, lineDash: [7, 4] }) }),
+  rootMin: new Style({ stroke: new Stroke({ color: 'rgba(183,100,0,.48)', width: 1, lineDash: [2, 4] }) }),
+};
+
+function growthEnvelopeStyle(feature: FeatureLike) {
+  return growthEnvelopeStyles[feature.get('envelopeStyle') as keyof typeof growthEnvelopeStyles];
+}
+
 const placementPreviewStyles = new globalThis.Map<string, Style>();
 function placementPreviewStyle(feature: FeatureLike) {
   const status = String(feature.get('placementStatus') ?? 'unknown');
@@ -316,7 +327,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onMapArea?: (target: MapAreaTarget) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: 5 | 10 | 20; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onMapArea?: (target: MapAreaTarget) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -330,6 +341,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const fullExtentRef = useRef<Extent>(initialExtent ? [...initialExtent] : createEmpty());
   const initialExtentRef = useRef(initialExtent);
   const planSourceRef = useRef(new VectorSource());
+  const growthEnvelopeSourceRef = useRef(new VectorSource());
   const areaDrawingSourceRef = useRef(new VectorSource());
   const placementPreviewSourceRef = useRef(new VectorSource());
   const changePreviewSourceRef = useRef(new VectorSource());
@@ -481,6 +493,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const zoneLayer = new VectorLayer({ source: zoneSourceRef.current, style: geometryStyle, zIndex: 0, renderBuffer: 260, updateWhileAnimating: true, updateWhileInteracting: true });
     const baseLayer = new VectorLayer({ source: baseSourceRef.current, style: geometryStyle, zIndex: 1, renderBuffer: 260, updateWhileAnimating: true, updateWhileInteracting: true });
     const constraintLayer = new VectorLayer({ source: constraintSourceRef.current, style: geometryStyle, zIndex: 2, renderBuffer: 260, updateWhileAnimating: true, updateWhileInteracting: true });
+    const growthEnvelopeLayer = new VectorLayer({ source: growthEnvelopeSourceRef.current, style: growthEnvelopeStyle, zIndex: 2.5, renderBuffer: 180, updateWhileAnimating: true, updateWhileInteracting: true });
     const planLayer = new VectorLayer({ source: planSourceRef.current, style: (feature, resolution) => planStyle(feature, selectedRef.current, resolution), zIndex: 3, renderBuffer: 180, updateWhileAnimating: true, updateWhileInteracting: true });
     const draftPlantingZoneLayer = new VectorLayer({ source: draftPlantingZoneSourceRef.current, style: plantingZoneFocusStyle, zIndex: 4, updateWhileAnimating: true, updateWhileInteracting: true });
     const plantingZoneFocusLayer = new VectorLayer({ source: plantingZoneFocusSourceRef.current, style: plantingZoneFocusStyle, zIndex: 5, updateWhileAnimating: true, updateWhileInteracting: true });
@@ -500,7 +513,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     });
     const map = new Map({
       target,
-      layers: [zoneLayer, baseLayer, constraintLayer, planLayer, draftPlantingZoneLayer, plantingZoneFocusLayer, mapHoverLayer, areaDrawingLayer, snapGuideLayer, changePreviewLayer, selectionDraftLayer, placementPreviewLayer],
+      layers: [zoneLayer, baseLayer, constraintLayer, growthEnvelopeLayer, planLayer, draftPlantingZoneLayer, plantingZoneFocusLayer, mapHoverLayer, areaDrawingLayer, snapGuideLayer, changePreviewLayer, selectionDraftLayer, placementPreviewLayer],
       controls: defaultControls({ zoom: true, rotate: false, attribution: false }),
       interactions: defaultInteractions({ mouseWheelZoom: false }).extend([mouseWheelZoom]),
       view,
@@ -914,6 +927,24 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       return [feature];
     }));
   }, [changePreview]);
+
+  useEffect(() => {
+    const source = growthEnvelopeSourceRef.current;
+    source.clear();
+    if (!growthHorizon) return;
+    for (const object of objects) {
+      const canopy = object.canopy_forecast?.find((item) => item.horizon_year === growthHorizon);
+      const roots = object.root_forecast?.find((item) => item.horizon_year === growthHorizon);
+      if (roots) {
+        source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_max_m), envelopeStyle: 'rootMax' }));
+        source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_min_m), envelopeStyle: 'rootMin' }));
+      }
+      if (canopy) {
+        source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], canopy.radius_max_m), envelopeStyle: 'canopyMax' }));
+        source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], canopy.radius_min_m), envelopeStyle: 'canopyMin' }));
+      }
+    }
+  }, [growthHorizon, objects]);
 
   useEffect(() => {
     const source = placementPreviewSourceRef.current;

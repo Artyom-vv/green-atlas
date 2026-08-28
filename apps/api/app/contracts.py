@@ -445,6 +445,37 @@ class PatternPreview(BaseModel):
     change_set: ChangeSetPreview | None = None
 
 
+class SpeciesRevision(BaseModel):
+    id: str
+    species_id: str
+    revision: int = Field(ge=1)
+    common_name: str
+    scientific_name: str
+    kind: Literal["tree", "shrub"]
+    crown_shape: Literal["columnar", "conical", "oval", "round", "spreading", "irregular"]
+    mature_height_min_m: float = Field(gt=0)
+    mature_height_max_m: float = Field(gt=0)
+    mature_crown_diameter_min_m: float = Field(gt=0)
+    mature_crown_diameter_max_m: float = Field(gt=0)
+    growth_rate: Literal["slow", "moderate", "fast"]
+    root_architecture: Literal["shallow", "mixed", "deep", "uncertain"]
+    provenance: Literal["native", "introduced", "cultivar", "not_assessed"]
+    territory_policy: Literal["general_draft", "specialist_review"] = "general_draft"
+    risk_flags: list[str] = Field(default_factory=list)
+    evidence_note: str
+    source_urls: list[str] = Field(min_length=1)
+
+
+class SpeciesShortlistRequest(BaseModel):
+    object_ids: list[str] = Field(min_length=1, max_length=5000)
+
+
+class SpeciesShortlistItem(BaseModel):
+    species: SpeciesRevision
+    status: Literal["available", "review"]
+    reasons: list[str] = Field(default_factory=list)
+
+
 class PlanMutationResult(BaseModel):
     change_set_id: str
     plan_version: int = Field(ge=1)

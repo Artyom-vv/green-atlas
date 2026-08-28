@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { AlertTriangle, MousePointer2, Plus, Trash2 } from 'lucide-react';
-import { Button, Checkbox, DataTable, FormField, IconButton, Inline, InlineMessage, NumberInput, Panel, Progress, Select, Stack, TextArea, TextInput, Toolbar, type ButtonVariant, type ControlSize } from './index';
+import { Button, Checkbox, Combobox, DataTable, FormField, IconButton, Inline, InlineMessage, NumberInput, Panel, Progress, Select, Stack, TextArea, TextInput, Toolbar, type ButtonVariant, type ControlSize } from './index';
 
 const meta: Meta = { title: 'Technical Atlas/Foundations' };
 export default meta;
@@ -69,8 +69,8 @@ export const FieldMatrix: Story = {
       <Stack gap={6}>
         <header><h2 style={{ margin: 0, fontSize: 20 }}>Поля</h2><p style={{ color: 'var(--ink-500)' }}>Высота меняется, внутренний ритм и семантические состояния сохраняются.</p></header>
         <DataTable>
-          <thead><tr><th>Размер</th><th>TextInput</th><th>NumberInput</th><th>Select</th></tr></thead>
-          <tbody>{controlSizes.map((size) => <tr key={size}><td><code>{size}</code></td><td><TextInput controlSize={size} defaultValue="Значение" aria-label={`Текст, ${size}`} /></td><td><NumberInput controlSize={size} defaultValue={3} unit="м" aria-label={`Число, ${size}`} /></td><td><Select controlSize={size} defaultValue="a" aria-label={`Выбор, ${size}`}><option value="a">Вариант A</option></Select></td></tr>)}</tbody>
+          <thead><tr><th>Размер</th><th>TextInput</th><th>NumberInput</th><th>Select</th><th>Combobox</th></tr></thead>
+          <tbody>{controlSizes.map((size) => <tr key={size}><td><code>{size}</code></td><td><TextInput controlSize={size} defaultValue="Значение" aria-label={`Текст, ${size}`} /></td><td><NumberInput controlSize={size} defaultValue={3} unit="м" aria-label={`Число, ${size}`} /></td><td><Select controlSize={size} defaultValue="a" aria-label={`Выбор, ${size}`}><option value="a">Вариант A</option></Select></td><td><Combobox controlSize={size} value="a" options={[{ value: 'a', label: 'Вариант A', description: 'Описание' }, { value: 'b', label: 'Вариант B' }]} onChange={() => undefined} /></td></tr>)}</tbody>
         </DataTable>
       </Stack>
     </div>
