@@ -541,6 +541,67 @@ test('box selection moves a group through one confirmed change set', async ({ pa
   expect(positions).toEqual([[20, 25], [20, 30], [40, 25]]);
 });
 
+test('fill tool creates many planting sites across the selected area as one revision', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const before = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const beforeProject = await before.json() as { plan: { version: number; objects: unknown[] } };
+
+  await page.getByRole('button', { name: 'Заполнить участки' }).click();
+  await expect(page.getByText('Несколько зон за один раз')).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
+  await page.getByRole('button', { name: 'Показать', exact: true }).click();
+  await expect(page.getByText(/позиций допустимо/)).toBeVisible();
+  await expect(page.getByText('Пунктир на карте показывает результат до сохранения.')).toBeVisible();
+  await page.getByRole('button', { name: 'Применить' }).click();
+
+  await expect.poll(async () => {
+    const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await response.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBeGreaterThan(beforeProject.plan.objects.length + 4);
+  const after = await page.request.get(`${apiBase}/projects/${projectId}`);
+  expect((await after.json() as { plan: { version: number } }).plan.version).toBe(beforeProject.plan.version + 1);
+
+  const undo = page.getByRole('button', { name: /Отменить: Заполнение участков/ });
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect.poll(async () => {
+    const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await response.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBe(beforeProject.plan.objects.length);
+});
+
+test('row tool turns one drawn axis into a confirmed planting group', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const map = page.getByLabel('Карта проекта озеленения');
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const sourceExtent = [-5, -5, 125, 95] as const;
+  const padding = 28;
+  const resolution = Math.max(
+    (sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2),
+    (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2),
+  );
+  const point = (x: number, y: number) => ({
+    x: box!.x + box!.width / 2 + (x - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (y - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
+  });
+  const start = point(28, 27);
+  const end = point(58, 27);
+
+  await page.getByRole('button', { name: 'Создать ряд' }).click();
+  await expect(page.getByText('Нарисуйте ось на карте')).toBeVisible();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.dblclick(end.x, end.y);
+  await expect(page.getByText('Ось задана')).toBeVisible();
+  await page.getByRole('button', { name: 'Показать', exact: true }).click();
+  await expect(page.getByText(/позиций допустимо/)).toBeVisible();
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
+});
+
 test('opening another workspace directly drops the prior map selection', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);

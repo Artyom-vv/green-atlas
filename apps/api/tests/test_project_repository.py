@@ -10,6 +10,7 @@ from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import InMemoryProjectHistory, SqliteProjectHistory
 from app.operations.adapters import SqliteOperationRepository
+from app.planning.patterns import ShapelyCandidateGenerator
 from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import ProjectVersionConflict
 from app.validation.adapters import RuleBasedPlanValidator
@@ -180,6 +181,7 @@ def test_real_manual_project_survives_application_recreation_without_losing_its_
             geometry_query=IndexedGeometryQuery(),
             validator=RuleBasedPlanValidator(),
             writer=DxfRoundTripWriter(),
+            candidate_generator=ShapelyCandidateGenerator(),
         )
 
     before_restart = application()

@@ -7,7 +7,7 @@ from pathlib import Path
 import ezdxf
 import pytest
 from fastapi.testclient import TestClient
-from shapely.geometry import mapping, shape
+from shapely.geometry import Point, mapping, shape
 from shapely.ops import unary_union
 from starlette.datastructures import UploadFile
 
@@ -22,6 +22,7 @@ from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import InMemoryProjectHistory
 from app.main import app
 from app.operations.adapters import SqliteOperationRepository
+from app.planning.patterns import ShapelyCandidateGenerator
 from app.projects.adapters import SqliteProjectRepository
 from app.validation.adapters import RuleBasedPlanValidator
 
@@ -230,6 +231,7 @@ def test_large_dxf_manual_plan_survives_repository_reopen_and_exports_from_sourc
             geometry_query=IndexedGeometryQuery(),
             validator=RuleBasedPlanValidator(),
             writer=DxfRoundTripWriter(),
+            candidate_generator=ShapelyCandidateGenerator(),
         )
 
     source = LARGE_DXF.read_bytes()
@@ -897,3 +899,71 @@ def test_change_set_rejects_a_preview_after_the_plan_version_changes() -> None:
     assert stale.status_code == 409
     assert stale.json()["code"] == "PLAN_VERSION_CONFLICT"
     assert len(client.get(f"/api/projects/{project_id}").json()["plan"]["objects"]) == 1
+
+
+def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
+    project_id = prepare_project("Ряд посадок")
+    select_areas(project_id, [area("row-zone", "Линейный участок", [[12, 12], [65, 12], [65, 30], [12, 30]])])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
+    base_version = opened["plan"]["version"]
+
+    pattern = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        "type": "row",
+        "base_plan_version": base_version,
+        "plant_kind": "tree",
+        "axis": {"type": "LineString", "coordinates": [[18, 20], [60, 20]]},
+        "spacing_m": 6,
+    })
+
+    assert pattern.status_code == 200, pattern.json()
+    preview = pattern.json()["change_set"]
+    assert pattern.json()["requested_count"] == 8
+    assert pattern.json()["accepted_count"] == 8
+    assert preview["can_apply"] is True
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
+
+    applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
+        "preview_id": preview["id"],
+        "digest": preview["digest"],
+        "base_plan_version": preview["base_plan_version"],
+    })
+    assert applied.status_code == 200, applied.json()
+    assert applied.json()["plan_version"] == base_version + 1
+    assert len(applied.json()["added_ids"]) == 8
+    assert client.post(f"/api/projects/{project_id}/plan/history/undo").json()["plan"]["objects"] == []
+
+
+def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips() -> None:
+    project_id = prepare_project("Заполнение участков")
+    zones = [
+        area("west", "Запад", [[12, 12], [36, 12], [36, 36], [12, 36]]),
+        area("east", "Восток", [[42, 12], [66, 12], [66, 36], [42, 36]]),
+    ]
+    select_areas(project_id, zones)
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 24, "y": 24}).status_code == 200
+    current_version = client.get(f"/api/projects/{project_id}").json()["plan"]["version"]
+    request = {
+        "type": "fill",
+        "base_plan_version": current_version,
+        "plant_kind": "tree",
+        "zone_ids": ["west", "east"],
+        "layout": "natural",
+        "spacing_m": 6,
+        "edge_offset_m": 2,
+        "angle_deg": 15,
+        "seed": 47,
+    }
+
+    first = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json=request)
+    second = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json=request)
+
+    assert first.status_code == 200, first.json()
+    assert second.status_code == 200, second.json()
+    first_coordinates = [(item["x"], item["y"]) for item in first.json()["change_set"]["additions"]]
+    second_coordinates = [(item["x"], item["y"]) for item in second.json()["change_set"]["additions"]]
+    assert first_coordinates == second_coordinates
+    assert first.json()["requested_count"] >= first.json()["accepted_count"] > 1
+    assert first.json()["change_set"]["can_apply"] is True
+    assert all(any(shape(zone["geometry"]).covers(Point(x, y)) for zone in zones) for x, y in first_coordinates)
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["version"] == current_version

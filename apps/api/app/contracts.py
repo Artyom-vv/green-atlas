@@ -393,6 +393,58 @@ class PlanChangeSetApplyRequest(BaseModel):
     base_plan_version: int = Field(ge=1)
 
 
+class RowPatternRequest(BaseModel):
+    type: Literal["row"] = "row"
+    base_plan_version: int = Field(ge=1)
+    plant_kind: Literal["tree", "shrub"] = "tree"
+    axis: dict[str, Any]
+    spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
+    start_offset_m: float = Field(default=0, ge=0, le=1000, allow_inf_nan=False)
+    end_offset_m: float = Field(default=0, ge=0, le=1000, allow_inf_nan=False)
+    side: Literal["center", "left", "right", "both"] = "center"
+    lateral_offset_m: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+
+    @model_validator(mode="after")
+    def validate_side_offset(self) -> "RowPatternRequest":
+        if self.side != "center" and self.lateral_offset_m <= 0:
+            raise ValueError("Для бокового ряда укажите поперечный отступ")
+        return self
+
+
+class FillPatternRequest(BaseModel):
+    type: Literal["fill"] = "fill"
+    base_plan_version: int = Field(ge=1)
+    plant_kind: Literal["tree", "shrub"] = "tree"
+    zone_ids: list[str] = Field(min_length=1, max_length=40)
+    layout: Literal["regular", "staggered", "natural"] = "staggered"
+    spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
+    edge_offset_m: float = Field(default=1, ge=0, le=100, allow_inf_nan=False)
+    angle_deg: float = Field(default=0, ge=-180, le=180, allow_inf_nan=False)
+    seed: int = Field(default=1, ge=0, le=2_147_483_647)
+    layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+
+
+PatternPreviewRequest = Annotated[RowPatternRequest | FillPatternRequest, Field(discriminator="type")]
+
+
+class PatternSkippedCandidate(BaseModel):
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+    reason: str
+
+
+class PatternPreview(BaseModel):
+    pattern_id: str
+    type: Literal["row", "fill"]
+    requested_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
+    change_set: ChangeSetPreview | None = None
+
+
 class PlanMutationResult(BaseModel):
     change_set_id: str
     plan_version: int = Field(ge=1)

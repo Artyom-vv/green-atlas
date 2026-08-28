@@ -21,6 +21,8 @@ from app.contracts import (
     PlanObjectCreate,
     PlanObjectUpdate,
     PlanObjectsDeleteRequest,
+    PatternPreview,
+    PatternPreviewRequest,
     PlacementCheck,
     PlacementCheckRequest,
     PlantingZonesRequest,
@@ -37,6 +39,7 @@ from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import SqliteProjectHistory
 from app.operations.adapters import SqliteOperationRepository
 from app.planning.domain import PlanVersionConflict
+from app.planning.patterns import ShapelyCandidateGenerator
 from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.validation.adapters import RuleBasedPlanValidator
@@ -53,6 +56,7 @@ application = ProjectApplication(
     geometry_query=IndexedGeometryQuery(),
     validator=RuleBasedPlanValidator(),
     writer=DxfRoundTripWriter(),
+    candidate_generator=ShapelyCandidateGenerator(),
 )
 
 
@@ -275,6 +279,14 @@ def preview_plan_change_set(project_id: str, payload: PlanChangeSetDraft) -> Cha
 def apply_plan_change_set(project_id: str, payload: PlanChangeSetApplyRequest) -> PlanMutationResult:
     try:
         return application.apply_change_set(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/plan/patterns/preview", response_model=PatternPreview)
+def preview_plan_pattern(project_id: str, payload: PatternPreviewRequest) -> PatternPreview:
+    try:
+        return application.preview_pattern(project_id, payload)
     except Exception as error:
         raise handle(error) from error
 

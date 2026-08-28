@@ -29,6 +29,9 @@ from app.contracts import (
     PlanObjectsDeleteRequest,
     PlacementCheck,
     PlacementCheckRequest,
+    PatternPreview,
+    PatternPreviewRequest,
+    PatternSkippedCandidate,
     PlantingZoneAssignment,
     Project,
     ProjectOperation,
@@ -44,6 +47,7 @@ from app.history.ports import ProjectHistoryPort
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
 from app.planning.domain import PlanVersionConflict, PlantSpacingIndex
+from app.planning.ports import CandidateGeneratorPort
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.projects.ports import ProjectRepository
 from app.validation.ports import PlanValidatorPort
@@ -72,6 +76,7 @@ class ProjectApplication:
         geometry_query: GeometryQueryPort,
         validator: PlanValidatorPort,
         writer: DxfWriterPort,
+        candidate_generator: CandidateGeneratorPort,
     ) -> None:
         self.repository = repository
         self.operation_repository = operation_repository
@@ -81,6 +86,7 @@ class ProjectApplication:
         self.geometry_query = geometry_query
         self.validator = validator
         self.writer = writer
+        self.candidate_generator = candidate_generator
         self._operation_commit_lock = RLock()
         # Manual edits must preserve the exact order in which their durable
         # snapshots reach the history. SQLite protects the state version, but
@@ -633,7 +639,7 @@ class ProjectApplication:
     def _default_layout_radius(kind: str) -> float:
         return 1.6 if kind == "tree" else 0.65
 
-    def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate) -> tuple[PlanObject, str | None]:
+    def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate, spacing_index: PlantSpacingIndex | None = None) -> tuple[PlanObject, str | None]:
         radius = payload.layout_radius_m or payload.radius or self._default_layout_radius(payload.kind)
         self.geometry.validate_position(project, payload.x, payload.y, radius, payload.kind)
         zone = self._planting_zone_at(project, payload.x, payload.y, radius)
@@ -647,7 +653,7 @@ class ProjectApplication:
             status="warning" if advisory else "valid",
             planting_zone_id=zone.id if zone else None,
         )
-        if not PlantSpacingIndex(plan.objects).respects(object_):
+        if not (spacing_index or PlantSpacingIndex(plan.objects)).respects(object_):
             raise ValueError("Объект расположен слишком близко к существующим посадкам")
         return object_, advisory
 
@@ -703,11 +709,15 @@ class ProjectApplication:
         updates: list[PlanObject] = []
         deletion_ids: list[str] = []
         results: list[ChangeSetCandidateResult] = []
+        spacing_index: PlantSpacingIndex | None = PlantSpacingIndex(working.objects)
         for index, operation in enumerate(draft.operations):
             try:
                 if operation.type == "add":
-                    candidate, advisory = self._preview_addition(project, working, operation.object)
+                    if spacing_index is None:
+                        spacing_index = PlantSpacingIndex(working.objects)
+                    candidate, advisory = self._preview_addition(project, working, operation.object, spacing_index)
                     working.objects.append(candidate)
+                    spacing_index.add(candidate)
                     additions.append(candidate.model_copy(deep=True))
                     results.append(ChangeSetCandidateResult(
                         operation_index=index,
@@ -719,6 +729,7 @@ class ProjectApplication:
                 elif operation.type == "update":
                     candidate, advisory = self._preview_update(project, working, operation.object_id, operation.changes)
                     working.objects = [candidate if item.id == candidate.id else item for item in working.objects]
+                    spacing_index = None
                     updates.append(candidate.model_copy(deep=True))
                     results.append(ChangeSetCandidateResult(
                         operation_index=index,
@@ -734,6 +745,7 @@ class ProjectApplication:
                     if current.locked:
                         raise ValueError("Сначала снимите закрепление объекта")
                     working.objects = [item for item in working.objects if item.id != operation.object_id]
+                    spacing_index = None
                     deletion_ids.append(operation.object_id)
                     results.append(ChangeSetCandidateResult(
                         operation_index=index,
@@ -774,6 +786,77 @@ class ProjectApplication:
             while len(self._change_set_previews) > 128:
                 self._change_set_previews.popitem(last=False)
         return preview
+
+    def preview_pattern(self, project_id: str, request: PatternPreviewRequest) -> PatternPreview:
+        project = self.get(project_id)
+        if project.plan is None:
+            raise ValueError("План ещё не создан")
+        if project.plan.version != request.base_plan_version:
+            raise PlanVersionConflict(request.base_plan_version, project.plan.version)
+
+        candidates = self.candidate_generator.generate(request, project.planting_zones)
+        pattern_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        pattern_id = f"pattern-{pattern_digest[:16]}"
+        label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
+        operations = [
+            {
+                "type": "add",
+                "object": {
+                    "kind": request.plant_kind,
+                    "x": candidate.x,
+                    "y": candidate.y,
+                    "layout_radius_m": request.layout_radius_m,
+                    "size_class": request.size_class,
+                    "pattern_id": pattern_id,
+                    "group_ids": [pattern_id],
+                },
+            }
+            for candidate in candidates
+        ]
+        if not operations:
+            return PatternPreview(
+                pattern_id=pattern_id,
+                type=request.type,
+                requested_count=0,
+                accepted_count=0,
+                skipped=[],
+            )
+
+        initial = self.preview_change_set(project_id, PlanChangeSetDraft(
+            base_plan_version=request.base_plan_version,
+            source="pattern",
+            label=label,
+            operations=operations,
+        ))
+        accepted_indices = {
+            item.operation_index for item in initial.candidate_results if item.status != "blocked"
+        }
+        skipped = [
+            PatternSkippedCandidate(
+                x=candidates[item.operation_index].x,
+                y=candidates[item.operation_index].y,
+                reason=item.reason,
+            )
+            for item in initial.candidate_results
+            if item.status == "blocked"
+        ]
+        accepted_operations = [operation for index, operation in enumerate(operations) if index in accepted_indices]
+        change_set = None
+        if accepted_operations:
+            change_set = self.preview_change_set(project_id, PlanChangeSetDraft(
+                base_plan_version=request.base_plan_version,
+                source="pattern",
+                label=f"{label}: {len(accepted_operations)}",
+                operations=accepted_operations,
+            ))
+        return PatternPreview(
+            pattern_id=pattern_id,
+            type=request.type,
+            requested_count=len(candidates),
+            accepted_count=len(accepted_operations),
+            skipped=skipped,
+            change_set=change_set,
+        )
 
     @staticmethod
     def _affected_bounds(before: Plan, after: Plan, preview: ChangeSetPreview) -> list[float] | None:

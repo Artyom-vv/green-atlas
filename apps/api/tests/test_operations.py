@@ -16,6 +16,7 @@ from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import InMemoryProjectHistory
 from app.projects.adapters import InMemoryProjectRepository
 from app.operations.adapters import SqliteOperationRepository
+from app.planning.patterns import ShapelyCandidateGenerator
 from app.operations.progress import OperationCancelled, WorkProgress
 from app.projects.concurrency import reset_expected_project_version, set_expected_project_version
 from app.validation.adapters import RuleBasedPlanValidator
@@ -180,6 +181,7 @@ def test_deleting_a_project_cancels_running_geometry_before_it_can_publish() -> 
         geometry_query=IndexedGeometryQuery(),
         validator=RuleBasedPlanValidator(),
         writer=DxfRoundTripWriter(),
+        candidate_generator=ShapelyCandidateGenerator(),
     )
     operation = application.start_geometry_operation(project.id)
     worker = Thread(target=application.run_geometry_operation, args=(operation.id,))
@@ -311,6 +313,7 @@ def test_background_calculation_keeps_the_original_source_snapshot_unchanged() -
         geometry_query=IndexedGeometryQuery(),
         validator=RuleBasedPlanValidator(),
         writer=DxfRoundTripWriter(),
+        candidate_generator=ShapelyCandidateGenerator(),
     )
     operation = operations.create(ProjectOperation(
         project_id=project.id,

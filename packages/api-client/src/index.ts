@@ -14,6 +14,11 @@ export type PlanChangeSetDraft = components['schemas']['PlanChangeSetDraft'];
 export type ChangeSetPreview = Omit<components['schemas']['ChangeSetPreview'], 'id'> & { id: string };
 export type PlanChangeSetApplyRequest = components['schemas']['PlanChangeSetApplyRequest'];
 export type PlanMutationResult = components['schemas']['PlanMutationResult'];
+export type RowPatternRequest = components['schemas']['RowPatternRequest'];
+export type FillPatternRequest = components['schemas']['FillPatternRequest'];
+export type PatternPreviewRequest = RowPatternRequest | FillPatternRequest;
+export type PatternSkippedCandidate = components['schemas']['PatternSkippedCandidate'];
+export type PatternPreview = Omit<components['schemas']['PatternPreview'], 'change_set' | 'skipped'> & { skipped: PatternSkippedCandidate[]; change_set?: ChangeSetPreview | null };
 export type ValidationIssue = components['schemas']['ValidationIssue'];
 export type PlacementCheck = components['schemas']['PlacementCheck'];
 export type ExportArtifact = components['schemas']['ExportArtifact'];
@@ -50,7 +55,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // geometry, but it is still a read-only calculation. Treating pointer
   // hover as a project mutation makes a delayed preview compete with an
   // actual placement and can surface a false version conflict.
-  const nonStateMutation = /\/operations(?:\/|$)/.test(path) || /\/plan\/(?:placement-check|change-sets\/preview)(?:\?|$)/.test(path);
+  const nonStateMutation = /\/operations(?:\/|$)/.test(path) || /\/plan\/(?:placement-check|change-sets\/preview|patterns\/preview)(?:\?|$)/.test(path);
   const headers = new Headers(init?.headers);
   if (projectId && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !nonStateMutation && !headers.has('If-Match')) {
     const version = projectVersions.get(projectId);
@@ -104,6 +109,7 @@ export const api = {
   checkPlacement: (projectId: string, object: { kind: 'tree' | 'shrub'; x: number; y: number; radius?: number }, signal?: AbortSignal) => request<PlacementCheck>(`/api/projects/${projectId}/plan/placement-check`, { ...json(object), signal }),
   previewPlanChanges: (projectId: string, draft: PlanChangeSetDraft) => request<ChangeSetPreview>(`/api/projects/${projectId}/plan/change-sets/preview`, json(draft)),
   applyPlanChanges: (projectId: string, preview: ChangeSetPreview) => request<PlanMutationResult>(`/api/projects/${projectId}/plan/change-sets/apply`, json({ preview_id: preview.id, digest: preview.digest, base_plan_version: preview.base_plan_version } satisfies PlanChangeSetApplyRequest)),
+  previewPlanPattern: (projectId: string, pattern: PatternPreviewRequest, signal?: AbortSignal) => request<PatternPreview>(`/api/projects/${projectId}/plan/patterns/preview`, { ...json(pattern), signal }),
   updatePlanObject: (projectId: string, objectId: string, object: { x?: number; y?: number; radius?: number }) => request<Plan>(`/api/projects/${projectId}/plan/objects/${objectId}`, { ...json(object), method: 'PATCH' }),
   deletePlanObjects: (projectId: string, ids: string[]) => request<Plan>(`/api/projects/${projectId}/plan/objects/delete`, json({ ids })),
   getPlanHistory: (projectId: string) => request<PlanHistoryState>(`/api/projects/${projectId}/plan/history`),

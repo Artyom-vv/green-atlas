@@ -1125,6 +1125,86 @@
         }
       }
     },
+    "/api/projects/{project_id}/plan/patterns/preview": {
+      "post": {
+        "summary": "Preview Plan Pattern",
+        "operationId": "preview_plan_pattern_api_projects__project_id__plan_patterns_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/RowPatternRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FillPatternRequest"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "row": "#/components/schemas/RowPatternRequest",
+                    "fill": "#/components/schemas/FillPatternRequest"
+                  }
+                },
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatternPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/plan/objects": {
       "post": {
         "summary": "Add Plan Object",
@@ -1891,6 +1971,107 @@
         ],
         "title": "ExportArtifact"
       },
+      "FillPatternRequest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "fill",
+            "title": "Type",
+            "default": "fill"
+          },
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "plant_kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub"
+            ],
+            "title": "Plant Kind",
+            "default": "tree"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Zone Ids"
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "regular",
+              "staggered",
+              "natural"
+            ],
+            "title": "Layout",
+            "default": "staggered"
+          },
+          "spacing_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.5,
+            "title": "Spacing M",
+            "default": 6
+          },
+          "edge_offset_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Edge Offset M",
+            "default": 1
+          },
+          "angle_deg": {
+            "type": "number",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Angle Deg",
+            "default": 0
+          },
+          "seed": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "default": 1
+          },
+          "layout_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 25.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout Radius M"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "unspecified",
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "unspecified"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_plan_version",
+          "zone_ids"
+        ],
+        "title": "FillPatternRequest"
+      },
       "GeometrySnapshot": {
         "properties": {
           "feature_collection": {
@@ -2169,6 +2350,80 @@
           "failed"
         ],
         "title": "OperationStatus"
+      },
+      "PatternPreview": {
+        "properties": {
+          "pattern_id": {
+            "type": "string",
+            "title": "Pattern Id"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "row",
+              "fill"
+            ],
+            "title": "Type"
+          },
+          "requested_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requested Count"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Accepted Count"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/PatternSkippedCandidate"
+            },
+            "type": "array",
+            "title": "Skipped"
+          },
+          "change_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSetPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "pattern_id",
+          "type",
+          "requested_count",
+          "accepted_count"
+        ],
+        "title": "PatternPreview"
+      },
+      "PatternSkippedCandidate": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "reason"
+        ],
+        "title": "PatternSkippedCandidate"
       },
       "PlacementCheck": {
         "properties": {
@@ -3353,6 +3608,104 @@
           "updated_at"
         ],
         "title": "ProjectSummary"
+      },
+      "RowPatternRequest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "row",
+            "title": "Type",
+            "default": "row"
+          },
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "plant_kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub"
+            ],
+            "title": "Plant Kind",
+            "default": "tree"
+          },
+          "axis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Axis"
+          },
+          "spacing_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.5,
+            "title": "Spacing M",
+            "default": 6
+          },
+          "start_offset_m": {
+            "type": "number",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Start Offset M",
+            "default": 0
+          },
+          "end_offset_m": {
+            "type": "number",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "End Offset M",
+            "default": 0
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "center",
+              "left",
+              "right",
+              "both"
+            ],
+            "title": "Side",
+            "default": "center"
+          },
+          "lateral_offset_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lateral Offset M",
+            "default": 0
+          },
+          "layout_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 25.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout Radius M"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "unspecified",
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "unspecified"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_plan_version",
+          "axis"
+        ],
+        "title": "RowPatternRequest"
       },
       "SourceFile": {
         "properties": {

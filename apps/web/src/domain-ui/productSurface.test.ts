@@ -21,6 +21,7 @@ describe('assisted planning product surface', () => {
       'getProject',
       'listProjects',
       'previewPlanChanges',
+      'previewPlanPattern',
       'redoPlanChange',
       'saveMappings',
       'savePlantingZones',

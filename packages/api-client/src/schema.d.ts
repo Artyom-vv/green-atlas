@@ -278,6 +278,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/plan/patterns/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Plan Pattern */
+        post: operations["preview_plan_pattern_api_projects__project_id__plan_patterns_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/plan/objects": {
         parameters: {
             query?: never;
@@ -530,6 +547,58 @@ export interface components {
              */
             media_type: string;
         };
+        /** FillPatternRequest */
+        FillPatternRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "fill";
+            /** Base Plan Version */
+            base_plan_version: number;
+            /**
+             * Plant Kind
+             * @default tree
+             * @enum {string}
+             */
+            plant_kind: "tree" | "shrub";
+            /** Zone Ids */
+            zone_ids: string[];
+            /**
+             * Layout
+             * @default staggered
+             * @enum {string}
+             */
+            layout: "regular" | "staggered" | "natural";
+            /**
+             * Spacing M
+             * @default 6
+             */
+            spacing_m: number;
+            /**
+             * Edge Offset M
+             * @default 1
+             */
+            edge_offset_m: number;
+            /**
+             * Angle Deg
+             * @default 0
+             */
+            angle_deg: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Layout Radius M */
+            layout_radius_m?: number | null;
+            /**
+             * Size Class
+             * @default unspecified
+             * @enum {string}
+             */
+            size_class: "unspecified" | "sapling" | "standard" | "large";
+        };
         /** GeometrySnapshot */
         GeometrySnapshot: {
             /** Feature Collection */
@@ -647,6 +716,32 @@ export interface components {
          * @enum {string}
          */
         OperationStatus: "queued" | "running" | "cancelling" | "cancelled" | "interrupted" | "completed" | "failed";
+        /** PatternPreview */
+        PatternPreview: {
+            /** Pattern Id */
+            pattern_id: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "row" | "fill";
+            /** Requested Count */
+            requested_count: number;
+            /** Accepted Count */
+            accepted_count: number;
+            /** Skipped */
+            skipped?: components["schemas"]["PatternSkippedCandidate"][];
+            change_set?: components["schemas"]["ChangeSetPreview"] | null;
+        };
+        /** PatternSkippedCandidate */
+        PatternSkippedCandidate: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Reason */
+            reason: string;
+        };
         /** PlacementCheck */
         PlacementCheck: {
             /** Allowed */
@@ -1050,6 +1145,60 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at: string;
+        };
+        /** RowPatternRequest */
+        RowPatternRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "row";
+            /** Base Plan Version */
+            base_plan_version: number;
+            /**
+             * Plant Kind
+             * @default tree
+             * @enum {string}
+             */
+            plant_kind: "tree" | "shrub";
+            /** Axis */
+            axis: {
+                [key: string]: unknown;
+            };
+            /**
+             * Spacing M
+             * @default 6
+             */
+            spacing_m: number;
+            /**
+             * Start Offset M
+             * @default 0
+             */
+            start_offset_m: number;
+            /**
+             * End Offset M
+             * @default 0
+             */
+            end_offset_m: number;
+            /**
+             * Side
+             * @default center
+             * @enum {string}
+             */
+            side: "center" | "left" | "right" | "both";
+            /**
+             * Lateral Offset M
+             * @default 0
+             */
+            lateral_offset_m: number;
+            /** Layout Radius M */
+            layout_radius_m?: number | null;
+            /**
+             * Size Class
+             * @default unspecified
+             * @enum {string}
+             */
+            size_class: "unspecified" | "sapling" | "standard" | "large";
         };
         /** SourceFile */
         SourceFile: {
@@ -1746,6 +1895,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanMutationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_plan_pattern_api_projects__project_id__plan_patterns_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RowPatternRequest"] | components["schemas"]["FillPatternRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatternPreview"];
                 };
             };
             /** @description Validation Error */

@@ -9,6 +9,7 @@ import Projection from 'ol/proj/Projection';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import Circle from 'ol/geom/Circle';
+import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import Point from 'ol/geom/Point';
@@ -315,7 +316,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onMapArea?: (target: MapAreaTarget) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onMapArea?: (target: MapAreaTarget) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -349,18 +350,18 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const planFitFrameRef = useRef<number | undefined>(undefined);
   const toolRef = useRef(tool);
   const selectionModifierRef = useRef<SelectionMode>('replace');
-  const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange });
+  const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onMapArea, onPointerCoordinate, onMapHover, onExtentChange });
 
   selectedRef.current = new Set(selectedIds);
   hiddenLayerNamesRef.current = new Set(hiddenLayerNames ?? []);
   toolRef.current = tool;
   initialExtentRef.current = initialExtent;
-  callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange };
+  callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onMapArea, onPointerCoordinate, onMapHover, onExtentChange };
 
   const rebuildSnapTargets = () => {
     const target = snapTargetSourceRef.current;
     target.clear();
-    if (toolRef.current !== 'draw_area') return;
+    if (toolRef.current !== 'draw_area' && toolRef.current !== 'pattern_row') return;
     const candidates = [baseSourceRef.current, constraintSourceRef.current, planSourceRef.current]
       .flatMap((source) => source.getFeatures())
       .sort((a, b) => {
@@ -689,8 +690,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     if (!map) return;
     if (drawRef.current) map.removeInteraction(drawRef.current);
     drawRef.current = null;
-    if (tool !== 'draw_area') return;
-    const draw = new Draw({ source: areaDrawingSourceRef.current, type: 'Polygon', style: drawStyle, stopClick: true });
+    if (tool !== 'draw_area' && tool !== 'pattern_row') return;
+    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', style: drawStyle, stopClick: true });
     draw.on('drawstart', () => {
       areaDrawingSourceRef.current.clear();
     });
@@ -701,6 +702,9 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         // The React state below owns the lasting visual selection. Keeping
         // Draw's transient feature would render the just-selected contour
         // twice and leave a stale polygon after it is removed in the panel.
+        areaDrawingSourceRef.current.clear();
+      } else if (featureGeometry instanceof LineString) {
+        callbackRef.current.onDrawAxis?.({ type: 'LineString', coordinates: featureGeometry.getCoordinates() });
         areaDrawingSourceRef.current.clear();
       }
     });
@@ -787,7 +791,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     if (snapInteractionRef.current) map.removeInteraction(snapInteractionRef.current);
     snapInteractionRef.current = null;
     guideSource.clear();
-    if (tool !== 'draw_area') return;
+    if (tool !== 'draw_area' && tool !== 'pattern_row') return;
     rebuildSnapTargets();
     const snap = new Snap({ source: snapTargetSourceRef.current, edge: true, vertex: true, intersection: true, pixelTolerance: 12 });
     snap.on('snap', (event) => {
