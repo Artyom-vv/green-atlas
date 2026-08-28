@@ -21,6 +21,7 @@ describe('assisted planning product surface', () => {
       'getProject',
       'listProjects',
       'listSpecies',
+      'previewBrush',
       'previewPlanChanges',
       'previewPlanPattern',
       'previewRecommendation',

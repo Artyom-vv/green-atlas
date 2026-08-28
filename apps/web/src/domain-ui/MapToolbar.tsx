@@ -1,7 +1,7 @@
-import { BoxSelect, Grid3x3, LassoSelect, MousePointer2, Rows3, Shrub, Trash2, TreePine } from 'lucide-react';
+import { BoxSelect, Grid3x3, LassoSelect, MousePointer2, Paintbrush, Rows3, Shrub, Trash2, TreePine } from 'lucide-react';
 import { Divider, IconButton, Toolbar } from '@green/ui';
 
-export type MapTool = 'select' | 'select_box' | 'select_lasso' | 'add_tree' | 'add_shrub' | 'pattern_row' | 'pattern_fill' | 'move' | 'copy' | 'draw_area';
+export type MapTool = 'select' | 'select_box' | 'select_lasso' | 'add_tree' | 'add_shrub' | 'pattern_row' | 'pattern_fill' | 'brush' | 'move' | 'copy' | 'draw_area';
 
 export function MapToolbar({ tool, onTool, onDelete, canDelete, editable = true }: { tool: MapTool; onTool: (tool: MapTool) => void; onDelete: () => void; canDelete: boolean; editable?: boolean }) {
   return (
@@ -14,6 +14,7 @@ export function MapToolbar({ tool, onTool, onDelete, canDelete, editable = true 
       <IconButton icon={Shrub} label="Добавить кустарник" active={tool === 'add_shrub'} aria-pressed={tool === 'add_shrub'} disabled={!editable} onClick={() => onTool('add_shrub')} />
       <IconButton icon={Rows3} label="Создать ряд" active={tool === 'pattern_row'} aria-pressed={tool === 'pattern_row'} disabled={!editable} onClick={() => onTool('pattern_row')} />
       <IconButton icon={Grid3x3} label="Заполнить участки" active={tool === 'pattern_fill'} aria-pressed={tool === 'pattern_fill'} disabled={!editable} onClick={() => onTool('pattern_fill')} />
+      <IconButton icon={Paintbrush} label="Кисть посадок" active={tool === 'brush'} aria-pressed={tool === 'brush'} disabled={!editable} onClick={() => onTool('brush')} />
       {canDelete ? <><Divider orientation="vertical" /><IconButton icon={Trash2} label="Удалить выбранное" variant="danger" disabled={!editable} onClick={onDelete} /></> : null}
     </Toolbar>
   );

@@ -26,6 +26,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects/{project_id}/plan/change-sets/apply",
         "/api/projects/{project_id}/plan/patterns/preview",
         "/api/projects/{project_id}/plan/recommendations/preview",
+        "/api/projects/{project_id}/plan/brush/preview",
         "/api/projects/{project_id}/species/shortlist",
         "/api/projects/{project_id}/plan/objects",
         "/api/projects/{project_id}/plan/objects/{object_id}",

@@ -329,6 +329,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/plan/brush/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Plan Brush */
+        post: operations["preview_plan_brush_api_projects__project_id__plan_brush_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/species/shortlist": {
         parameters: {
             query?: never;
@@ -490,6 +507,79 @@ export interface components {
         Body_upload_dxf_api_projects__project_id__source_dxf_post: {
             /** File */
             file: string;
+        };
+        /** BrushPreview */
+        BrushPreview: {
+            /** Brush Id */
+            brush_id: string;
+            /** Requested Count */
+            requested_count: number;
+            /** Accepted Count */
+            accepted_count: number;
+            /** Added Count */
+            added_count: number;
+            /** Removed Count */
+            removed_count: number;
+            /** Skipped */
+            skipped?: components["schemas"]["PatternSkippedCandidate"][];
+            change_set?: components["schemas"]["ChangeSetPreview"] | null;
+        };
+        /** BrushPreviewRequest */
+        BrushPreviewRequest: {
+            /** Base Plan Version */
+            base_plan_version: number;
+            /** Strokes */
+            strokes: components["schemas"]["BrushStroke"][];
+            /**
+             * Width M
+             * @default 12
+             */
+            width_m: number;
+            /**
+             * Spacing M
+             * @default 6
+             */
+            spacing_m: number;
+            /**
+             * Density
+             * @default balanced
+             * @enum {string}
+             */
+            density: "sparse" | "balanced" | "dense";
+            /**
+             * Composition
+             * @default trees
+             * @enum {string}
+             */
+            composition: "trees" | "shrubs" | "mixed";
+            /**
+             * Tree Share
+             * @default 0.7
+             */
+            tree_share: number;
+            /**
+             * Seed
+             * @default 47
+             */
+            seed: number;
+            /**
+             * Max Sites
+             * @default 500
+             */
+            max_sites: number;
+        };
+        /** BrushStroke */
+        BrushStroke: {
+            /**
+             * Mode
+             * @default add
+             * @enum {string}
+             */
+            mode: "add" | "subtract";
+            /** Geometry */
+            geometry: {
+                [key: string]: unknown;
+            };
         };
         /** ChangeSetCandidateResult */
         ChangeSetCandidateResult: {
@@ -2226,6 +2316,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecommendationPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_plan_brush_api_projects__project_id__plan_brush_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrushPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrushPreview"];
                 };
             };
             /** @description Validation Error */

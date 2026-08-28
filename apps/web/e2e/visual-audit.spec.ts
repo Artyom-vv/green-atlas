@@ -601,6 +601,57 @@ test('one explainable recommendation becomes one confirmed revision without relo
   await expect(page.getByRole('button', { name: /Отменить: Предложение посадок/ })).toBeEnabled();
 });
 
+test('brush combines freehand add and subtract strokes into one revision', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const before = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const beforePlan = (await before.json() as { plan: { version: number; objects: unknown[] } }).plan;
+  const map = page.getByLabel('Карта проекта озеленения');
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const sourceExtent = [-5, -5, 125, 95] as const;
+  const padding = 28;
+  const resolution = Math.max((sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2), (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2));
+  const point = (x: number, y: number) => ({
+    x: box!.x + box!.width / 2 + (x - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (y - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
+  });
+  const drag = async (start: { x: number; y: number }, end: { x: number; y: number }) => {
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 12 });
+    await page.mouse.up();
+  };
+
+  await page.getByRole('button', { name: 'Кисть посадок' }).click();
+  await expect(page.getByText('Проведите по карте')).toBeVisible();
+  await drag(point(16, 30), point(56, 30));
+  await page.keyboard.down('Shift');
+  await drag(point(16, 34), point(56, 34));
+  await page.keyboard.up('Shift');
+  await page.keyboard.down('Alt');
+  await drag(point(16, 20), point(44, 20));
+  await page.keyboard.up('Alt');
+  await expect(page.getByText('3 мазка в черновике')).toBeVisible();
+  await expect(page.getByText('Добавление: 2. Вычитание: 1.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Показать', exact: true }).click();
+  await expect(page.getByText(/Добавится:/)).toBeVisible();
+  await expect(page.getByText(/Удалится: 2/)).toBeVisible();
+  let viewportRequests = 0;
+  page.on('request', (request) => { if (request.url().includes('/map-features?')) viewportRequests += 1; });
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await page.waitForTimeout(180);
+  expect(viewportRequests).toBe(0);
+
+  const after = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const afterPlan = (await after.json() as { plan: { version: number; objects: unknown[] } }).plan;
+  expect(afterPlan.version).toBe(beforePlan.version + 1);
+  expect(afterPlan.objects.length).toBeGreaterThan(3);
+  await expect(page.getByRole('button', { name: /Отменить: Кисть/ })).toBeEnabled();
+});
+
 test('row tool turns one drawn axis into a confirmed planting group', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);

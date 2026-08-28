@@ -5,8 +5,9 @@ from random import Random
 
 from shapely.affinity import rotate
 from shapely.geometry import LineString, Point, shape
+from shapely.ops import unary_union
 
-from app.contracts import FillPatternRequest, PlantingZoneAssignment, RowPatternRequest
+from app.contracts import BrushPreviewRequest, FillPatternRequest, PlantingZoneAssignment, RowPatternRequest
 from app.planning.ports import PatternCandidate
 
 
@@ -107,6 +108,57 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
     return _bounded(candidates)
 
 
+def generate_brush(request: BrushPreviewRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]:
+    add_corridors = []
+    subtract_corridors = []
+    for stroke in request.strokes:
+        geometry = shape(stroke.geometry)
+        if not isinstance(geometry, LineString) or geometry.is_empty or len(geometry.coords) < 2 or geometry.length <= 0:
+            raise ValueError("Мазок должен быть линией минимум из двух точек")
+        corridor = geometry.buffer(request.width_m / 2, cap_style="round", join_style="round")
+        (add_corridors if stroke.mode == "add" else subtract_corridors).append(corridor)
+    if not add_corridors:
+        return []
+    target = unary_union(add_corridors)
+    if subtract_corridors:
+        target = target.difference(unary_union(subtract_corridors))
+    zone_geometry = unary_union([shape(zone.geometry) for zone in zones])
+    target = target.intersection(zone_geometry)
+    if target.is_empty:
+        return []
+
+    min_x, min_y, max_x, max_y = target.bounds
+    first_x = floor(min_x / request.spacing_m) * request.spacing_m
+    first_y = floor(min_y / request.spacing_m) * request.spacing_m
+    threshold = {"sparse": 0.42, "balanced": 0.7, "dense": 1.0}[request.density]
+    candidates: list[PatternCandidate] = []
+    row = 0
+    y = first_y
+    while y <= max_y + 1e-9:
+        col = 0
+        x = first_x + (request.spacing_m / 2 if row % 2 else 0)
+        while x <= max_x + 1e-9:
+            point = Point(x, y)
+            random = Random(f"brush:{request.seed}:{row}:{col}")
+            if target.covers(point) and random.random() <= threshold:
+                if request.composition == "trees":
+                    kind = "tree"
+                elif request.composition == "shrubs":
+                    kind = "shrub"
+                else:
+                    kind = "tree" if random.random() < request.tree_share else "shrub"
+                candidates.append(PatternCandidate(round(x, 6), round(y, 6), kind))
+                if len(candidates) >= request.max_sites:
+                    return candidates
+            x += request.spacing_m
+            col += 1
+        y += request.spacing_m
+        row += 1
+    return candidates
+
+
 class ShapelyCandidateGenerator:
-    def generate(self, request: RowPatternRequest | FillPatternRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]:
+    def generate(self, request: RowPatternRequest | FillPatternRequest | BrushPreviewRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]:
+        if isinstance(request, BrushPreviewRequest):
+            return generate_brush(request, zones)
         return generate_row(request) if request.type == "row" else generate_fill(request, zones)

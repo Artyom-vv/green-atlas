@@ -1079,3 +1079,69 @@ def test_recommendation_is_deterministic_and_stale_versions_are_rejected() -> No
     stale = client.post(f"/api/projects/{project_id}/plan/recommendations/preview", json=payload)
     assert stale.status_code == 409
     assert stale.json()["code"] == "PLAN_VERSION_CONFLICT"
+
+
+def test_brush_adds_and_subtracts_as_one_undoable_change_set() -> None:
+    project_id = prepare_project("Кисть посадок")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
+    client.post(f"/api/projects/{project_id}/plan/manual")
+    first = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
+    locked_id = first["objects"][0]["id"]
+    locked = client.patch(f"/api/projects/{project_id}/plan/objects/{locked_id}", json={"locked": True}).json()
+    second = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 30, "y": 20}).json()
+    removable_id = next(item["id"] for item in second["objects"] if item["id"] != locked_id)
+
+    response = client.post(f"/api/projects/{project_id}/plan/brush/preview", json={
+        "base_plan_version": second["version"],
+        "strokes": [
+            {"mode": "add", "geometry": {"type": "LineString", "coordinates": [[16, 44], [66, 44]]}},
+            {"mode": "subtract", "geometry": {"type": "LineString", "coordinates": [[16, 20], [34, 20]]}},
+        ],
+        "width_m": 6,
+        "spacing_m": 5,
+        "density": "dense",
+        "composition": "mixed",
+        "tree_share": 0.6,
+        "seed": 71,
+    })
+    assert response.status_code == 200, response.json()
+    brush = response.json()
+    preview = brush["change_set"]
+    assert brush["added_count"] > 4
+    assert brush["removed_count"] == 1
+    assert removable_id in preview["deletion_ids"]
+    assert locked_id not in preview["deletion_ids"]
+    assert any("Закреплённая" in item["reason"] for item in brush["skipped"])
+    assert {item["kind"] for item in preview["additions"]} == {"tree", "shrub"}
+
+    applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
+        "preview_id": preview["id"],
+        "digest": preview["digest"],
+        "base_plan_version": preview["base_plan_version"],
+    })
+    assert applied.status_code == 200, applied.json()
+    assert any(item["id"] == locked_id and item["locked"] for item in applied.json()["plan"]["objects"])
+    assert all(item["id"] != removable_id for item in applied.json()["plan"]["objects"])
+    undone = client.post(f"/api/projects/{project_id}/plan/history/undo").json()["plan"]
+    assert {item["id"] for item in undone["objects"]} == {locked_id, removable_id}
+
+
+def test_brush_density_depends_on_geometry_not_pointer_event_frequency() -> None:
+    project_id = prepare_project("Стабильная кисть")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    base = {
+        "base_plan_version": version,
+        "width_m": 10,
+        "spacing_m": 4,
+        "density": "balanced",
+        "composition": "trees",
+        "seed": 19,
+    }
+    sparse_events = client.post(f"/api/projects/{project_id}/plan/brush/preview", json={**base, "strokes": [{"mode": "add", "geometry": {"type": "LineString", "coordinates": [[16, 36], [66, 36]]}}]})
+    many_events = client.post(f"/api/projects/{project_id}/plan/brush/preview", json={**base, "strokes": [{"mode": "add", "geometry": {"type": "LineString", "coordinates": [[16, 36], [26, 36], [36, 36], [46, 36], [56, 36], [66, 36]]}}]})
+    assert sparse_events.status_code == many_events.status_code == 200
+    assert [(item["x"], item["y"]) for item in sparse_events.json()["change_set"]["additions"]] == [
+        (item["x"], item["y"]) for item in many_events.json()["change_set"]["additions"]
+    ]
+    assert sparse_events.json()["accepted_count"] <= 500

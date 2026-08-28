@@ -1336,6 +1336,71 @@
         }
       }
     },
+    "/api/projects/{project_id}/plan/brush/preview": {
+      "post": {
+        "summary": "Preview Plan Brush",
+        "operationId": "preview_plan_brush_api_projects__project_id__plan_brush_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrushPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrushPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/species/shortlist": {
       "post": {
         "summary": "Shortlist Project Species",
@@ -1907,6 +1972,162 @@
           "file"
         ],
         "title": "Body_upload_dxf_api_projects__project_id__source_dxf_post"
+      },
+      "BrushPreview": {
+        "properties": {
+          "brush_id": {
+            "type": "string",
+            "title": "Brush Id"
+          },
+          "requested_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requested Count"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Accepted Count"
+          },
+          "added_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Added Count"
+          },
+          "removed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Removed Count"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/PatternSkippedCandidate"
+            },
+            "type": "array",
+            "title": "Skipped"
+          },
+          "change_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSetPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "brush_id",
+          "requested_count",
+          "accepted_count",
+          "added_count",
+          "removed_count"
+        ],
+        "title": "BrushPreview"
+      },
+      "BrushPreviewRequest": {
+        "properties": {
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "strokes": {
+            "items": {
+              "$ref": "#/components/schemas/BrushStroke"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Strokes"
+          },
+          "width_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Width M",
+            "default": 12
+          },
+          "spacing_m": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Spacing M",
+            "default": 6
+          },
+          "density": {
+            "type": "string",
+            "enum": [
+              "sparse",
+              "balanced",
+              "dense"
+            ],
+            "title": "Density",
+            "default": "balanced"
+          },
+          "composition": {
+            "type": "string",
+            "enum": [
+              "trees",
+              "shrubs",
+              "mixed"
+            ],
+            "title": "Composition",
+            "default": "trees"
+          },
+          "tree_share": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Tree Share",
+            "default": 0.7
+          },
+          "seed": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "default": 47
+          },
+          "max_sites": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Max Sites",
+            "default": 500
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_plan_version",
+          "strokes"
+        ],
+        "title": "BrushPreviewRequest"
+      },
+      "BrushStroke": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "add",
+              "subtract"
+            ],
+            "title": "Mode",
+            "default": "add"
+          },
+          "geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geometry"
+          }
+        },
+        "type": "object",
+        "required": [
+          "geometry"
+        ],
+        "title": "BrushStroke"
       },
       "ChangeSetCandidateResult": {
         "properties": {

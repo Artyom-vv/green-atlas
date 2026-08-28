@@ -10,6 +10,8 @@ from shapely.geometry import Point, shape
 from shapely.ops import unary_union
 
 from app.contracts import (
+    BrushPreview,
+    BrushPreviewRequest,
     ExportArtifact,
     EvidenceAssessment,
     EffectEstimate,
@@ -1072,6 +1074,104 @@ class ProjectApplication:
                 "Рельеф и водоотвод",
                 "Подтверждённые инженерные сети",
             ],
+        )
+
+    def preview_brush(self, project_id: str, request: BrushPreviewRequest) -> BrushPreview:
+        project = self.get(project_id)
+        if project.plan is None:
+            raise ValueError("План ещё не создан")
+        if project.plan.version != request.base_plan_version:
+            raise PlanVersionConflict(request.base_plan_version, project.plan.version)
+
+        request_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        brush_id = f"brush-{request_digest[:16]}"
+        subtract_corridors = []
+        for stroke in request.strokes:
+            geometry = shape(stroke.geometry)
+            if geometry.geom_type != "LineString" or geometry.is_empty or len(geometry.coords) < 2:  # type: ignore[attr-defined]
+                raise ValueError("Мазок должен быть линией минимум из двух точек")
+            if stroke.mode == "subtract":
+                subtract_corridors.append(geometry.buffer(request.width_m / 2, cap_style="round", join_style="round"))
+        subtract_area = unary_union(subtract_corridors) if subtract_corridors else None
+
+        skipped: list[PatternSkippedCandidate] = []
+        operations: list[dict[str, object]] = []
+        operation_points: list[tuple[float, float]] = []
+        removed_count = 0
+        if subtract_area is not None:
+            for object_ in project.plan.objects:
+                if not subtract_area.covers(Point(object_.x, object_.y)):
+                    continue
+                if object_.locked:
+                    skipped.append(PatternSkippedCandidate(x=object_.x, y=object_.y, reason="Закреплённая посадка сохранена"))
+                    continue
+                operations.append({"type": "delete", "object_id": object_.id})
+                operation_points.append((object_.x, object_.y))
+                removed_count += 1
+
+        candidates = self.candidate_generator.generate(request, project.planting_zones)
+        for candidate in candidates:
+            kind = candidate.kind or "tree"
+            operations.append({
+                "type": "add",
+                "object": {
+                    "kind": kind,
+                    "x": candidate.x,
+                    "y": candidate.y,
+                    "size_class": "unspecified",
+                    "pattern_id": brush_id,
+                    "group_ids": [brush_id],
+                },
+            })
+            operation_points.append((candidate.x, candidate.y))
+
+        if not operations:
+            return BrushPreview(
+                brush_id=brush_id,
+                requested_count=len(candidates),
+                accepted_count=0,
+                added_count=0,
+                removed_count=0,
+                skipped=skipped,
+            )
+
+        initial = self.preview_change_set(project_id, PlanChangeSetDraft(
+            base_plan_version=request.base_plan_version,
+            source="brush",
+            label="Проверка мазка",
+            operations=operations,
+        ))
+        accepted_operations: list[dict[str, object]] = []
+        accepted_additions = 0
+        accepted_removals = 0
+        for result in initial.candidate_results:
+            if result.status == "blocked":
+                x, y = operation_points[result.operation_index]
+                skipped.append(PatternSkippedCandidate(x=x, y=y, reason=result.reason))
+                continue
+            operation = operations[result.operation_index]
+            accepted_operations.append(operation)
+            if operation["type"] == "add":
+                accepted_additions += 1
+            else:
+                accepted_removals += 1
+
+        change_set = None
+        if accepted_operations:
+            change_set = self.preview_change_set(project_id, PlanChangeSetDraft(
+                base_plan_version=request.base_plan_version,
+                source="brush",
+                label=f"Кисть: +{accepted_additions}, −{accepted_removals}",
+                operations=accepted_operations,
+            ))
+        return BrushPreview(
+            brush_id=brush_id,
+            requested_count=len(candidates) + removed_count,
+            accepted_count=len(accepted_operations),
+            added_count=accepted_additions,
+            removed_count=accepted_removals,
+            skipped=skipped,
+            change_set=change_set,
         )
 
     @staticmethod

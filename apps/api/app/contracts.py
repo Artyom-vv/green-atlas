@@ -445,6 +445,33 @@ class PatternPreview(BaseModel):
     change_set: ChangeSetPreview | None = None
 
 
+class BrushStroke(BaseModel):
+    mode: Literal["add", "subtract"] = "add"
+    geometry: dict[str, Any]
+
+
+class BrushPreviewRequest(BaseModel):
+    base_plan_version: int = Field(ge=1)
+    strokes: list[BrushStroke] = Field(min_length=1, max_length=40)
+    width_m: float = Field(default=12, ge=1, le=100, allow_inf_nan=False)
+    spacing_m: float = Field(default=6, ge=1, le=30, allow_inf_nan=False)
+    density: Literal["sparse", "balanced", "dense"] = "balanced"
+    composition: Literal["trees", "shrubs", "mixed"] = "trees"
+    tree_share: float = Field(default=0.7, ge=0, le=1, allow_inf_nan=False)
+    seed: int = Field(default=47, ge=0, le=2_147_483_647)
+    max_sites: int = Field(default=500, ge=1, le=500)
+
+
+class BrushPreview(BaseModel):
+    brush_id: str
+    requested_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    added_count: int = Field(ge=0)
+    removed_count: int = Field(ge=0)
+    skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
+    change_set: ChangeSetPreview | None = None
+
+
 class SpeciesRevision(BaseModel):
     id: str
     species_id: str

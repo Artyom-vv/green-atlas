@@ -8,6 +8,8 @@ from fastapi.responses import Response
 from app.application import ProjectApplication
 from app.contracts import (
     ApiError,
+    BrushPreview,
+    BrushPreviewRequest,
     ExportArtifact,
     GeometrySnapshot,
     ChangeSetPreview,
@@ -308,6 +310,14 @@ def preview_plan_pattern(project_id: str, payload: PatternPreviewRequest) -> Pat
 def preview_plan_recommendation(project_id: str, payload: RecommendationRequest) -> RecommendationPreview:
     try:
         return application.preview_recommendation(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/plan/brush/preview", response_model=BrushPreview)
+def preview_plan_brush(project_id: str, payload: BrushPreviewRequest) -> BrushPreview:
+    try:
+        return application.preview_brush(project_id, payload)
     except Exception as error:
         raise handle(error) from error
 
