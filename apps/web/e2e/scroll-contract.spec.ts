@@ -1,0 +1,49 @@
+import { expect, test, type Page } from '@playwright/test';
+import path from 'node:path';
+
+const fixture = path.resolve('../../fixtures/site.dxf');
+const apiBase = `http://127.0.0.1:${process.env.E2E_API_PORT ?? '18000'}/api`;
+
+async function prepareWorkspace(page: Page) {
+  await page.goto('/projects/new/import');
+  await page.setInputFiles('input[type=file]', fixture);
+  await expect(page).toHaveURL(/\/setup$/);
+  await page.getByLabel('Тип слоя UTIL_HEAT').selectOption('utility');
+  await page.getByRole('button', { name: 'Подготовить карту' }).click();
+  await expect(page).toHaveURL(/\/workspace$/);
+}
+
+test('project list owns vertical scrolling instead of the browser window', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1280, height: 560 });
+  for (let index = 0; index < 12; index += 1) {
+    const response = await request.post(`${apiBase}/projects`, { data: { name: `Scroll contract ${index + 1}` } });
+    expect(response.ok()).toBeTruthy();
+  }
+  await page.goto('/projects');
+  await expect(page.locator('.projects-table tbody tr').filter({ hasText: 'Scroll contract 12' })).toHaveCount(1);
+  const scroll = page.locator('.projects-screen');
+  const before = await scroll.evaluate((element) => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }));
+  expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+  const box = await scroll.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height - 8);
+  await page.mouse.wheel(0, 480);
+  await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test('workspace rails scroll independently without replacing the map canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await prepareWorkspace(page);
+  await page.getByRole('button', { name: 'Развернуть слои' }).click();
+  const map = page.getByRole('region', { name: 'Карта проекта озеленения' });
+  const canvas = map.locator('canvas').first();
+  await expect(canvas).toBeVisible();
+  await canvas.evaluate((element) => element.setAttribute('data-scroll-contract', 'stable'));
+  const layerList = page.locator('.layer-list');
+  await expect(layerList).toHaveCSS('overflow-y', 'auto');
+  await layerList.hover();
+  await page.mouse.wheel(0, 480);
+  await expect(map.locator('canvas[data-scroll-contract="stable"]')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});

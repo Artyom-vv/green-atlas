@@ -1,0 +1,31 @@
+node_modules/
+.pnpm-store/
+dist/
+storybook-static/
+coverage/
+test-results/
+playwright-report/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.tsbuildinfo
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+.DS_Store
+
+# Local runtime state
+apps/api/data/
+
+# Raw research captures are retained locally. Transcripts, reports and small
+# structured fixtures remain versioned, while recordings and generated
+# archives are too large and reproducible from their documented sources.
+artifacts/**/*.mp4
+artifacts/**/*.wav
+artifacts/**/*.m4a
+artifacts/**/*.part
+artifacts/**/*.ts
+artifacts/**/*.m3u8
+artifacts/**/*.zip
+artifacts/artifacts/
