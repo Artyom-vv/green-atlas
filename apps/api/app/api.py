@@ -34,6 +34,7 @@ from app.contracts import (
     ProjectSummary,
     RecommendationPreview,
     RecommendationRequest,
+    SceneSnapshot,
     SpeciesRevision,
     SpeciesShortlistItem,
     SpeciesShortlistRequest,
@@ -318,6 +319,14 @@ def preview_plan_recommendation(project_id: str, payload: RecommendationRequest)
 def preview_plan_brush(project_id: str, payload: BrushPreviewRequest) -> BrushPreview:
     try:
         return application.preview_brush(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/plan/scene", response_model=SceneSnapshot)
+def get_plan_scene(project_id: str, horizon_year: int = Query(default=0)) -> SceneSnapshot:
+    try:
+        return application.get_scene(project_id, horizon_year)
     except Exception as error:
         raise handle(error) from error
 

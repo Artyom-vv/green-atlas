@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiClientError, type BrushPreview, type BrushPreviewRequest, type BrushStroke, type ExportArtifact, type Layer, type PatternPreview, type PatternPreviewRequest, type PlacementCheck, type PlanChangeSetDraft, type PlanObject, type PlantingZoneAssignment, type RecommendationPreview, type RecommendationRequest } from '@green/api-client';
-import { AlertTriangle, ChevronLeft, ChevronRight, Crosshair, Layers3, Maximize2, Minus, PanelRightClose, Plus, Scan, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Box, ChevronLeft, ChevronRight, Crosshair, Layers3, Maximize2, Minus, PanelRightClose, Plus, Scan, Trash2, X } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Dialog, IconButton, InlineMessage, Progress } from '@green/ui';
 import { AppHeader } from '../domain-ui/AppHeader';
@@ -33,6 +33,7 @@ type BufferedMapRequest = { projectId: string; extent: MapExtent; resolution: nu
 
 const EMPTY_PLAN_OBJECTS: PlanObject[] = [];
 const EMPTY_LAYERS: Layer[] = [];
+const SceneReview = lazy(async () => ({ default: (await import('../domain-ui/SceneReview')).SceneReview }));
 const message = (error: unknown) => error instanceof ApiClientError ? error.message : error instanceof Error ? error.message : 'Неизвестная ошибка';
 
 function bufferedMapRequest(extent: MapExtent, resolution: number) {
@@ -89,6 +90,8 @@ export function WorkspacePage() {
   const [brushPreview, setBrushPreview] = useState<BrushPreview>();
   const [speciesAssignmentOpen, setSpeciesAssignmentOpen] = useState(false);
   const [growthHorizon, setGrowthHorizon] = useState<GrowthHorizon>();
+  const [sceneOpen, setSceneOpen] = useState(false);
+  const [sceneHorizon, setSceneHorizon] = useState<0 | 5 | 10 | 20>(0);
 
   const projectQuery = useQuery({ queryKey: ['workspace-project', projectId], queryFn: () => api.getProject(projectId, false), enabled: Boolean(projectId) });
   const project = projectQuery.data;
@@ -121,6 +124,7 @@ export function WorkspacePage() {
     staleTime: 30_000,
   });
   const mapGeometryMetadata = (mapGeometryQuery.data?.feature_collection as { metadata?: MapGeometryMetadata } | undefined)?.metadata;
+  const sceneQuery = useQuery({ queryKey: ['plan-scene', projectId, project?.plan?.version, sceneHorizon], queryFn: () => api.getPlanScene(projectId, sceneHorizon), enabled: Boolean(sceneOpen && project?.plan), staleTime: Number.POSITIVE_INFINITY });
 
   const refresh = useCallback(async ({ mapGeometry = false }: { mapGeometry?: boolean } = {}) => {
     const queries = [
@@ -173,6 +177,8 @@ export function WorkspacePage() {
     setBrushPreview(undefined);
     setSpeciesAssignmentOpen(false);
     setGrowthHorizon(undefined);
+    setSceneOpen(false);
+    setSceneHorizon(0);
   }, [projectId]);
 
   useEffect(() => {
@@ -475,6 +481,10 @@ export function WorkspacePage() {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (event.key === 'Escape') {
+        if (sceneOpen) {
+          setSceneOpen(false);
+          return;
+        }
         patternAbortRef.current?.abort();
         recommendationAbortRef.current?.abort();
         brushAbortRef.current?.abort();
@@ -513,7 +523,7 @@ export function WorkspacePage() {
     };
     window.addEventListener('keydown', handleHistoryShortcut);
     return () => window.removeEventListener('keydown', handleHistoryShortcut);
-  }, [applyChanges, changePreview?.can_apply, editor, editorBusy, historyQuery.data?.can_redo, historyQuery.data?.can_undo, planLocked, redoChange, selectedIds.length, undoChange]);
+  }, [applyChanges, changePreview?.can_apply, editor, editorBusy, historyQuery.data?.can_redo, historyQuery.data?.can_undo, planLocked, redoChange, sceneOpen, selectedIds.length, undoChange]);
 
   if (projectQuery.isLoading) return <div className="app-shell"><AppHeader /><main className="center-status"><Progress label="Загрузка рабочей области" /></main></div>;
   if (!project) return <div className="app-shell"><AppHeader /><main className="center-status"><InlineMessage tone="error">{message(projectQuery.error)}</InlineMessage></main></div>;
@@ -551,14 +561,15 @@ export function WorkspacePage() {
           setPanel(null);
           openRightPanel();
         }} onCoordinate={handleCoordinate} onPointerCoordinate={handlePointerCoordinate} onExtentChange={handleMapExtent} />
-        {mapHoverTarget && tool === 'select' && !projectHasPlan ? <div className={`map-hover-hint ${mapHoverTarget.pixel[0] > 520 ? 'is-left' : ''}`} style={{ left: mapHoverTarget.pixel[0] + 14, top: mapHoverTarget.pixel[1] + 14 }} role="status"><strong>{mapHoverTarget.label}</strong><span>{mapHoverTarget.detail}</span></div> : null}
-        {projectHasPlan ? <div className="map-edit-tools"><MapToolbar tool={tool} onTool={activateTool} editable={!sourcePreview && !planLocked && !editorBusy} canDelete={selectedIds.length > 0} onDelete={() => setDeleteSelectionOpen(true)} /></div> : null}
-        <div className="map-zoom-tools"><IconButton icon={Plus} label="Увеличить" variant="ghost" onClick={() => mapViewport.current?.zoomIn()} /><IconButton icon={Minus} label="Уменьшить" variant="ghost" onClick={() => mapViewport.current?.zoomOut()} /><IconButton icon={Maximize2} label="Показать весь чертёж" variant="ghost" onClick={() => mapViewport.current?.fit()} /></div>
-        {project.plan ? <div className="map-plan-focus"><IconButton icon={Crosshair} label="Показать посадки" variant="ghost" onClick={() => mapViewport.current?.fitPlan()} /></div> : null}
+        {!sceneOpen && mapHoverTarget && tool === 'select' && !projectHasPlan ? <div className={`map-hover-hint ${mapHoverTarget.pixel[0] > 520 ? 'is-left' : ''}`} style={{ left: mapHoverTarget.pixel[0] + 14, top: mapHoverTarget.pixel[1] + 14 }} role="status"><strong>{mapHoverTarget.label}</strong><span>{mapHoverTarget.detail}</span></div> : null}
+        {!sceneOpen && projectHasPlan ? <div className="map-edit-tools"><MapToolbar tool={tool} onTool={activateTool} editable={!sourcePreview && !planLocked && !editorBusy} canDelete={selectedIds.length > 0} onDelete={() => setDeleteSelectionOpen(true)} /></div> : null}
+        {!sceneOpen ? <div className="map-zoom-tools"><IconButton icon={Plus} label="Увеличить" variant="ghost" onClick={() => mapViewport.current?.zoomIn()} /><IconButton icon={Minus} label="Уменьшить" variant="ghost" onClick={() => mapViewport.current?.zoomOut()} /><IconButton icon={Maximize2} label="Показать весь чертёж" variant="ghost" onClick={() => mapViewport.current?.fit()} /></div> : null}
+        {!sceneOpen && project.plan ? <><div className="map-plan-focus"><IconButton icon={Crosshair} label="Показать посадки" variant="ghost" onClick={() => mapViewport.current?.fitPlan()} /></div><div className="map-scene-tools"><Button variant="secondary" controlSize="compact" icon={Box} onClick={() => setSceneOpen(true)}>3D</Button></div></> : null}
         {!rightOpen ? <div className="right-dock"><IconButton icon={ChevronLeft} label="Развернуть панель" variant="ghost" onClick={openRightPanel} /><IconButton icon={project.plan ? AlertTriangle : Scan} label={project.plan ? 'Проверка' : 'Участки'} variant="ghost" onClick={() => { setPanel(project.plan ? 'issues' : 'zones'); openRightPanel(); }} /></div> : null}
         {showMapStatus ? <div className="map-statusbar">{placementCheck && (tool === 'add_tree' || tool === 'add_shrub') ? <span className={`placement-check placement-check--${placementCheck.status}`} role="status">{placementCheck.reason}</span> : null}{mapGeometryQuery.isFetching ? <span className="map-stream-status">Обновляем карту</span> : null}{mapGeometryMetadata?.truncated ? <span className="map-lod-warning" role="status">Приблизьте карту, чтобы увидеть детали.</span> : null}</div> : null}
         {busy ? <div className="map-busy"><Progress label="Сохраняем изменения" /></div> : null}
         {operationError ? <div className="map-operation-error">{isProjectConflict(operationError) ? <ProjectConflictNotice error={operationError} onReload={() => void reloadAfterConflict()} reloading={projectQuery.isFetching} /> : <InlineMessage tone="error">{message(operationError)}</InlineMessage>}</div> : null}
+        {sceneOpen ? <Suspense fallback={<div className="scene-review scene-review--loading"><Progress label="Загрузка 3D" /></div>}><SceneReview snapshot={sceneQuery.data} horizon={sceneHorizon} selectedIds={selectedIds} loading={sceneQuery.isLoading || sceneQuery.isFetching} error={sceneQuery.error ? message(sceneQuery.error) : undefined} onHorizon={setSceneHorizon} onSelect={(id) => editor.select([id], 'replace')} onClose={() => setSceneOpen(false)} /></Suspense> : null}
       </section>
       <aside className="workspace-right">
         {!panel ? <button className="right-close" type="button" aria-label="Свернуть инспектор" onClick={closeRightPanel}><PanelRightClose size={16} /></button> : null}

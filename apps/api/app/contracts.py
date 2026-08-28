@@ -544,6 +544,34 @@ class RecommendationPreview(BaseModel):
     data_gaps: list[str] = Field(default_factory=list)
 
 
+class ScenePlantObject(BaseModel):
+    object_id: str
+    kind: Literal["tree", "shrub"]
+    species_revision_id: str | None = None
+    local_x: float = Field(allow_inf_nan=False)
+    local_y: float = Field(allow_inf_nan=False)
+    crown_shape: Literal["columnar", "conical", "oval", "round", "spreading", "irregular", "placeholder"]
+    canopy_radius_min_m: float = Field(ge=0, allow_inf_nan=False)
+    canopy_radius_max_m: float = Field(ge=0, allow_inf_nan=False)
+    height_min_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    height_max_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    root_radius_min_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    root_radius_max_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    confidence: Literal["unknown", "low", "medium", "high"] = "unknown"
+
+
+class SceneSnapshot(BaseModel):
+    plan_version: int = Field(ge=1)
+    horizon_year: Literal[0, 5, 10, 20]
+    coordinate_origin: list[float] = Field(min_length=2, max_length=2)
+    completeness: Literal["partial"] = "partial"
+    terrain_status: Literal["missing"] = "missing"
+    building_heights_status: Literal["missing"] = "missing"
+    note: str
+    data_gaps: list[str] = Field(default_factory=list)
+    objects: list[ScenePlantObject] = Field(default_factory=list)
+
+
 class PlanMutationResult(BaseModel):
     change_set_id: str
     plan_version: int = Field(ge=1)

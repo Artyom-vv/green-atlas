@@ -18,6 +18,7 @@ describe('assisted planning product surface', () => {
       'getMapFeatures',
       'getOperation',
       'getPlanHistory',
+      'getPlanScene',
       'getProject',
       'listProjects',
       'listSpecies',

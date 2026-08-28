@@ -720,6 +720,40 @@ test('species assignment adds crown and root horizons without reloading the DXF'
   expect(assigned?.root_forecast).toHaveLength(3);
 });
 
+test('3D scene loads lazily and returns to the same live 2D viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const loadedBefore = await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('SceneReview')));
+  expect(loadedBefore).toBe(false);
+  await page.evaluate(() => { (window as unknown as { __greenMapNode?: Element }).__greenMapNode = document.querySelector('[aria-label="Карта проекта озеленения"]') ?? undefined; });
+  let sceneRequests = 0;
+  let viewportRequests = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/plan/scene')) sceneRequests += 1;
+    if (request.url().includes('/map-features?')) viewportRequests += 1;
+  });
+  await page.waitForTimeout(250);
+  viewportRequests = 0;
+
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Параметрический 3D-предпросмотр' })).toBeVisible();
+  await expect(page.getByLabel('3D-сцена посадок')).toBeVisible();
+  await expect(page.getByText('3 объектов')).toBeVisible();
+  await expect(page.getByText('Рельеф и высоты зданий не заданы')).toBeVisible();
+  await expect.poll(() => sceneRequests).toBe(1);
+  const loadedAfter = await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('SceneReview')));
+  expect(loadedAfter).toBe(true);
+
+  const futureResponse = page.waitForResponse((response) => response.url().includes('/plan/scene?horizon_year=20'));
+  await page.getByRole('button', { name: '20 лет' }).click();
+  await futureResponse;
+  await page.getByRole('button', { name: 'Вернуться к карте' }).click();
+  await expect(page.getByLabel('Карта проекта озеленения')).toBeVisible();
+  const sameMap = await page.evaluate(() => (window as unknown as { __greenMapNode?: Element }).__greenMapNode?.isSameNode(document.querySelector('[aria-label="Карта проекта озеленения"]')));
+  expect(sameMap).toBe(true);
+  expect(viewportRequests).toBe(0);
+});
+
 test('opening another workspace directly drops the prior map selection', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);

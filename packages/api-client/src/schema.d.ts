@@ -346,6 +346,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/plan/scene": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Plan Scene */
+        get: operations["get_plan_scene_api_projects__project_id__plan_scene_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/species/shortlist": {
         parameters: {
             query?: never;
@@ -1440,6 +1457,81 @@ export interface components {
              */
             size_class: "unspecified" | "sapling" | "standard" | "large";
         };
+        /** ScenePlantObject */
+        ScenePlantObject: {
+            /** Object Id */
+            object_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tree" | "shrub";
+            /** Species Revision Id */
+            species_revision_id?: string | null;
+            /** Local X */
+            local_x: number;
+            /** Local Y */
+            local_y: number;
+            /**
+             * Crown Shape
+             * @enum {string}
+             */
+            crown_shape: "columnar" | "conical" | "oval" | "round" | "spreading" | "irregular" | "placeholder";
+            /** Canopy Radius Min M */
+            canopy_radius_min_m: number;
+            /** Canopy Radius Max M */
+            canopy_radius_max_m: number;
+            /** Height Min M */
+            height_min_m?: number | null;
+            /** Height Max M */
+            height_max_m?: number | null;
+            /** Root Radius Min M */
+            root_radius_min_m?: number | null;
+            /** Root Radius Max M */
+            root_radius_max_m?: number | null;
+            /**
+             * Confidence
+             * @default unknown
+             * @enum {string}
+             */
+            confidence: "unknown" | "low" | "medium" | "high";
+        };
+        /** SceneSnapshot */
+        SceneSnapshot: {
+            /** Plan Version */
+            plan_version: number;
+            /**
+             * Horizon Year
+             * @enum {integer}
+             */
+            horizon_year: 0 | 5 | 10 | 20;
+            /** Coordinate Origin */
+            coordinate_origin: number[];
+            /**
+             * Completeness
+             * @default partial
+             * @constant
+             */
+            completeness: "partial";
+            /**
+             * Terrain Status
+             * @default missing
+             * @constant
+             */
+            terrain_status: "missing";
+            /**
+             * Building Heights Status
+             * @default missing
+             * @constant
+             */
+            building_heights_status: "missing";
+            /** Note */
+            note: string;
+            /** Data Gaps */
+            data_gaps?: string[];
+            /** Objects */
+            objects?: components["schemas"]["ScenePlantObject"][];
+        };
         /** SourceFile */
         SourceFile: {
             /** Name */
@@ -2353,6 +2445,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrushPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_plan_scene_api_projects__project_id__plan_scene_get: {
+        parameters: {
+            query?: {
+                horizon_year?: number;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneSnapshot"];
                 };
             };
             /** @description Validation Error */

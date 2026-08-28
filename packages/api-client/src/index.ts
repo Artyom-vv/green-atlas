@@ -34,6 +34,8 @@ export type BrushPreview = Omit<components['schemas']['BrushPreview'], 'change_s
   change_set?: ChangeSetPreview | null;
   skipped: PatternSkippedCandidate[];
 };
+export type ScenePlantObject = components['schemas']['ScenePlantObject'];
+export type SceneSnapshot = Omit<components['schemas']['SceneSnapshot'], 'objects' | 'data_gaps'> & { objects: ScenePlantObject[]; data_gaps: string[] };
 export type ValidationIssue = components['schemas']['ValidationIssue'];
 export type PlacementCheck = components['schemas']['PlacementCheck'];
 export type ExportArtifact = components['schemas']['ExportArtifact'];
@@ -128,6 +130,7 @@ export const api = {
   previewPlanPattern: (projectId: string, pattern: PatternPreviewRequest, signal?: AbortSignal) => request<PatternPreview>(`/api/projects/${projectId}/plan/patterns/preview`, { ...json(pattern), signal }),
   previewRecommendation: (projectId: string, recommendation: RecommendationRequest, signal?: AbortSignal) => request<RecommendationPreview>(`/api/projects/${projectId}/plan/recommendations/preview`, { ...json(recommendation), signal }),
   previewBrush: (projectId: string, brush: BrushPreviewRequest, signal?: AbortSignal) => request<BrushPreview>(`/api/projects/${projectId}/plan/brush/preview`, { ...json(brush), signal }),
+  getPlanScene: (projectId: string, horizonYear: 0 | 5 | 10 | 20) => request<SceneSnapshot>(`/api/projects/${projectId}/plan/scene?horizon_year=${horizonYear}`),
   shortlistSpecies: (projectId: string, objectIds: string[]) => request<SpeciesShortlistItem[]>(`/api/projects/${projectId}/species/shortlist`, json({ object_ids: objectIds })),
   updatePlanObject: (projectId: string, objectId: string, object: { x?: number; y?: number; radius?: number }) => request<Plan>(`/api/projects/${projectId}/plan/objects/${objectId}`, { ...json(object), method: 'PATCH' }),
   deletePlanObjects: (projectId: string, ids: string[]) => request<Plan>(`/api/projects/${projectId}/plan/objects/delete`, json({ ids })),

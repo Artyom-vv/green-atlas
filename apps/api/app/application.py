@@ -45,6 +45,8 @@ from app.contracts import (
     RecommendationExplanation,
     RecommendationPreview,
     RecommendationRequest,
+    ScenePlantObject,
+    SceneSnapshot,
     SourceFile,
     SpeciesRevision,
     SpeciesShortlistItem,
@@ -1172,6 +1174,78 @@ class ProjectApplication:
             removed_count=accepted_removals,
             skipped=skipped,
             change_set=change_set,
+        )
+
+    def get_scene(self, project_id: str, horizon_year: int) -> SceneSnapshot:
+        if horizon_year not in {0, 5, 10, 20}:
+            raise ValueError("Горизонт сцены должен быть 0, 5, 10 или 20 лет")
+        # The projection contains the plan and compact map metadata but omits
+        # both raw and calculated DXF feature graphs. Opening 3D therefore
+        # never reparses or deserialises the source drawing.
+        project = self.get(project_id, lightweight=True)
+        if project.plan is None:
+            raise ValueError("План ещё не создан")
+        if project.plan.objects:
+            min_x = min(item.x for item in project.plan.objects)
+            max_x = max(item.x for item in project.plan.objects)
+            min_y = min(item.y for item in project.plan.objects)
+            max_y = max(item.y for item in project.plan.objects)
+            origin_x = (min_x + max_x) / 2
+            origin_y = (min_y + max_y) / 2
+        else:
+            origin_x = origin_y = 0.0
+
+        height_scale = {
+            "slow": {5: 0.25, 10: 0.45, 20: 0.72},
+            "moderate": {5: 0.32, 10: 0.58, 20: 0.84},
+            "fast": {5: 0.42, 10: 0.7, 20: 0.92},
+        }
+        initial_heights = {
+            "sapling": (1.5, 2.5),
+            "standard": (2.5, 4.5),
+            "large": (4.5, 7.0),
+        }
+        scene_objects: list[ScenePlantObject] = []
+        for object_ in project.plan.objects:
+            revision = get_species(object_.species_revision_id) if object_.species_revision_id else None
+            canopy = next((item for item in object_.canopy_forecast if item.horizon_year == horizon_year), None)
+            roots = next((item for item in object_.root_forecast if item.horizon_year == horizon_year), None)
+            layout_radius = object_.layout_radius_m or object_.radius
+            if horizon_year == 0:
+                canopy_min = canopy_max = layout_radius
+                heights = initial_heights.get(object_.size_class)
+                confidence = "unknown" if revision is None else "low"
+            else:
+                canopy_min = canopy.radius_min_m if canopy else layout_radius
+                canopy_max = canopy.radius_max_m if canopy else layout_radius
+                if revision:
+                    scale = height_scale[revision.growth_rate][horizon_year]
+                    heights = (round(revision.mature_height_min_m * scale, 2), round(revision.mature_height_max_m * min(1, scale + 0.12), 2))
+                else:
+                    heights = None
+                confidence = canopy.confidence if canopy else "unknown"
+            scene_objects.append(ScenePlantObject(
+                object_id=object_.id,
+                kind=object_.kind,
+                species_revision_id=object_.species_revision_id,
+                local_x=round(object_.x - origin_x, 6),
+                local_y=round(object_.y - origin_y, 6),
+                crown_shape=revision.crown_shape if revision else "placeholder",
+                canopy_radius_min_m=canopy_min,
+                canopy_radius_max_m=canopy_max,
+                height_min_m=heights[0] if heights else None,
+                height_max_m=heights[1] if heights else None,
+                root_radius_min_m=roots.radius_min_m if roots else None,
+                root_radius_max_m=roots.radius_max_m if roots else None,
+                confidence=confidence,
+            ))
+        return SceneSnapshot(
+            plan_version=project.plan.version,
+            horizon_year=horizon_year,
+            coordinate_origin=[round(origin_x, 6), round(origin_y, 6)],
+            note="Упрощённая параметрическая сцена посадок. Это не геодезическая 3D-модель и не расчёт инсоляции.",
+            data_gaps=["Рельеф", "Высоты зданий", "Точные модели пород", "Инсоляция"],
+            objects=scene_objects,
         )
 
     @staticmethod

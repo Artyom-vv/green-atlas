@@ -1145,3 +1145,36 @@ def test_brush_density_depends_on_geometry_not_pointer_event_frequency() -> None
         (item["x"], item["y"]) for item in many_events.json()["change_set"]["additions"]
     ]
     assert sparse_events.json()["accepted_count"] <= 500
+
+
+def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() -> None:
+    project_id = prepare_project("Параметрическая сцена")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
+    client.post(f"/api/projects/{project_id}/plan/manual")
+    first_plan = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
+    second_plan = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "shrub", "x": 60, "y": 40}).json()
+    tree_id = next(item["id"] for item in second_plan["objects"] if item["kind"] == "tree")
+    species = next(item for item in client.get("/api/species", params={"kind": "tree"}).json() if item["species_id"] == "tilia-cordata")
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": second_plan["version"],
+        "source": "manual",
+        "label": "Порода для сцены",
+        "operations": [{"type": "update", "object_id": tree_id, "changes": {"species_revision_id": species["id"], "size_class": "standard"}}],
+    }).json()
+    applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={"preview_id": preview["id"], "digest": preview["digest"], "base_plan_version": preview["base_plan_version"]})
+    assert applied.status_code == 200
+
+    current = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
+    future = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 20})
+    assert current.status_code == future.status_code == 200
+    current_scene, future_scene = current.json(), future.json()
+    assert current_scene["coordinate_origin"] == [40.0, 30.0]
+    assert current_scene["completeness"] == "partial"
+    assert current_scene["terrain_status"] == "missing"
+    assert {item["object_id"] for item in current_scene["objects"]} == {item["id"] for item in applied.json()["plan"]["objects"]}
+    current_tree = next(item for item in current_scene["objects"] if item["object_id"] == tree_id)
+    future_tree = next(item for item in future_scene["objects"] if item["object_id"] == tree_id)
+    assert future_tree["canopy_radius_max_m"] > current_tree["canopy_radius_max_m"]
+    assert future_tree["height_max_m"] is not None
+    assert max(abs(item["local_x"]) for item in future_scene["objects"]) == 20
+    assert client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 7}).status_code == 400

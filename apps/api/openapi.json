@@ -1401,6 +1401,71 @@
         }
       }
     },
+    "/api/projects/{project_id}/plan/scene": {
+      "get": {
+        "summary": "Get Plan Scene",
+        "operationId": "get_plan_scene_api_projects__project_id__plan_scene_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "horizon_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Horizon Year"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/species/shortlist": {
       "post": {
         "summary": "Shortlist Project Species",
@@ -4381,6 +4446,206 @@
           "axis"
         ],
         "title": "RowPatternRequest"
+      },
+      "ScenePlantObject": {
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "title": "Object Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub"
+            ],
+            "title": "Kind"
+          },
+          "species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Revision Id"
+          },
+          "local_x": {
+            "type": "number",
+            "title": "Local X"
+          },
+          "local_y": {
+            "type": "number",
+            "title": "Local Y"
+          },
+          "crown_shape": {
+            "type": "string",
+            "enum": [
+              "columnar",
+              "conical",
+              "oval",
+              "round",
+              "spreading",
+              "irregular",
+              "placeholder"
+            ],
+            "title": "Crown Shape"
+          },
+          "canopy_radius_min_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Canopy Radius Min M"
+          },
+          "canopy_radius_max_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Canopy Radius Max M"
+          },
+          "height_min_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Min M"
+          },
+          "height_max_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Max M"
+          },
+          "root_radius_min_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Radius Min M"
+          },
+          "root_radius_max_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Radius Max M"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Confidence",
+            "default": "unknown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "object_id",
+          "kind",
+          "local_x",
+          "local_y",
+          "crown_shape",
+          "canopy_radius_min_m",
+          "canopy_radius_max_m"
+        ],
+        "title": "ScenePlantObject"
+      },
+      "SceneSnapshot": {
+        "properties": {
+          "plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Plan Version"
+          },
+          "horizon_year": {
+            "type": "integer",
+            "enum": [
+              0,
+              5,
+              10,
+              20
+            ],
+            "title": "Horizon Year"
+          },
+          "coordinate_origin": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Coordinate Origin"
+          },
+          "completeness": {
+            "type": "string",
+            "const": "partial",
+            "title": "Completeness",
+            "default": "partial"
+          },
+          "terrain_status": {
+            "type": "string",
+            "const": "missing",
+            "title": "Terrain Status",
+            "default": "missing"
+          },
+          "building_heights_status": {
+            "type": "string",
+            "const": "missing",
+            "title": "Building Heights Status",
+            "default": "missing"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "data_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Gaps"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/ScenePlantObject"
+            },
+            "type": "array",
+            "title": "Objects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_version",
+          "horizon_year",
+          "coordinate_origin",
+          "note"
+        ],
+        "title": "SceneSnapshot"
       },
       "SourceFile": {
         "properties": {
