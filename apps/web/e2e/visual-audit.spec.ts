@@ -854,20 +854,20 @@ test('a repeated map click becomes one persisted planting action', async ({ page
   await expect(page.getByText('Проект изменён в другой вкладке')).toHaveCount(0);
 });
 
-test('an export snapshot makes manual editing read-only until it is complete', async ({ page }) => {
+test('a release snapshot makes manual editing read-only until it is complete', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
-  await page.getByRole('button', { name: 'Экспорт DXF' }).click();
+  await page.getByRole('button', { name: 'Выпустить пакет' }).click();
 
   let manualWriteRequests = 0;
   page.on('request', (request) => {
     if (request.url().includes('/plan/objects') || request.url().includes('/plan/history/undo')) manualWriteRequests += 1;
   });
-  await page.route('**/api/projects/*/exports', async (route) => {
+  await page.route('**/api/projects/*/releases', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 700));
     await route.continue();
   });
-  await page.getByRole('button', { name: 'Подготовить DXF' }).click();
+  await page.getByRole('button', { name: 'Собрать черновой пакет' }).click();
 
   const addTree = page.getByRole('button', { name: 'Добавить дерево' });
   await expect(addTree).toBeDisabled();
@@ -875,7 +875,7 @@ test('an export snapshot makes manual editing read-only until it is complete', a
   await page.waitForTimeout(150);
   expect(manualWriteRequests).toBe(0);
 
-  await expect(page.getByText('Файл готов')).toBeVisible();
+  await expect(page.getByText('Черновой пакет готов')).toBeVisible();
   await expect(addTree).toBeEnabled();
   const projectId = new URL(page.url()).pathname.split('/')[2];
   const savedProject = await page.request.get(`${apiBase}/projects/${projectId}`);

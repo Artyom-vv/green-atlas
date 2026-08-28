@@ -604,6 +604,36 @@ class ExportArtifact(BaseModel):
     media_type: str = "application/dxf"
 
 
+class ReleaseCreateRequest(BaseModel):
+    mode: Literal["draft", "final"] = "draft"
+    scene_horizon: Literal[0, 5, 10, 20] = 20
+
+
+class ReleaseArtifact(BaseModel):
+    id: str
+    filename: str
+    kind: Literal["bundle", "dxf", "schedule", "manifest", "scene", "dendroplan"]
+    media_type: str
+    size: int = Field(ge=0)
+    sha256: str
+    download_url: str
+
+
+class ReleasePackage(BaseModel):
+    id: str
+    project_id: str
+    plan_version: int = Field(ge=1)
+    geometry_version: int = Field(ge=0)
+    mode: Literal["draft", "final"]
+    status: Literal["draft", "ready"]
+    created_at: str
+    rule_set_revision: str
+    species_catalog_revision: str
+    scene_horizon: Literal[0, 5, 10, 20]
+    warnings: list[str] = Field(default_factory=list)
+    artifacts: list[ReleaseArtifact] = Field(default_factory=list)
+
+
 class ApiError(BaseModel):
     code: str
     message: str

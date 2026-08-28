@@ -20,6 +20,7 @@ class InMemoryProjectRepository:
         self._projects: dict[str, Project] = {}
         self._sources: dict[str, bytes] = {}
         self._exports: dict[tuple[str, str], bytes] = {}
+        self._releases: dict[tuple[str, str], str] = {}
         self._lock = RLock()
 
     def create(self, project: Project) -> Project:
@@ -79,6 +80,8 @@ class InMemoryProjectRepository:
             self._sources.pop(project_id, None)
             for key in [key for key in self._exports if key[0] == project_id]:
                 del self._exports[key]
+            for key in [key for key in self._releases if key[0] == project_id]:
+                del self._releases[key]
 
     def save_source(self, project_id: str, content: bytes | bytearray) -> None:
         with self._lock:
@@ -121,6 +124,30 @@ class InMemoryProjectRepository:
         with self._lock:
             return self._exports.get((project_id, artifact_id))
 
+    def publish_release(self, project: Project, release_id: str, payload: str, artifacts: dict[str, bytes]) -> Project:
+        with self._lock:
+            if project.id not in self._projects:
+                raise KeyError(f"Project {project.id} not found")
+            release_key = (project.id, release_id)
+            if release_key in self._releases:
+                raise ValueError("Выпуск уже существует")
+            current = self._projects[project.id].state_version
+            expected = expected_project_version() or project.state_version or current
+            if expected != current:
+                raise ProjectVersionConflict(project.id, expected, current)
+            project.state_version = current + 1
+            project.updated_at = datetime.now(UTC).isoformat()
+            self._projects[project.id] = project.model_copy(deep=True)
+            self._releases[release_key] = payload
+            for artifact_id, content in artifacts.items():
+                self._exports[(project.id, artifact_id)] = bytes(content)
+            advance_expected_project_version(project.state_version)
+            return project.model_copy(deep=True)
+
+    def get_release(self, project_id: str, release_id: str) -> str | None:
+        with self._lock:
+            return self._releases.get((project_id, release_id))
+
 
 class SqliteProjectRepository:
     """Small durable store: project metadata, compact projection, original DXF."""
@@ -142,6 +169,7 @@ class SqliteProjectRepository:
             self._connection.execute("PRAGMA synchronous=NORMAL")
             self._connection.execute("CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, payload TEXT NOT NULL, projection TEXT, source BLOB, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, state_version INTEGER NOT NULL DEFAULT 1)")
             self._connection.execute("CREATE TABLE IF NOT EXISTS project_exports (project_id TEXT NOT NULL, artifact_id TEXT NOT NULL, content BLOB NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (project_id, artifact_id))")
+            self._connection.execute("CREATE TABLE IF NOT EXISTS project_releases (project_id TEXT NOT NULL, release_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (project_id, release_id))")
             self._connection.execute("CREATE INDEX IF NOT EXISTS idx_project_exports_project ON project_exports (project_id, created_at DESC)")
             columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(projects)").fetchall()}
             if "projection" not in columns:
@@ -218,6 +246,7 @@ class SqliteProjectRepository:
             cursor = self._connection.execute("DELETE FROM projects WHERE id = ?" if expected is None else "DELETE FROM projects WHERE id = ? AND state_version = ?", (project_id,) if expected is None else (project_id, expected))
             if cursor.rowcount:
                 self._connection.execute("DELETE FROM project_exports WHERE project_id = ?", (project_id,))
+                self._connection.execute("DELETE FROM project_releases WHERE project_id = ?", (project_id,))
         if cursor.rowcount:
             return
         try:
@@ -303,3 +332,52 @@ class SqliteProjectRepository:
                 (project_id, artifact_id),
             ).fetchone()
         return bytes(row["content"]) if row is not None else None
+
+    def publish_release(self, project: Project, release_id: str, payload: str, artifacts: dict[str, bytes]) -> Project:
+        original_version = project.state_version
+        original_updated_at = project.updated_at
+        expected = expected_project_version() or original_version or 1
+        project.state_version = expected + 1
+        project.updated_at = datetime.now(UTC).isoformat()
+        stored_payload, projection = self._payloads(project)
+        conflict = False
+        try:
+            with self._lock, self._connection:
+                cursor = self._connection.execute(
+                    "UPDATE projects SET payload=?, projection=?, updated_at=?, state_version=? WHERE id=? AND state_version=?",
+                    (stored_payload, projection, project.updated_at, project.state_version, project.id, expected),
+                )
+                if cursor.rowcount == 0:
+                    conflict = True
+                else:
+                    self._connection.execute(
+                        "INSERT INTO project_releases (project_id, release_id, payload, created_at) VALUES (?, ?, ?, ?)",
+                        (project.id, release_id, payload, project.updated_at),
+                    )
+                    for artifact_id, content in artifacts.items():
+                        self._connection.execute(
+                            "INSERT INTO project_exports (project_id, artifact_id, content, created_at) VALUES (?, ?, ?, ?)",
+                            (project.id, artifact_id, content, project.updated_at),
+                        )
+        except sqlite3.IntegrityError as error:
+            project.state_version = original_version
+            project.updated_at = original_updated_at
+            raise ValueError("Выпуск уже существует") from error
+        if conflict:
+            project.state_version = original_version
+            project.updated_at = original_updated_at
+            try:
+                current = self._read(project.id, lightweight=True).state_version
+            except KeyError:
+                raise KeyError(f"Project {project.id} not found") from None
+            raise ProjectVersionConflict(project.id, expected, current)
+        advance_expected_project_version(project.state_version)
+        return project
+
+    def get_release(self, project_id: str, release_id: str) -> str | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload FROM project_releases WHERE project_id = ? AND release_id = ?",
+                (project_id, release_id),
+            ).fetchone()
+        return str(row["payload"]) if row is not None else None

@@ -37,6 +37,9 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects/{project_id}/plan/history/redo",
         "/api/projects/{project_id}/exports",
         "/api/projects/{project_id}/exports/{artifact_id}/download",
+        "/api/projects/{project_id}/releases",
+        "/api/projects/{project_id}/releases/{release_id}",
+        "/api/projects/{project_id}/releases/{release_id}/artifacts/{artifact_id}",
     }
 
 

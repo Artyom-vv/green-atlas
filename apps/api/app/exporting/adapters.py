@@ -68,7 +68,16 @@ class DxfRoundTripWriter:
                 (1000, f"schema={GREEN_ATLAS_SCHEMA}"),
                 (1000, f"object_id={object_.id}"),
                 (1000, f"kind={object_.kind}"),
+                (1000, f"size_class={object_.size_class}"),
+                (1000, f"layout_radius_m={object_.layout_radius_m or object_.radius}"),
+                (1000, f"locked={'true' if object_.locked else 'false'}"),
             ]
+            if object_.species_revision_id:
+                xdata.append((1000, f"species_revision_id={object_.species_revision_id}"))
+            if object_.pattern_id:
+                xdata.append((1000, f"pattern_id={object_.pattern_id}"))
+            for group_id in sorted(object_.group_ids):
+                xdata.append((1000, f"group_id={group_id}"))
             if object_.planting_zone_id:
                 xdata.append((1000, f"planting_zone_id={object_.planting_zone_id}"))
             entity.set_xdata(GREEN_ATLAS_APP_ID, xdata)

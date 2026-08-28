@@ -34,6 +34,8 @@ from app.contracts import (
     ProjectSummary,
     RecommendationPreview,
     RecommendationRequest,
+    ReleaseCreateRequest,
+    ReleasePackage,
     SceneSnapshot,
     SpeciesRevision,
     SpeciesShortlistItem,
@@ -405,3 +407,29 @@ def download_export(project_id: str, artifact_id: str) -> Response:
     filename = f"{project.name.lower().replace(' ', '_')}_plan.dxf"
     disposition = f"attachment; filename=green_plan.dxf; filename*=UTF-8''{quote(filename)}"
     return Response(content=content, media_type="application/dxf", headers={"Content-Disposition": disposition})
+
+
+@router.post("/projects/{project_id}/releases", response_model=ReleasePackage)
+def create_release(project_id: str, payload: ReleaseCreateRequest) -> ReleasePackage:
+    try:
+        return application.create_release(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/releases/{release_id}", response_model=ReleasePackage)
+def get_release(project_id: str, release_id: str) -> ReleasePackage:
+    try:
+        return application.get_release(project_id, release_id)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/releases/{release_id}/artifacts/{artifact_id}")
+def download_release_artifact(project_id: str, release_id: str, artifact_id: str) -> Response:
+    try:
+        artifact, content = application.download_release_artifact(project_id, release_id, artifact_id)
+    except Exception as error:
+        raise handle(error) from error
+    disposition = f"attachment; filename=green-atlas-artifact; filename*=UTF-8''{quote(artifact.filename)}"
+    return Response(content=content, media_type=artifact.media_type, headers={"Content-Disposition": disposition})

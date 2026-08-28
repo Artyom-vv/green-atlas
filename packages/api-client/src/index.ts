@@ -39,6 +39,9 @@ export type SceneSnapshot = Omit<components['schemas']['SceneSnapshot'], 'object
 export type ValidationIssue = components['schemas']['ValidationIssue'];
 export type PlacementCheck = components['schemas']['PlacementCheck'];
 export type ExportArtifact = components['schemas']['ExportArtifact'];
+export type ReleaseCreateRequest = components['schemas']['ReleaseCreateRequest'];
+export type ReleaseArtifact = components['schemas']['ReleaseArtifact'];
+export type ReleasePackage = components['schemas']['ReleasePackage'];
 export type ProjectOperation = components['schemas']['ProjectOperation'];
 export type OperationKind = components['schemas']['OperationKind'];
 export type GeometrySnapshot = components['schemas']['GeometrySnapshot'];
@@ -138,5 +141,7 @@ export const api = {
   undoPlanChange: (projectId: string) => request<Project>(`/api/projects/${projectId}/plan/history/undo`, json()),
   redoPlanChange: (projectId: string) => request<Project>(`/api/projects/${projectId}/plan/history/redo`, json()),
   createExport: (projectId: string) => request<ExportArtifact>(`/api/projects/${projectId}/exports`, json()),
+  createRelease: (projectId: string, release: ReleaseCreateRequest) => request<ReleasePackage>(`/api/projects/${projectId}/releases`, json(release)),
+  getRelease: (projectId: string, releaseId: string) => request<ReleasePackage>(`/api/projects/${projectId}/releases/${releaseId}`),
   downloadUrl: (path: string) => `${API_URL}${path}`,
 };

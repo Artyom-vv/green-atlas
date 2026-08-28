@@ -43,7 +43,7 @@ export function AppHeader({ projectName, workspace = false, onReview, onExport, 
           <IconButton icon={Redo2} label={redoLabel ? `Повторить: ${redoLabel}` : 'Повторить'} variant="ghost" disabled={!onRedo || historyBusy || actionsDisabled} onClick={onRedo} />
           <span className="header-divider" />
           {onReview ? <Button variant="secondary" icon={AlertTriangle} disabled={actionsDisabled} onClick={onReview}>Проверка</Button> : null}
-          {onExport ? <Button variant="primary" icon={Download} loading={exporting} disabled={actionsDisabled} onClick={onExport}>Экспорт DXF</Button> : null}
+          {onExport ? <Button variant="primary" icon={Download} loading={exporting} disabled={actionsDisabled} onClick={onExport}>Выпустить пакет</Button> : null}
         </>}
       </div>
     </header>

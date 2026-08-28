@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 
-test('user can import any DXF, prepare a manual plan and export it', async ({ page }) => {
+test('user can import any DXF, prepare a manual plan and release a reproducible package', async ({ page }) => {
   await page.goto('/projects/new/import');
   await page.setInputFiles('input[type=file]', path.resolve('../../fixtures/site.dxf'));
   await expect(page).toHaveURL(/\/setup$/);
@@ -33,11 +33,11 @@ test('user can import any DXF, prepare a manual plan and export it', async ({ pa
   await page.getByRole('button', { name: 'Проверка' }).click();
   await expect(page.getByText('Проверка плана', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Экспорт DXF' }).click();
-  await page.getByRole('button', { name: 'Подготовить DXF' }).click();
-  await expect(page.getByText('Файл готов')).toBeVisible();
+  await page.getByRole('button', { name: 'Выпустить пакет' }).click();
+  await page.getByRole('button', { name: 'Собрать черновой пакет' }).click();
+  await expect(page.getByText('Черновой пакет готов')).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Скачать DXF' }).click();
+  await page.getByRole('button', { name: 'Скачать полный пакет' }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toContain('_plan.dxf');
+  expect(download.suggestedFilename()).toContain('-release.zip');
 });

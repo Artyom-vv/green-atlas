@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 from io import BytesIO, StringIO
+import json
 from pathlib import Path
+import zipfile
 
 import ezdxf
 import pytest
@@ -726,6 +729,85 @@ def test_export_reopens_original_dxf_and_adds_only_planting_layers() -> None:
     assert "schema=green-atlas:1" in strings
     assert any(str(value).startswith("object_id=") for value in strings)
     assert not any(str(value).startswith(prefix) for value in strings for prefix in ("strategy=", "factor="))
+
+
+def test_draft_release_is_reproducible_and_links_every_artifact_by_object_id() -> None:
+    project_id = prepare_project("Воспроизводимый выпуск")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
+    first_plan = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
+    object_id = first_plan["objects"][0]["id"]
+
+    first = client.post(f"/api/projects/{project_id}/releases", json={"mode": "draft", "scene_horizon": 20})
+    assert first.status_code == 200, first.json()
+    package = first.json()
+    assert package["status"] == "draft"
+    assert {item["kind"] for item in package["artifacts"]} == {"bundle", "dxf", "schedule", "manifest", "scene", "dendroplan"}
+    state_after_first = int(first.headers["X-Project-State-Version"])
+
+    second = client.post(f"/api/projects/{project_id}/releases", json={"mode": "draft", "scene_horizon": 20})
+    assert second.status_code == 200
+    assert second.json() == package
+    assert int(second.headers["X-Project-State-Version"]) == state_after_first
+
+    contents = {}
+    for artifact in package["artifacts"]:
+        downloaded = client.get(artifact["download_url"])
+        assert downloaded.status_code == 200
+        contents[artifact["kind"]] = downloaded.content
+        assert downloaded.content == client.get(artifact["download_url"]).content
+
+    schedule_rows = list(csv.DictReader(StringIO(contents["schedule"].decode("utf-8-sig"))))
+    scene = json.loads(contents["scene"])
+    manifest = json.loads(contents["manifest"])
+    assert {row["object_id"] for row in schedule_rows} == {object_id}
+    assert {item["object_id"] for item in scene["objects"]} == {object_id}
+    assert manifest["objects"] == [object_id]
+    assert f'data-object-id="{object_id}"'.encode() in contents["dendroplan"]
+
+    document = ezdxf.read(StringIO(contents["dxf"].decode("utf-8")))
+    planting = document.modelspace().query('CIRCLE[layer=="GREEN_ATLAS_TREES"]')
+    exported_ids = {
+        tag.value.split("=", 1)[1]
+        for entity in planting
+        for tag in entity.get_xdata("GREEN_ATLAS")
+        if tag.code == 1000 and str(tag.value).startswith("object_id=")
+    }
+    assert exported_ids == {object_id}
+    with zipfile.ZipFile(BytesIO(contents["bundle"])) as archive:
+        assert len(archive.namelist()) == 5
+        assert all(info.date_time == (2026, 8, 28, 0, 0, 0) for info in archive.infolist())
+
+
+def test_final_release_requires_species_and_has_an_honest_process_scope() -> None:
+    project_id = prepare_project("Финальный выпуск")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
+    plan = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
+    object_id = plan["objects"][0]["id"]
+
+    blocked = client.post(f"/api/projects/{project_id}/releases", json={"mode": "final", "scene_horizon": 20})
+    assert blocked.status_code == 400
+    assert "назначьте виды" in blocked.json()["message"]
+
+    assigned = client.patch(
+        f"/api/projects/{project_id}/plan/objects/{object_id}",
+        json={"species_revision_id": "tilia-cordata@2026-08-28.1", "size_class": "standard"},
+    )
+    assert assigned.status_code == 200, assigned.json()
+    final = client.post(f"/api/projects/{project_id}/releases", json={"mode": "final", "scene_horizon": 20})
+    assert final.status_code == 200, final.json()
+    assert final.json()["status"] == "ready"
+    manifest_artifact = next(item for item in final.json()["artifacts"] if item["kind"] == "manifest")
+    manifest = client.get(manifest_artifact["download_url"]).json()
+    assert manifest["missing_species_object_ids"] == []
+    assert manifest["regulatory_scope"]["pp_616"].endswith("not implemented")
+    assert "approved" not in json.dumps(manifest).lower()
+    dxf_artifact = next(item for item in final.json()["artifacts"] if item["kind"] == "dxf")
+    document = ezdxf.read(StringIO(client.get(dxf_artifact["download_url"]).content.decode("utf-8")))
+    tags = [tag.value for tag in document.modelspace().query('CIRCLE[layer=="GREEN_ATLAS_TREES"]')[0].get_xdata("GREEN_ATLAS") if tag.code == 1000]
+    assert "species_revision_id=tilia-cordata@2026-08-28.1" in tags
+    assert "size_class=standard" in tags
 
 
 def test_failed_export_storage_does_not_publish_a_new_project_revision(monkeypatch: pytest.MonkeyPatch) -> None:

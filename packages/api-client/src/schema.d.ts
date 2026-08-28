@@ -516,6 +516,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Release */
+        post: operations["create_release_api_projects__project_id__releases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/releases/{release_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Release */
+        get: operations["get_release_api_projects__project_id__releases__release_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/releases/{release_id}/artifacts/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Release Artifact */
+        get: operations["download_release_artifact_api_projects__project_id__releases__release_id__artifacts__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1402,6 +1453,77 @@ export interface components {
              * @default 80
              */
             max_sites: number;
+        };
+        /** ReleaseArtifact */
+        ReleaseArtifact: {
+            /** Id */
+            id: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bundle" | "dxf" | "schedule" | "manifest" | "scene" | "dendroplan";
+            /** Media Type */
+            media_type: string;
+            /** Size */
+            size: number;
+            /** Sha256 */
+            sha256: string;
+            /** Download Url */
+            download_url: string;
+        };
+        /** ReleaseCreateRequest */
+        ReleaseCreateRequest: {
+            /**
+             * Mode
+             * @default draft
+             * @enum {string}
+             */
+            mode: "draft" | "final";
+            /**
+             * Scene Horizon
+             * @default 20
+             * @enum {integer}
+             */
+            scene_horizon: 0 | 5 | 10 | 20;
+        };
+        /** ReleasePackage */
+        ReleasePackage: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Plan Version */
+            plan_version: number;
+            /** Geometry Version */
+            geometry_version: number;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "draft" | "final";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "draft" | "ready";
+            /** Created At */
+            created_at: string;
+            /** Rule Set Revision */
+            rule_set_revision: string;
+            /** Species Catalog Revision */
+            species_catalog_revision: string;
+            /**
+             * Scene Horizon
+             * @enum {integer}
+             */
+            scene_horizon: 0 | 5 | 10 | 20;
+            /** Warnings */
+            warnings?: string[];
+            /** Artifacts */
+            artifacts?: components["schemas"]["ReleaseArtifact"][];
         };
         /** RowPatternRequest */
         RowPatternRequest: {
@@ -2782,6 +2904,112 @@ export interface operations {
             };
             path: {
                 project_id: string;
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_release_api_projects__project_id__releases_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePackage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_release_api_projects__project_id__releases__release_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+                release_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePackage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_release_artifact_api_projects__project_id__releases__release_id__artifacts__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+                release_id: string;
                 artifact_id: string;
             };
             cookie?: never;

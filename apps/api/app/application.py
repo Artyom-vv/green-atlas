@@ -45,6 +45,9 @@ from app.contracts import (
     RecommendationExplanation,
     RecommendationPreview,
     RecommendationRequest,
+    ReleaseArtifact,
+    ReleaseCreateRequest,
+    ReleasePackage,
     ScenePlantObject,
     SceneSnapshot,
     SourceFile,
@@ -62,6 +65,7 @@ from app.planning.domain import PlanVersionConflict, PlantSpacingIndex
 from app.planning.ports import CandidateGeneratorPort
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.projects.ports import ProjectRepository
+from app.releases.service import build_release, release_identity
 from app.species.catalog import get_species, growth_forecasts, list_species
 from app.validation.ports import PlanValidatorPort
 
@@ -1361,6 +1365,54 @@ class ProjectApplication:
         # behind when another tab changes the project between those writes.
         self.repository.publish_export(project, artifact.id, content)
         return artifact
+
+    def create_release(self, project_id: str, request: ReleaseCreateRequest) -> ReleasePackage:
+        project = self.get(project_id)
+        if project.plan is None:
+            raise ValueError("План ещё не создан")
+        if not project.plan.objects:
+            raise ValueError("Добавьте хотя бы одну посадку")
+        if project.source_file is None:
+            raise ValueError("Исходный DXF недоступен для выпуска")
+        if request.mode == "final":
+            error_count = sum(issue.severity == "error" for issue in project.plan.issues)
+            missing_species = sum(not item.species_revision_id for item in project.plan.objects)
+            if error_count or missing_species:
+                reasons: list[str] = []
+                if error_count:
+                    reasons.append(f"устраните ошибки: {error_count}")
+                if missing_species:
+                    reasons.append(f"назначьте виды: {missing_species}")
+                raise ValueError("Финальный выпуск недоступен: " + "; ".join(reasons))
+        release_id = release_identity(project, request)
+        existing = self.repository.get_release(project.id, release_id)
+        if existing is not None:
+            return ReleasePackage.model_validate_json(existing)
+        source_content = self.repository.get_source(project.id)
+        if source_content is None:
+            raise ValueError("Исходный DXF недоступен для выпуска")
+        _legacy_artifact, dxf_content = self.writer.create(project, source_content)
+        scene = self.get_scene(project.id, request.scene_horizon)
+        package, artifacts = build_release(project, request, release_id, dxf_content, scene, source_content)
+        self.repository.publish_release(project, release_id, package.model_dump_json(), artifacts)
+        return package
+
+    def get_release(self, project_id: str, release_id: str) -> ReleasePackage:
+        self.get(project_id, lightweight=True)
+        payload = self.repository.get_release(project_id, release_id)
+        if payload is None:
+            raise KeyError("Выпуск не найден")
+        return ReleasePackage.model_validate_json(payload)
+
+    def download_release_artifact(self, project_id: str, release_id: str, artifact_id: str) -> tuple[ReleaseArtifact, bytes]:
+        package = self.get_release(project_id, release_id)
+        artifact = next((item for item in package.artifacts if item.id == artifact_id), None)
+        if artifact is None:
+            raise KeyError("Файл выпуска не найден")
+        content = self.repository.get_export(project_id, artifact_id)
+        if content is None:
+            raise KeyError("Файл выпуска не найден")
+        return artifact, content
 
     def download_export(self, project_id: str, artifact_id: str) -> bytes:
         self.get(project_id)

@@ -2020,6 +2020,206 @@
           }
         }
       }
+    },
+    "/api/projects/{project_id}/releases": {
+      "post": {
+        "summary": "Create Release",
+        "operationId": "create_release_api_projects__project_id__releases_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasePackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/releases/{release_id}": {
+      "get": {
+        "summary": "Get Release",
+        "operationId": "get_release_api_projects__project_id__releases__release_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "release_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Release Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleasePackage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/releases/{release_id}/artifacts/{artifact_id}": {
+      "get": {
+        "summary": "Download Release Artifact",
+        "operationId": "download_release_artifact_api_projects__project_id__releases__release_id__artifacts__artifact_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "release_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Release Id"
+            }
+          },
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4348,6 +4548,172 @@
           "zone_ids"
         ],
         "title": "RecommendationRequest"
+      },
+      "ReleaseArtifact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bundle",
+              "dxf",
+              "schedule",
+              "manifest",
+              "scene",
+              "dendroplan"
+            ],
+            "title": "Kind"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "download_url": {
+            "type": "string",
+            "title": "Download Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "kind",
+          "media_type",
+          "size",
+          "sha256",
+          "download_url"
+        ],
+        "title": "ReleaseArtifact"
+      },
+      "ReleaseCreateRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "final"
+            ],
+            "title": "Mode",
+            "default": "draft"
+          },
+          "scene_horizon": {
+            "type": "integer",
+            "enum": [
+              0,
+              5,
+              10,
+              20
+            ],
+            "title": "Scene Horizon",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "title": "ReleaseCreateRequest"
+      },
+      "ReleasePackage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Plan Version"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Geometry Version"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "final"
+            ],
+            "title": "Mode"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "rule_set_revision": {
+            "type": "string",
+            "title": "Rule Set Revision"
+          },
+          "species_catalog_revision": {
+            "type": "string",
+            "title": "Species Catalog Revision"
+          },
+          "scene_horizon": {
+            "type": "integer",
+            "enum": [
+              0,
+              5,
+              10,
+              20
+            ],
+            "title": "Scene Horizon"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseArtifact"
+            },
+            "type": "array",
+            "title": "Artifacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "plan_version",
+          "geometry_version",
+          "mode",
+          "status",
+          "created_at",
+          "rule_set_revision",
+          "species_catalog_revision",
+          "scene_horizon"
+        ],
+        "title": "ReleasePackage"
       },
       "RowPatternRequest": {
         "properties": {
