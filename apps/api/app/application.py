@@ -11,6 +11,9 @@ from shapely.ops import unary_union
 
 from app.contracts import (
     ExportArtifact,
+    EvidenceAssessment,
+    EffectEstimate,
+    FillPatternRequest,
     GeometrySnapshot,
     LayerMapping,
     OperationError,
@@ -37,6 +40,9 @@ from app.contracts import (
     ProjectOperation,
     ProjectStatus,
     ProjectSummary,
+    RecommendationExplanation,
+    RecommendationPreview,
+    RecommendationRequest,
     SourceFile,
     SpeciesRevision,
     SpeciesShortlistItem,
@@ -908,6 +914,164 @@ class ProjectApplication:
             accepted_count=len(accepted_operations),
             skipped=skipped,
             change_set=change_set,
+        )
+
+    def preview_recommendation(self, project_id: str, request: RecommendationRequest) -> RecommendationPreview:
+        """Build one confirmable proposal without pretending missing ecology data exists.
+
+        The recommendation is deliberately a read-only draft. Hard spatial
+        constraints use the normalized DXF and the current plan. Species and
+        growth envelopes come from the versioned catalogue. Environmental
+        effects remain explicitly unknown until the project contains the
+        corresponding sunlight, soil and hydrology evidence.
+        """
+        project = self.get(project_id)
+        if project.plan is None:
+            raise ValueError("План ещё не создан")
+        if project.plan.version != request.base_plan_version:
+            raise PlanVersionConflict(request.base_plan_version, project.plan.version)
+        requested_zone_ids = set(request.zone_ids)
+        known_zone_ids = {zone.id for zone in project.planting_zones}
+        if requested_zone_ids - known_zone_ids:
+            raise ValueError("Один из выбранных участков больше не существует")
+
+        profile = {
+            "balanced": {
+                "species": "betula-pendula@2026-08-28.1",
+                "spacing": 8.0,
+                "layout": "staggered",
+                "edge": 2.0,
+                "seed": 17,
+            },
+            "shade": {
+                "species": "tilia-cordata@2026-08-28.1",
+                "spacing": 11.0,
+                "layout": "staggered",
+                "edge": 3.0,
+                "seed": 23,
+            },
+            "continuity": {
+                "species": "sorbus-aucuparia@2026-08-28.1",
+                "spacing": 6.0,
+                "layout": "staggered",
+                "edge": 1.5,
+                "seed": 31,
+            },
+            "low_future_conflict": {
+                "species": "sorbus-aucuparia@2026-08-28.1",
+                "spacing": 9.0,
+                "layout": "regular",
+                "edge": 3.0,
+                "seed": 41,
+            },
+        }[request.profile]
+        revision = get_species(str(profile["species"]))
+        fill = FillPatternRequest(
+            base_plan_version=request.base_plan_version,
+            zone_ids=request.zone_ids,
+            layout=str(profile["layout"]),
+            spacing_m=float(profile["spacing"]),
+            edge_offset_m=float(profile["edge"]),
+            seed=int(profile["seed"]),
+            plant_kind="tree",
+            size_class="standard",
+        )
+        candidates = self.candidate_generator.generate(fill, project.planting_zones)
+        digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        recommendation_id = f"recommendation-{digest[:16]}"
+        operations = [
+            {
+                "type": "add",
+                "object": {
+                    "kind": "tree",
+                    "x": candidate.x,
+                    "y": candidate.y,
+                    "size_class": "standard",
+                    "species_revision_id": revision.id,
+                    "pattern_id": recommendation_id,
+                    "group_ids": [recommendation_id],
+                },
+            }
+            for candidate in candidates
+        ]
+
+        skipped: list[PatternSkippedCandidate] = []
+        accepted_operations: list[dict[str, object]] = []
+        if operations:
+            initial = self.preview_change_set(project_id, PlanChangeSetDraft(
+                base_plan_version=request.base_plan_version,
+                source="recommendation",
+                label="Проверка предложения",
+                operations=operations,
+            ))
+            for result in initial.candidate_results:
+                candidate = candidates[result.operation_index]
+                if result.status == "blocked":
+                    skipped.append(PatternSkippedCandidate(x=candidate.x, y=candidate.y, reason=result.reason))
+                elif len(accepted_operations) < request.max_sites:
+                    accepted_operations.append(operations[result.operation_index])
+                else:
+                    skipped.append(PatternSkippedCandidate(x=candidate.x, y=candidate.y, reason="Не включено из-за заданного лимита предложения"))
+
+        change_set = None
+        if accepted_operations:
+            change_set = self.preview_change_set(project_id, PlanChangeSetDraft(
+                base_plan_version=request.base_plan_version,
+                source="recommendation",
+                label=f"Предложение посадок: {len(accepted_operations)}",
+                operations=accepted_operations,
+            ))
+
+        mapped_physical_kinds = {
+            layer.mapped_kind.value
+            for layer in project.layers
+            if layer.mapped_kind.value not in {"ignore", "other"}
+        }
+        spatial_evidence = "verified" if project.geometry is not None and {"site_border", "building", "road"} <= mapped_physical_kinds else "partial"
+        evidence = EvidenceAssessment(
+            spatial_constraints=spatial_evidence,
+            species_catalog="verified",
+            note="Проверены только распознанные объекты DXF, рабочие области и текущие посадки. Необозначенные сети и условия участка требуют проверки специалистом.",
+        )
+        effects = [
+            EffectEstimate(effect="shade", status="unknown", reason="Нет инсоляции и модели затенения участка"),
+            EffectEstimate(effect="continuity", status="unknown", reason="Нет целевой схемы зелёного каркаса и связности"),
+            EffectEstimate(effect="stormwater", status="unknown", reason="Нет данных о почве, рельефе и водоотводе"),
+            EffectEstimate(effect="comfort", status="unknown", reason="Нет сценариев использования территории и потоков людей"),
+        ]
+        risks: list[str] = []
+        if "broad_crown" in revision.risk_flags:
+            risks.append("Широкая взрослая крона: проектный отступ проверяет дендролог")
+        if "shallow_roots" in revision.risk_flags:
+            risks.append("Поверхностная корневая система: нужны подтверждённые трассы сетей")
+        if revision.territory_policy == "specialist_review":
+            risks.append("Порода требует согласования специалистом для конкретной территории")
+        explanations = [
+            RecommendationExplanation(
+                object_id=object_.id,
+                rank=index,
+                hard_constraints=[
+                    "Внутри выбранной рабочей области",
+                    "Не пересекает распознанные запретные зоны DXF",
+                    "Соблюдает шаг относительно текущих и закреплённых посадок",
+                ],
+                biological_risks=risks,
+                effects=[item.model_copy(deep=True) for item in effects],
+            )
+            for index, object_ in enumerate(change_set.additions if change_set else [], start=1)
+        ]
+        return RecommendationPreview(
+            profile=request.profile,
+            evidence=evidence,
+            change_set=change_set,
+            explanations=explanations,
+            skipped=skipped,
+            data_gaps=[
+                "Инсоляция и тени",
+                "Почва и влажность",
+                "Рельеф и водоотвод",
+                "Подтверждённые инженерные сети",
+            ],
         )
 
     @staticmethod

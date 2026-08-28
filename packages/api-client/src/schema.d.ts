@@ -312,6 +312,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/plan/recommendations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Plan Recommendation */
+        post: operations["preview_plan_recommendation_api_projects__project_id__plan_recommendations_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/species/shortlist": {
         parameters: {
             query?: never;
@@ -553,6 +570,58 @@ export interface components {
             evidence: string;
             /** Updated At */
             updated_at?: string | null;
+        };
+        /** EffectEstimate */
+        EffectEstimate: {
+            /**
+             * Effect
+             * @enum {string}
+             */
+            effect: "shade" | "continuity" | "stormwater" | "comfort";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "estimated" | "unknown";
+            /** Value */
+            value?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Reason */
+            reason: string;
+        };
+        /** EvidenceAssessment */
+        EvidenceAssessment: {
+            /**
+             * Spatial Constraints
+             * @enum {string}
+             */
+            spatial_constraints: "verified" | "partial" | "missing";
+            /**
+             * Species Catalog
+             * @enum {string}
+             */
+            species_catalog: "verified" | "partial" | "missing";
+            /**
+             * Sunlight
+             * @default missing
+             * @enum {string}
+             */
+            sunlight: "verified" | "partial" | "missing";
+            /**
+             * Soil
+             * @default missing
+             * @enum {string}
+             */
+            soil: "verified" | "partial" | "missing";
+            /**
+             * Hydrology
+             * @default missing
+             * @enum {string}
+             */
+            hydrology: "verified" | "partial" | "missing";
+            /** Note */
+            note: string;
         };
         /** ExportArtifact */
         ExportArtifact: {
@@ -1179,6 +1248,53 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at: string;
+        };
+        /** RecommendationExplanation */
+        RecommendationExplanation: {
+            /** Object Id */
+            object_id: string;
+            /** Rank */
+            rank: number;
+            /** Hard Constraints */
+            hard_constraints?: string[];
+            /** Biological Risks */
+            biological_risks?: string[];
+            /** Effects */
+            effects?: components["schemas"]["EffectEstimate"][];
+        };
+        /** RecommendationPreview */
+        RecommendationPreview: {
+            /**
+             * Profile
+             * @enum {string}
+             */
+            profile: "balanced" | "shade" | "continuity" | "low_future_conflict";
+            evidence: components["schemas"]["EvidenceAssessment"];
+            change_set?: components["schemas"]["ChangeSetPreview"] | null;
+            /** Explanations */
+            explanations?: components["schemas"]["RecommendationExplanation"][];
+            /** Skipped */
+            skipped?: components["schemas"]["PatternSkippedCandidate"][];
+            /** Data Gaps */
+            data_gaps?: string[];
+        };
+        /** RecommendationRequest */
+        RecommendationRequest: {
+            /** Base Plan Version */
+            base_plan_version: number;
+            /** Zone Ids */
+            zone_ids: string[];
+            /**
+             * Profile
+             * @default balanced
+             * @enum {string}
+             */
+            profile: "balanced" | "shade" | "continuity" | "low_future_conflict";
+            /**
+             * Max Sites
+             * @default 80
+             */
+            max_sites: number;
         };
         /** RowPatternRequest */
         RowPatternRequest: {
@@ -2073,6 +2189,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PatternPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_plan_recommendation_api_projects__project_id__plan_recommendations_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecommendationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationPreview"];
                 };
             };
             /** @description Validation Error */

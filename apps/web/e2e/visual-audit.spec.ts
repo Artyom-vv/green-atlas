@@ -572,6 +572,35 @@ test('fill tool creates many planting sites across the selected area as one revi
   }).toBe(beforeProject.plan.objects.length);
 });
 
+test('one explainable recommendation becomes one confirmed revision without reloading the DXF', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const before = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const beforePlan = (await before.json() as { plan: { version: number; objects: unknown[] } }).plan;
+
+  await page.getByRole('button', { name: 'Предложить посадки' }).click();
+  await expect(page.getByText('Один проверяемый вариант')).toBeVisible();
+  await page.getByLabel('Приоритет').selectOption('low_future_conflict');
+  await page.getByRole('button', { name: 'Показать', exact: true }).click();
+  await expect(page.getByText('Предложение готово')).toBeVisible();
+  await expect(page.getByText('Чего пока не знаем')).toBeVisible();
+  await expect(page.getByText(/Инсоляция и тени/)).toBeVisible();
+
+  let viewportRequests = 0;
+  page.on('request', (request) => { if (request.url().includes('/map-features?')) viewportRequests += 1; });
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByText('Предложение готово')).toHaveCount(0);
+  await page.waitForTimeout(180);
+  expect(viewportRequests).toBe(0);
+
+  const after = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const afterPlan = (await after.json() as { plan: { version: number; objects: unknown[] } }).plan;
+  expect(afterPlan.version).toBe(beforePlan.version + 1);
+  expect(afterPlan.objects.length).toBeGreaterThan(beforePlan.objects.length);
+  await expect(page.getByRole('button', { name: /Отменить: Предложение посадок/ })).toBeEnabled();
+});
+
 test('row tool turns one drawn axis into a confirmed planting group', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
@@ -687,7 +716,7 @@ test('opening another workspace directly drops the prior map selection', async (
   await page.mouse.dblclick(secondBox!.x + secondBox!.width * 0.35, secondBox!.y + secondBox!.height * 0.65);
   await expect(page.getByText('Ручной участок 1')).toBeVisible();
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
-  await expect(page.getByText('Поставьте или выберите посадку')).toBeVisible();
+  await expect(page.getByText('Начните с предложения')).toBeVisible();
 });
 
 test('a repeated map click becomes one persisted planting action', async ({ page }) => {

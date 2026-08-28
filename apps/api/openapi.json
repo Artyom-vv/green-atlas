@@ -1271,6 +1271,71 @@
         }
       }
     },
+    "/api/projects/{project_id}/plan/recommendations/preview": {
+      "post": {
+        "summary": "Preview Plan Recommendation",
+        "operationId": "preview_plan_recommendation_api_projects__project_id__plan_recommendations_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/species/shortlist": {
       "post": {
         "summary": "Shortlist Project Species",
@@ -2058,6 +2123,124 @@
         },
         "type": "object",
         "title": "CoordinateReference"
+      },
+      "EffectEstimate": {
+        "properties": {
+          "effect": {
+            "type": "string",
+            "enum": [
+              "shade",
+              "continuity",
+              "stormwater",
+              "comfort"
+            ],
+            "title": "Effect"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "estimated",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "effect",
+          "status",
+          "reason"
+        ],
+        "title": "EffectEstimate"
+      },
+      "EvidenceAssessment": {
+        "properties": {
+          "spatial_constraints": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "partial",
+              "missing"
+            ],
+            "title": "Spatial Constraints"
+          },
+          "species_catalog": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "partial",
+              "missing"
+            ],
+            "title": "Species Catalog"
+          },
+          "sunlight": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "partial",
+              "missing"
+            ],
+            "title": "Sunlight",
+            "default": "missing"
+          },
+          "soil": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "partial",
+              "missing"
+            ],
+            "title": "Soil",
+            "default": "missing"
+          },
+          "hydrology": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "partial",
+              "missing"
+            ],
+            "title": "Hydrology",
+            "default": "missing"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "spatial_constraints",
+          "species_catalog",
+          "note"
+        ],
+        "title": "EvidenceAssessment"
       },
       "ExportArtifact": {
         "properties": {
@@ -3743,6 +3926,142 @@
           "updated_at"
         ],
         "title": "ProjectSummary"
+      },
+      "RecommendationExplanation": {
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "title": "Object Id"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Rank"
+          },
+          "hard_constraints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hard Constraints"
+          },
+          "biological_risks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Biological Risks"
+          },
+          "effects": {
+            "items": {
+              "$ref": "#/components/schemas/EffectEstimate"
+            },
+            "type": "array",
+            "title": "Effects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "object_id",
+          "rank"
+        ],
+        "title": "RecommendationExplanation"
+      },
+      "RecommendationPreview": {
+        "properties": {
+          "profile": {
+            "type": "string",
+            "enum": [
+              "balanced",
+              "shade",
+              "continuity",
+              "low_future_conflict"
+            ],
+            "title": "Profile"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceAssessment"
+          },
+          "change_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSetPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "explanations": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationExplanation"
+            },
+            "type": "array",
+            "title": "Explanations"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/PatternSkippedCandidate"
+            },
+            "type": "array",
+            "title": "Skipped"
+          },
+          "data_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Gaps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile",
+          "evidence"
+        ],
+        "title": "RecommendationPreview"
+      },
+      "RecommendationRequest": {
+        "properties": {
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Zone Ids"
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "balanced",
+              "shade",
+              "continuity",
+              "low_future_conflict"
+            ],
+            "title": "Profile",
+            "default": "balanced"
+          },
+          "max_sites": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Max Sites",
+            "default": 80
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_plan_version",
+          "zone_ids"
+        ],
+        "title": "RecommendationRequest"
       },
       "RowPatternRequest": {
         "properties": {

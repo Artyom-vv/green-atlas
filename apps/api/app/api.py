@@ -30,6 +30,8 @@ from app.contracts import (
     ProjectCreate,
     ProjectOperation,
     ProjectSummary,
+    RecommendationPreview,
+    RecommendationRequest,
     SpeciesRevision,
     SpeciesShortlistItem,
     SpeciesShortlistRequest,
@@ -298,6 +300,14 @@ def apply_plan_change_set(project_id: str, payload: PlanChangeSetApplyRequest) -
 def preview_plan_pattern(project_id: str, payload: PatternPreviewRequest) -> PatternPreview:
     try:
         return application.preview_pattern(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/plan/recommendations/preview", response_model=RecommendationPreview)
+def preview_plan_recommendation(project_id: str, payload: RecommendationRequest) -> RecommendationPreview:
+    try:
+        return application.preview_recommendation(project_id, payload)
     except Exception as error:
         raise handle(error) from error
 

@@ -1015,3 +1015,67 @@ def test_species_kind_mismatch_is_blocked_without_changing_the_plan() -> None:
     assert preview.json()["can_apply"] is False
     assert "не соответствует" in preview.json()["candidate_results"][0]["reason"]
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
+
+
+def test_recommendation_is_one_explainable_atomic_draft_and_preserves_locked_sites() -> None:
+    project_id = prepare_project("Объяснимое предложение")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 52], [12, 52]])])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
+    locked = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
+    locked_id = locked["objects"][0]["id"]
+    locked_plan = client.patch(
+        f"/api/projects/{project_id}/plan/objects/{locked_id}",
+        json={"locked": True},
+    ).json()
+
+    response = client.post(f"/api/projects/{project_id}/plan/recommendations/preview", json={
+        "base_plan_version": locked_plan["version"],
+        "zone_ids": ["work"],
+        "profile": "balanced",
+        "max_sites": 12,
+    })
+
+    assert response.status_code == 200, response.json()
+    proposal = response.json()
+    preview = proposal["change_set"]
+    assert preview["source"] == "recommendation"
+    assert 1 <= len(preview["additions"]) <= 12
+    assert len(proposal["explanations"]) == len(preview["additions"])
+    assert proposal["evidence"]["sunlight"] == "missing"
+    assert proposal["evidence"]["soil"] == "missing"
+    assert all(
+        effect["status"] == "unknown" and effect["value"] is None
+        for explanation in proposal["explanations"]
+        for effect in explanation["effects"]
+    )
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["version"] == locked_plan["version"]
+
+    applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
+        "preview_id": preview["id"],
+        "digest": preview["digest"],
+        "base_plan_version": preview["base_plan_version"],
+    })
+    assert applied.status_code == 200, applied.json()
+    assert applied.json()["plan_version"] == locked_plan["version"] + 1
+    preserved = next(item for item in applied.json()["plan"]["objects"] if item["id"] == locked_id)
+    assert preserved["locked"] is True
+    undone = client.post(f"/api/projects/{project_id}/plan/history/undo").json()
+    assert [item["id"] for item in undone["plan"]["objects"]] == [locked_id]
+
+
+def test_recommendation_is_deterministic_and_stale_versions_are_rejected() -> None:
+    project_id = prepare_project("Повторяемое предложение")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 52], [12, 52]])])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    payload = {"base_plan_version": version, "zone_ids": ["work"], "profile": "continuity", "max_sites": 20}
+
+    first = client.post(f"/api/projects/{project_id}/plan/recommendations/preview", json=payload)
+    second = client.post(f"/api/projects/{project_id}/plan/recommendations/preview", json=payload)
+    assert first.status_code == second.status_code == 200
+    assert [(item["x"], item["y"]) for item in first.json()["change_set"]["additions"]] == [
+        (item["x"], item["y"]) for item in second.json()["change_set"]["additions"]
+    ]
+    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
+    stale = client.post(f"/api/projects/{project_id}/plan/recommendations/preview", json=payload)
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "PLAN_VERSION_CONFLICT"

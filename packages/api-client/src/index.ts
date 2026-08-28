@@ -21,6 +21,13 @@ export type PatternSkippedCandidate = components['schemas']['PatternSkippedCandi
 export type PatternPreview = Omit<components['schemas']['PatternPreview'], 'change_set' | 'skipped'> & { skipped: PatternSkippedCandidate[]; change_set?: ChangeSetPreview | null };
 export type SpeciesRevision = components['schemas']['SpeciesRevision'];
 export type SpeciesShortlistItem = components['schemas']['SpeciesShortlistItem'];
+export type RecommendationRequest = components['schemas']['RecommendationRequest'];
+export type RecommendationExplanation = components['schemas']['RecommendationExplanation'];
+export type RecommendationPreview = Omit<components['schemas']['RecommendationPreview'], 'change_set' | 'explanations' | 'skipped'> & {
+  change_set?: ChangeSetPreview | null;
+  explanations: RecommendationExplanation[];
+  skipped: PatternSkippedCandidate[];
+};
 export type ValidationIssue = components['schemas']['ValidationIssue'];
 export type PlacementCheck = components['schemas']['PlacementCheck'];
 export type ExportArtifact = components['schemas']['ExportArtifact'];
@@ -57,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // geometry, but it is still a read-only calculation. Treating pointer
   // hover as a project mutation makes a delayed preview compete with an
   // actual placement and can surface a false version conflict.
-  const nonStateMutation = /\/operations(?:\/|$)/.test(path) || /\/plan\/(?:placement-check|change-sets\/preview|patterns\/preview)(?:\?|$)/.test(path) || /\/species\/shortlist(?:\?|$)/.test(path);
+  const nonStateMutation = /\/operations(?:\/|$)/.test(path) || /\/plan\/(?:placement-check|change-sets\/preview|patterns\/preview|recommendations\/preview)(?:\?|$)/.test(path) || /\/species\/shortlist(?:\?|$)/.test(path);
   const headers = new Headers(init?.headers);
   if (projectId && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !nonStateMutation && !headers.has('If-Match')) {
     const version = projectVersions.get(projectId);
@@ -113,6 +120,7 @@ export const api = {
   previewPlanChanges: (projectId: string, draft: PlanChangeSetDraft) => request<ChangeSetPreview>(`/api/projects/${projectId}/plan/change-sets/preview`, json(draft)),
   applyPlanChanges: (projectId: string, preview: ChangeSetPreview) => request<PlanMutationResult>(`/api/projects/${projectId}/plan/change-sets/apply`, json({ preview_id: preview.id, digest: preview.digest, base_plan_version: preview.base_plan_version } satisfies PlanChangeSetApplyRequest)),
   previewPlanPattern: (projectId: string, pattern: PatternPreviewRequest, signal?: AbortSignal) => request<PatternPreview>(`/api/projects/${projectId}/plan/patterns/preview`, { ...json(pattern), signal }),
+  previewRecommendation: (projectId: string, recommendation: RecommendationRequest, signal?: AbortSignal) => request<RecommendationPreview>(`/api/projects/${projectId}/plan/recommendations/preview`, { ...json(recommendation), signal }),
   shortlistSpecies: (projectId: string, objectIds: string[]) => request<SpeciesShortlistItem[]>(`/api/projects/${projectId}/species/shortlist`, json({ object_ids: objectIds })),
   updatePlanObject: (projectId: string, objectId: string, object: { x?: number; y?: number; radius?: number }) => request<Plan>(`/api/projects/${projectId}/plan/objects/${objectId}`, { ...json(object), method: 'PATCH' }),
   deletePlanObjects: (projectId: string, ids: string[]) => request<Plan>(`/api/projects/${projectId}/plan/objects/delete`, json({ ids })),

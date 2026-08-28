@@ -23,6 +23,7 @@ describe('assisted planning product surface', () => {
       'listSpecies',
       'previewPlanChanges',
       'previewPlanPattern',
+      'previewRecommendation',
       'redoPlanChange',
       'saveMappings',
       'savePlantingZones',

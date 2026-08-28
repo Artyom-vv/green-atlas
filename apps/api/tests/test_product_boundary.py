@@ -25,6 +25,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects/{project_id}/plan/change-sets/preview",
         "/api/projects/{project_id}/plan/change-sets/apply",
         "/api/projects/{project_id}/plan/patterns/preview",
+        "/api/projects/{project_id}/plan/recommendations/preview",
         "/api/projects/{project_id}/species/shortlist",
         "/api/projects/{project_id}/plan/objects",
         "/api/projects/{project_id}/plan/objects/{object_id}",
@@ -39,7 +40,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
 
 def test_generated_client_exposes_no_retired_product_surface() -> None:
     client = (Path(__file__).parents[3] / "packages" / "api-client" / "src" / "index.ts").read_text(encoding="utf-8").lower()
-    for retired in ("scenario", "portfolio", "pareto", "suitability", "recommendation", "saveparameters", "saveworkarea", "previewcommand", "calculatezones"):
+    for retired in ("scenario", "portfolio", "pareto", "suitability", "saveparameters", "saveworkarea", "previewcommand", "calculatezones"):
         assert retired not in client
 
 
