@@ -288,6 +288,10 @@ test('keyboard focus covers the manual editor workflow', async ({ page }) => {
   await selectTool.focus();
   await expect(selectTool).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('button', { name: 'Выбрать рамкой' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('button', { name: 'Выбрать произвольным контуром' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('button', { name: 'Добавить дерево' })).toBeFocused();
   const map = page.getByRole('region', { name: 'Карта проекта озеленения' });
   await map.focus();
@@ -485,6 +489,58 @@ test('map selection supports group deletion and undo without an object table', a
   await expect(page.getByText('3 посадок')).toBeVisible();
 });
 
+test('box selection moves a group through one confirmed change set', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const map = page.getByLabel('Карта проекта озеленения');
+  await page.getByLabel('Показать посадки').click();
+  await page.waitForTimeout(250);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
+  const padding = 72;
+  const resolution = Math.max(
+    (planExtent[2] - planExtent[0]) / (box!.width - padding * 2),
+    (planExtent[3] - planExtent[1]) / (box!.height - padding * 2),
+  );
+  const point = (x: number, y: number) => ({
+    x: box!.x + box!.width / 2 + (x - (planExtent[0] + planExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (y - (planExtent[1] + planExtent[3]) / 2) / resolution,
+  });
+  const first = point(20, 20);
+  const second = point(40, 20);
+  await page.getByRole('button', { name: 'Выбрать рамкой' }).click();
+  await page.mouse.move(first.x - 18, first.y + 18);
+  await page.mouse.down();
+  await page.mouse.move(second.x + 18, second.y - 18, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 объектов')).toBeVisible();
+  await page.getByRole('button', { name: 'Переместить' }).click();
+  const destination = point(30, 25);
+  await page.mouse.click(destination.x, destination.y);
+  await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
+  await expect(page.getByText('Пунктир на карте показывает результат до сохранения.')).toBeVisible();
+
+  let viewportRequests = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/map-features?')) viewportRequests += 1;
+  });
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByText('Перемещение группы (2)')).toHaveCount(0);
+  await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
+  await page.waitForTimeout(150);
+  expect(viewportRequests).toBe(0);
+
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const project = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const positions = (await project.json() as { plan: { objects: Array<{ x: number; y: number }> } }).plan.objects
+    .map((object) => [Number(object.x.toFixed(3)), Number(object.y.toFixed(3))])
+    .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+  expect(positions).toEqual([[20, 25], [20, 30], [40, 25]]);
+});
+
 test('opening another workspace directly drops the prior map selection', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
@@ -553,7 +609,8 @@ test('a repeated map click becomes one persisted planting action', async ({ page
     x: box!.x + box!.width / 2 + (30 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
     y: box!.y + box!.height / 2 - (27 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
   };
-  await page.getByRole('button', { name: 'Добавить дерево' }).click();
+  const addTree = page.getByRole('button', { name: 'Добавить дерево' });
+  await addTree.click();
   await page.mouse.move(plantingPoint.x, plantingPoint.y);
   await expect(page.getByText('Позиция проходит текущую проверку')).toBeVisible();
 
@@ -576,6 +633,7 @@ test('a repeated map click becomes one persisted planting action', async ({ page
 
   await expect.poll(() => persistedRequests).toBe(1);
   await expect(page.getByText('4 посадок')).toBeVisible();
+  await expect(addTree).toHaveAttribute('aria-pressed', 'true');
   // A placement changes only the dedicated plan overlay. Fetching and
   // decoding the current DXF viewport here would make dense maps stutter.
   await page.waitForTimeout(180);

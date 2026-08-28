@@ -161,6 +161,9 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .map-canvas { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #fafbfc; }
 .map-viewport { position: absolute; inset: 0; }
 .map-viewport--draw_area { cursor: crosshair; }
+.map-viewport--select_box, .map-viewport--select_lasso { cursor: crosshair; }
+.map-viewport--move, .map-viewport--copy { cursor: move; }
+.map-viewport .ol-dragbox { border: 1.5px dashed var(--color-blue-600); background: rgba(34,92,255,.06); }
 .map-viewport .ol-viewport { background-color: #fafbfc; background-image: linear-gradient(rgba(205,212,220,.24) 1px, transparent 1px), linear-gradient(90deg, rgba(205,212,220,.24) 1px, transparent 1px); background-size: 24px 24px; }
 .map-viewport .ol-zoom { display: none; }
 .map-edit-tools { position: absolute; z-index: 8; top: 10px; left: 10px; max-width: calc(100% - var(--map-safe-right, 20px)); padding: 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
@@ -257,6 +260,13 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .is-warning { color: var(--color-warning) !important; }
 .rail-panel__content { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow: auto; }
 .multi-selection-inspector > section p { margin: 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.group-selection-summary dl, .change-set-review__summary dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; margin: 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.group-selection-summary dt, .group-selection-summary dd, .change-set-review__summary dt, .change-set-review__summary dd { margin: 0; }
+.group-selection-summary dd, .change-set-review__summary dd { color: var(--color-neutral-800); font-family: var(--font-mono); }
+.group-selection-actions { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px !important; }
+.group-selection-actions .ui-button { min-width: 0; justify-content: flex-start; }
+.change-set-review__summary p { max-width: 30ch; margin: 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.change-set-review > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
 .export-panel .rail-panel__content { padding: 0; }
 .export-artifact-section { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; border-bottom: 1px solid var(--color-neutral-200); }
 .export-artifact-section header { display: grid; gap: 3px; }

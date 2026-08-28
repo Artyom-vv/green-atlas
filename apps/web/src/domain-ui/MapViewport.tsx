@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef } from 'react';
-import type { PlanObject, PlantingZoneAssignment } from '@green/api-client';
+import type { ChangeSetPreview, PlanObject, PlantingZoneAssignment } from '@green/api-client';
 import Feature from 'ol/Feature';
 import GeoJSON from 'ol/format/GeoJSON';
 import Map from 'ol/Map';
@@ -13,15 +13,17 @@ import Polygon from 'ol/geom/Polygon';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import Point from 'ol/geom/Point';
 import Draw from 'ol/interaction/Draw';
+import DragBox, { type DragBoxEvent } from 'ol/interaction/DragBox';
 import MouseWheelZoom from 'ol/interaction/MouseWheelZoom';
 import Snap from 'ol/interaction/Snap';
 import { defaults as defaultInteractions } from 'ol/interaction/defaults';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text as TextStyle } from 'ol/style';
 import type { FeatureLike } from 'ol/Feature';
 import type { Extent } from 'ol/extent';
-import { createEmpty, extend } from 'ol/extent';
+import { containsCoordinate, createEmpty, extend } from 'ol/extent';
 import { BoundedLruCache } from './BoundedLruCache';
 import type { MapTool } from './MapToolbar';
+import type { SelectionMode } from './selection';
 import { paddedMapExtent } from './mapExtent';
 import { isPrimarySingleBlockComponent, sourceBlockCaption } from './sourceLabels';
 
@@ -47,6 +49,17 @@ const drawStyle = new Style({
 
 const snapGuideStyle = new Style({
   image: new CircleStyle({ radius: 6, fill: new Fill({ color: 'rgba(255,255,255,.94)' }), stroke: new Stroke({ color: '#225CFF', width: 2 }) }),
+});
+
+const selectionDraftStyle = new Style({
+  fill: new Fill({ color: 'rgba(34,92,255,.06)' }),
+  stroke: new Stroke({ color: '#225CFF', width: 1.5, lineDash: [6, 4] }),
+});
+
+const changePreviewStyle = new Style({
+  fill: new Fill({ color: 'rgba(34,92,255,.10)' }),
+  stroke: new Stroke({ color: '#225CFF', width: 1.75, lineDash: [6, 4] }),
+  image: new CircleStyle({ radius: 4, fill: new Fill({ color: '#225CFF' }), stroke: new Stroke({ color: '#FFFFFF', width: 1.5 }) }),
 });
 
 const placementPreviewStyles = new globalThis.Map<string, Style>();
@@ -255,6 +268,35 @@ function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string> | unde
   return styles;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- exported for deterministic map-diff tests.
+export function syncPlanFeatures(source: VectorSource, objects: PlanObject[]): void {
+  const incoming = new Set(objects.flatMap((object) => object.id ? [object.id] : []));
+  for (const feature of source.getFeatures()) {
+    const id = String(feature.getId() ?? '');
+    if (!incoming.has(id)) source.removeFeature(feature);
+  }
+  for (const object of objects) {
+    if (!object.id) continue;
+    const radius = object.layout_radius_m ?? object.radius;
+    let feature = source.getFeatureById(object.id) as Feature | null;
+    if (!feature) {
+      feature = new Feature();
+      feature.setId(object.id);
+      source.addFeature(feature);
+    }
+    const geometry = feature.getGeometry();
+    if (!(geometry instanceof Circle) || geometry.getRadius() !== radius || geometry.getCenter()[0] !== object.x || geometry.getCenter()[1] !== object.y) {
+      feature.setGeometry(new Circle([object.x, object.y], radius));
+    }
+    const marker = feature.get('markerGeometry');
+    if (!(marker instanceof Point) || marker.getCoordinates()[0] !== object.x || marker.getCoordinates()[1] !== object.y) {
+      feature.set('markerGeometry', new Point([object.x, object.y]), true);
+    }
+    feature.setProperties({ kind: object.kind, status: object.status, objectId: object.id, plantingZoneId: object.planting_zone_id }, true);
+    feature.changed();
+  }
+}
+
 export type MapViewportHandle = {
   fit: () => void;
   fitLayer: (sourceLayer: string) => void;
@@ -266,7 +308,14 @@ export type MapViewportHandle = {
 
 export type PlacementPreview = { coordinate: [number, number]; radius: number; status: 'allowed' | 'blocked' | 'unknown' };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; tool: MapTool; onSelect: (id?: string, additive?: boolean) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onMapArea?: (target: MapAreaTarget) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, tool, onSelect, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
+const selectionMode = (event?: Event): SelectionMode => {
+  const input = event as MouseEvent | KeyboardEvent | undefined;
+  if (input?.altKey || input?.ctrlKey || input?.metaKey) return 'subtract';
+  if (input?.shiftKey) return 'add';
+  return 'replace';
+};
+
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onMapArea?: (target: MapAreaTarget) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -282,12 +331,15 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const planSourceRef = useRef(new VectorSource());
   const areaDrawingSourceRef = useRef(new VectorSource());
   const placementPreviewSourceRef = useRef(new VectorSource());
+  const changePreviewSourceRef = useRef(new VectorSource());
+  const selectionDraftSourceRef = useRef(new VectorSource());
   const draftPlantingZoneSourceRef = useRef(new VectorSource());
   const plantingZoneFocusSourceRef = useRef(new VectorSource());
   const mapHoverSourceRef = useRef(new VectorSource());
   const snapTargetSourceRef = useRef(new VectorSource());
   const snapGuideSourceRef = useRef(new VectorSource());
   const drawRef = useRef<Draw | null>(null);
+  const selectionInteractionRef = useRef<Draw | DragBox | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
   const hoveredMapFeatureRef = useRef<Feature | null>(null);
   const hoveredMapGeometryKeyRef = useRef<string | undefined>(undefined);
@@ -296,13 +348,14 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const pendingPlanFitRef = useRef(false);
   const planFitFrameRef = useRef<number | undefined>(undefined);
   const toolRef = useRef(tool);
-  const callbackRef = useRef({ onSelect, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange });
+  const selectionModifierRef = useRef<SelectionMode>('replace');
+  const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange });
 
   selectedRef.current = new Set(selectedIds);
   hiddenLayerNamesRef.current = new Set(hiddenLayerNames ?? []);
   toolRef.current = tool;
   initialExtentRef.current = initialExtent;
-  callbackRef.current = { onSelect, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange };
+  callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onMapArea, onPointerCoordinate, onMapHover, onExtentChange };
 
   const rebuildSnapTargets = () => {
     const target = snapTargetSourceRef.current;
@@ -433,7 +486,9 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const mapHoverLayer = new VectorLayer({ source: mapHoverSourceRef.current, style: mapHoverStyle, zIndex: 6, updateWhileAnimating: true, updateWhileInteracting: true });
     const areaDrawingLayer = new VectorLayer({ source: areaDrawingSourceRef.current, style: drawStyle, zIndex: 7 });
     const snapGuideLayer = new VectorLayer({ source: snapGuideSourceRef.current, style: snapGuideStyle, zIndex: 8 });
-    const placementPreviewLayer = new VectorLayer({ source: placementPreviewSourceRef.current, style: placementPreviewStyle, zIndex: 9, renderBuffer: 80, updateWhileAnimating: true, updateWhileInteracting: true });
+    const changePreviewLayer = new VectorLayer({ source: changePreviewSourceRef.current, style: changePreviewStyle, zIndex: 9, renderBuffer: 120, updateWhileAnimating: true, updateWhileInteracting: true });
+    const selectionDraftLayer = new VectorLayer({ source: selectionDraftSourceRef.current, style: selectionDraftStyle, zIndex: 10, updateWhileInteracting: true });
+    const placementPreviewLayer = new VectorLayer({ source: placementPreviewSourceRef.current, style: placementPreviewStyle, zIndex: 11, renderBuffer: 80, updateWhileAnimating: true, updateWhileInteracting: true });
     const view = new View({ projection, center: [0, 0], resolution: 1, showFullExtent: true });
     planLayerRef.current = planLayer;
     const mouseWheelZoom = new MouseWheelZoom({
@@ -444,7 +499,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     });
     const map = new Map({
       target,
-      layers: [zoneLayer, baseLayer, constraintLayer, planLayer, draftPlantingZoneLayer, plantingZoneFocusLayer, mapHoverLayer, areaDrawingLayer, snapGuideLayer, placementPreviewLayer],
+      layers: [zoneLayer, baseLayer, constraintLayer, planLayer, draftPlantingZoneLayer, plantingZoneFocusLayer, mapHoverLayer, areaDrawingLayer, snapGuideLayer, changePreviewLayer, selectionDraftLayer, placementPreviewLayer],
       controls: defaultControls({ zoom: true, rotate: false, attribution: false }),
       interactions: defaultInteractions({ mouseWheelZoom: false }).extend([mouseWheelZoom]),
       view,
@@ -488,13 +543,13 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     observer.observe(target);
     map.on('singleclick', (event) => {
       const activeTool = toolRef.current;
-      if (activeTool === 'add_tree' || activeTool === 'add_shrub' || activeTool === 'move') {
+      if (activeTool === 'add_tree' || activeTool === 'add_shrub' || activeTool === 'move' || activeTool === 'copy') {
         callbackRef.current.onCoordinate([event.coordinate[0], event.coordinate[1]]);
         return;
       }
-      const feature = map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate, { layerFilter: (layer) => layer === planLayer });
+      const feature = activeTool === 'select' ? map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate, { layerFilter: (layer) => layer === planLayer }) : undefined;
       if (feature) {
-        callbackRef.current.onSelect(String(feature.get('objectId')), Boolean((event.originalEvent as MouseEvent).shiftKey));
+        callbackRef.current.onSelect(String(feature.get('objectId')), selectionMode(event.originalEvent));
         return;
       }
       if (activeTool === 'select') {
@@ -520,7 +575,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
           }
         }
       }
-      callbackRef.current.onSelect(undefined, false);
+      if (activeTool === 'select') callbackRef.current.onSelect(undefined, 'replace');
     });
     map.on('pointermove', (event) => {
       if (event.dragging) {
@@ -602,6 +657,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       pendingPlanFitRef.current = false;
       planFitFrameRef.current = undefined;
       drawRef.current = null;
+      selectionInteractionRef.current = null;
       snapInteractionRef.current = null;
       mapRef.current = null;
     };
@@ -662,6 +718,58 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       window.removeEventListener('keydown', onKeyDown);
       map.removeInteraction(draw);
       if (drawRef.current === draw) drawRef.current = null;
+    };
+  }, [tool]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const target = targetRef.current;
+    const draftSource = selectionDraftSourceRef.current;
+    if (!map || !target) return;
+    if (selectionInteractionRef.current) map.removeInteraction(selectionInteractionRef.current);
+    selectionInteractionRef.current = null;
+    draftSource.clear();
+    if (tool !== 'select_box' && tool !== 'select_lasso') return;
+
+    const idsInside = (contains: (coordinate: number[]) => boolean) => planSourceRef.current.getFeatures()
+      .filter((feature) => {
+        const marker = feature.get('markerGeometry');
+        return marker instanceof Point && contains(marker.getCoordinates());
+      })
+      .map((feature) => String(feature.get('objectId')));
+    const rememberModifier = (event: PointerEvent) => {
+      selectionModifierRef.current = selectionMode(event);
+    };
+    target.addEventListener('pointerdown', rememberModifier, true);
+
+    if (tool === 'select_box') {
+      const dragBox = new DragBox({ condition: () => true, minArea: 8 });
+      dragBox.on('boxend', (event: DragBoxEvent) => {
+        const extent = dragBox.getGeometry().getExtent();
+        const mode = selectionMode(event.mapBrowserEvent.originalEvent) ?? selectionModifierRef.current;
+        callbackRef.current.onSelectMany?.(idsInside((coordinate) => containsCoordinate(extent, coordinate)), mode);
+      });
+      map.addInteraction(dragBox);
+      selectionInteractionRef.current = dragBox;
+    } else {
+      const lasso = new Draw({ source: draftSource, type: 'Polygon', freehand: true, stopClick: true, style: selectionDraftStyle });
+      lasso.on('drawend', (event) => {
+        const geometry = event.feature.getGeometry();
+        if (geometry instanceof Polygon) {
+          callbackRef.current.onSelectMany?.(idsInside((coordinate) => geometry.intersectsCoordinate(coordinate)), selectionModifierRef.current);
+        }
+        requestAnimationFrame(() => draftSource.clear());
+      });
+      map.addInteraction(lasso);
+      selectionInteractionRef.current = lasso;
+    }
+
+    return () => {
+      target.removeEventListener('pointerdown', rememberModifier, true);
+      const interaction = selectionInteractionRef.current;
+      if (interaction) map.removeInteraction(interaction);
+      selectionInteractionRef.current = null;
+      draftSource.clear();
     };
   }, [tool]);
 
@@ -779,16 +887,29 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
 
   useEffect(() => {
     const source = planSourceRef.current;
-    source.clear();
-    source.addFeatures(objects.map((object) => {
-      const feature = new Feature({ geometry: new Circle([object.x, object.y], object.radius), markerGeometry: new Point([object.x, object.y]), kind: object.kind, status: object.status, objectId: object.id, plantingZoneId: object.planting_zone_id });
-      feature.setId(object.id);
-      return feature;
-    }));
+    syncPlanFeatures(source, objects);
     rebuildSnapTargets();
     planLayerRef.current?.changed();
     if (pendingPlanFitRef.current && objects.length) schedulePlanFit();
   }, [objects, schedulePlanFit]);
+
+  useEffect(() => {
+    const source = changePreviewSourceRef.current;
+    source.clear();
+    if (!changePreview) return;
+    const objects = [...(changePreview.additions ?? []), ...(changePreview.updates ?? [])];
+    source.addFeatures(objects.flatMap((object) => {
+      if (!object.id) return [];
+      const radius = object.layout_radius_m ?? object.radius;
+      const feature = new Feature({
+        geometry: new Circle([object.x, object.y], radius),
+        markerGeometry: new Point([object.x, object.y]),
+        objectId: object.id,
+      });
+      feature.setId(`change-preview-${object.id}`);
+      return [feature];
+    }));
+  }, [changePreview]);
 
   useEffect(() => {
     const source = placementPreviewSourceRef.current;
