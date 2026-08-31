@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -341,7 +342,8 @@ class ProjectApplication:
         # in-process read/create gap and keeps a double click idempotent even
         # with the lightweight in-memory adapter used in tests.
         with self._operation_commit_lock:
-            if self.get(project_id).plan is not None:
+            project = self.get(project_id)
+            if project.plan is not None and project.map_ready:
                 raise ValueError("Нельзя пересчитывать карту после открытия ручной схемы. Создайте новый проект.")
             return self._start_operation(project_id, OperationKind.CALCULATE_GEOMETRY)
 
@@ -358,12 +360,18 @@ class ProjectApplication:
             # detached, but share immutable source payload until the engine
             # takes the one copy it actually needs.
             project = self.get(operation.project_id).model_copy(deep=False)
+            release_source_after = project.plan is not None
             geometry = self.geometry.calculate(project, lambda update: self._report_adapter_progress(operation_id, update, 2, 96))
             with self._operation_commit_lock:
                 self._raise_if_cancelled(operation_id)
                 self._update_operation(operation_id, status=OperationStatus.RUNNING, progress=99, stage="Фиксируем проверенную геометрию")
                 self._assign_geometry(project, geometry)
                 self._attach_planting_zone_features(project)
+                if project.plan is not None:
+                    self._refresh_plan(project, project.plan, increment_version=False)
+                    project.status = ProjectStatus.EDITING
+                if release_source_after:
+                    project.source_geometry = None
                 self.repository.save(project)
                 self._discard_spatial_indexes(project.id)
                 self._update_operation(operation_id, status=OperationStatus.COMPLETED, progress=100, stage="Карта подготовлена")
@@ -454,8 +462,6 @@ class ProjectApplication:
 
     def save_mappings(self, project_id: str, mappings: list[LayerMapping]) -> Project:
         project = self.get(project_id)
-        if project.plan is not None:
-            raise ValueError("Нельзя менять сопоставление слоёв после открытия ручной схемы. Создайте новый проект.")
         mapping_by_id = {item.layer_id: item for item in mappings}
         meaning_changed = False
         for layer in project.layers:
@@ -471,14 +477,24 @@ class ProjectApplication:
             # The calculated snapshot is a product of the previous mapping.
             # Retaining it after a building/road/etc. changes meaning would
             # let manual placement rely on no-longer-authoritative setbacks.
-            project.geometry = None
             project.map_ready = False
-            project.geometry_version += 1
-            project.planting_zones = []
             project.site_area_m2 = None
             project.planning_area_m2 = None
             project.allowed_area_m2 = None
-        if project.geometry is None:
+            if project.plan is not None and project.source_geometry is None:
+                if project.geometry is None:
+                    raise ValueError("Сохранённая карта недоступна для уточнения слоёв")
+                source_features = [
+                    deepcopy(feature)
+                    for feature in project.geometry.feature_collection.get("features", [])
+                    if feature.get("properties", {}).get("source_layer")
+                ]
+                project.source_geometry = GeometrySnapshot(feature_collection={"type": "FeatureCollection", "features": source_features})
+            project.geometry = None
+            project.geometry_version += 1
+            if project.plan is None:
+                project.planting_zones = []
+        if project.geometry is None and project.plan is None:
             project.status = ProjectStatus.MAPPED
         saved = self.repository.save(project)
         if meaning_changed:

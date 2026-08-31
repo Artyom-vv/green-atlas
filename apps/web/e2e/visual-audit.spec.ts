@@ -319,6 +319,25 @@ test('map navigation keeps the canvas live without auxiliary CAD modes', async (
   await expect(page.getByRole('button', { name: /Измерить/ })).toHaveCount(0);
 });
 
+test('map hover exposes the object stack below the working-area overlay', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const map = page.getByLabel('Карта проекта озеленения');
+  await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const sourceExtent = [-5, -5, 125, 95] as const;
+  const padding = 28;
+  const resolution = Math.max((sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2), (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2));
+  await page.mouse.move(
+    box!.x + box!.width / 2 + (26 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
+    box!.y + box!.height / 2 - (28 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
+  );
+  const hover = page.locator('.map-hover-hint');
+  await expect(hover.getByText('Существующее озеленение', { exact: true })).toBeVisible();
+  await expect(hover.getByText('Контур DXF: тестовая область', { exact: true })).toBeVisible();
+});
+
 test('workspace panels do not remount or blank the map canvas', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openManualPlan(page);

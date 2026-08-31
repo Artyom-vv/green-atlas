@@ -37,11 +37,12 @@ const MAX_CACHED_GEOMETRY_STYLES = 512;
 const MAX_CACHED_BLOCK_LABEL_STYLES = 320;
 
 const colors: Record<string, string> = {
-  site_border: '#163A5F', building: '#A7B0BC', road: '#7A8795', utility: '#4E78B8', existing_green: '#2E9C67', allowed: '#91CFAE', forbidden: '#C76B00',
+  site_border: '#163A5F', building: '#A7B0BC', road: '#7A8795', utility: '#4E78B8', existing_green: '#2E9C67', water: '#4E91B8', restricted: '#9A6700', allowed: '#91CFAE', forbidden: '#C76B00',
 };
 
 export type MapExtent = [number, number, number, number];
-export type MapHoverTarget = { id: string; kind: string; label: string; detail: string; pixel: [number, number] };
+export type MapHoverItem = { id: string; kind: string; label: string; detail: string };
+export type MapHoverTarget = { items: MapHoverItem[]; pixel: [number, number] };
 export type MapAreaTarget = { sourceId: string; plantingZoneId?: string; geometry?: { type: 'Polygon'; coordinates: number[][][] }; kind: string; label: string; detail: string; selectable: boolean };
 
 function mapFeatureCopy(feature: FeatureLike) {
@@ -51,6 +52,8 @@ function mapFeatureCopy(feature: FeatureLike) {
     planting_area: [String(feature.get('label') ?? 'Участок посадки'), 'Рабочая область проекта'],
     site_border: ['Территория проектирования', 'Граница исходного чертежа'],
     existing_green: ['Существующее озеленение', 'Сохраняемый зелёный контур'],
+    water: ['Водный объект', `Слой ${String(feature.get('source_layer') ?? 'без имени')}`],
+    restricted: ['Техническая зона', `Слой ${String(feature.get('source_layer') ?? 'без имени')}`],
     ignore: [`Контур DXF: ${String(feature.get('source_layer') ?? 'без имени')}`, 'Справочная геометрия исходного плана'],
     building: ['Здание', `Слой ${String(feature.get('source_layer') ?? 'без имени')}`],
     road: ['Дорога или дорожка', `Слой ${String(feature.get('source_layer') ?? 'без имени')}`],
@@ -269,6 +272,8 @@ export function geometryStyle(feature: FeatureLike, resolution: number) {
     style = new Style({ stroke: new Stroke({ color: sourceLayer.includes('road_major') ? '#596675' : localOverview ? 'rgba(167,176,188,.58)' : '#A7B0BC', width: sourceLayer.includes('road_major') ? 1.6 : localOverview ? .75 : 1 }) });
   }
   else if (kind === 'existing_green') style = new Style({ fill: new Fill({ color: 'rgba(25,135,84,.07)' }), stroke: new Stroke({ color: '#5AA77F', width: 1 }) });
+  else if (kind === 'water') style = new Style({ fill: new Fill({ color: 'rgba(78,145,184,.12)' }), stroke: new Stroke({ color: colors[kind], width: 1.1 }) });
+  else if (kind === 'restricted') style = new Style({ fill: new Fill({ color: 'rgba(154,103,0,.08)' }), stroke: new Stroke({ color: colors[kind], width: 1.1, lineDash: [5, 3] }) });
   else style = new Style({ fill: new Fill({ color: 'rgba(255,255,255,0)' }), stroke: new Stroke({ color: colors[kind] ?? sourceColor, width: kind === 'site_border' ? 2 : Math.max(.8, Number(feature.get('source_lineweight_mm') ?? 1.1) || 1.1), lineDash: sourceLineDash(sourceLinetype) }) });
   geometryStyles.set(key, style);
   const styles = blockCaption ? [style, blockCaption] : style;
@@ -426,7 +431,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       if (hidden.has(String(feature.get('source_layer')))) continue;
       const kind = String(feature.get('kind'));
       if (kind === 'allowed' || kind === 'planting_area') zoneSource.addFeature(feature);
-      else if (kind === 'forbidden' || kind === 'utility') constraintSource.addFeature(feature);
+      else if (kind === 'forbidden' || kind === 'utility' || kind === 'water' || kind === 'restricted') constraintSource.addFeature(feature);
       else baseSource.addFeature(feature);
     }
     rebuildSnapTargets();
@@ -540,6 +545,13 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       interactions: defaultInteractions({ mouseWheelZoom: false, shiftDragZoom: false }).extend([mouseWheelZoom, temporaryPan]),
       view,
     });
+    const hitPriority: Record<string, number> = { forbidden: 0, restricted: 1, water: 2, building: 3, road: 4, utility: 5, existing_green: 6, ignore: 7, planting_area: 8, allowed: 9, site_border: 10 };
+    const hitFeatures = (pixel: number[]) => (map.getFeaturesAtPixel(pixel, {
+      layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer,
+      hitTolerance: 8,
+    }) as Feature[])
+      .filter((candidate) => String(candidate.get('kind') ?? '') in hitPriority)
+      .sort((left, right) => hitPriority[String(left.get('kind'))] - hitPriority[String(right.get('kind'))]);
     const resizeMap = () => {
       map.updateSize();
     };
@@ -581,10 +593,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         return;
       }
       if (activeTool === 'select' || activeTool === 'pattern_fill') {
-        const priority: Record<string, number> = { planting_area: 0, forbidden: 1, existing_green: 2, allowed: 3, ignore: 4, site_border: 5, building: 6, road: 7, utility: 8 };
-        const candidates = (map.getFeaturesAtPixel(event.pixel, { layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer, hitTolerance: 10 }) as Feature[])
-          .filter((candidate) => String(candidate.get('kind') ?? '') in priority)
-          .sort((left, right) => priority[String(left.get('kind'))] - priority[String(right.get('kind'))]);
+        const candidates = hitFeatures(event.pixel);
         const areaTarget = activeTool === 'pattern_fill'
           ? candidates.find((candidate) => candidate.get('kind') === 'planting_area')
           : candidates[0];
@@ -627,11 +636,18 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const coordinate: [number, number] = [event.coordinate[0], event.coordinate[1]];
       callbackRef.current.onPointerCoordinate?.(coordinate);
       let hoveredFeature: Feature | undefined;
+      let hoverItems: MapHoverItem[] = [];
       if (toolRef.current === 'select' || toolRef.current === 'pattern_fill') {
-        const priority: Record<string, number> = { planting_area: 0, forbidden: 1, existing_green: 2, allowed: 3, ignore: 4, site_border: 5, building: 6, road: 7, utility: 8 };
-        hoveredFeature = (map.getFeaturesAtPixel(event.pixel, { layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer, hitTolerance: 8 }) as Feature[])
-            .filter((candidate) => String(candidate.get('kind') ?? '') in priority)
-            .sort((left, right) => priority[String(left.get('kind'))] - priority[String(right.get('kind'))])[0];
+        const candidates = hitFeatures(event.pixel);
+        hoveredFeature = candidates[0];
+        const seen = new Set<string>();
+        hoverItems = candidates.flatMap((candidate) => {
+          const copy = mapFeatureCopy(candidate);
+          const key = `${copy.kind}:${copy.label}:${copy.detail}`;
+          if (seen.has(key)) return [];
+          seen.add(key);
+          return [{ id: String(candidate.getId() ?? key), kind: copy.kind, label: copy.label, detail: copy.detail }];
+        }).slice(0, 5);
       }
       const sourceGeometry = hoveredFeature?.getGeometry();
       const hoverGeometry = sourceGeometry instanceof MultiPolygon
@@ -648,8 +664,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         return;
       }
       if (changedFeature && hoverGeometry) mapHoverSourceRef.current.addFeature(new Feature({ geometry: hoverGeometry.clone() }));
-      const { kind, label, detail } = mapFeatureCopy(hoveredFeature);
-      callbackRef.current.onMapHover?.({ id: String(hoveredFeature.getId() ?? kind), kind, label, detail, pixel: [event.pixel[0], event.pixel[1]] });
+      callbackRef.current.onMapHover?.({ items: hoverItems, pixel: [event.pixel[0], event.pixel[1]] });
     });
     map.on('moveend', publishExtent);
     const rememberSpace = (event: KeyboardEvent) => { if (event.code === 'Space' && !event.repeat) spacePanRef.current = true; };
@@ -912,7 +927,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         if (hiddenLayerNamesRef.current.has(String(feature.get('source_layer')))) continue;
         const kind = String(feature.get('kind'));
         if (kind === 'allowed' || kind === 'planting_area') zoneFeatures.push(feature);
-        else if (kind === 'forbidden' || kind === 'utility') constraintFeatures.push(feature);
+        else if (kind === 'forbidden' || kind === 'utility' || kind === 'water' || kind === 'restricted') constraintFeatures.push(feature);
         else baseFeatures.push(feature);
       }
       if (baseFeatures.length) baseSourceRef.current.addFeatures(baseFeatures);

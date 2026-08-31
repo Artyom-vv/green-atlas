@@ -62,6 +62,8 @@ class LayerKind(StrEnum):
     ROAD = "road"
     UTILITY = "utility"
     EXISTING_GREEN = "existing_green"
+    WATER = "water"
+    RESTRICTED = "restricted"
     IGNORE = "ignore"
 
 

@@ -3,7 +3,7 @@ import type { Layer } from '@green/api-client';
 import { Eye, EyeOff, PanelLeftClose, Search } from 'lucide-react';
 import { IconButton } from '@green/ui';
 
-const kindLabels: Record<string, string> = { site_border: 'Границы участка', building: 'Здания', road: 'Дороги и проезды', utility: 'Инженерные сети', existing_green: 'Существующее озеленение', ignore: 'Не используется' };
+const kindLabels: Record<string, string> = { site_border: 'Границы участка', building: 'Здания', road: 'Дороги и проезды', utility: 'Инженерные сети', existing_green: 'Существующее озеленение', water: 'Водные объекты', restricted: 'Технические зоны', ignore: 'Не используется' };
 
 export function ProjectLayers({ layers, visibility, activeLayerId, onVisibility, onSelect, onClose }: { layers: Layer[]; visibility: Record<string, boolean>; activeLayerId?: string; onVisibility: (layerId: string, visible: boolean) => void; onSelect: (layerId: string) => void; onClose?: () => void }) {
   const [query, setQuery] = useState('');

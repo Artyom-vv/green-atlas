@@ -153,6 +153,8 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .layer-symbol::before { content: ''; width: 12px; height: 12px; display: block; border: 2px solid var(--layer-color, var(--color-neutral-600)); }
 .layer-symbol--utility::before { width: 14px; height: 2px; border: 0; background: var(--color-error); }
 .layer-symbol--existing_green::before { border: 0; border-radius: 50%; background: var(--color-green-700); }
+.layer-symbol--water::before { border: 0; background: #4E91B8; }
+.layer-symbol--restricted::before { border-color: #9A6700; }
 .layer-row__body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .layer-row__body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 16px; font-weight: 400; }
 .layer-row__body small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 10px; line-height: 12px; }
@@ -181,10 +183,12 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .workspace-layout.is-left-collapsed .map-edit-tools { left: 58px; max-width: calc(100% - var(--map-safe-right, 20px) - 48px); }
 .workspace-layout.is-left-collapsed .map-zoom-tools, .workspace-layout.is-left-collapsed .map-plan-focus { left: 60px; }
 .workspace-layout.is-left-collapsed .map-statusbar { padding-left: 60px; }
-.map-hover-hint { position: absolute; z-index: 7; width: max-content; max-width: 260px; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--color-neutral-300); border-radius: 4px; color: var(--color-neutral-800); background: rgba(255,255,255,.96); pointer-events: none; }
+.map-hover-hint { position: absolute; z-index: 7; width: max-content; max-width: 280px; display: flex; flex-direction: column; gap: 0; padding: 0; border: 1px solid var(--color-neutral-300); border-radius: 4px; color: var(--color-neutral-800); background: rgba(255,255,255,.96); pointer-events: none; overflow: hidden; }
 .map-hover-hint.is-left { transform: translateX(calc(-100% - 28px)); }
 .map-hover-hint strong { font-size: 12px; line-height: 16px; font-weight: 600; }
 .map-hover-hint span { color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
+.map-hover-hint__item { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; }
+.map-hover-hint__item + .map-hover-hint__item { border-top: 1px solid var(--color-neutral-200); }
 .map-statusbar { position: absolute; z-index: 7; right: 0; bottom: 0; left: 0; min-height: 36px; display: flex; align-items: center; gap: 18px; padding: 0 12px; border-top: 1px solid var(--color-neutral-200); color: var(--color-neutral-600); background: rgba(255,255,255,.96); font-size: 11px; }
 .placement-check { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .placement-check--allowed { color: var(--color-green-700) !important; }

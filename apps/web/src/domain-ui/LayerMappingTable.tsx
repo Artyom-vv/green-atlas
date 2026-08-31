@@ -8,6 +8,8 @@ const options: Array<{ value: LayerKind; label: string }> = [
   { value: 'road', label: 'Дорога / проезд' },
   { value: 'utility', label: 'Инженерная сеть' },
   { value: 'existing_green', label: 'Существующее озеленение' },
+  { value: 'water', label: 'Водный объект' },
+  { value: 'restricted', label: 'Техническая / непригодная зона' },
   { value: 'ignore', label: 'Не использовать' },
 ];
 

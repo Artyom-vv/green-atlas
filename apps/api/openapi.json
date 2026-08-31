@@ -3102,6 +3102,8 @@
           "road",
           "utility",
           "existing_green",
+          "water",
+          "restricted",
           "ignore"
         ],
         "title": "LayerKind"

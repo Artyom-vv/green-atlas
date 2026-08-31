@@ -40,6 +40,8 @@ PHYSICAL_LAYER_KINDS = frozenset({
     LayerKind.ROAD,
     LayerKind.UTILITY,
     LayerKind.EXISTING_GREEN,
+    LayerKind.WATER,
+    LayerKind.RESTRICTED,
 })
 
 
@@ -329,6 +331,33 @@ class ShapelyGeometryEngine:
                 "type": "Feature",
                 "id": f"forbidden-{rule_id}",
                 "properties": {"kind": "forbidden", "rule_id": rule_id, "label": label, "distance_m": distance},
+                "geometry": mapping(clipped),
+            })
+
+        occupied_labels = {
+            LayerKind.EXISTING_GREEN: "Существующее озеленение",
+            LayerKind.WATER: "Водный объект",
+            LayerKind.RESTRICTED: "Техническая или непригодная зона",
+        }
+        for kind, label in occupied_labels.items():
+            geometries = grouped[kind]
+            if not geometries:
+                continue
+            occupied = _union_in_batches(
+                geometries,
+                progress=progress,
+                stage=f"Собираем занятые контуры: {label.lower()}",
+                fraction_start=0.80,
+                fraction_end=0.84,
+            )
+            clipped = occupied.intersection(site) if site is not None else occupied
+            if clipped.is_empty:
+                continue
+            forbidden_parts.append(clipped)
+            constraint_features.append({
+                "type": "Feature",
+                "id": f"occupied-{kind.value}",
+                "properties": {"kind": "forbidden", "rule_id": f"occupied-{kind.value}", "label": f"Занято: {label.lower()}", "distance_m": 0},
                 "geometry": mapping(clipped),
             })
 

@@ -8,6 +8,8 @@ const kindLabels: Record<string, string> = {
   road: 'Дороги и проезды',
   utility: 'Инженерные сети',
   existing_green: 'Существующее озеленение',
+  water: 'Водный объект',
+  restricted: 'Техническая или непригодная зона',
   ignore: 'Справочная геометрия',
 };
 

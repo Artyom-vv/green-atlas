@@ -21,6 +21,7 @@ from app.contracts import FillPatternRequest, LayerMapping, PlanObjectCreate, Pl
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
+from app.geometry.domain import PositionChecker
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import InMemoryProjectHistory
 from app.main import app
@@ -202,6 +203,7 @@ def test_real_large_dxf_survives_http_import_geometry_viewport_and_source_recove
     )
     assert uploaded.status_code == 200, uploaded.json()
     assert uploaded.json()["source_file"]["entity_count"] == 4859
+    assert next(layer for layer in uploaded.json()["layers"] if layer["source_name"] == "OSM_HYDROGRAPHY")["suggested_kind"] == "water"
     mappings = [
         {"layer_id": layer["id"], "kind": layer["suggested_kind"], "visible": True}
         for layer in uploaded.json()["layers"]
@@ -225,6 +227,36 @@ def test_real_large_dxf_survives_http_import_geometry_viewport_and_source_recove
     features = viewport.json()["feature_collection"]["features"]
     assert features
     assert any(feature["properties"].get("source_layer") == "OSM_ROAD_LOCAL" for feature in features)
+
+    full_project = api_module.application.get(project_id)
+    site_geometry = next(
+        feature["geometry"]
+        for feature in full_project.geometry.feature_collection["features"]
+        if feature["properties"].get("kind") == "site_border"
+    )
+    selected = {"id": "whole-map", "label": "Проверяемая территория", "geometry": site_geometry}
+    select_areas(project_id, [selected])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual")
+    assert opened.status_code == 200
+    preview = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        "type": "fill",
+        "base_plan_version": opened.json()["plan"]["version"],
+        "plant_kind": "tree",
+        "zone_ids": ["whole-map"],
+        "placement_mode": "count",
+        "target_count": 100,
+        "layout": "natural",
+        "spacing_m": 6,
+        "edge_offset_m": 2,
+        "seed": 47,
+    })
+    assert preview.status_code == 200, preview.json()
+    assert preview.json()["accepted_count"] == 100
+    checker = PositionChecker(api_module.application.get(project_id))
+    assert all(
+        checker.check(item["x"], item["y"], item["radius"], item["kind"]) is None
+        for item in preview.json()["change_set"]["additions"]
+    )
 
     recovered = client.get(f"/api/projects/{project_id}/source-dxf/download")
     assert recovered.status_code == 200
@@ -480,6 +512,66 @@ def test_manual_area_keeps_a_boundaryless_dxf_usable() -> None:
     assert "выбранных рабочих областей" in outside.json()["message"]
 
 
+def test_existing_green_is_a_hard_occupied_contour_for_manual_and_bulk_placement() -> None:
+    project_id = prepare_project("Сохранение существующего озеленения")
+    select_areas(project_id, [area("work", "Вся площадка", [[2, 2], [118, 2], [118, 88], [2, 88]])])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual")
+    assert opened.status_code == 200
+
+    overlapping = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 51, "y": 68})
+    assert overlapping.status_code == 400
+    assert "существующее озеленение" in overlapping.json()["message"].lower()
+
+    preview = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        "type": "fill",
+        "base_plan_version": opened.json()["plan"]["version"],
+        "plant_kind": "tree",
+        "zone_ids": ["work"],
+        "placement_mode": "count",
+        "target_count": 60,
+        "layout": "natural",
+        "spacing_m": 5,
+        "edge_offset_m": 1,
+        "seed": 47,
+    })
+    assert preview.status_code == 200, preview.json()
+    project = api_module.application.get(project_id)
+    green = unary_union([
+        shape(feature["geometry"])
+        for feature in project.geometry.feature_collection["features"]
+        if feature["properties"].get("kind") == "existing_green"
+    ])
+    additions = preview.json()["change_set"]["additions"]
+    assert additions
+    assert all(not green.intersects(Point(item["x"], item["y"]).buffer(item["radius"])) for item in additions)
+
+
+def test_layer_meaning_can_be_corrected_after_plan_without_losing_work() -> None:
+    project_id = prepare_project("Уточнение слоя после начала работы")
+    select_areas(project_id, [area("work", "Рабочий участок", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
+    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
+    current = client.get(f"/api/projects/{project_id}").json()
+    mappings = [{
+        "layer_id": layer["id"],
+        "kind": "restricted" if layer["source_name"] == "UTIL_WATER" else layer["mapped_kind"],
+        "visible": layer["visible"],
+    } for layer in current["layers"]]
+
+    remapped = client.put(f"/api/projects/{project_id}/layer-mappings", json={"mappings": mappings})
+    assert remapped.status_code == 200, remapped.json()
+    assert len(remapped.json()["planting_zones"]) == 1
+    assert len(remapped.json()["plan"]["objects"]) == 1
+    prepare_map(project_id)
+
+    recalculated = client.get(f"/api/projects/{project_id}").json()
+    assert recalculated["map_ready"] is True
+    assert recalculated["status"] == "editing"
+    assert len(recalculated["planting_zones"]) == 1
+    assert len(recalculated["plan"]["objects"]) == 1
+    assert recalculated["source_geometry"] is None
+
+
 def test_pp743_building_distance_is_measured_to_plant_axis() -> None:
     project_id = client.post("/api/projects", json={"name": "Отступ до оси"}).json()["id"]
     imported = client.post(
@@ -536,7 +628,7 @@ def test_selected_areas_cannot_silently_delete_an_existing_manual_plan() -> None
     assert len(project["plan"]["objects"]) == 1
 
 
-def test_manual_plan_freezes_the_layer_meaning_and_map_geometry() -> None:
+def test_manual_plan_blocks_an_unrequested_geometry_recalculation() -> None:
     project_id = prepare_project("Нельзя сдвинуть основу под планом")
     select_areas(project_id, [area("first", "Первый участок", [[12, 12], [60, 12], [60, 35], [12, 35]])])
     assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
@@ -549,9 +641,9 @@ def test_manual_plan_freezes_the_layer_meaning_and_map_geometry() -> None:
     remap = client.put(f"/api/projects/{project_id}/layer-mappings", json={"mappings": mappings})
     background_recalculation = client.post(f"/api/projects/{project_id}/operations/geometry")
 
-    for response in (remap, background_recalculation):
-        assert response.status_code == 400
-        assert "после открытия ручной схемы" in response.json()["message"]
+    assert remap.status_code == 200
+    assert background_recalculation.status_code == 400
+    assert "после открытия ручной схемы" in background_recalculation.json()["message"]
 
 
 def test_invalid_drawn_area_is_rejected_without_replacing_saved_areas() -> None:
@@ -1039,7 +1131,8 @@ def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
     assert pattern.status_code == 200, pattern.json()
     preview = pattern.json()["change_set"]
     assert pattern.json()["requested_count"] == 8
-    assert pattern.json()["accepted_count"] == 8
+    assert pattern.json()["accepted_count"] == 7
+    assert any("существующее озеленение" in item["reason"].lower() for item in pattern.json()["skipped"])
     assert preview["can_apply"] is True
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
 
@@ -1050,7 +1143,7 @@ def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
     })
     assert applied.status_code == 200, applied.json()
     assert applied.json()["plan_version"] == base_version + 1
-    assert len(applied.json()["added_ids"]) == 8
+    assert len(applied.json()["added_ids"]) == 7
     assert client.post(f"/api/projects/{project_id}/plan/history/undo").json()["plan"]["objects"] == []
 
 
@@ -1062,7 +1155,7 @@ def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips()
     ]
     select_areas(project_id, zones)
     base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
-    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 24, "y": 24}).status_code == 200
+    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 18, "y": 18}).status_code == 200
     current_version = client.get(f"/api/projects/{project_id}").json()["plan"]["version"]
     request = {
         "type": "fill",

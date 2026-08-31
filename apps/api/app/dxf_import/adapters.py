@@ -174,6 +174,10 @@ def _kind_for_layer(name: str) -> LayerKind:
         return LayerKind.BUILDING
     if any(word in value for word in ("road", "street", "drive", "path", "trail", "foot", "walk", "alley", "lane", "sidewalk", "дорог", "проезд", "троп", "дорожк", "аллея")):
         return LayerKind.ROAD
+    if any(word in value for word in ("hydro", "river", "lake", "pond", "stream", "waterbody", "водоем", "пруд", "река", "ручей")):
+        return LayerKind.WATER
+    if any(word in value for word in ("restricted", "obstacle", "technical_area", "equipment", "hardscape", "техзон", "технич", "препятств", "оборудован")):
+        return LayerKind.RESTRICTED
     if any(word in value for word in ("util", "water", "heat", "gas", "sewer", "cable", "вод", "тепл", "газ", "канал", "кабел", "сет")):
         return LayerKind.UTILITY
     if any(word in value for word in ("green", "tree", "shrub", "exist", "park", "lawn", "flower", "landscape", "озелен", "дерев", "куст", "газон", "парк", "цветник")):

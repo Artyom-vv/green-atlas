@@ -50,6 +50,12 @@ CONSTRAINT_KINDS: dict[str, tuple[str, str, dict[str, float]]] = {
     ),
 }
 
+OCCUPIED_KINDS: dict[str, tuple[str, str]] = {
+    "existing_green": ("EXISTING_GREEN_OVERLAP", "Существующее озеленение"),
+    "water": ("WATER_OVERLAP", "Водный объект"),
+    "restricted": ("RESTRICTED_AREA_OVERLAP", "Техническая или непригодная зона"),
+}
+
 
 def rule_distance(kind: str, plant_kind: Literal["tree", "shrub"]) -> float:
     """Distance from PП-743 table 3.6.1 for the recognised base case."""
@@ -174,6 +180,20 @@ class PositionChecker:
                     round(required, 2),
                     f"Переместить посадку минимум на {required - actual:.2f} м дальше",
                 )
+        for kind, (code, label) in OCCUPIED_KINDS.items():
+            geometry = self._constraint(kind)
+            if geometry is None or not geometry.intersects(footprint):
+                continue
+            actual = max(0.0, center.distance(geometry))
+            return PositionViolation(
+                code,
+                f"Пересечение: {label.lower()}",
+                f"Контур новой посадки пересекает объект «{label}» из исходного DXF.",
+                f"occupied-{kind}",
+                round(actual, 2),
+                round(radius, 2),
+                "Переместить посадку за пределы занятого контура",
+            )
         return None
 
     def advisory(self, x: float, y: float, radius: float) -> PositionAdvisory | None:

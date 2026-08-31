@@ -956,7 +956,7 @@ export interface components {
          * LayerKind
          * @enum {string}
          */
-        LayerKind: "site_border" | "building" | "road" | "utility" | "existing_green" | "ignore";
+        LayerKind: "site_border" | "building" | "road" | "utility" | "existing_green" | "water" | "restricted" | "ignore";
         /** LayerMapping */
         LayerMapping: {
             /** Layer Id */
