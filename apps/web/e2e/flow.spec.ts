@@ -23,6 +23,7 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await page.getByRole('checkbox', { name: 'Ручной участок 1' }).check();
+  await page.getByRole('combobox', { name: 'Порода' }).selectOption({ label: 'Рябина обыкновенная' });
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('3');
   await page.getByRole('button', { name: 'Рассчитать' }).click();
   await expect(page.getByText(/Размещено [1-3]/)).toBeVisible();

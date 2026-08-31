@@ -448,6 +448,7 @@ class PatternPreview(BaseModel):
     requested_count: int = Field(ge=0)
     accepted_count: int = Field(ge=0)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
+    unverified_data: list[str] = Field(default_factory=list)
     change_set: ChangeSetPreview | None = None
 
 

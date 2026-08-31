@@ -13,13 +13,25 @@ class PlanVersionConflict(Exception):
         )
 
 
+def planning_radius(object_: PlanObject) -> float:
+    """Largest known 20-year crown radius used for layout decisions."""
+
+    forecast = next(
+        (item for item in object_.canopy_forecast if item.horizon_year == 20),
+        None,
+    )
+    return max(object_.radius, forecast.radius_max_m if forecast else 0.0)
+
+
 def required_spacing(first: PlanObject, second: PlanObject) -> float:
     """Minimum crown-to-crown distance used while an operator places objects."""
+    first_radius = planning_radius(first)
+    second_radius = planning_radius(second)
     if first.kind == "tree" and second.kind == "tree":
-        return max(4.8, first.radius + second.radius + 1.7)
+        return max(4.8, first_radius + second_radius + 1.7)
     if first.kind == "shrub" and second.kind == "shrub":
-        return max(1.55, first.radius + second.radius + 0.35)
-    return first.radius + second.radius + 1.0
+        return max(1.55, first_radius + second_radius + 0.35)
+    return first_radius + second_radius + 1.0
 
 
 def respects_plant_spacing(candidate: PlanObject, objects: list[PlanObject], ignore_id: str | None = None) -> bool:
@@ -48,7 +60,7 @@ class PlantSpacingIndex:
         # Custom planting radii can be much larger than a default crown. A
         # fixed 3×3 window silently misses collisions across several 8 m
         # cells, so derive the search span from the widest possible rule.
-        max_distance = candidate.radius + self.max_radius + 1.7
+        max_distance = planning_radius(candidate) + self.max_radius + 1.7
         cell_radius = max(1, ceil(max_distance / self.cell_size))
         return [
             object_
@@ -62,4 +74,4 @@ class PlantSpacingIndex:
 
     def add(self, object_: PlanObject) -> None:
         self.cells[self._key(object_)].append(object_)
-        self.max_radius = max(self.max_radius, object_.radius)
+        self.max_radius = max(self.max_radius, planning_radius(object_))

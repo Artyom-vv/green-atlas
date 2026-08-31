@@ -913,6 +913,13 @@ class ProjectApplication:
         if project.plan.version != request.base_plan_version:
             raise PlanVersionConflict(request.base_plan_version, project.plan.version)
 
+        mapped_kinds = {layer.mapped_kind.value for layer in project.layers}
+        unverified_data = []
+        if "utility" not in mapped_kinds:
+            unverified_data.append("подземные сети")
+        if "restricted" not in mapped_kinds:
+            unverified_data.append("малые сооружения и технические зоны")
+
         requested_target = request.target_count if request.type == "fill" and request.placement_mode == "count" else None
         generation_request = request
         if requested_target is not None:
@@ -949,6 +956,7 @@ class ProjectApplication:
                 requested_count=requested_target or 0,
                 accepted_count=0,
                 skipped=[],
+                unverified_data=unverified_data,
             )
 
         initial = self.preview_change_set(project_id, PlanChangeSetDraft(
@@ -990,6 +998,7 @@ class ProjectApplication:
             requested_count=requested_target if requested_target is not None else len(candidates),
             accepted_count=len(accepted_operations),
             skipped=skipped,
+            unverified_data=unverified_data,
             change_set=change_set,
         )
 

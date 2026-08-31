@@ -3215,6 +3215,13 @@
             "type": "array",
             "title": "Skipped"
           },
+          "unverified_data": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unverified Data"
+          },
           "change_set": {
             "anyOf": [
               {

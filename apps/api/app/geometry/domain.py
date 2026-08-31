@@ -218,8 +218,28 @@ class PositionChecker:
         )
 
     def growth_advisory(self, x: float, y: float, canopy_radius: float, root_radius: float) -> PositionAdvisory | None:
-        """Flag forecast envelope conflicts without presenting them as law."""
+        """Flag future envelope conflicts without presenting them as law.
+
+        Automatic layouts skip these candidates. A specialist can still
+        place one object manually after reviewing the warning.
+        """
         center = Point(x, y)
+        full_envelope = max(canopy_radius, root_radius)
+        footprint = center.buffer(full_envelope)
+        if self.selected_area is not None and self.prepared_selected_area is not None and not self.prepared_selected_area.covers(footprint):
+            return PositionAdvisory(
+                code="GROWTH_PLANTING_ZONE",
+                title="Не хватает места для взрослого растения",
+                description=f"Прогнозная крона или корневая зона радиусом до {full_envelope:.2f} м выходит за выбранный участок",
+                suggested_action="Сместить посадку внутрь участка или выбрать более компактную породу",
+            )
+        if self.site is not None and self.prepared_site is not None and not self.prepared_site.covers(footprint):
+            return PositionAdvisory(
+                code="GROWTH_SITE_BOUNDARY",
+                title="Прогнозная зона выходит за границу",
+                description=f"Крона или корневая зона радиусом до {full_envelope:.2f} м выходит за границу проектирования",
+                suggested_action="Сместить посадку внутрь территории",
+            )
         utility = self._constraint("utility")
         if utility is not None and center.distance(utility) + 1e-6 < root_radius:
             return PositionAdvisory(
@@ -235,6 +255,28 @@ class PositionChecker:
                 title="Крона достигает здания",
                 description=f"Прогноз кроны на 20 лет достигает здания при радиусе до {canopy_radius:.2f} м",
                 suggested_action="Увеличить отступ или выбрать более компактную породу",
+            )
+        road = self._constraint("road")
+        if road is not None and center.distance(road) + 1e-6 < canopy_radius:
+            return PositionAdvisory(
+                code="CROWN_ROAD_REVIEW",
+                title="Крона достигает дороги",
+                description=f"Прогноз кроны на 20 лет достигает дороги при радиусе до {canopy_radius:.2f} м",
+                suggested_action="Сместить посадку или выбрать более компактную породу",
+            )
+        for kind, code, title, label in (
+            ("existing_green", "GROWTH_EXISTING_GREEN_REVIEW", "Не хватает места рядом с существующей зеленью", "существующего озеленения"),
+            ("water", "GROWTH_WATER_REVIEW", "Прогнозная зона достигает воды", "водного объекта"),
+            ("restricted", "GROWTH_RESTRICTED_REVIEW", "Прогнозная зона достигает препятствия", "технической или непригодной зоны"),
+        ):
+            geometry = self._constraint(kind)
+            if geometry is None or center.distance(geometry) + 1e-6 >= full_envelope:
+                continue
+            return PositionAdvisory(
+                code=code,
+                title=title,
+                description=f"Прогноз кроны или корней на 20 лет достигает {label} при радиусе до {full_envelope:.2f} м",
+                suggested_action="Сместить посадку или выбрать более компактную породу",
             )
         return None
 

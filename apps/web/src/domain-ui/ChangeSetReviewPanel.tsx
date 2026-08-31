@@ -1,7 +1,7 @@
 import type { ChangeSetPreview } from '@green/api-client';
 import { Button, InlineMessage, StepProgress } from '@green/ui';
 
-export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons = [], onApply, onCancel }: { preview: ChangeSetPreview; applying?: boolean; note?: string; rejectedReasons?: string[]; onApply: () => void; onCancel: () => void }) {
+export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons = [], unverifiedData = [], onApply, onCancel }: { preview: ChangeSetPreview; applying?: boolean; note?: string; rejectedReasons?: string[]; unverifiedData?: string[]; onApply: () => void; onCancel: () => void }) {
   const additions = preview.additions?.length ?? 0;
   const updates = preview.updates?.length ?? 0;
   const deletions = preview.deletion_ids?.length ?? 0;
@@ -22,7 +22,8 @@ export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons 
       {blocked.length ? <InlineMessage tone="error">{blocked[0].reason}{blocked.length > 1 ? ` Ещё ${blocked.length - 1}` : ''}</InlineMessage> : null}
       {!blocked.length ? <p>Пунктиром показан результат до сохранения</p> : null}
       {note ? <InlineMessage tone="info">{note}</InlineMessage> : null}
-      {additions ? <div className="change-set-review__checks"><strong>Учтено при расчёте</strong><span>Рабочая зона, здания, дороги, существующая зелень, вода и технические зоны, шаг посадок, прогноз кроны и корней</span></div> : null}
+      {unverifiedData.length ? <InlineMessage tone="warning">Нет данных: {unverifiedData.join(', ')}</InlineMessage> : null}
+      {additions ? <div className="change-set-review__checks"><strong>Учтено при расчёте</strong><span>Границы участков, распознанные объекты DXF, нормативные отступы, прогноз кроны и корней</span></div> : null}
       {rejectionSummary.length ? <div className="change-set-review__checks"><strong>Исключено при поиске</strong><ul>{rejectionSummary.map(([reason, count]) => <li key={reason}>{count}: {reason}</li>)}</ul></div> : null}
     </section>
     <div className="inspector-spacer" />

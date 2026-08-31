@@ -580,6 +580,7 @@ test('placement flow creates a typed group across the selected area as one revis
     box!.y + box!.height / 2 - (25 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
   );
   await expect(zoneCheckbox).toBeChecked();
+  await page.getByRole('combobox', { name: 'Порода' }).selectOption({ label: 'Рябина обыкновенная' });
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
   await page.getByRole('button', { name: 'Рассчитать' }).click();
   await expect(page.getByText(/Размещено/)).toBeVisible();
@@ -717,14 +718,15 @@ test('row placement creates a checked linear planting group', async ({ page }) =
     x: box!.x + box!.width / 2 + (x - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
     y: box!.y + box!.height / 2 - (y - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
   });
-  const start = point(28, 27);
-  const end = point(58, 27);
+  const start = point(34, 30);
+  const end = point(58, 30);
 
   await page.getByRole('button', { name: 'Посадки вдоль линии' }).click();
   await expect(page.getByText('Нарисуйте ось на карте')).toBeVisible();
   await page.mouse.click(start.x, start.y);
   await page.mouse.dblclick(end.x, end.y);
   await expect(page.getByText('Ось задана')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Порода' }).selectOption({ label: 'Рябина обыкновенная' });
   await page.getByRole('button', { name: 'Рассчитать', exact: true }).click();
   await expect(page.getByText(/Размещено/)).toBeVisible();
   await page.getByRole('button', { name: /Добавить/ }).click();
@@ -749,13 +751,13 @@ test('species assignment adds crown and root horizons without reloading the DXF'
 
   await page.getByRole('button', { name: 'Назначить породу' }).click();
   const species = page.getByRole('combobox', { name: /Порода/ });
-  await species.fill('Липа');
-  await page.getByRole('option', { name: /Липа мелколистная/ }).click();
+  await species.fill('Рябина');
+  await page.getByRole('option', { name: /Рябина обыкновенная/ }).click();
   await expect(page.getByText(/не нормативная зона/)).toBeVisible();
   await page.getByRole('button', { name: 'Показать', exact: true }).click();
   await expect(page.getByText('Назначение породы', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Применить' }).click();
-  await expect(page.getByText('Липа мелколистная')).toBeVisible();
+  await expect(page.getByText('Рябина обыкновенная')).toBeVisible();
 
   let viewportRequests = 0;
   page.on('request', (request) => { if (request.url().includes('/map-features?')) viewportRequests += 1; });
@@ -764,7 +766,7 @@ test('species assignment adds crown and root horizons without reloading the DXF'
   expect(viewportRequests).toBe(0);
   const projectId = new URL(page.url()).pathname.split('/')[2];
   const response = await page.request.get(`${apiBase}/projects/${projectId}`);
-  const assigned = (await response.json() as { plan: { objects: Array<{ species_revision_id?: string; canopy_forecast?: unknown[]; root_forecast?: unknown[] }> } }).plan.objects.find((object) => object.species_revision_id?.startsWith('tilia-cordata@'));
+  const assigned = (await response.json() as { plan: { objects: Array<{ species_revision_id?: string; canopy_forecast?: unknown[]; root_forecast?: unknown[] }> } }).plan.objects.find((object) => object.species_revision_id?.startsWith('sorbus-aucuparia@'));
   expect(assigned?.canopy_forecast).toHaveLength(3);
   expect(assigned?.root_forecast).toHaveLength(3);
 });

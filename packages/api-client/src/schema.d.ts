@@ -1005,6 +1005,8 @@ export interface components {
             accepted_count: number;
             /** Skipped */
             skipped?: components["schemas"]["PatternSkippedCandidate"][];
+            /** Unverified Data */
+            unverified_data?: string[];
             change_set?: components["schemas"]["ChangeSetPreview"] | null;
         };
         /** PatternSkippedCandidate */
