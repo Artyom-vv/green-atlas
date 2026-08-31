@@ -14,6 +14,7 @@ const object = (id: string, x: number): PlanObject => ({
   size_class: 'unspecified',
   locked: false,
   status: 'valid',
+  spacing_policy: 'balanced',
 });
 
 describe('plan feature diff', () => {

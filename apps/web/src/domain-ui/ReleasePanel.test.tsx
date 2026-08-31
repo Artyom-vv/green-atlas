@@ -9,7 +9,7 @@ const draftPlan = {
   id: 'plan-1',
   version: 3,
   issues: [],
-  objects: [{ id: 'tree-1', kind: 'tree', x: 10, y: 20, radius: 1.6, size_class: 'unspecified', species_revision_id: null, locked: false, status: 'valid' }],
+  objects: [{ id: 'tree-1', kind: 'tree', x: 10, y: 20, radius: 1.6, size_class: 'unspecified', species_revision_id: null, spacing_policy: 'balanced', locked: false, status: 'valid' }],
 } as Plan;
 
 describe('ReleasePanel', () => {

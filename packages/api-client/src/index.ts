@@ -20,6 +20,7 @@ export type PatternPreviewRequest = RowPatternRequest | FillPatternRequest;
 export type PatternSkippedCandidate = components['schemas']['PatternSkippedCandidate'];
 export type PatternPreview = Omit<components['schemas']['PatternPreview'], 'change_set' | 'skipped'> & { skipped: PatternSkippedCandidate[]; change_set?: ChangeSetPreview | null };
 export type SpeciesRevision = components['schemas']['SpeciesRevision'];
+export type GrowthEnvelopeForecast = components['schemas']['GrowthEnvelopeForecast'];
 export type SpeciesShortlistItem = components['schemas']['SpeciesShortlistItem'];
 export type RecommendationRequest = components['schemas']['RecommendationRequest'];
 export type RecommendationExplanation = components['schemas']['RecommendationExplanation'];

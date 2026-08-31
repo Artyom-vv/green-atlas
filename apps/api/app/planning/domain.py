@@ -27,7 +27,13 @@ def required_spacing(first: PlanObject, second: PlanObject) -> float:
     """Minimum crown-to-crown distance used while an operator places objects."""
     first_radius = planning_radius(first)
     second_radius = planning_radius(second)
+    same_group = bool(set(first.group_ids) & set(second.group_ids))
+    policy = first.spacing_policy if same_group and first.spacing_policy == second.spacing_policy else "open"
     if first.kind == "tree" and second.kind == "tree":
+        if policy == "canopy":
+            return max(2.5, (first_radius + second_radius) * 0.58)
+        if policy == "balanced":
+            return max(3.5, (first_radius + second_radius) * 0.82)
         return max(4.8, first_radius + second_radius + 1.7)
     if first.kind == "shrub" and second.kind == "shrub":
         return max(1.55, first_radius + second_radius + 0.35)

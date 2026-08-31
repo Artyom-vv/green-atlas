@@ -79,11 +79,18 @@ def generate_row(request: RowPatternRequest) -> list[PatternCandidate]:
         raise ValueError("Начальный и конечный отступы длиннее оси ряда")
 
     distances: list[float] = []
-    distance = request.start_offset_m
     last = axis.length - request.end_offset_m
-    while distance <= last + 1e-9:
-        distances.append(distance)
-        distance += request.spacing_m
+    if request.placement_mode == "count":
+        if request.target_count == 2:
+            distances = [request.start_offset_m, last]
+        else:
+            step = usable_length / (request.target_count - 1)
+            distances = [request.start_offset_m + step * index for index in range(request.target_count)]
+    else:
+        distance = request.start_offset_m
+        while distance <= last + 1e-9:
+            distances.append(distance)
+            distance += request.spacing_m
 
     sides = {
         "center": (0,),

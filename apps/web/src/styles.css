@@ -284,6 +284,21 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .pattern-tool-panel__zones legend { margin-bottom: 8px; color: var(--color-neutral-700); font-size: 12px; font-weight: 600; }
 .pattern-tool-panel__setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; color: var(--color-neutral-700); font-size: 12px; }
 .pattern-tool-panel > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
+.growth-horizon-control { display: grid; gap: 8px; padding: 12px 0; }
+.growth-horizon-control__heading { display: flex; align-items: baseline; justify-content: space-between; }
+.growth-horizon-control__heading h3 { margin: 0; font-size: 13px; }
+.growth-horizon-control__heading output { color: var(--color-blue-600); font: 500 13px/18px 'IBM Plex Mono', monospace; }
+.growth-horizon-control input[type='range'] { width: 100%; accent-color: var(--color-blue-600); }
+.growth-horizon-control__ticks { display: flex; justify-content: space-between; color: var(--color-neutral-500); font: 11px/14px 'IBM Plex Mono', monospace; }
+.growth-horizon-control p { margin: 0; color: var(--color-neutral-500); font-size: 12px; line-height: 16px; }
+.species-choice { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
+.species-choice legend { margin-bottom: 8px; color: var(--color-neutral-600); font-size: 13px; }
+.species-choice__item { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 8px 10px; border: 1px solid var(--color-neutral-200); border-radius: 4px; background: var(--color-white); color: var(--color-neutral-900); text-align: left; cursor: pointer; }
+.species-choice__item span { display: grid; min-width: 0; }
+.species-choice__item strong { font-size: 13px; line-height: 18px; }
+.species-choice__item small { color: var(--color-neutral-500); font-size: 11px; line-height: 16px; }
+.species-choice__item b { flex: none; color: var(--color-neutral-600); font: 500 11px/16px 'IBM Plex Mono', monospace; }
+.species-choice__item.is-selected { border-color: var(--color-blue-600); background: var(--color-blue-100); }
 .object-species > strong { font-size: 13px; line-height: 18px; }
 .object-species > span { max-width: 28ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
 .species-assignment-panel__content { display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow: visible auto; }

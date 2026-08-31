@@ -27,6 +27,7 @@ import { containsCoordinate, createEmpty, extend } from 'ol/extent';
 import { BoundedLruCache } from './BoundedLruCache';
 import type { MapTool } from './MapToolbar';
 import type { SelectionMode } from './selection';
+import { forecastAt } from './growthForecast';
 import { paddedMapExtent } from './mapExtent';
 import { isPrimarySingleBlockComponent, sourceBlockCaption } from './sourceLabels';
 
@@ -353,7 +354,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: 5 | 10 | 20; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -741,7 +742,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       brushModeRef.current = event.altKey ? 'subtract' : 'append';
     };
     if (tool === 'brush') target?.addEventListener('pointerdown', rememberBrushMode, true);
-    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', style: drawStyle, stopClick: true, condition: (event) => {
+    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', trace: tool === 'pattern_row', traceSource: tool === 'pattern_row' ? snapTargetSourceRef.current : undefined, style: drawStyle, stopClick: true, condition: (event) => {
       const original = event.originalEvent as PointerEvent;
       return !spacePanRef.current && original.button === 0;
     } });
@@ -980,9 +981,10 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const source = growthEnvelopeSourceRef.current;
     source.clear();
     if (!growthHorizon) return;
-    for (const object of objects) {
-      const canopy = object.canopy_forecast?.find((item) => item.horizon_year === growthHorizon);
-      const roots = object.root_forecast?.find((item) => item.horizon_year === growthHorizon);
+    const visibleObjects = [...objects, ...(changePreview?.additions ?? []), ...(changePreview?.updates ?? [])];
+    for (const object of visibleObjects) {
+      const canopy = forecastAt(object.canopy_forecast, growthHorizon);
+      const roots = forecastAt(object.root_forecast, growthHorizon);
       if (roots) {
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_max_m), envelopeStyle: 'rootMax' }));
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_min_m), envelopeStyle: 'rootMin' }));
@@ -992,7 +994,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], canopy.radius_min_m), envelopeStyle: 'canopyMin' }));
       }
     }
-  }, [growthHorizon, objects]);
+  }, [changePreview, growthHorizon, objects]);
 
   useEffect(() => {
     const source = placementPreviewSourceRef.current;

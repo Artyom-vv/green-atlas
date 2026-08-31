@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FillPatternRequest, PlantingZoneAssignment, RowPatternRequest, SpeciesRevision } from '@green/api-client';
 import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select, StepProgress } from '@green/ui';
+import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
+import { forecastAt } from './growthForecast';
 
 type Axis = RowPatternRequest['axis'];
 type PatternDraft = Omit<RowPatternRequest, 'base_plan_version'> | Omit<FillPatternRequest, 'base_plan_version'>;
 
-export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds = [], drawingZone = false, loading, error, resultNote, onSelectedZoneIdsChange, onDrawZone, onPreview, onCancel }: {
+export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds = [], drawingZone = false, loading, error, resultNote, growthHorizon, onGrowthHorizon, onSelectedZoneIdsChange, onDrawZone, onPreview, onCancel }: {
   mode: 'row' | 'fill';
   zones: PlantingZoneAssignment[];
   species: SpeciesRevision[];
@@ -15,6 +17,8 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
   loading?: boolean;
   error?: string;
   resultNote?: string;
+  growthHorizon?: GrowthHorizon;
+  onGrowthHorizon?: (year: GrowthHorizon) => void;
   onSelectedZoneIdsChange?: (ids: string[]) => void;
   onDrawZone?: () => void;
   onPreview: (draft: PatternDraft) => void;
@@ -24,12 +28,14 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
   const availableSpecies = useMemo(() => species.filter((item) => item.kind === plantKind), [plantKind, species]);
   const [speciesId, setSpeciesId] = useState<string>();
   const [targetCount, setTargetCount] = useState(40);
+  const [rowPlacementMode, setRowPlacementMode] = useState<'count' | 'spacing'>('count');
   const [spacing, setSpacing] = useState(6);
   const [side, setSide] = useState<'center' | 'left' | 'right' | 'both'>('center');
   const [lateralOffset, setLateralOffset] = useState(3);
   const [startOffset, setStartOffset] = useState(0);
   const [endOffset, setEndOffset] = useState(0);
   const [layout, setLayout] = useState<'staggered' | 'natural'>('natural');
+  const [spacingPolicy, setSpacingPolicy] = useState<'open' | 'balanced' | 'canopy'>('balanced');
   const [edgeOffset] = useState(1);
   const [angle] = useState(0);
   const [seed] = useState(47);
@@ -46,12 +52,15 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
         plant_kind: plantKind,
         axis,
         spacing_m: spacing,
+        placement_mode: rowPlacementMode,
+        target_count: targetCount,
         start_offset_m: startOffset,
         end_offset_m: endOffset,
         side,
         lateral_offset_m: side === 'center' ? 0 : lateralOffset,
         size_class: 'standard',
         species_revision_id: speciesId,
+        spacing_policy: spacingPolicy,
       });
     }
     if (mode === 'fill') {
@@ -68,6 +77,7 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
         seed,
         size_class: 'standard',
         species_revision_id: speciesId,
+        spacing_policy: spacingPolicy,
       });
     }
   };
@@ -77,8 +87,8 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
     <div className="pattern-tool-panel__content">
       <StepProgress current={mode === 'fill' && !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
       {mode === 'row' ? <section className="pattern-tool-panel__axis">
-        <strong>{axis ? 'Ось задана' : 'Нарисуйте ось на карте'}</strong>
-        <span>{axis ? 'Можно рассчитать размещение' : 'Укажите начало и конец'}</span>
+        <strong>{axis ? 'Линия выбрана' : 'Выберите линию на карте'}</strong>
+        <span>{axis ? 'Посадки появятся после расчёта' : 'Кликните по границе или дорожке и проведите вдоль неё'}</span>
       </section> : null}
       {mode === 'fill' ? <fieldset className="pattern-tool-panel__zones">
         <legend>Участки</legend>
@@ -90,10 +100,14 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
       {drawingZone ? <InlineMessage tone="info">Поставьте точки по границе участка и замкните контур</InlineMessage> : null}
       {!drawingZone ? <>
       <FormField label="Растительность"><Select value={plantKind} onChange={(event) => { const value = event.target.value as 'tree' | 'shrub'; setPlantKind(value); setSpacing(value === 'tree' ? 6 : 2); }}><option value="tree">Деревья</option><option value="shrub">Кустарники</option></Select></FormField>
-      <FormField label="Порода"><Select aria-label="Порода" value={speciesId ?? ''} onChange={(event) => setSpeciesId(event.target.value)}>{availableSpecies.map((item) => <option key={item.id} value={item.id}>{item.common_name}</option>)}</Select></FormField>
+      <fieldset className="species-choice"><legend>Порода</legend>{availableSpecies.map((item) => { const forecast = forecastAt(item.canopy_forecast, growthHorizon ?? 20); return <button type="button" key={item.id} className={speciesId === item.id ? 'species-choice__item is-selected' : 'species-choice__item'} onClick={() => setSpeciesId(item.id)}><span><strong>{item.common_name}</strong><small>{item.crown_shape === 'spreading' ? 'раскидистая' : item.crown_shape === 'conical' ? 'коническая' : item.crown_shape === 'oval' ? 'овальная' : 'компактная'} крона</small></span><b>{forecast ? `${(forecast.radius_min_m * 2).toFixed(1)}–${(forecast.radius_max_m * 2).toFixed(1)} м` : 'нет данных'}</b></button>; })}</fieldset>
+      {onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} onChange={onGrowthHorizon} /> : null}
+      <FormField label="Плотность группы"><Select value={spacingPolicy} onChange={(event) => setSpacingPolicy(event.target.value as typeof spacingPolicy)}><option value="canopy">Плотно, кроны сомкнутся</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select></FormField>
       {mode === 'row' ? <FormField label="Сторона оси"><Select value={side} onChange={(event) => setSide(event.target.value as typeof side)}><option value="center">По оси</option><option value="left">Слева</option><option value="right">Справа</option><option value="both">С двух сторон</option></Select></FormField> : null}
+      {mode === 'row' ? <FormField label="Задать ряд"><Select value={rowPlacementMode} onChange={(event) => setRowPlacementMode(event.target.value as typeof rowPlacementMode)}><option value="count">По количеству</option><option value="spacing">По шагу</option></Select></FormField> : null}
+      {mode === 'row' && rowPlacementMode === 'count' ? <div className="pattern-tool-panel__setting"><span>Количество</span><NumberStepper label="Количество посадок" value={targetCount} onChange={setTargetCount} min={2} max={5000} step={10} /></div> : null}
       {mode === 'fill' ? <div className="pattern-tool-panel__setting"><span>Количество</span><NumberStepper label="Количество посадок" value={targetCount} onChange={setTargetCount} min={1} max={5000} step={10} /></div> : null}
-      <div className="pattern-tool-panel__setting"><span>{mode === 'fill' ? 'Минимальный шаг, м' : 'Шаг, м'}</span><NumberStepper label="Шаг между посадками" value={spacing} onChange={setSpacing} min={plantKind === 'tree' ? 5 : 1.6} max={30} step={plantKind === 'tree' ? 0.5 : 0.2} /></div>
+      {(mode === 'fill' || rowPlacementMode === 'spacing') ? <div className="pattern-tool-panel__setting"><span>{mode === 'fill' ? 'Минимальный шаг, м' : 'Шаг, м'}</span><NumberStepper label="Шаг между посадками" value={spacing} onChange={setSpacing} min={plantKind === 'tree' ? 5 : 1.6} max={30} step={plantKind === 'tree' ? 0.5 : 0.2} /></div> : null}
       {mode === 'row' && side !== 'center' ? <div className="pattern-tool-panel__setting"><span>От оси, м</span><NumberStepper label="Поперечный отступ" value={lateralOffset} onChange={setLateralOffset} min={0.5} max={30} step={0.5} /></div> : null}
       {mode === 'row' ? <><div className="pattern-tool-panel__setting"><span>От начала, м</span><NumberStepper label="Отступ от начала" value={startOffset} onChange={setStartOffset} min={0} max={100} step={0.5} /></div><div className="pattern-tool-panel__setting"><span>От конца, м</span><NumberStepper label="Отступ от конца" value={endOffset} onChange={setEndOffset} min={0} max={100} step={0.5} /></div></> : null}
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}

@@ -872,6 +872,12 @@ export interface components {
             size_class: "unspecified" | "sapling" | "standard" | "large";
             /** Species Revision Id */
             species_revision_id?: string | null;
+            /**
+             * Spacing Policy
+             * @default balanced
+             * @enum {string}
+             */
+            spacing_policy: "open" | "balanced" | "canopy";
         };
         /** GeometrySnapshot */
         GeometrySnapshot: {
@@ -891,11 +897,8 @@ export interface components {
          * @description A bounded biological forecast, never a regulatory exclusion zone.
          */
         GrowthEnvelopeForecast: {
-            /**
-             * Horizon Year
-             * @enum {integer}
-             */
-            horizon_year: 5 | 10 | 20;
+            /** Horizon Year */
+            horizon_year: number;
             /** Radius Min M */
             radius_min_m: number;
             /** Radius Max M */
@@ -1168,6 +1171,12 @@ export interface components {
             /** Group Ids */
             group_ids?: string[];
             /**
+             * Spacing Policy
+             * @default balanced
+             * @enum {string}
+             */
+            spacing_policy: "open" | "balanced" | "canopy";
+            /**
              * Locked
              * @default false
              */
@@ -1222,6 +1231,12 @@ export interface components {
             /** Group Ids */
             group_ids?: string[];
             /**
+             * Spacing Policy
+             * @default balanced
+             * @enum {string}
+             */
+            spacing_policy: "open" | "balanced" | "canopy";
+            /**
              * Locked
              * @default false
              */
@@ -1255,6 +1270,8 @@ export interface components {
             pattern_id?: string | null;
             /** Group Ids */
             group_ids?: string[] | null;
+            /** Spacing Policy */
+            spacing_policy?: ("open" | "balanced" | "canopy") | null;
             /** Locked */
             locked?: boolean | null;
         };
@@ -1565,6 +1582,17 @@ export interface components {
              */
             spacing_m: number;
             /**
+             * Placement Mode
+             * @default spacing
+             * @enum {string}
+             */
+            placement_mode: "count" | "spacing";
+            /**
+             * Target Count
+             * @default 20
+             */
+            target_count: number;
+            /**
              * Start Offset M
              * @default 0
              */
@@ -1595,6 +1623,12 @@ export interface components {
             size_class: "unspecified" | "sapling" | "standard" | "large";
             /** Species Revision Id */
             species_revision_id?: string | null;
+            /**
+             * Spacing Policy
+             * @default balanced
+             * @enum {string}
+             */
+            spacing_policy: "open" | "balanced" | "canopy";
         };
         /** ScenePlantObject */
         ScenePlantObject: {
@@ -1639,11 +1673,8 @@ export interface components {
         SceneSnapshot: {
             /** Plan Version */
             plan_version: number;
-            /**
-             * Horizon Year
-             * @enum {integer}
-             */
-            horizon_year: 0 | 5 | 10 | 20;
+            /** Horizon Year */
+            horizon_year: number;
             /** Coordinate Origin */
             coordinate_origin: number[];
             /**
@@ -1752,6 +1783,10 @@ export interface components {
             evidence_note: string;
             /** Source Urls */
             source_urls: string[];
+            /** Canopy Forecast */
+            canopy_forecast?: components["schemas"]["GrowthEnvelopeForecast"][];
+            /** Root Forecast */
+            root_forecast?: components["schemas"]["GrowthEnvelopeForecast"][];
         };
         /** SpeciesShortlistItem */
         SpeciesShortlistItem: {

@@ -1224,8 +1224,8 @@ def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -
     })
     assert preview.status_code == 200, preview.json()
     forecast = preview.json()["updates"][0]
-    assert [item["horizon_year"] for item in forecast["canopy_forecast"]] == [5, 10, 20]
-    assert [item["horizon_year"] for item in forecast["root_forecast"]] == [5, 10, 20]
+    assert [item["horizon_year"] for item in forecast["canopy_forecast"]] == [0, 5, 10, 15, 20, 30, 40]
+    assert [item["horizon_year"] for item in forecast["root_forecast"]] == [0, 5, 10, 15, 20, 30, 40]
     assert all(item["radius_min_m"] <= item["radius_max_m"] for item in forecast["root_forecast"])
     assert all("не норматив" in item["basis"] for item in forecast["canopy_forecast"])
 

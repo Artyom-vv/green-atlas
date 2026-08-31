@@ -142,7 +142,7 @@ class DxfImportResult(BaseModel):
 class GrowthEnvelopeForecast(BaseModel):
     """A bounded biological forecast, never a regulatory exclusion zone."""
 
-    horizon_year: Literal[5, 10, 20]
+    horizon_year: int = Field(ge=0, le=40)
     radius_min_m: float = Field(ge=0, allow_inf_nan=False)
     radius_max_m: float = Field(ge=0, allow_inf_nan=False)
     confidence: Literal["low", "medium", "high"]
@@ -166,6 +166,7 @@ class PlanObject(BaseModel):
     species_revision_id: str | None = None
     pattern_id: str | None = None
     group_ids: list[str] = Field(default_factory=list, max_length=50)
+    spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
     locked: bool = False
     canopy_forecast: list[GrowthEnvelopeForecast] = Field(default_factory=list)
     root_forecast: list[GrowthEnvelopeForecast] = Field(default_factory=list)
@@ -322,6 +323,7 @@ class PlanObjectCreate(BaseModel):
     species_revision_id: str | None = None
     pattern_id: str | None = None
     group_ids: list[str] = Field(default_factory=list, max_length=50)
+    spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
     locked: bool = False
 
 
@@ -334,6 +336,7 @@ class PlanObjectUpdate(BaseModel):
     species_revision_id: str | None = None
     pattern_id: str | None = None
     group_ids: list[str] | None = Field(default=None, max_length=50)
+    spacing_policy: Literal["open", "balanced", "canopy"] | None = None
     locked: bool | None = None
 
 
@@ -401,6 +404,8 @@ class RowPatternRequest(BaseModel):
     plant_kind: Literal["tree", "shrub"] = "tree"
     axis: dict[str, Any]
     spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
+    placement_mode: Literal["count", "spacing"] = "spacing"
+    target_count: int = Field(default=20, ge=2, le=5000)
     start_offset_m: float = Field(default=0, ge=0, le=1000, allow_inf_nan=False)
     end_offset_m: float = Field(default=0, ge=0, le=1000, allow_inf_nan=False)
     side: Literal["center", "left", "right", "both"] = "center"
@@ -408,6 +413,7 @@ class RowPatternRequest(BaseModel):
     layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
     size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
     species_revision_id: str | None = None
+    spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
 
     @model_validator(mode="after")
     def validate_side_offset(self) -> "RowPatternRequest":
@@ -431,6 +437,7 @@ class FillPatternRequest(BaseModel):
     layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
     size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
     species_revision_id: str | None = None
+    spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
 
 
 PatternPreviewRequest = Annotated[RowPatternRequest | FillPatternRequest, Field(discriminator="type")]
@@ -498,6 +505,8 @@ class SpeciesRevision(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     evidence_note: str
     source_urls: list[str] = Field(min_length=1)
+    canopy_forecast: list[GrowthEnvelopeForecast] = Field(default_factory=list)
+    root_forecast: list[GrowthEnvelopeForecast] = Field(default_factory=list)
 
 
 class SpeciesShortlistRequest(BaseModel):
@@ -569,7 +578,7 @@ class ScenePlantObject(BaseModel):
 
 class SceneSnapshot(BaseModel):
     plan_version: int = Field(ge=1)
-    horizon_year: Literal[0, 5, 10, 20]
+    horizon_year: int = Field(ge=0, le=40)
     coordinate_origin: list[float] = Field(min_length=2, max_length=2)
     completeness: Literal["partial"] = "partial"
     terrain_status: Literal["missing"] = "missing"

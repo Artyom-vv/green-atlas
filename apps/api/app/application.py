@@ -945,6 +945,7 @@ class ProjectApplication:
                     "species_revision_id": getattr(request, "species_revision_id", None),
                     "pattern_id": pattern_id,
                     "group_ids": [pattern_id],
+                    "spacing_policy": request.spacing_policy,
                 },
             }
             for candidate in candidates
