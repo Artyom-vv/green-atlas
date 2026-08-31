@@ -1147,6 +1147,27 @@ def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
     assert client.post(f"/api/projects/{project_id}/plan/history/undo").json()["plan"]["objects"] == []
 
 
+def test_row_pattern_can_be_defined_by_count_instead_of_repeated_clicks() -> None:
+    project_id = prepare_project("Ряд по количеству")
+    select_areas(project_id, [area("row-zone", "Линейный участок", [[10, 10], [90, 10], [90, 40], [10, 40]])])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+
+    pattern = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        "type": "row",
+        "base_plan_version": version,
+        "plant_kind": "shrub",
+        "axis": {"type": "LineString", "coordinates": [[15, 30], [85, 30]]},
+        "placement_mode": "count",
+        "target_count": 12,
+        "spacing_policy": "canopy",
+    })
+
+    assert pattern.status_code == 200, pattern.json()
+    assert pattern.json()["requested_count"] == 12
+    assert pattern.json()["accepted_count"] > 0
+    assert all(item["spacing_policy"] == "canopy" for item in pattern.json()["change_set"]["additions"])
+
+
 def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips() -> None:
     project_id = prepare_project("Заполнение участков")
     zones = [

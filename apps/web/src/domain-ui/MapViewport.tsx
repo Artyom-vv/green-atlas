@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef } from 'react';
 import type { BrushStroke, ChangeSetPreview, PlanObject, PlantingZoneAssignment } from '@green/api-client';
 import Feature from 'ol/Feature';
+import Collection from 'ol/Collection';
 import GeoJSON from 'ol/format/GeoJSON';
 import Map from 'ol/Map';
 import View from 'ol/View';
@@ -13,14 +14,16 @@ import Circle from 'ol/geom/Circle';
 import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
 import MultiPolygon from 'ol/geom/MultiPolygon';
+import MultiLineString from 'ol/geom/MultiLineString';
 import Point from 'ol/geom/Point';
 import Draw from 'ol/interaction/Draw';
 import DragPan from 'ol/interaction/DragPan';
 import DragBox, { type DragBoxEvent } from 'ol/interaction/DragBox';
 import MouseWheelZoom from 'ol/interaction/MouseWheelZoom';
 import Snap from 'ol/interaction/Snap';
+import Translate from 'ol/interaction/Translate';
 import { defaults as defaultInteractions } from 'ol/interaction/defaults';
-import { Fill, Stroke, Style, Circle as CircleStyle, Text as TextStyle } from 'ol/style';
+import { Fill, Stroke, Style, Circle as CircleStyle, Icon, Text as TextStyle } from 'ol/style';
 import type { FeatureLike } from 'ol/Feature';
 import type { Extent } from 'ol/extent';
 import { containsCoordinate, createEmpty, extend } from 'ol/extent';
@@ -81,11 +84,29 @@ const selectionDraftStyle = new Style({
   stroke: new Stroke({ color: '#225CFF', width: 1.5, lineDash: [6, 4] }),
 });
 
-const changePreviewStyle = new Style({
-  fill: new Fill({ color: 'rgba(34,92,255,.10)' }),
-  stroke: new Stroke({ color: '#225CFF', width: 1.75, lineDash: [6, 4] }),
-  image: new CircleStyle({ radius: 4, fill: new Fill({ color: '#225CFF' }), stroke: new Stroke({ color: '#FFFFFF', width: 1.5 }) }),
-});
+function plantGlyph(kind: string, color: string, outline: string): string {
+  const body = kind === 'shrub'
+    ? '<circle cx="8" cy="11" r="4"/><circle cx="12" cy="8" r="5"/><circle cx="16" cy="11" r="4"/>'
+    : '<path d="M12 2.2c-2.7 0-4.6 1.7-4.9 4.1A5 5 0 0 0 4.5 15a5.3 5.3 0 0 0 7.5 1.2A5.3 5.3 0 0 0 19.5 15a5 5 0 0 0-2.6-8.7C16.6 3.9 14.7 2.2 12 2.2Z"/><path d="M11 15h2v6h-2z"/>';
+  return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="${color}" stroke="${outline}" stroke-width="1.5" stroke-linejoin="round">${body}</g></svg>`)}`;
+}
+
+const changePreviewStyles = new globalThis.Map<string, Style[]>();
+function changePreviewStyle(feature: FeatureLike): Style[] {
+  const kind = String(feature.get('kind') ?? 'tree');
+  const cached = changePreviewStyles.get(kind);
+  if (cached) return cached;
+  const geometry = (candidate: FeatureLike) => {
+    const candidateGeometry = candidate.getGeometry();
+    return candidateGeometry instanceof Circle ? new Point(candidateGeometry.getCenter()) : candidate.get('markerGeometry');
+  };
+  const styles = [new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 9 : 7, fill: new Fill({ color: 'rgba(255,255,255,.92)' }), stroke: new Stroke({ color: '#225CFF', width: 1.5 }) }) }), new Style({
+    geometry,
+    image: new Icon({ src: plantGlyph(kind, '#225CFF', '#FFFFFF'), width: kind === 'tree' ? 20 : 17, height: kind === 'tree' ? 20 : 17 }),
+  })];
+  changePreviewStyles.set(kind, styles);
+  return styles;
+}
 
 const growthEnvelopeStyles = {
   canopyMax: new Style({ fill: new Fill({ color: 'rgba(25,135,84,.10)' }), stroke: new Stroke({ color: 'rgba(25,135,84,.72)', width: 1.5 }) }),
@@ -297,11 +318,28 @@ function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string> | unde
     fill: new Fill({ color: fill }),
     stroke: new Stroke({ color: stroke, width: selected ? 2.5 : 1.25 }),
   });
-  const markerStyle = new Style({
-    geometry: (candidate) => candidate.get('markerGeometry'),
-    image: new CircleStyle({ radius: kind === 'tree' ? 6 : 3.5, fill: new Fill({ color: zoneMuted ? 'rgba(122,135,149,.24)' : kind === 'tree' ? '#26885A' : '#72B892' }), stroke: new Stroke({ color: zoneMuted ? 'rgba(255,255,255,.50)' : selected ? '#225CFF' : '#ffffff', width: selected ? 2.5 : 1 }) }),
+  const hitStyle = new Style({
+    fill: new Fill({ color: 'rgba(0,0,0,0.001)' }),
   });
-  const styles = overview ? [crownStyle, markerStyle] : crownStyle;
+  const markerStyle = new Style({
+    geometry: (candidate) => {
+      const geometry = candidate.getGeometry();
+      return geometry instanceof Circle ? new Point(geometry.getCenter()) : candidate.get('markerGeometry');
+    },
+    image: new Icon({
+      src: plantGlyph(kind, zoneMuted ? '#A7B0BC' : status === 'error' ? '#C83B32' : kind === 'tree' ? '#26885A' : '#72B892', selected ? '#225CFF' : '#FFFFFF'),
+      width: kind === 'tree' ? 20 : 17,
+      height: kind === 'tree' ? 20 : 17,
+    }),
+  });
+  const markerHaloStyle = new Style({
+    geometry: (candidate) => {
+      const geometry = candidate.getGeometry();
+      return geometry instanceof Circle ? new Point(geometry.getCenter()) : candidate.get('markerGeometry');
+    },
+    image: new CircleStyle({ radius: kind === 'tree' ? 9 : 7, fill: new Fill({ color: 'rgba(255,255,255,.9)' }), stroke: new Stroke({ color: selected ? '#225CFF' : 'rgba(18,104,63,.45)', width: 1 }) }),
+  });
+  const styles = selected ? [crownStyle, markerHaloStyle, markerStyle] : [hitStyle, markerHaloStyle, markerStyle];
   planStyles.set(key, styles);
   return styles;
 }
@@ -337,6 +375,7 @@ export function syncPlanFeatures(source: VectorSource, objects: PlanObject[]): v
 
 export type MapViewportHandle = {
   fit: () => void;
+  fitGeometry: (geometry: PlantingZoneAssignment['geometry']) => void;
   fitLayer: (sourceLayer: string) => void;
   fitSelection: (id: string) => void;
   fitPlan: () => void;
@@ -354,7 +393,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -381,6 +420,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const drawRef = useRef<Draw | null>(null);
   const selectionInteractionRef = useRef<Draw | DragBox | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
+  const translateInteractionRef = useRef<Translate | null>(null);
   const hoveredMapFeatureRef = useRef<Feature | null>(null);
   const hoveredMapGeometryKeyRef = useRef<string | undefined>(undefined);
   const selectedRef = useRef<ReadonlySet<string>>(new Set(selectedIds));
@@ -391,13 +431,13 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const selectionModifierRef = useRef<SelectionMode>('replace');
   const brushModeRef = useRef<BrushDrawMode>('replace');
   const spacePanRef = useRef(false);
-  const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange });
+  const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd });
 
   selectedRef.current = new Set(selectedIds);
   hiddenLayerNamesRef.current = new Set(hiddenLayerNames ?? []);
   toolRef.current = tool;
   initialExtentRef.current = initialExtent;
-  callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange };
+  callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd };
 
   const rebuildSnapTargets = () => {
     const target = snapTargetSourceRef.current;
@@ -481,6 +521,12 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
 
   useImperativeHandle(ref, () => ({
     fit,
+    fitGeometry: (geometry) => {
+      const parsed = new GeoJSON().readGeometry(geometry, { dataProjection: projection, featureProjection: projection });
+      const map = mapRef.current;
+      const size = map?.getSize();
+      if (parsed && map && size) map.getView().fit(parsed.getExtent(), { size, padding: [72, 72, 72, 72], maxZoom: 24, duration: 180 });
+    },
     fitLayer: (sourceLayer) => {
       const extent = createEmpty();
       const features = [baseSourceRef.current, zoneSourceRef.current, constraintSourceRef.current]
@@ -584,6 +630,33 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     observer.observe(target);
     map.on('singleclick', (event) => {
       const activeTool = toolRef.current;
+      if (activeTool === 'pattern_row' && !(event.originalEvent as PointerEvent).shiftKey) {
+        const directHit = (map.getFeaturesAtPixel(event.pixel, {
+          layerFilter: (layer) => layer === baseLayer || layer === constraintLayer,
+          hitTolerance: 10,
+        }) as Feature[]).find((candidate) => candidate.getGeometry() instanceof LineString || candidate.getGeometry() instanceof MultiLineString);
+        const maxDistance = (map.getView().getResolution() ?? 1) * 24;
+        const nearest = directHit ? undefined : [...baseSourceRef.current.getFeatures(), ...constraintSourceRef.current.getFeatures()]
+          .flatMap((candidate) => {
+            const geometry = candidate.getGeometry();
+            if (!(geometry instanceof LineString) && !(geometry instanceof MultiLineString)) return [];
+            const point = geometry.getClosestPoint(event.coordinate);
+            return [{ candidate, distance: Math.hypot(point[0] - event.coordinate[0], point[1] - event.coordinate[1]) }];
+          })
+          .filter(({ distance }) => distance <= maxDistance)
+          .sort((left, right) => left.distance - right.distance)[0]?.candidate;
+        const lineFeature = directHit ?? nearest;
+        const lineGeometry = lineFeature?.getGeometry();
+        if (lineGeometry instanceof LineString) {
+          callbackRef.current.onDrawAxis?.({ type: 'LineString', coordinates: lineGeometry.getCoordinates() });
+          return;
+        }
+        if (lineGeometry instanceof MultiLineString) {
+          const closest = lineGeometry.getLineStrings().sort((left, right) => left.getClosestPoint(event.coordinate).reduce((sum, value, index) => sum + (value - event.coordinate[index]) ** 2, 0) - right.getClosestPoint(event.coordinate).reduce((sum, value, index) => sum + (value - event.coordinate[index]) ** 2, 0))[0];
+          if (closest) callbackRef.current.onDrawAxis?.({ type: 'LineString', coordinates: closest.getCoordinates() });
+          return;
+        }
+      }
       if (activeTool === 'add_tree' || activeTool === 'add_shrub' || activeTool === 'move' || activeTool === 'copy') {
         callbackRef.current.onCoordinate([event.coordinate[0], event.coordinate[1]]);
         return;
@@ -706,6 +779,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       drawRef.current = null;
       selectionInteractionRef.current = null;
       snapInteractionRef.current = null;
+      translateInteractionRef.current = null;
       mapRef.current = null;
     };
   }, []);
@@ -744,7 +818,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     if (tool === 'brush') target?.addEventListener('pointerdown', rememberBrushMode, true);
     const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', trace: tool === 'pattern_row', traceSource: tool === 'pattern_row' ? snapTargetSourceRef.current : undefined, style: drawStyle, stopClick: true, condition: (event) => {
       const original = event.originalEvent as PointerEvent;
-      return !spacePanRef.current && original.button === 0;
+      return !spacePanRef.current && original.button === 0 && (tool !== 'pattern_row' || original.shiftKey);
     } });
     draw.on('drawstart', () => {
       areaDrawingSourceRef.current.clear();
@@ -960,6 +1034,62 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   }, [objects, schedulePlanFit]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    const selected = planSourceRef.current.getFeatures().filter((feature) => selectedRef.current.has(String(feature.get('objectId'))));
+    if (!map || !selected.length) {
+      callbackRef.current.onSelectionAnchor?.(undefined);
+      return;
+    }
+    const centers = selected.flatMap((feature) => {
+      const geometry = feature.getGeometry();
+      return geometry instanceof Circle ? [geometry.getCenter()] : [];
+    });
+    if (!centers.length) return;
+    const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
+    const pixel = map.getPixelFromCoordinate(center);
+    callbackRef.current.onSelectionAnchor?.([pixel[0], pixel[1]]);
+  }, [objects, selectedIds]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (translateInteractionRef.current) map.removeInteraction(translateInteractionRef.current);
+    translateInteractionRef.current = null;
+    if (tool !== 'move' || !selectedIds?.length) return;
+    const features = planSourceRef.current.getFeatures().filter((feature) => selectedRef.current.has(String(feature.get('objectId'))));
+    if (!features.length) return;
+    const translate = new Translate({ features: new Collection(features), hitTolerance: 8 });
+    translate.on('translating', () => {
+      const centers = features.flatMap((feature) => {
+        const geometry = feature.getGeometry();
+        return geometry instanceof Circle ? [geometry.getCenter()] : [];
+      });
+      if (!centers.length) return;
+      const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
+      const pixel = map.getPixelFromCoordinate(center);
+      callbackRef.current.onSelectionAnchor?.([pixel[0], pixel[1]]);
+    });
+    translate.on('translateend', () => {
+      const centers = features.flatMap((feature) => {
+        const geometry = feature.getGeometry();
+        return geometry instanceof Circle ? [geometry.getCenter()] : [];
+      });
+      if (centers.length) {
+        const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
+        callbackRef.current.onTranslateSelectionEnd?.(center);
+      }
+      syncPlanFeatures(planSourceRef.current, objects);
+      planLayerRef.current?.changed();
+    });
+    map.addInteraction(translate);
+    translateInteractionRef.current = translate;
+    return () => {
+      map.removeInteraction(translate);
+      if (translateInteractionRef.current === translate) translateInteractionRef.current = null;
+    };
+  }, [objects, selectedIds, tool]);
+
+  useEffect(() => {
     const source = changePreviewSourceRef.current;
     source.clear();
     if (!changePreview) return;
@@ -971,6 +1101,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         geometry: new Circle([object.x, object.y], radius),
         markerGeometry: new Point([object.x, object.y]),
         objectId: object.id,
+        kind: object.kind,
       });
       feature.setId(`change-preview-${object.id}`);
       return [feature];
@@ -980,12 +1111,15 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   useEffect(() => {
     const source = growthEnvelopeSourceRef.current;
     source.clear();
-    if (!growthHorizon) return;
-    const visibleObjects = [...objects, ...(changePreview?.additions ?? []), ...(changePreview?.updates ?? [])];
+    if (growthHorizon === undefined) return;
+    const selectedObjects = objects.filter((object) => object.id && selectedRef.current.has(object.id));
+    const previewObjects = [...(changePreview?.additions ?? []), ...(changePreview?.updates ?? [])];
+    const visibleObjects = [...selectedObjects, ...previewObjects];
     for (const object of visibleObjects) {
       const canopy = forecastAt(object.canopy_forecast, growthHorizon);
       const roots = forecastAt(object.root_forecast, growthHorizon);
-      if (roots) {
+      const selected = Boolean(object.id && selectedRef.current.has(object.id));
+      if (roots && selected) {
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_max_m), envelopeStyle: 'rootMax' }));
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_min_m), envelopeStyle: 'rootMin' }));
       }
@@ -994,7 +1128,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], canopy.radius_min_m), envelopeStyle: 'canopyMin' }));
       }
     }
-  }, [changePreview, growthHorizon, objects]);
+  }, [changePreview, growthHorizon, objects, selectedIds]);
 
   useEffect(() => {
     const source = placementPreviewSourceRef.current;

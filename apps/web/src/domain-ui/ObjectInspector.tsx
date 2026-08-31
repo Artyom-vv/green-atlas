@@ -17,7 +17,7 @@ export function ObjectInspector({ object, speciesName, growthHorizon, onGrowthHo
       <header><span><strong>{object.kind === 'tree' ? 'Дерево' : 'Кустарник'}</strong><small>Выбранная посадка</small></span></header>
       <section className="inspector-status"><span>Проверка</span><strong className={status.className}><i />{status.label}</strong><p>{status.description}</p></section>
       <section className="object-species"><h3>Порода</h3><strong>{speciesName ?? 'Не назначена'}</strong><span>{speciesName ? 'Прогноз роста доступен.' : 'Назначьте для расчёта кроны и корней.'}</span>{editable ? <Button variant="secondary" icon={Leaf} onClick={onSpecies}>{speciesName ? 'Изменить породу' : 'Назначить породу'}</Button> : null}</section>
-      {object.canopy_forecast?.length ? <GrowthHorizonControl value={growthHorizon} onChange={onGrowthHorizon} /> : null}
+      {object.canopy_forecast?.length ? <GrowthHorizonControl value={growthHorizon} forecasts={[object]} onChange={onGrowthHorizon} /> : null}
       <div className="inspector-spacer" />
       <footer>{editable ? <><button type="button" onClick={onDelete}>Удалить</button><Button variant="primary" onClick={onMove}>Переместить</Button></> : <Button variant="secondary" disabled>Зафиксировано в реализации</Button>}</footer>
     </div>

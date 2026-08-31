@@ -533,7 +533,7 @@ test('box selection moves a group through one confirmed change set', async ({ pa
 
   await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
   await expect(page.getByText('2 объектов')).toBeVisible();
-  await page.getByRole('button', { name: 'Переместить' }).click();
+  await page.getByRole('button', { name: 'Переместить', exact: true }).click();
   const destination = point(30, 25);
   await page.mouse.click(destination.x, destination.y);
   await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
@@ -580,11 +580,10 @@ test('placement flow creates a typed group across the selected area as one revis
     box!.y + box!.height / 2 - (25 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
   );
   await expect(zoneCheckbox).toBeChecked();
-  await page.getByRole('combobox', { name: 'Порода' }).selectOption({ label: 'Рябина обыкновенная' });
+  await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
-  await page.getByRole('button', { name: 'Рассчитать' }).click();
-  await expect(page.getByText(/Размещено/)).toBeVisible();
-  await expect(page.getByText('Пунктиром показан результат до сохранения')).toBeVisible();
+  await expect(page.getByText('Черновик на карте')).toBeVisible();
+  await expect(page.getByText(/из 8 допустимы/)).toBeVisible();
   await page.getByRole('button', { name: /Добавить/ }).click();
 
   await expect.poll(async () => {
@@ -620,6 +619,27 @@ test('primary workspace exposes one guided placement action and direct numeric i
   await count.fill('5000');
   await expect(count).toHaveValue('5000');
   await expect(page.getByText('Шаг 2 из 3')).toBeVisible();
+});
+
+test('working areas remain manageable after the editor is opened', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+
+  await page.getByRole('button', { name: 'Рабочие участки' }).click();
+  await expect(page.locator('.rail-panel__header strong', { hasText: 'Рабочие участки' })).toBeVisible();
+  const name = page.getByRole('textbox', { name: 'Название Контур DXF: тестовая область' });
+  await name.fill('Главная аллея');
+  await name.press('Enter');
+  await expect.poll(async () => {
+    const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await response.json() as { planting_zones: Array<{ label: string }> }).planting_zones[0]?.label;
+  }).toBe('Главная аллея');
+
+  await expect(page.getByRole('button', { name: 'Удалить Главная аллея' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Новый участок' }).click();
+  await expect(page.getByText('Поставьте точки и замкните новый контур')).toBeVisible();
+  await page.getByRole('button', { name: 'Отменить обводку' }).click();
 });
 
 test.skip('legacy recommendation surface is removed from the primary flow', async ({ page }) => {
@@ -718,19 +738,20 @@ test('row placement creates a checked linear planting group', async ({ page }) =
     x: box!.x + box!.width / 2 + (x - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
     y: box!.y + box!.height / 2 - (y - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
   });
-  const start = point(34, 30);
-  const end = point(58, 30);
+  const start = point(34, 7);
 
   await page.getByRole('button', { name: 'Посадки вдоль линии' }).click();
-  await expect(page.getByText('Нарисуйте ось на карте')).toBeVisible();
+  await expect(page.getByText('Выберите линию на карте')).toBeVisible();
   await page.mouse.click(start.x, start.y);
-  await page.mouse.dblclick(end.x, end.y);
-  await expect(page.getByText('Ось задана')).toBeVisible();
-  await page.getByRole('combobox', { name: 'Порода' }).selectOption({ label: 'Рябина обыкновенная' });
-  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click();
-  await expect(page.getByText(/Размещено/)).toBeVisible();
+  await expect(page.getByText('Линия выбрана')).toBeVisible();
+  await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  await page.getByRole('combobox', { name: 'Сторона оси' }).selectOption('left');
+  await page.getByRole('spinbutton', { name: 'Поперечный отступ' }).fill('12');
+  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('5');
+  await expect(page.getByText('Черновик на карте')).toBeVisible();
   await page.getByRole('button', { name: /Добавить/ }).click();
-  await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
+  await expect(page.getByText('Дерево', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Отменить: Ряд посадок/ })).toBeEnabled();
 });
 
 test('species assignment adds crown and root horizons without reloading the DXF', async ({ page }) => {
@@ -761,14 +782,14 @@ test('species assignment adds crown and root horizons without reloading the DXF'
 
   let viewportRequests = 0;
   page.on('request', (request) => { if (request.url().includes('/map-features?')) viewportRequests += 1; });
-  await page.getByRole('button', { name: '10 лет' }).click();
+  await page.getByRole('slider', { name: 'Горизонт прогноза' }).fill('10');
   await page.waitForTimeout(180);
   expect(viewportRequests).toBe(0);
   const projectId = new URL(page.url()).pathname.split('/')[2];
   const response = await page.request.get(`${apiBase}/projects/${projectId}`);
   const assigned = (await response.json() as { plan: { objects: Array<{ species_revision_id?: string; canopy_forecast?: unknown[]; root_forecast?: unknown[] }> } }).plan.objects.find((object) => object.species_revision_id?.startsWith('sorbus-aucuparia@'));
-  expect(assigned?.canopy_forecast).toHaveLength(3);
-  expect(assigned?.root_forecast).toHaveLength(3);
+  expect(assigned?.canopy_forecast).toHaveLength(7);
+  expect(assigned?.root_forecast).toHaveLength(7);
 });
 
 test.skip('decorative 3D stays hidden until it is linked to the DXF context', async ({ page }) => {

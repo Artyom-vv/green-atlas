@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { FillPatternRequest, PlantingZoneAssignment, RowPatternRequest, SpeciesRevision } from '@green/api-client';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FillPatternRequest, PatternPreview, PlantingZoneAssignment, RowPatternRequest, SpeciesRevision } from '@green/api-client';
 import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select, StepProgress } from '@green/ui';
 import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
 import { forecastAt } from './growthForecast';
@@ -7,7 +7,7 @@ import { forecastAt } from './growthForecast';
 type Axis = RowPatternRequest['axis'];
 type PatternDraft = Omit<RowPatternRequest, 'base_plan_version'> | Omit<FillPatternRequest, 'base_plan_version'>;
 
-export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds = [], drawingZone = false, loading, error, resultNote, growthHorizon, onGrowthHorizon, onSelectedZoneIdsChange, onDrawZone, onPreview, onCancel }: {
+export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds = [], drawingZone = false, loading, error, resultNote, preview, growthHorizon, onGrowthHorizon, onSelectedZoneIdsChange, onDrawZone, onPreview, onApply, onCancel }: {
   mode: 'row' | 'fill';
   zones: PlantingZoneAssignment[];
   species: SpeciesRevision[];
@@ -17,11 +17,13 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
   loading?: boolean;
   error?: string;
   resultNote?: string;
+  preview?: PatternPreview;
   growthHorizon?: GrowthHorizon;
   onGrowthHorizon?: (year: GrowthHorizon) => void;
   onSelectedZoneIdsChange?: (ids: string[]) => void;
   onDrawZone?: () => void;
   onPreview: (draft: PatternDraft) => void;
+  onApply?: () => void;
   onCancel: () => void;
 }) {
   const [plantKind, setPlantKind] = useState<'tree' | 'shrub'>('tree');
@@ -39,15 +41,18 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
   const [edgeOffset] = useState(1);
   const [angle] = useState(0);
   const [seed] = useState(47);
+  const previewRef = useRef(onPreview);
+  previewRef.current = onPreview;
   useEffect(() => {
     if (!availableSpecies.some((item) => item.id === speciesId)) setSpeciesId(availableSpecies[0]?.id);
   }, [availableSpecies, speciesId]);
 
   const canPreview = mode === 'row' ? Boolean(axis) : selectedZoneIds.length > 0;
+  const selectedSpecies = availableSpecies.find((item) => item.id === speciesId);
   const selectedZoneLabels = useMemo(() => new Set(selectedZoneIds), [selectedZoneIds]);
-  const submit = () => {
+  const submit = useCallback(() => {
     if (mode === 'row' && axis) {
-      onPreview({
+      previewRef.current({
         type: 'row',
         plant_kind: plantKind,
         axis,
@@ -64,7 +69,7 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
       });
     }
     if (mode === 'fill') {
-      onPreview({
+      previewRef.current({
         type: 'fill',
         plant_kind: plantKind,
         zone_ids: selectedZoneIds,
@@ -80,15 +85,21 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
         spacing_policy: spacingPolicy,
       });
     }
-  };
+  }, [angle, axis, edgeOffset, endOffset, lateralOffset, layout, mode, plantKind, rowPlacementMode, seed, selectedZoneIds, side, spacing, spacingPolicy, speciesId, startOffset, targetCount]);
+
+  useEffect(() => {
+    if (!canPreview || !speciesId || drawingZone) return;
+    const timer = window.setTimeout(submit, 420);
+    return () => window.clearTimeout(timer);
+  }, [canPreview, drawingZone, speciesId, submit]);
 
   return <div className="project-inspector pattern-tool-panel">
     <header><span><strong>{mode === 'row' ? 'Ряд посадок' : 'Разместить посадки'}</strong><small>{mode === 'row' ? 'По выбранной линии' : 'По выбранным участкам'}</small></span></header>
     <div className="pattern-tool-panel__content">
-      <StepProgress current={mode === 'fill' && !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
+      <StepProgress current={preview ? 2 : mode === 'fill' && !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
       {mode === 'row' ? <section className="pattern-tool-panel__axis">
         <strong>{axis ? 'Линия выбрана' : 'Выберите линию на карте'}</strong>
-        <span>{axis ? 'Посадки появятся после расчёта' : 'Кликните по границе или дорожке и проведите вдоль неё'}</span>
+        <span>{axis ? 'Черновик обновляется автоматически' : 'Кликните по линии DXF. Shift — нарисовать свою ось'}</span>
       </section> : null}
       {mode === 'fill' ? <fieldset className="pattern-tool-panel__zones">
         <legend>Участки</legend>
@@ -101,7 +112,6 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
       {!drawingZone ? <>
       <FormField label="Растительность"><Select value={plantKind} onChange={(event) => { const value = event.target.value as 'tree' | 'shrub'; setPlantKind(value); setSpacing(value === 'tree' ? 6 : 2); }}><option value="tree">Деревья</option><option value="shrub">Кустарники</option></Select></FormField>
       <fieldset className="species-choice"><legend>Порода</legend>{availableSpecies.map((item) => { const forecast = forecastAt(item.canopy_forecast, growthHorizon ?? 20); return <button type="button" key={item.id} className={speciesId === item.id ? 'species-choice__item is-selected' : 'species-choice__item'} onClick={() => setSpeciesId(item.id)}><span><strong>{item.common_name}</strong><small>{item.crown_shape === 'spreading' ? 'раскидистая' : item.crown_shape === 'conical' ? 'коническая' : item.crown_shape === 'oval' ? 'овальная' : 'компактная'} крона</small></span><b>{forecast ? `${(forecast.radius_min_m * 2).toFixed(1)}–${(forecast.radius_max_m * 2).toFixed(1)} м` : 'нет данных'}</b></button>; })}</fieldset>
-      {onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} onChange={onGrowthHorizon} /> : null}
       <FormField label="Плотность группы"><Select value={spacingPolicy} onChange={(event) => setSpacingPolicy(event.target.value as typeof spacingPolicy)}><option value="canopy">Плотно, кроны сомкнутся</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select></FormField>
       {mode === 'row' ? <FormField label="Сторона оси"><Select value={side} onChange={(event) => setSide(event.target.value as typeof side)}><option value="center">По оси</option><option value="left">Слева</option><option value="right">Справа</option><option value="both">С двух сторон</option></Select></FormField> : null}
       {mode === 'row' ? <FormField label="Задать ряд"><Select value={rowPlacementMode} onChange={(event) => setRowPlacementMode(event.target.value as typeof rowPlacementMode)}><option value="count">По количеству</option><option value="spacing">По шагу</option></Select></FormField> : null}
@@ -112,9 +122,10 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
       {mode === 'row' ? <><div className="pattern-tool-panel__setting"><span>От начала, м</span><NumberStepper label="Отступ от начала" value={startOffset} onChange={setStartOffset} min={0} max={100} step={0.5} /></div><div className="pattern-tool-panel__setting"><span>От конца, м</span><NumberStepper label="Отступ от конца" value={endOffset} onChange={setEndOffset} min={0} max={100} step={0.5} /></div></> : null}
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
       {resultNote ? <InlineMessage tone="warning">{resultNote}</InlineMessage> : null}
+      {preview?.change_set ? <><section className="pattern-live-summary" aria-live="polite"><strong>Черновик на карте</strong><span>{preview.accepted_count} из {preview.requested_count} допустимы</span></section>{onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} forecasts={selectedSpecies ? [selectedSpecies] : []} onChange={onGrowthHorizon} /> : null}</> : null}
       </> : null}
     </div>
     <div className="inspector-spacer" />
-    {!drawingZone ? <footer><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!canPreview || !speciesId} onClick={submit}>Рассчитать</Button></footer> : null}
+    {!drawingZone ? <footer><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!canPreview || !speciesId || Boolean(preview && !preview.change_set)} onClick={preview?.change_set ? onApply : submit}>{preview?.change_set ? `Добавить ${preview.accepted_count}` : 'Показать'}</Button></footer> : null}
   </div>;
 }

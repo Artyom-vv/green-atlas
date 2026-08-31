@@ -20,6 +20,6 @@ export function GroupInspector({ objects, disabled, growthHorizon, onGrowthHoriz
       <Button variant="secondary" icon={locked === objects.length ? Unlock : Lock} disabled={disabled} onClick={() => onLock(locked !== objects.length)}>{locked === objects.length ? 'Открепить' : 'Закрепить'}</Button>
       <Button variant="danger" icon={Trash2} disabled={disabled || locked > 0} onClick={onDelete}>Удалить выбранные</Button>
     </section>
-    {objects.some((object) => object.canopy_forecast?.length) ? <GrowthHorizonControl value={growthHorizon} onChange={onGrowthHorizon} /> : null}
+    {objects.some((object) => object.canopy_forecast?.length) ? <GrowthHorizonControl value={growthHorizon} forecasts={objects} onChange={onGrowthHorizon} /> : null}
   </div>;
 }

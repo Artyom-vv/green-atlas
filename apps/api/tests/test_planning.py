@@ -35,6 +35,14 @@ def test_spacing_uses_mature_crowns_when_species_is_known() -> None:
     assert index.respects(PlanObject(kind="tree", x=14, y=0, radius=1.6, canopy_forecast=forecast(6))) is True
 
 
+def test_dense_group_can_close_canopies_without_disabling_external_spacing() -> None:
+    first = PlanObject(kind="tree", x=0, y=0, radius=1.6, canopy_forecast=forecast(6), group_ids=["grove"], spacing_policy="canopy")
+    index = PlantSpacingIndex([first])
+
+    assert index.respects(PlanObject(kind="tree", x=7, y=0, radius=1.6, canopy_forecast=forecast(6), group_ids=["grove"], spacing_policy="canopy")) is True
+    assert index.respects(PlanObject(kind="tree", x=7, y=0, radius=1.6, canopy_forecast=forecast(6), group_ids=["other"], spacing_policy="canopy")) is False
+
+
 def test_growth_envelope_keeps_automatic_layout_inside_the_selected_area() -> None:
     area = {"type": "Polygon", "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}
     project = Project(
