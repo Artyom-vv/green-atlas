@@ -9,7 +9,7 @@ describe('MapToolbar', () => {
   it('keeps the editing surface to placement actions', () => {
     render(<MapToolbar {...props} />);
     expect(screen.getByRole('button', { name: 'Выбрать. Shift — добавить к выбору' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Добавить дерево' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Разместить посадки' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /Измерить|Нарисовать участок/ })).not.toBeInTheDocument();
   });
 
@@ -18,6 +18,6 @@ describe('MapToolbar', () => {
     render(<MapToolbar {...props} onDelete={onDelete} canDelete />);
     screen.getByRole('button', { name: 'Удалить выбранное' }).click();
     expect(onDelete).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: 'Добавить кустарник' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Разместить посадки' })).toBeEnabled();
   });
 });

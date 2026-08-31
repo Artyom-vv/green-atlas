@@ -46,6 +46,14 @@ describe('Button', () => {
     expect(onChange).toHaveBeenCalledWith(13);
   });
 
+  it('accepts large numeric values from the keyboard', () => {
+    const onChange = vi.fn();
+    render(<NumberStepper label="Число посадок" value={50} onChange={onChange} min={1} max={5000} />);
+    const input = screen.getByRole('spinbutton', { name: 'Число посадок' });
+    fireEvent.change(input, { target: { value: '5000' } });
+    expect(onChange).toHaveBeenCalledWith(5000);
+  });
+
   it('traps dialog focus, closes on Escape and restores the opener', async () => {
     function Harness() {
       const [open, setOpen] = useState(false);

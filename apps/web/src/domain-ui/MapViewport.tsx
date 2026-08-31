@@ -7,6 +7,7 @@ import View from 'ol/View';
 import { defaults as defaultControls } from 'ol/control/defaults';
 import Projection from 'ol/proj/Projection';
 import VectorLayer from 'ol/layer/Vector';
+import VectorImageLayer from 'ol/layer/VectorImage';
 import VectorSource from 'ol/source/Vector';
 import Circle from 'ol/geom/Circle';
 import LineString from 'ol/geom/LineString';
@@ -14,6 +15,7 @@ import Polygon from 'ol/geom/Polygon';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import Point from 'ol/geom/Point';
 import Draw from 'ol/interaction/Draw';
+import DragPan from 'ol/interaction/DragPan';
 import DragBox, { type DragBoxEvent } from 'ol/interaction/DragBox';
 import MouseWheelZoom from 'ol/interaction/MouseWheelZoom';
 import Snap from 'ol/interaction/Snap';
@@ -40,7 +42,24 @@ const colors: Record<string, string> = {
 
 export type MapExtent = [number, number, number, number];
 export type MapHoverTarget = { id: string; kind: string; label: string; detail: string; pixel: [number, number] };
-export type MapAreaTarget = { sourceId: string; geometry: { type: 'Polygon'; coordinates: number[][][] }; label: string };
+export type MapAreaTarget = { sourceId: string; geometry?: { type: 'Polygon'; coordinates: number[][][] }; kind: string; label: string; detail: string; selectable: boolean };
+
+function mapFeatureCopy(feature: FeatureLike) {
+  const kind = String(feature.get('kind') ?? 'unknown');
+  const labels: Record<string, [string, string]> = {
+    allowed: ['Допустимая область', 'Можно включить в рабочую зону'],
+    planting_area: [String(feature.get('label') ?? 'Участок посадки'), 'Рабочая область проекта'],
+    site_border: ['Территория проектирования', 'Граница исходного чертежа'],
+    existing_green: ['Существующее озеленение', 'Сохраняемый зелёный контур'],
+    ignore: [`Контур DXF: ${String(feature.get('source_layer') ?? 'без имени')}`, 'Справочная геометрия исходного плана'],
+    building: ['Здание', `Слой ${String(feature.get('source_layer') ?? 'без имени')}`],
+    road: ['Дорога или дорожка', `Слой ${String(feature.get('source_layer') ?? 'без имени')}`],
+    utility: ['Инженерная сеть', `Слой ${String(feature.get('source_layer') ?? 'без имени')}`],
+    forbidden: [String(feature.get('label') ?? 'Зона ограничения'), `Проверочный отступ ${Number(feature.get('distance_m') ?? 0).toLocaleString('ru-RU')} м`],
+  };
+  const [label, detail] = labels[kind] ?? ['Область карты', 'Геометрия исходного плана'];
+  return { kind, label, detail };
+}
 
 const drawStyle = new Style({
   stroke: new Stroke({ color: '#225CFF', width: 2, lineDash: [7, 5] }),
@@ -364,6 +383,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const toolRef = useRef(tool);
   const selectionModifierRef = useRef<SelectionMode>('replace');
   const brushModeRef = useRef<BrushDrawMode>('replace');
+  const spacePanRef = useRef(false);
   const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange });
 
   selectedRef.current = new Set(selectedIds);
@@ -492,32 +512,31 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     // animation is in progress. The viewport cache bounds the amount of
     // primary DXF geometry, so rebuilding these batches continuously avoids
     // the clipped/empty edge that OpenLayers otherwise keeps until moveend.
-    const zoneLayer = new VectorLayer({ source: zoneSourceRef.current, style: geometryStyle, zIndex: 0, renderBuffer: 260, updateWhileAnimating: true, updateWhileInteracting: true });
-    const baseLayer = new VectorLayer({ source: baseSourceRef.current, style: geometryStyle, zIndex: 1, renderBuffer: 260, updateWhileAnimating: true, updateWhileInteracting: true });
-    const constraintLayer = new VectorLayer({ source: constraintSourceRef.current, style: geometryStyle, zIndex: 2, renderBuffer: 260, updateWhileAnimating: true, updateWhileInteracting: true });
-    const growthEnvelopeLayer = new VectorLayer({ source: growthEnvelopeSourceRef.current, style: growthEnvelopeStyle, zIndex: 2.5, renderBuffer: 180, updateWhileAnimating: true, updateWhileInteracting: true });
-    const planLayer = new VectorLayer({ source: planSourceRef.current, style: (feature, resolution) => planStyle(feature, selectedRef.current, resolution), zIndex: 3, renderBuffer: 180, updateWhileAnimating: true, updateWhileInteracting: true });
-    const draftPlantingZoneLayer = new VectorLayer({ source: draftPlantingZoneSourceRef.current, style: plantingZoneFocusStyle, zIndex: 4, updateWhileAnimating: true, updateWhileInteracting: true });
-    const plantingZoneFocusLayer = new VectorLayer({ source: plantingZoneFocusSourceRef.current, style: plantingZoneFocusStyle, zIndex: 5, updateWhileAnimating: true, updateWhileInteracting: true });
-    const mapHoverLayer = new VectorLayer({ source: mapHoverSourceRef.current, style: mapHoverStyle, zIndex: 6, updateWhileAnimating: true, updateWhileInteracting: true });
+    const zoneLayer = new VectorImageLayer({ source: zoneSourceRef.current, style: geometryStyle, zIndex: 0, renderBuffer: 160, imageRatio: 1.5 });
+    const baseLayer = new VectorImageLayer({ source: baseSourceRef.current, style: geometryStyle, zIndex: 1, renderBuffer: 160, imageRatio: 1.5 });
+    const constraintLayer = new VectorImageLayer({ source: constraintSourceRef.current, style: geometryStyle, zIndex: 2, renderBuffer: 160, imageRatio: 1.5 });
+    const growthEnvelopeLayer = new VectorLayer({ source: growthEnvelopeSourceRef.current, style: growthEnvelopeStyle, zIndex: 2.5, renderBuffer: 80 });
+    const planLayer = new VectorLayer({ source: planSourceRef.current, style: (feature, resolution) => planStyle(feature, selectedRef.current, resolution), zIndex: 3, renderBuffer: 80 });
+    const draftPlantingZoneLayer = new VectorLayer({ source: draftPlantingZoneSourceRef.current, style: plantingZoneFocusStyle, zIndex: 4 });
+    const plantingZoneFocusLayer = new VectorLayer({ source: plantingZoneFocusSourceRef.current, style: plantingZoneFocusStyle, zIndex: 5 });
+    const mapHoverLayer = new VectorLayer({ source: mapHoverSourceRef.current, style: mapHoverStyle, zIndex: 6 });
     const areaDrawingLayer = new VectorLayer({ source: areaDrawingSourceRef.current, style: drawStyle, zIndex: 7 });
     const snapGuideLayer = new VectorLayer({ source: snapGuideSourceRef.current, style: snapGuideStyle, zIndex: 8 });
-    const changePreviewLayer = new VectorLayer({ source: changePreviewSourceRef.current, style: changePreviewStyle, zIndex: 9, renderBuffer: 120, updateWhileAnimating: true, updateWhileInteracting: true });
-    const selectionDraftLayer = new VectorLayer({ source: selectionDraftSourceRef.current, style: selectionDraftStyle, zIndex: 10, updateWhileInteracting: true });
-    const placementPreviewLayer = new VectorLayer({ source: placementPreviewSourceRef.current, style: placementPreviewStyle, zIndex: 11, renderBuffer: 80, updateWhileAnimating: true, updateWhileInteracting: true });
+    const changePreviewLayer = new VectorLayer({ source: changePreviewSourceRef.current, style: changePreviewStyle, zIndex: 9, renderBuffer: 80 });
+    const selectionDraftLayer = new VectorLayer({ source: selectionDraftSourceRef.current, style: selectionDraftStyle, zIndex: 10 });
+    const placementPreviewLayer = new VectorLayer({ source: placementPreviewSourceRef.current, style: placementPreviewStyle, zIndex: 11, renderBuffer: 60 });
     const view = new View({ projection, center: [0, 0], resolution: 1, showFullExtent: true });
     planLayerRef.current = planLayer;
-    const mouseWheelZoom = new MouseWheelZoom({
-      condition: (event) => {
-        const original = event.originalEvent as WheelEvent;
-        return !original.ctrlKey && !original.metaKey;
-      },
-    });
+    const mouseWheelZoom = new MouseWheelZoom();
+    const temporaryPan = new DragPan({ condition: (event) => {
+      const original = event.originalEvent as PointerEvent;
+      return spacePanRef.current || original.button === 1;
+    } });
     const map = new Map({
       target,
       layers: [zoneLayer, baseLayer, constraintLayer, growthEnvelopeLayer, planLayer, draftPlantingZoneLayer, plantingZoneFocusLayer, mapHoverLayer, areaDrawingLayer, snapGuideLayer, changePreviewLayer, selectionDraftLayer, placementPreviewLayer],
       controls: defaultControls({ zoom: true, rotate: false, attribution: false }),
-      interactions: defaultInteractions({ mouseWheelZoom: false }).extend([mouseWheelZoom]),
+      interactions: defaultInteractions({ mouseWheelZoom: false, shiftDragZoom: false }).extend([mouseWheelZoom, temporaryPan]),
       view,
     });
     const resizeMap = () => {
@@ -530,14 +549,6 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       callbackRef.current.onExtentChange?.([extent[0], extent[1], extent[2], extent[3]], view.getResolution() ?? 1);
     };
     let resizeFrame = 0;
-    let extentFrame = 0;
-    const scheduleExtent = () => {
-      if (extentFrame) return;
-      extentFrame = requestAnimationFrame(() => {
-        extentFrame = 0;
-        publishExtent();
-      });
-    };
     requestAnimationFrame(() => {
       resizeMap();
       const initial = initialExtentRef.current;
@@ -569,14 +580,11 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         return;
       }
       if (activeTool === 'select') {
-        const areaTarget = (map.getFeaturesAtPixel(event.pixel, { layerFilter: (layer) => layer === zoneLayer || layer === baseLayer, hitTolerance: 10 }) as Feature[])
-          .find((candidate) => {
-            const kind = String(candidate.get('kind') ?? '');
-            const geometry = candidate.getGeometry();
-            return (kind === 'allowed' || kind === 'ignore' || kind === 'site_border') && (geometry instanceof Polygon || geometry instanceof MultiPolygon);
-          });
+        const areaTarget = (map.getFeaturesAtPixel(event.pixel, { layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer, hitTolerance: 10 }) as Feature[])
+          .find((candidate) => ['allowed', 'ignore', 'site_border', 'planting_area', 'existing_green', 'building', 'road', 'utility', 'forbidden'].includes(String(candidate.get('kind') ?? '')));
         const areaGeometry = areaTarget?.getGeometry();
         if (areaTarget && areaGeometry) {
+          const copy = mapFeatureCopy(areaTarget);
           const clickedGeometry = areaGeometry instanceof MultiPolygon
             ? areaGeometry.getPolygons().find((polygon) => polygon.intersectsCoordinate(event.coordinate))
             : areaGeometry;
@@ -584,11 +592,18 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
             const serialized = new GeoJSON().writeGeometryObject(clickedGeometry, { featureProjection: projection, dataProjection: projection });
             callbackRef.current.onMapArea?.({
               sourceId: `source-zone-${String(areaTarget.getId() ?? 'map')}-${clickedGeometry.getExtent().map((value) => value.toFixed(3)).join('-')}`,
-              geometry: serialized as MapAreaTarget['geometry'],
-              label: areaTarget.get('kind') === 'allowed' ? 'Базово допустимая область' : `Контур DXF: ${String(areaTarget.get('source_layer') ?? 'без имени')}`,
+              geometry: serialized as NonNullable<MapAreaTarget['geometry']>,
+              ...copy,
+              selectable: ['allowed', 'ignore', 'site_border'].includes(copy.kind),
             });
             return;
           }
+          callbackRef.current.onMapArea?.({
+            sourceId: `source-feature-${String(areaTarget.getId() ?? copy.kind)}`,
+            ...copy,
+            selectable: false,
+          });
+          return;
         }
       }
       if (activeTool === 'select') callbackRef.current.onSelect(undefined, 'replace');
@@ -627,22 +642,16 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         return;
       }
       if (changedFeature && hoverGeometry) mapHoverSourceRef.current.addFeature(new Feature({ geometry: hoverGeometry.clone() }));
-      const kind = String(hoveredFeature.get('kind'));
-      const labels: Record<string, [string, string]> = {
-        allowed: ['Допустимая область', 'Нажмите, чтобы выбрать её для ручной работы'],
-        planting_area: [String(hoveredFeature.get('label') ?? 'Участок посадки'), 'Выбранная рабочая область'],
-        site_border: ['Территория проектирования', 'Нажмите, чтобы выбрать весь замкнутый контур'],
-        existing_green: ['Существующее озеленение', 'Сохраняемый зелёный контур'],
-        ignore: [`Контур DXF: ${String(hoveredFeature.get('source_layer') ?? 'без имени')}`, 'Нажмите, чтобы выбрать этот замкнутый контур'],
-        forbidden: [String(hoveredFeature.get('label') ?? 'Зона ограничения'), `Проверочный отступ ${Number(hoveredFeature.get('distance_m') ?? 0).toLocaleString('ru-RU')} м`],
-      };
-      const [label, detail] = labels[kind] ?? ['Область карты', 'Геометрия исходного плана'];
+      const { kind, label, detail } = mapFeatureCopy(hoveredFeature);
       callbackRef.current.onMapHover?.({ id: String(hoveredFeature.getId() ?? kind), kind, label, detail, pixel: [event.pixel[0], event.pixel[1]] });
     });
-    const publishResolution = () => scheduleExtent();
-    view.on('change:center', scheduleExtent);
-    view.on('change:resolution', publishResolution);
     map.on('moveend', publishExtent);
+    const rememberSpace = (event: KeyboardEvent) => { if (event.code === 'Space' && !event.repeat) spacePanRef.current = true; };
+    const releaseSpace = (event: KeyboardEvent) => { if (event.code === 'Space') spacePanRef.current = false; };
+    const preventPageZoom = (event: WheelEvent) => event.preventDefault();
+    window.addEventListener('keydown', rememberSpace);
+    window.addEventListener('keyup', releaseSpace);
+    target.addEventListener('wheel', preventPageZoom, { passive: false });
     const clearPointer = () => {
       callbackRef.current.onPointerCoordinate?.(undefined);
       callbackRef.current.onMapHover?.(undefined);
@@ -656,12 +665,12 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     mapRef.current = map;
     return () => {
       cancelAnimationFrame(resizeFrame);
-      cancelAnimationFrame(extentFrame);
       if (planFitFrameRef.current !== undefined) cancelAnimationFrame(planFitFrameRef.current);
       observer.disconnect();
-      view.un('change:center', scheduleExtent);
-      view.un('change:resolution', publishResolution);
       map.un('moveend', publishExtent);
+      window.removeEventListener('keydown', rememberSpace);
+      window.removeEventListener('keyup', releaseSpace);
+      target.removeEventListener('wheel', preventPageZoom);
       target.removeEventListener('mouseleave', clearPointer);
       map.setTarget(undefined);
       // ``setTarget(undefined)`` removes the DOM binding but does not make
@@ -708,10 +717,13 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     drawRef.current = null;
     if (tool !== 'draw_area' && tool !== 'pattern_row' && tool !== 'brush') return;
     const rememberBrushMode = (event: PointerEvent) => {
-      brushModeRef.current = event.altKey ? 'subtract' : event.shiftKey ? 'append' : 'replace';
+      brushModeRef.current = event.altKey ? 'subtract' : 'append';
     };
     if (tool === 'brush') target?.addEventListener('pointerdown', rememberBrushMode, true);
-    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', style: drawStyle, stopClick: true });
+    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', style: drawStyle, stopClick: true, condition: (event) => {
+      const original = event.originalEvent as PointerEvent;
+      return !spacePanRef.current && original.button === 0;
+    } });
     draw.on('drawstart', () => {
       areaDrawingSourceRef.current.clear();
     });
@@ -724,6 +736,11 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         // twice and leave a stale polygon after it is removed in the panel.
         areaDrawingSourceRef.current.clear();
       } else if (featureGeometry instanceof LineString) {
+        const resolution = map.getView().getResolution() ?? 1;
+        if (tool === 'brush' && featureGeometry.getLength() < resolution * 5) {
+          areaDrawingSourceRef.current.clear();
+          return;
+        }
         const geometry = { type: 'LineString' as const, coordinates: featureGeometry.getCoordinates() };
         if (tool === 'brush') callbackRef.current.onDrawBrush?.({ mode: brushModeRef.current === 'subtract' ? 'subtract' : 'add', geometry }, brushModeRef.current);
         else callbackRef.current.onDrawAxis?.(geometry);
@@ -1018,5 +1035,5 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     planLayerRef.current?.changed();
   }, [selectedIds]);
 
-  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} /><span id={helpId} className="sr-only">Используйте стрелки для перемещения карты, плюс и минус для масштаба. Инструменты редактирования находятся над картой.</span></>;
+  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} /><span id={helpId} className="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб</span></>;
 });

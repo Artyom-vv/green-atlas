@@ -648,12 +648,13 @@ def test_stricter_tree_map_cue_does_not_false_block_a_shrub() -> None:
     engine = ShapelyGeometryEngine()
     project.geometry = engine.calculate(project)
 
-    # The point is inside the 5 m tree cue but more than 1.5 m plus the
-    # shrub footprint away from the building. It must not inherit the tree
-    # prohibition merely because the map has one conservative green layer.
+    # The point is on the 5 m tree threshold and outside the 1.5 m shrub
+    # threshold. It must not inherit the tree prohibition merely because the
+    # map has one conservative cue. PP-743 measures both values to the axis.
     engine.validate_position(project, 35, 25, 0.65, "shrub")
+    engine.validate_position(project, 35, 25, 1.6, "tree")
     with __import__("pytest").raises(ValueError, match="наружной стены"):
-        engine.validate_position(project, 35, 25, 1.6, "tree")
+        engine.validate_position(project, 34.99, 25, 1.6, "tree")
 
 
 def test_empty_common_tree_cue_does_not_block_a_shrub_only_site() -> None:

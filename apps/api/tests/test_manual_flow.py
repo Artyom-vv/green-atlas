@@ -17,7 +17,7 @@ from starlette.datastructures import UploadFile
 from app import api as api_module
 from app import application as application_module
 from app.application import ProjectApplication
-from app.contracts import LayerMapping, PlanObjectCreate, PlantingZoneAssignment
+from app.contracts import FillPatternRequest, LayerMapping, PlanObjectCreate, PlantingZoneAssignment
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
@@ -25,7 +25,7 @@ from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import InMemoryProjectHistory
 from app.main import app
 from app.operations.adapters import SqliteOperationRepository
-from app.planning.patterns import ShapelyCandidateGenerator
+from app.planning.patterns import ShapelyCandidateGenerator, generate_fill
 from app.projects.adapters import SqliteProjectRepository
 from app.validation.adapters import RuleBasedPlanValidator
 
@@ -460,6 +460,27 @@ def test_manual_area_keeps_a_boundaryless_dxf_usable() -> None:
     outside = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 85, "y": 20})
     assert outside.status_code == 400
     assert "выбранных рабочих областей" in outside.json()["message"]
+
+
+def test_pp743_building_distance_is_measured_to_plant_axis() -> None:
+    project_id = client.post("/api/projects", json={"name": "Отступ до оси"}).json()["id"]
+    imported = client.post(
+        f"/api/projects/{project_id}/source-dxf",
+        files={"file": ("survey-fragment.dxf", boundaryless_content(), "application/dxf")},
+    ).json()
+    mappings = [{"layer_id": layer["id"], "kind": layer["suggested_kind"], "visible": True} for layer in imported["layers"]]
+    assert client.put(f"/api/projects/{project_id}/layer-mappings", json={"mappings": mappings}).status_code == 200
+    prepare_map(project_id)
+    select_areas(project_id, [area("manual", "Ручной контур", [[5, 5], [80, 5], [80, 80], [5, 80]])])
+    client.post(f"/api/projects/{project_id}/plan/manual")
+
+    exact = client.post(f"/api/projects/{project_id}/plan/placement-check", json={"kind": "tree", "x": 33, "y": 43})
+    too_close = client.post(f"/api/projects/{project_id}/plan/placement-check", json={"kind": "tree", "x": 33.01, "y": 43})
+
+    assert exact.status_code == 200 and exact.json()["allowed"] is True
+    assert too_close.status_code == 200 and too_close.json()["allowed"] is False
+    assert "4.99" in too_close.json()["reason"]
+    assert "5.00" in too_close.json()["reason"]
 
 
 def test_manual_plan_requires_a_prepared_map_and_selected_area() -> None:
@@ -1051,6 +1072,22 @@ def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips()
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["version"] == current_version
 
 
+def test_count_fill_is_bounded_and_spans_a_large_area() -> None:
+    zone = PlantingZoneAssignment.model_validate(area("large", "Большая область", [[0, 0], [2000, 0], [2000, 2000], [0, 2000]]))
+    candidates = generate_fill(FillPatternRequest(
+        base_plan_version=1,
+        zone_ids=["large"],
+        placement_mode="count",
+        target_count=500,
+        spacing_m=5,
+        edge_offset_m=0,
+    ), [zone])
+
+    assert len(candidates) == 500
+    assert max(item.x for item in candidates) - min(item.x for item in candidates) > 1800
+    assert max(item.y for item in candidates) - min(item.y for item in candidates) > 1800
+
+
 def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -> None:
     catalog = client.get("/api/species", params={"kind": "tree"})
     assert catalog.status_code == 200
@@ -1163,7 +1200,7 @@ def test_recommendation_is_deterministic_and_stale_versions_are_rejected() -> No
     assert stale.json()["code"] == "PLAN_VERSION_CONFLICT"
 
 
-def test_brush_adds_and_subtracts_as_one_undoable_change_set() -> None:
+def test_brush_subtracts_only_from_its_draft_and_never_deletes_saved_objects() -> None:
     project_id = prepare_project("Кисть посадок")
     select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
     client.post(f"/api/projects/{project_id}/plan/manual")
@@ -1190,10 +1227,9 @@ def test_brush_adds_and_subtracts_as_one_undoable_change_set() -> None:
     brush = response.json()
     preview = brush["change_set"]
     assert brush["added_count"] > 4
-    assert brush["removed_count"] == 1
-    assert removable_id in preview["deletion_ids"]
+    assert brush["removed_count"] == 0
+    assert removable_id not in preview["deletion_ids"]
     assert locked_id not in preview["deletion_ids"]
-    assert any("Закреплённая" in item["reason"] for item in brush["skipped"])
     assert {item["kind"] for item in preview["additions"]} == {"tree", "shrub"}
 
     applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
@@ -1203,7 +1239,7 @@ def test_brush_adds_and_subtracts_as_one_undoable_change_set() -> None:
     })
     assert applied.status_code == 200, applied.json()
     assert any(item["id"] == locked_id and item["locked"] for item in applied.json()["plan"]["objects"])
-    assert all(item["id"] != removable_id for item in applied.json()["plan"]["objects"])
+    assert any(item["id"] == removable_id for item in applied.json()["plan"]["objects"])
     undone = client.post(f"/api/projects/{project_id}/plan/history/undo").json()["plan"]
     assert {item["id"] for item in undone["objects"]} == {locked_id, removable_id}
 

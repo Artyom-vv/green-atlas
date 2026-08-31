@@ -19,14 +19,18 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
   await page.mouse.dblclick(box!.x + box!.width * 0.35, box!.y + box!.height * 0.65);
   await expect(page.getByText('Ручной участок 1')).toBeVisible();
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
-  await expect(page.getByText('Ручной план', { exact: true })).toBeVisible();
+  await expect(page.getByText('План озеленения', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Добавить дерево' }).click();
-  const plantingPoint = { x: box!.x + box!.width * 0.44, y: box!.y + box!.height * 0.48 };
-  await page.mouse.move(plantingPoint.x, plantingPoint.y);
-  await expect(page.getByText('Позиция проходит текущую проверку')).toBeVisible();
-  await page.mouse.click(plantingPoint.x, plantingPoint.y);
-  await expect(page.getByText('1 посадок')).toBeVisible();
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('3');
+  await page.getByRole('button', { name: 'Рассчитать' }).click();
+  await expect(page.getByText(/Размещено [1-3]/)).toBeVisible();
+  await page.getByRole('button', { name: /Добавить [1-3]/ }).click();
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  await expect.poll(async () => {
+    const response = await page.request.get(`http://127.0.0.1:${process.env.E2E_API_PORT ?? '18000'}/api/projects/${projectId}`);
+    return (await response.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBeGreaterThan(0);
 
   // Validation is derived on every edit; this action only opens the current
   // findings instead of creating a competing "check" stage or request.

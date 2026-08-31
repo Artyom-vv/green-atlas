@@ -231,11 +231,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-step-progress__label em { overflow: hidden; color: var(--color-neutral-500); font-size: 12px; line-height: 16px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 
 .ui-number-stepper { --control-height: var(--control-height-default); height: var(--control-height); display: inline-flex; flex: none; overflow: hidden; border: 1px solid var(--color-neutral-300); border-radius: var(--radius-control); background: var(--surface); }
-.ui-number-stepper button, .ui-number-stepper output { height: 100%; display: flex; align-items: center; justify-content: center; }
+.ui-number-stepper button, .ui-number-stepper input { height: 100%; display: flex; align-items: center; justify-content: center; }
 .ui-number-stepper button { width: var(--control-height); padding: 0; border: 0; color: var(--color-neutral-700); background: transparent; cursor: pointer; }
 .ui-number-stepper button:hover:not(:disabled) { background: var(--color-neutral-100); }
 .ui-number-stepper button:disabled { color: var(--color-neutral-400); cursor: not-allowed; }
-.ui-number-stepper output { min-width: calc(var(--control-height) + 8px); padding: 0 8px; border-inline: 1px solid var(--color-neutral-200); color: var(--color-neutral-800); font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ui-number-stepper input { width: calc(var(--control-height) + 24px); min-width: 0; padding: 0 6px; border: 0; border-inline: 1px solid var(--color-neutral-200); border-radius: 0; color: var(--color-neutral-800); background: transparent; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; }
+.ui-number-stepper input:focus { position: relative; z-index: 1; outline: 2px solid var(--focus); outline-offset: -2px; }
+.ui-number-stepper input::-webkit-inner-spin-button, .ui-number-stepper input::-webkit-outer-spin-button { margin: 0; appearance: none; }
+.ui-number-stepper input[type='number'] { appearance: textfield; }
 
 .ui-combobox { --control-height: 36px; position: relative; min-width: 0; color: var(--color-neutral-800); }
 .ui-combobox.ui-control--compact { --control-height: 32px; }

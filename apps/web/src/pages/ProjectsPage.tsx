@@ -30,7 +30,7 @@ export function ProjectsPage() {
     <div className="app-shell projects-screen">
       <header className="app-header projects-topbar"><strong>Проекты озеленения</strong><div className="projects-topbar__actions"><Button variant="primary" icon={FilePlus2} onClick={() => navigate('/projects/new/import')}>Новый проект</Button></div></header>
       <main className="projects-page">
-        <header className="projects-heading"><div><h1>Проекты</h1><p>DXF и ручные посадки сохраняются автоматически.</p></div></header>
+        <header className="projects-heading"><div><h1>Проекты</h1><p>DXF и ручные посадки сохраняются автоматически</p></div></header>
         {projectsQuery.isLoading ? <div className="projects-state">Загружаем проекты</div> : null}
         {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
         {!projectsQuery.isLoading && !error && !projects.length ? <div className="projects-empty"><FolderOpen size={24} /><strong>Проектов пока нет</strong><span>Загрузите DXF, чтобы подготовить первый план озеленения.</span><Button variant="primary" icon={FilePlus2} onClick={() => navigate('/projects/new/import')}>Загрузить DXF</Button></div> : null}

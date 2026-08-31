@@ -405,6 +405,7 @@ class RowPatternRequest(BaseModel):
     lateral_offset_m: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
     layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
     size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+    species_revision_id: str | None = None
 
     @model_validator(mode="after")
     def validate_side_offset(self) -> "RowPatternRequest":
@@ -418,6 +419,8 @@ class FillPatternRequest(BaseModel):
     base_plan_version: int = Field(ge=1)
     plant_kind: Literal["tree", "shrub"] = "tree"
     zone_ids: list[str] = Field(min_length=1, max_length=40)
+    placement_mode: Literal["count", "spacing"] = "spacing"
+    target_count: int = Field(default=40, ge=1, le=5000)
     layout: Literal["regular", "staggered", "natural"] = "staggered"
     spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
     edge_offset_m: float = Field(default=1, ge=0, le=100, allow_inf_nan=False)
@@ -425,6 +428,7 @@ class FillPatternRequest(BaseModel):
     seed: int = Field(default=1, ge=0, le=2_147_483_647)
     layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
     size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+    species_revision_id: str | None = None
 
 
 PatternPreviewRequest = Annotated[RowPatternRequest | FillPatternRequest, Field(discriminator="type")]

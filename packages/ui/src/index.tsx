@@ -179,11 +179,35 @@ export function StepProgress({ steps, current, label = 'Этапы настро�
 }
 
 export function NumberStepper({ value, onChange, min = 0, max = Number.MAX_SAFE_INTEGER, step = 1, controlSize = 'default', label, disabled = false, className }: { value: number; onChange: (value: number) => void; min?: number; max?: number; step?: number; controlSize?: ControlSize; label: string; disabled?: boolean; className?: string }) {
+  const [draft, setDraft] = useState(String(value));
   const clamp = (next: number) => Math.max(min, Math.min(max, Number(next.toFixed(6))));
-  const change = (delta: number) => onChange(clamp(value + delta));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = (raw = draft) => {
+    const parsed = Number(raw.replace(',', '.'));
+    const next = Number.isFinite(parsed) ? clamp(parsed) : value;
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  };
+  const change = (delta: number) => {
+    const next = clamp(value + delta);
+    setDraft(String(next));
+    onChange(next);
+  };
   return <div className={cx('ui-number-stepper', controlSizeClass(controlSize), className)} data-size={controlSize} role="group" aria-label={label}>
     <button type="button" aria-label={`Уменьшить: ${label}`} disabled={disabled || value <= min} onClick={() => change(-step)}><Icon icon={Minus} /></button>
-    <output aria-live="polite">{value.toLocaleString('ru-RU')}</output>
+    <input type="number" inputMode="decimal" aria-label={label} disabled={disabled} min={min} max={max} step={step} value={draft} onFocus={(event) => event.currentTarget.select()} onChange={(event) => {
+      const raw = event.target.value;
+      setDraft(raw);
+      if (raw === '' || raw === '-' || raw === '.' || raw === ',') return;
+      const parsed = Number(raw.replace(',', '.'));
+      if (Number.isFinite(parsed) && parsed >= min && parsed <= max) onChange(clamp(parsed));
+    }} onBlur={() => commit()} onKeyDown={(event) => {
+      if (event.key === 'Enter') event.currentTarget.blur();
+      if (event.key === 'Escape') {
+        setDraft(String(value));
+        event.currentTarget.blur();
+      }
+    }} />
     <button type="button" aria-label={`Увеличить: ${label}`} disabled={disabled || value >= max} onClick={() => change(step)}><Icon icon={Plus} /></button>
   </div>;
 }

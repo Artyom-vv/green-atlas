@@ -826,6 +826,17 @@ export interface components {
             /** Zone Ids */
             zone_ids: string[];
             /**
+             * Placement Mode
+             * @default spacing
+             * @enum {string}
+             */
+            placement_mode: "count" | "spacing";
+            /**
+             * Target Count
+             * @default 40
+             */
+            target_count: number;
+            /**
              * Layout
              * @default staggered
              * @enum {string}
@@ -859,6 +870,8 @@ export interface components {
              * @enum {string}
              */
             size_class: "unspecified" | "sapling" | "standard" | "large";
+            /** Species Revision Id */
+            species_revision_id?: string | null;
         };
         /** GeometrySnapshot */
         GeometrySnapshot: {
@@ -1578,6 +1591,8 @@ export interface components {
              * @enum {string}
              */
             size_class: "unspecified" | "sapling" | "standard" | "large";
+            /** Species Revision Id */
+            species_revision_id?: string | null;
         };
         /** ScenePlantObject */
         ScenePlantObject: {

@@ -159,7 +159,11 @@ class PositionChecker:
             if geometry is None:
                 continue
             required = rule_distance(kind, plant_kind)
-            actual = max(0.0, center.distance(geometry) - radius)
+            # ПП-743 measures the setback from the obstacle boundary to the
+            # axis of a tree or shrub. ``radius`` describes the editable
+            # planting symbol and must not silently increase that legal
+            # distance. Crown and root envelopes are checked separately.
+            actual = max(0.0, center.distance(geometry))
             if actual + 1e-6 < required:
                 return PositionViolation(
                     f"{rule_id.upper()}_CLEARANCE",

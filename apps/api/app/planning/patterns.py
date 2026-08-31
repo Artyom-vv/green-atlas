@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import floor, hypot
+from math import floor, hypot, sqrt
 from random import Random
 
 from shapely.affinity import rotate
@@ -66,8 +66,7 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
     if missing:
         raise ValueError("Один из выбранных участков больше не существует")
 
-    candidates: list[PatternCandidate] = []
-    seen: set[tuple[float, float]] = set()
+    usable_parts = []
     for zone in selected:
         polygon = shape(zone.geometry)
         if polygon.is_empty or polygon.geom_type not in {"Polygon", "MultiPolygon"}:
@@ -75,21 +74,30 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
         usable = polygon.buffer(-request.edge_offset_m) if request.edge_offset_m else polygon
         if usable.is_empty:
             continue
-        rotated = rotate(usable, -request.angle_deg, origin=(0, 0), use_radians=False)
+        usable_parts.append(usable)
+
+    if not usable_parts:
+        return []
+    usable_geometry = unary_union(usable_parts)
+
+    def candidates_at(spacing: float, limit: int | None = None) -> list[PatternCandidate]:
+        candidates: list[PatternCandidate] = []
+        seen: set[tuple[float, float]] = set()
+        rotated = rotate(usable_geometry, -request.angle_deg, origin=(0, 0), use_radians=False)
         min_x, min_y, max_x, max_y = rotated.bounds
-        first_x = floor(min_x / request.spacing_m) * request.spacing_m
-        first_y = floor(min_y / request.spacing_m) * request.spacing_m
+        first_x = floor(min_x / spacing) * spacing
+        first_y = floor(min_y / spacing) * spacing
         row = 0
         y = first_y
         while y <= max_y + 1e-9:
             col = 0
-            x_offset = request.spacing_m / 2 if request.layout == "staggered" and row % 2 else 0
+            x_offset = spacing / 2 if request.layout == "staggered" and row % 2 else 0
             x = first_x + x_offset
             while x <= max_x + 1e-9:
                 candidate_x, candidate_y = x, y
                 if request.layout == "natural":
-                    random = Random(f"{request.seed}:{zone.id}:{row}:{col}")
-                    jitter = request.spacing_m * 0.28
+                    random = Random(f"{request.seed}:{row}:{col}")
+                    jitter = spacing * 0.28
                     candidate_x += random.uniform(-jitter, jitter)
                     candidate_y += random.uniform(-jitter, jitter)
                 point = Point(candidate_x, candidate_y)
@@ -99,12 +107,38 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
                     if key not in seen:
                         seen.add(key)
                         candidates.append(PatternCandidate(*key))
-                        if len(candidates) > MAX_PATTERN_CANDIDATES:
-                            return _bounded(candidates)
-                x += request.spacing_m
+                        if limit is not None and len(candidates) >= limit:
+                            return candidates
+                x += spacing
                 col += 1
-            y += request.spacing_m
+            y += spacing
             row += 1
+        return candidates
+
+    if request.placement_mode == "count":
+        target = request.target_count
+        minimum = request.spacing_m
+        low = minimum
+        high = max(minimum * 2, sqrt(max(usable_geometry.area, 1)) * 2)
+        # Find the largest spacing that still yields the requested count.
+        # Search requests stop as soon as the threshold is reached, so a
+        # multi-hectare DXF never materialises an irrelevant full grid.
+        for _ in range(16):
+            middle = (low + high) / 2
+            count = len(candidates_at(middle, target))
+            if count >= target:
+                low = middle
+            else:
+                high = middle
+        candidates = candidates_at(low)
+        if len(candidates) > target:
+            if target == 1:
+                return [candidates[len(candidates) // 2]]
+            indices = [round(index * (len(candidates) - 1) / (target - 1)) for index in range(target)]
+            return [candidates[index] for index in indices]
+        return candidates
+
+    candidates = candidates_at(request.spacing_m)
     return _bounded(candidates)
 
 

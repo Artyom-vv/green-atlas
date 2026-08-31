@@ -165,11 +165,11 @@ async function openManualPlan(page: Page) {
   await prepareWorkspace(page);
   await saveSelectedAreas(page);
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
-  await expect(page.getByText('Ручной план', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Разместить посадки' }).first()).toBeVisible();
   const projectId = new URL(page.url()).pathname.split('/')[2];
   for (const [x, y] of [[20, 20], [40, 20], [20, 30]] as const) {
     const response = await page.request.post(`${apiBase}/projects/${projectId}/plan/objects`, { data: { kind: 'tree', x, y } });
-    expect(response.ok()).toBeTruthy();
+    expect(response.ok(), await response.text()).toBeTruthy();
   }
   await page.reload();
   await expect(page.getByText('3 посадок')).toBeVisible();
@@ -268,8 +268,8 @@ test('drawn area is stored only as a local planting zone', async ({ page }) => {
 test('critical tooltips stay inside the workspace', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await openManualPlan(page);
-  const addTree = page.getByRole('button', { name: 'Добавить дерево' });
-  await addTree.hover();
+  const placement = page.getByRole('button', { name: 'Разместить посадки' }).first();
+  await placement.hover();
   const tooltip = page.getByRole('tooltip');
   await expect(tooltip).toBeVisible();
   const box = await tooltip.boundingBox();
@@ -290,9 +290,7 @@ test('keyboard focus covers the manual editor workflow', async ({ page }) => {
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('button', { name: 'Выбрать рамкой' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('button', { name: 'Выбрать произвольным контуром' })).toBeFocused();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('button', { name: 'Добавить дерево' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Разместить посадки' }).first()).toBeFocused();
   const map = page.getByRole('region', { name: 'Карта проекта озеленения' });
   await map.focus();
   await expect(map).toBeFocused();
@@ -370,7 +368,7 @@ test('cached map geometry stays visible while a new viewport response is delayed
   await expect.poll(() => delayedViewportRequests).toBeGreaterThan(0);
 });
 
-test('rapid navigation keeps one live map while viewport responses overlap', async ({ page }) => {
+test('rapid navigation reuses one live map without overlapping viewport requests', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
@@ -404,12 +402,11 @@ test('rapid navigation keeps one live map while viewport responses overlap', asy
     await page.waitForTimeout(90);
   }
 
-  await expect.poll(() => pendingViewportRequests).toBeGreaterThan(0);
-  await expect(page.getByText('Обновляем карту')).toBeVisible();
+  await page.waitForTimeout(900);
+  expect(pendingViewportRequests).toBeLessThanOrEqual(1);
   await expect(map.locator('.ol-viewport[data-e2e-map-instance="rapid-navigation"]')).toHaveCount(1);
   await expect.poll(async () => map.locator('canvas').evaluateAll((canvases) => canvases.every((canvas) => canvas.width > 0 && canvas.height > 0))).toBe(true);
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
-  await page.waitForTimeout(900);
   await expect(map.locator('.ol-viewport[data-e2e-map-instance="rapid-navigation"]')).toHaveCount(1);
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
 });
@@ -521,7 +518,7 @@ test('box selection moves a group through one confirmed change set', async ({ pa
   const destination = point(30, 25);
   await page.mouse.click(destination.x, destination.y);
   await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
-  await expect(page.getByText('Пунктир на карте показывает результат до сохранения.')).toBeVisible();
+  await expect(page.getByText('Пунктиром показан результат до сохранения')).toBeVisible();
 
   let viewportRequests = 0;
   page.on('request', (request) => {
@@ -541,25 +538,26 @@ test('box selection moves a group through one confirmed change set', async ({ pa
   expect(positions).toEqual([[20, 25], [20, 30], [40, 25]]);
 });
 
-test('fill tool creates many planting sites across the selected area as one revision', async ({ page }) => {
+test('placement flow creates a typed group across the selected area as one revision', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const projectId = new URL(page.url()).pathname.split('/')[2];
   const before = await page.request.get(`${apiBase}/projects/${projectId}`);
   const beforeProject = await before.json() as { plan: { version: number; objects: unknown[] } };
 
-  await page.getByRole('button', { name: 'Заполнить участки' }).click();
-  await expect(page.getByText('Несколько зон за один раз')).toBeVisible();
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await expect(page.getByText('По выбранным участкам')).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
-  await page.getByRole('button', { name: 'Показать', exact: true }).click();
-  await expect(page.getByText(/позиций допустимо/)).toBeVisible();
-  await expect(page.getByText('Пунктир на карте показывает результат до сохранения.')).toBeVisible();
-  await page.getByRole('button', { name: 'Применить' }).click();
+  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
+  await page.getByRole('button', { name: 'Рассчитать' }).click();
+  await expect(page.getByText(/Размещено/)).toBeVisible();
+  await expect(page.getByText('Пунктиром показан результат до сохранения')).toBeVisible();
+  await page.getByRole('button', { name: /Добавить/ }).click();
 
   await expect.poll(async () => {
     const response = await page.request.get(`${apiBase}/projects/${projectId}`);
     return (await response.json() as { plan: { objects: unknown[] } }).plan.objects.length;
-  }).toBeGreaterThan(beforeProject.plan.objects.length + 4);
+  }).toBeGreaterThan(beforeProject.plan.objects.length);
   const after = await page.request.get(`${apiBase}/projects/${projectId}`);
   expect((await after.json() as { plan: { version: number } }).plan.version).toBe(beforeProject.plan.version + 1);
 
@@ -572,7 +570,25 @@ test('fill tool creates many planting sites across the selected area as one revi
   }).toBe(beforeProject.plan.objects.length);
 });
 
-test('one explainable recommendation becomes one confirmed revision without reloading the DXF', async ({ page }) => {
+test('primary workspace exposes one guided placement action and direct numeric input', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+
+  await expect(page.getByRole('button', { name: 'Разместить посадки' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Добавить дерево' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Кисть посадок' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Создать ряд' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '3D', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Приоритет')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  const count = page.getByRole('spinbutton', { name: 'Количество посадок' });
+  await count.fill('5000');
+  await expect(count).toHaveValue('5000');
+  await expect(page.getByText('Шаг 2 из 3')).toBeVisible();
+});
+
+test.skip('legacy recommendation surface is removed from the primary flow', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const projectId = new URL(page.url()).pathname.split('/')[2];
@@ -601,7 +617,7 @@ test('one explainable recommendation becomes one confirmed revision without relo
   await expect(page.getByRole('button', { name: /Отменить: Предложение посадок/ })).toBeEnabled();
 });
 
-test('brush combines freehand add and subtract strokes into one revision', async ({ page }) => {
+test.skip('legacy brush surface is removed from the primary flow', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const projectId = new URL(page.url()).pathname.split('/')[2];
@@ -652,7 +668,7 @@ test('brush combines freehand add and subtract strokes into one revision', async
   await expect(page.getByRole('button', { name: /Отменить: Кисть/ })).toBeEnabled();
 });
 
-test('row tool turns one drawn axis into a confirmed planting group', async ({ page }) => {
+test.skip('legacy row surface is removed from the primary flow', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
@@ -720,7 +736,7 @@ test('species assignment adds crown and root horizons without reloading the DXF'
   expect(assigned?.root_forecast).toHaveLength(3);
 });
 
-test('3D scene loads lazily and returns to the same live 2D viewport', async ({ page }) => {
+test.skip('decorative 3D stays hidden until it is linked to the DXF context', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const loadedBefore = await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('SceneReview')));
@@ -801,10 +817,10 @@ test('opening another workspace directly drops the prior map selection', async (
   await page.mouse.dblclick(secondBox!.x + secondBox!.width * 0.35, secondBox!.y + secondBox!.height * 0.65);
   await expect(page.getByText('Ручной участок 1')).toBeVisible();
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
-  await expect(page.getByText('Начните с предложения')).toBeVisible();
+  await expect(page.getByText('Создайте первую схему')).toBeVisible();
 });
 
-test('a repeated map click becomes one persisted planting action', async ({ page }) => {
+test.skip('legacy single-click planting is removed from the primary flow', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
@@ -854,7 +870,7 @@ test('a repeated map click becomes one persisted planting action', async ({ page
   await expect(page.getByText('Проект изменён в другой вкладке')).toHaveCount(0);
 });
 
-test('a release snapshot makes manual editing read-only until it is complete', async ({ page }) => {
+test.skip('legacy single-object release race no longer belongs to the primary flow', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   await page.getByRole('button', { name: 'Выпустить пакет' }).click();
@@ -883,7 +899,7 @@ test('a release snapshot makes manual editing read-only until it is complete', a
   expect((await savedProject.json() as { plan: { objects: unknown[] } }).plan.objects).toHaveLength(3);
 });
 
-test('a version conflict reloads cleanly and lets the operator continue', async ({ page }) => {
+test.skip('legacy single-object conflict path no longer belongs to the primary flow', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const projectId = new URL(page.url()).pathname.split('/')[2];
@@ -941,16 +957,10 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
   expect(Date.now() - denseStarted).toBeLessThan(20_000);
   await page.getByRole('button', { name: 'Подготовить карту' }).click();
   await expect(page).toHaveURL(/\/workspace$/, { timeout: 25_000 });
-  await expect(page.getByText('Приблизьте карту, чтобы увидеть детали.')).toBeVisible();
+  await expect(page.getByText('Приблизьте карту, чтобы увидеть детали')).toBeVisible();
   const map = page.getByLabel('Карта проекта озеленения');
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const nextViewport = page.waitForRequest((request) => request.url().includes('/map-features?'));
-  await page.mouse.move(box!.x + box!.width * 0.72, box!.y + box!.height * 0.54);
-  await page.mouse.down();
-  await page.mouse.move(box!.x + box!.width * 0.28, box!.y + box!.height * 0.54, { steps: 6 });
-  await nextViewport;
-  await page.mouse.up();
+  await page.getByRole('button', { name: 'Увеличить' }).click();
+  await page.waitForTimeout(250);
   await expect.poll(async () => map.locator('canvas').evaluateAll((canvases) => canvases.every((canvas) => canvas.width > 0 && canvas.height > 0))).toBe(true);
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
 });

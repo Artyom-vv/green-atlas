@@ -873,6 +873,7 @@ class ProjectApplication:
                     "y": candidate.y,
                     "layout_radius_m": request.layout_radius_m,
                     "size_class": request.size_class,
+                    "species_revision_id": getattr(request, "species_revision_id", None),
                     "pattern_id": pattern_id,
                     "group_ids": [pattern_id],
                 },
@@ -983,6 +984,9 @@ class ProjectApplication:
             seed=int(profile["seed"]),
             plant_kind="tree",
             size_class="standard",
+            species_revision_id=revision.id,
+            placement_mode="count",
+            target_count=request.max_sites,
         )
         candidates = self.candidate_generator.generate(fill, project.planting_zones)
         digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
@@ -1091,30 +1095,14 @@ class ProjectApplication:
 
         request_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         brush_id = f"brush-{request_digest[:16]}"
-        subtract_corridors = []
         for stroke in request.strokes:
             geometry = shape(stroke.geometry)
             if geometry.geom_type != "LineString" or geometry.is_empty or len(geometry.coords) < 2:  # type: ignore[attr-defined]
                 raise ValueError("Мазок должен быть линией минимум из двух точек")
-            if stroke.mode == "subtract":
-                subtract_corridors.append(geometry.buffer(request.width_m / 2, cap_style="round", join_style="round"))
-        subtract_area = unary_union(subtract_corridors) if subtract_corridors else None
 
         skipped: list[PatternSkippedCandidate] = []
         operations: list[dict[str, object]] = []
         operation_points: list[tuple[float, float]] = []
-        removed_count = 0
-        if subtract_area is not None:
-            for object_ in project.plan.objects:
-                if not subtract_area.covers(Point(object_.x, object_.y)):
-                    continue
-                if object_.locked:
-                    skipped.append(PatternSkippedCandidate(x=object_.x, y=object_.y, reason="Закреплённая посадка сохранена"))
-                    continue
-                operations.append({"type": "delete", "object_id": object_.id})
-                operation_points.append((object_.x, object_.y))
-                removed_count += 1
-
         candidates = self.candidate_generator.generate(request, project.planting_zones)
         for candidate in candidates:
             kind = candidate.kind or "tree"
@@ -1172,7 +1160,7 @@ class ProjectApplication:
             ))
         return BrushPreview(
             brush_id=brush_id,
-            requested_count=len(candidates) + removed_count,
+            requested_count=len(candidates),
             accepted_count=len(accepted_operations),
             added_count=accepted_additions,
             removed_count=accepted_removals,
