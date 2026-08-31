@@ -42,7 +42,7 @@ const colors: Record<string, string> = {
 
 export type MapExtent = [number, number, number, number];
 export type MapHoverTarget = { id: string; kind: string; label: string; detail: string; pixel: [number, number] };
-export type MapAreaTarget = { sourceId: string; geometry?: { type: 'Polygon'; coordinates: number[][][] }; kind: string; label: string; detail: string; selectable: boolean };
+export type MapAreaTarget = { sourceId: string; plantingZoneId?: string; geometry?: { type: 'Polygon'; coordinates: number[][][] }; kind: string; label: string; detail: string; selectable: boolean };
 
 function mapFeatureCopy(feature: FeatureLike) {
   const kind = String(feature.get('kind') ?? 'unknown');
@@ -58,7 +58,8 @@ function mapFeatureCopy(feature: FeatureLike) {
     forbidden: [String(feature.get('label') ?? 'Зона ограничения'), `Проверочный отступ ${Number(feature.get('distance_m') ?? 0).toLocaleString('ru-RU')} м`],
   };
   const [label, detail] = labels[kind] ?? ['Область карты', 'Геометрия исходного плана'];
-  return { kind, label, detail };
+  const plantingZoneId = feature.get('planting_zone_id');
+  return { kind, label, detail, plantingZoneId: typeof plantingZoneId === 'string' ? plantingZoneId : undefined };
 }
 
 const drawStyle = new Style({
@@ -347,7 +348,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: 5 | 10 | 20; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: 5 | 10 | 20; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -579,9 +580,14 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         callbackRef.current.onSelect(String(feature.get('objectId')), selectionMode(event.originalEvent));
         return;
       }
-      if (activeTool === 'select') {
-        const areaTarget = (map.getFeaturesAtPixel(event.pixel, { layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer, hitTolerance: 10 }) as Feature[])
-          .find((candidate) => ['allowed', 'ignore', 'site_border', 'planting_area', 'existing_green', 'building', 'road', 'utility', 'forbidden'].includes(String(candidate.get('kind') ?? '')));
+      if (activeTool === 'select' || activeTool === 'pattern_fill') {
+        const priority: Record<string, number> = { planting_area: 0, forbidden: 1, existing_green: 2, allowed: 3, ignore: 4, site_border: 5, building: 6, road: 7, utility: 8 };
+        const candidates = (map.getFeaturesAtPixel(event.pixel, { layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer, hitTolerance: 10 }) as Feature[])
+          .filter((candidate) => String(candidate.get('kind') ?? '') in priority)
+          .sort((left, right) => priority[String(left.get('kind'))] - priority[String(right.get('kind'))]);
+        const areaTarget = activeTool === 'pattern_fill'
+          ? candidates.find((candidate) => candidate.get('kind') === 'planting_area')
+          : candidates[0];
         const areaGeometry = areaTarget?.getGeometry();
         if (areaTarget && areaGeometry) {
           const copy = mapFeatureCopy(areaTarget);
@@ -594,15 +600,15 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
               sourceId: `source-zone-${String(areaTarget.getId() ?? 'map')}-${clickedGeometry.getExtent().map((value) => value.toFixed(3)).join('-')}`,
               geometry: serialized as NonNullable<MapAreaTarget['geometry']>,
               ...copy,
-              selectable: ['allowed', 'ignore', 'site_border'].includes(copy.kind),
-            });
+              selectable: ['allowed', 'ignore', 'site_border', 'planting_area'].includes(copy.kind),
+            }, selectionMode(event.originalEvent));
             return;
           }
           callbackRef.current.onMapArea?.({
             sourceId: `source-feature-${String(areaTarget.getId() ?? copy.kind)}`,
             ...copy,
             selectable: false,
-          });
+          }, selectionMode(event.originalEvent));
           return;
         }
       }
@@ -621,7 +627,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const coordinate: [number, number] = [event.coordinate[0], event.coordinate[1]];
       callbackRef.current.onPointerCoordinate?.(coordinate);
       let hoveredFeature: Feature | undefined;
-      if (toolRef.current === 'select') {
+      if (toolRef.current === 'select' || toolRef.current === 'pattern_fill') {
         const priority: Record<string, number> = { planting_area: 0, forbidden: 1, existing_green: 2, allowed: 3, ignore: 4, site_border: 5, building: 6, road: 7, utility: 8 };
         hoveredFeature = (map.getFeaturesAtPixel(event.pixel, { layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer, hitTolerance: 8 }) as Feature[])
             .filter((candidate) => String(candidate.get('kind') ?? '') in priority)
@@ -997,16 +1003,14 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
 
   useEffect(() => {
     const map = mapRef.current;
-    const size = map?.getSize();
     const source = plantingZoneFocusSourceRef.current;
     source.clear();
-    if (!map || !size || !focusGeometry) return;
+    if (!map || !focusGeometry) return;
     try {
       const feature = new GeoJSON().readFeature({ type: 'Feature', geometry: focusGeometry, properties: {} }, { dataProjection: projection, featureProjection: projection }) as Feature;
       const targetGeometry = feature.getGeometry();
       if (!targetGeometry) return;
       source.addFeature(feature);
-      map.getView().fit(targetGeometry.getExtent(), { size, padding: [84, 84, 84, 84], maxZoom: 24, duration: 180 });
     } catch {
       // Geometry was validated on save; a stale preview must not break the canvas.
     }

@@ -172,7 +172,7 @@ async function openManualPlan(page: Page) {
     expect(response.ok(), await response.text()).toBeTruthy();
   }
   await page.reload();
-  await expect(page.getByText('3 посадок')).toBeVisible();
+  await expect(page.getByText('3 посадки')).toBeVisible();
 }
 
 function denseDxfBuffer(pointCount = 13_000) {
@@ -479,11 +479,11 @@ test('map selection supports group deletion and undo without an object table', a
   await page.keyboard.up('Shift');
   await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Удалить выбранные' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Удалить 2 посадок?' });
+  const dialog = page.getByRole('dialog', { name: 'Удалить 2 посадки' });
   await dialog.getByRole('button', { name: 'Удалить', exact: true }).click();
-  await expect(page.getByText('1 посадок')).toBeVisible();
+  await expect(page.getByText('1 посадка')).toBeVisible();
   await page.keyboard.press('Control+z');
-  await expect(page.getByText('3 посадок')).toBeVisible();
+  await expect(page.getByText('3 посадки')).toBeVisible();
 });
 
 test('box selection moves a group through one confirmed change set', async ({ page }) => {
@@ -547,7 +547,20 @@ test('placement flow creates a typed group across the selected area as one revis
 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.getByText('По выбранным участкам')).toBeVisible();
-  await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
+  const zoneCheckbox = page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' });
+  await expect(zoneCheckbox).not.toBeChecked();
+  await expect(page.getByText('Выберите участок на карте или обведите новый')).toBeVisible();
+  const map = page.getByLabel('Карта проекта озеленения');
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const sourceExtent = [-5, -5, 125, 95] as const;
+  const padding = 28;
+  const resolution = Math.max((sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2), (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2));
+  await page.mouse.click(
+    box!.x + box!.width / 2 + (30 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
+    box!.y + box!.height / 2 - (25 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
+  );
+  await expect(zoneCheckbox).toBeChecked();
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
   await page.getByRole('button', { name: 'Рассчитать' }).click();
   await expect(page.getByText(/Размещено/)).toBeVisible();
@@ -582,6 +595,7 @@ test('primary workspace exposes one guided placement action and direct numeric i
   await expect(page.getByLabel('Приоритет')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' }).check();
   const count = page.getByRole('spinbutton', { name: 'Количество посадок' });
   await count.fill('5000');
   await expect(count).toHaveValue('5000');
@@ -668,7 +682,7 @@ test.skip('legacy brush surface is removed from the primary flow', async ({ page
   await expect(page.getByRole('button', { name: /Отменить: Кисть/ })).toBeEnabled();
 });
 
-test.skip('legacy row surface is removed from the primary flow', async ({ page }) => {
+test('row placement creates a checked linear planting group', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
@@ -687,14 +701,14 @@ test.skip('legacy row surface is removed from the primary flow', async ({ page }
   const start = point(28, 27);
   const end = point(58, 27);
 
-  await page.getByRole('button', { name: 'Создать ряд' }).click();
+  await page.getByRole('button', { name: 'Посадки вдоль линии' }).click();
   await expect(page.getByText('Нарисуйте ось на карте')).toBeVisible();
   await page.mouse.click(start.x, start.y);
   await page.mouse.dblclick(end.x, end.y);
   await expect(page.getByText('Ось задана')).toBeVisible();
-  await page.getByRole('button', { name: 'Показать', exact: true }).click();
-  await expect(page.getByText(/позиций допустимо/)).toBeVisible();
-  await page.getByRole('button', { name: 'Применить' }).click();
+  await page.getByRole('button', { name: 'Рассчитать', exact: true }).click();
+  await expect(page.getByText(/Размещено/)).toBeVisible();
+  await page.getByRole('button', { name: /Добавить/ }).click();
   await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
 });
 
@@ -861,7 +875,7 @@ test.skip('legacy single-click planting is removed from the primary flow', async
   await page.mouse.click(plantingPoint.x, plantingPoint.y);
 
   await expect.poll(() => persistedRequests).toBe(1);
-  await expect(page.getByText('4 посадок')).toBeVisible();
+  await expect(page.getByText('4 посадки')).toBeVisible();
   await expect(addTree).toHaveAttribute('aria-pressed', 'true');
   // A placement changes only the dedicated plan overlay. Fetching and
   // decoding the current DXF viewport here would make dense maps stutter.
@@ -927,7 +941,7 @@ test.skip('legacy single-object conflict path no longer belongs to the primary f
 
   await page.getByRole('button', { name: 'Обновить проект' }).click();
   await expect(page.getByText('Проект обновлён в другой вкладке')).toHaveCount(0);
-  await expect(page.getByText('4 посадок')).toBeVisible();
+  await expect(page.getByText('4 посадки')).toBeVisible();
 
   await page.getByRole('button', { name: 'Добавить дерево' }).click();
   await page.mouse.move(plantingPoint.x, plantingPoint.y);

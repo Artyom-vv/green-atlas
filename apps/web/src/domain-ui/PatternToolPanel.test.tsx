@@ -13,7 +13,7 @@ const species = [{ id: 'tree@1', species_id: 'tree', revision: 1, common_name: '
 describe('PatternToolPanel', () => {
   it('previews a fill across several selected zones', () => {
     const onPreview = vi.fn();
-    render(<PatternToolPanel mode="fill" zones={zones} species={species} onPreview={onPreview} onCancel={vi.fn()} />);
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west', 'east']} onPreview={onPreview} onCancel={vi.fn()} />);
 
     expect(screen.getByRole('checkbox', { name: 'Западный участок' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Восточный участок' })).toBeChecked();
@@ -23,12 +23,21 @@ describe('PatternToolPanel', () => {
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
       type: 'fill',
       zone_ids: ['west', 'east'],
-      layout: 'staggered',
+      layout: 'natural',
       spacing_m: 6,
       placement_mode: 'count',
       target_count: 5000,
       species_revision_id: 'tree@1',
     }));
+  });
+
+  it('requires an explicit area and can start drawing one', () => {
+    const onDrawZone = vi.fn();
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={[]} onDrawZone={onDrawZone} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByText('Выберите участок на карте или обведите новый')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Рассчитать' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Обвести новый участок' }));
+    expect(onDrawZone).toHaveBeenCalledOnce();
   });
 
   it('requires an axis before previewing a row', () => {

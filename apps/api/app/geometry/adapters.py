@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from copy import deepcopy
+from threading import RLock
 from shapely.geometry import GeometryCollection, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 
 from app.contracts import GeometrySnapshot, LayerKind, Project
-from app.geometry.domain import CONSTRAINT_KINDS, PositionChecker, envelope_distance, position_is_allowed
+from app.geometry.domain import CONSTRAINT_KINDS, PositionChecker, envelope_distance
 from app.operations.progress import ProgressReporter, WorkProgress
 
 
@@ -141,6 +143,25 @@ def _union_in_batches(
 
 class ShapelyGeometryEngine:
     """Builds rule buffers and allowed planting areas from imported geometry."""
+
+    def __init__(self, max_cached_projects: int = 32) -> None:
+        self.max_cached_projects = max_cached_projects
+        self._position_checkers: OrderedDict[str, tuple[int, PositionChecker]] = OrderedDict()
+        self._checker_lock = RLock()
+
+    def _position_checker(self, project: Project) -> PositionChecker:
+        version = project.geometry_version if project.geometry else 0
+        with self._checker_lock:
+            cached = self._position_checkers.get(project.id)
+            if cached is not None and cached[0] == version:
+                self._position_checkers.move_to_end(project.id)
+                return cached[1]
+            checker = PositionChecker(project)
+            self._position_checkers[project.id] = (version, checker)
+            self._position_checkers.move_to_end(project.id)
+            while len(self._position_checkers) > self.max_cached_projects:
+                self._position_checkers.popitem(last=False)
+            return checker
 
     def calculate(self, project: Project, progress: ProgressReporter | None = None) -> GeometrySnapshot:
         if project.source_geometry is None:
@@ -350,10 +371,14 @@ class ShapelyGeometryEngine:
     def validate_position(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree") -> None:
         if project.geometry is None:
             raise ValueError("Сначала рассчитайте допустимые зоны")
-        allowed, reason = position_is_allowed(project, x, y, radius, plant_kind)  # type: ignore[arg-type]
-        if not allowed:
-            raise ValueError(reason)
+        violation = self._position_checker(project).check(x, y, radius, plant_kind)  # type: ignore[arg-type]
+        if violation:
+            raise ValueError(violation.description)
 
     def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None:
-        advisory = PositionChecker(project).advisory(x, y, radius)
+        advisory = self._position_checker(project).advisory(x, y, radius)
+        return advisory.description if advisory else None
+
+    def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> str | None:
+        advisory = self._position_checker(project).growth_advisory(x, y, canopy_radius, root_radius)
         return advisory.description if advisory else None

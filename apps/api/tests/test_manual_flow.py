@@ -166,6 +166,24 @@ def test_opening_manual_plan_releases_raw_geometry_but_keeps_map_and_source() ->
     assert client.get(f"/api/projects/{project_id}/source-dxf/download").content == source
 
 
+def test_editor_can_add_a_nested_local_working_area_after_plan_creation() -> None:
+    project_id = prepare_project("Локальный участок после открытия")
+    outer = area("territory", "Вся территория", [[5, 5], [90, 5], [90, 70], [5, 70]])
+    select_areas(project_id, [outer])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual")
+    assert opened.status_code == 200
+    added = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20})
+    assert added.status_code == 200
+
+    local = area("local", "Локальный участок", [[12, 12], [36, 12], [36, 36], [12, 36]])
+    saved = client.put(f"/api/projects/{project_id}/planting-zones", json={"zones": [outer, local]})
+
+    assert saved.status_code == 200, saved.json()
+    assert [zone["id"] for zone in saved.json()["planting_zones"]] == ["territory", "local"]
+    assert len(saved.json()["plan"]["objects"]) == 1
+    assert saved.json()["status"] == "editing"
+
+
 def test_real_large_dxf_survives_http_import_geometry_viewport_and_source_recovery() -> None:
     """Exercise the durable path on a real, heterogeneous map-sized DXF.
 
@@ -513,7 +531,7 @@ def test_selected_areas_cannot_silently_delete_an_existing_manual_plan() -> None
         json={"zones": [area("second", "Второй участок", [[62, 12], [72, 12], [72, 30], [62, 30]])]},
     )
     assert replacement.status_code == 400
-    assert "после открытия ручной схемы" in replacement.json()["message"]
+    assert "Нельзя удалить участок, в котором уже есть посадки" in replacement.json()["message"]
     project = client.get(f"/api/projects/{project_id}").json()
     assert len(project["plan"]["objects"]) == 1
 
@@ -1051,6 +1069,8 @@ def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips()
         "base_plan_version": current_version,
         "plant_kind": "tree",
         "zone_ids": ["west", "east"],
+        "placement_mode": "count",
+        "target_count": 8,
         "layout": "natural",
         "spacing_m": 6,
         "edge_offset_m": 2,
@@ -1066,7 +1086,7 @@ def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips()
     first_coordinates = [(item["x"], item["y"]) for item in first.json()["change_set"]["additions"]]
     second_coordinates = [(item["x"], item["y"]) for item in second.json()["change_set"]["additions"]]
     assert first_coordinates == second_coordinates
-    assert first.json()["requested_count"] >= first.json()["accepted_count"] > 1
+    assert first.json()["requested_count"] == first.json()["accepted_count"] == 8
     assert first.json()["change_set"]["can_apply"] is True
     assert all(any(shape(zone["geometry"]).covers(Point(x, y)) for zone in zones) for x, y in first_coordinates)
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["version"] == current_version
@@ -1079,6 +1099,7 @@ def test_count_fill_is_bounded_and_spans_a_large_area() -> None:
         zone_ids=["large"],
         placement_mode="count",
         target_count=500,
+        layout="natural",
         spacing_m=5,
         edge_offset_m=0,
     ), [zone])
@@ -1086,6 +1107,7 @@ def test_count_fill_is_bounded_and_spans_a_large_area() -> None:
     assert len(candidates) == 500
     assert max(item.x for item in candidates) - min(item.x for item in candidates) > 1800
     assert max(item.y for item in candidates) - min(item.y for item in candidates) > 1800
+    assert len({round(item.x % 5, 3) for item in candidates[:30]}) > 10
 
 
 def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -> None:

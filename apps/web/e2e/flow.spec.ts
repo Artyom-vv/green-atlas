@@ -22,6 +22,7 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
   await expect(page.getByText('План озеленения', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await page.getByRole('checkbox', { name: 'Ручной участок 1' }).check();
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('3');
   await page.getByRole('button', { name: 'Рассчитать' }).click();
   await expect(page.getByText(/Размещено [1-3]/)).toBeVisible();

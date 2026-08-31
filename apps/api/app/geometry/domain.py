@@ -197,6 +197,27 @@ class PositionChecker:
             suggested_action="Уточнить вид сети и применимое техническое условие",
         )
 
+    def growth_advisory(self, x: float, y: float, canopy_radius: float, root_radius: float) -> PositionAdvisory | None:
+        """Flag forecast envelope conflicts without presenting them as law."""
+        center = Point(x, y)
+        utility = self._constraint("utility")
+        if utility is not None and center.distance(utility) + 1e-6 < root_radius:
+            return PositionAdvisory(
+                code="ROOT_UTILITY_REVIEW",
+                title="Корневая зона пересекает сеть",
+                description=f"Прогноз корней на 20 лет достигает сети при радиусе до {root_radius:.2f} м",
+                suggested_action="Уточнить тип сети или выбрать другое место",
+            )
+        building = self._constraint("building")
+        if building is not None and center.distance(building) + 1e-6 < canopy_radius:
+            return PositionAdvisory(
+                code="CANOPY_BUILDING_REVIEW",
+                title="Крона достигает здания",
+                description=f"Прогноз кроны на 20 лет достигает здания при радиусе до {canopy_radius:.2f} м",
+                suggested_action="Увеличить отступ или выбрать более компактную породу",
+            )
+        return None
+
 
 def check_position(project: Project, x: float, y: float, radius: float, plant_kind: Literal["tree", "shrub"] = "tree") -> PositionViolation | None:
     return PositionChecker(project).check(x, y, radius, plant_kind)

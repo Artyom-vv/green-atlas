@@ -75,6 +75,28 @@ class RuleBasedPlanValidator:
                     y=object_.y,
                     suggested_action=advisory.suggested_action,
                 ))
+            canopy_20 = next((item for item in object_.canopy_forecast if item.horizon_year == 20), None)
+            roots_20 = next((item for item in object_.root_forecast if item.horizon_year == 20), None)
+            growth_advisory = position_checker.growth_advisory(
+                object_.x,
+                object_.y,
+                canopy_20.radius_max_m,
+                roots_20.radius_max_m,
+            ) if canopy_20 and roots_20 else None
+            if growth_advisory:
+                if object_.status == "valid":
+                    object_.status = "warning"
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    code=growth_advisory.code,
+                    title=growth_advisory.title,
+                    description=growth_advisory.description,
+                    object_id=object_.id,
+                    rule_id="growth_forecast",
+                    x=object_.x,
+                    y=object_.y,
+                    suggested_action=growth_advisory.suggested_action,
+                ))
             if not object_.species_revision_id:
                 if object_.status == "valid":
                     object_.status = "warning"

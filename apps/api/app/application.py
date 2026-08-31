@@ -489,10 +489,16 @@ class ProjectApplication:
         project = self.get(project_id)
         if project.geometry is None:
             raise ValueError("Сначала подготовьте карту и ограничения")
-        if project.plan is not None:
-            raise ValueError("Нельзя менять рабочие области после открытия ручной схемы")
         if not zones:
             raise ValueError("Выберите хотя бы один участок")
+        referenced_zone_ids = {
+            object_.planting_zone_id
+            for object_ in (project.plan.objects if project.plan else [])
+            if object_.planting_zone_id
+        }
+        supplied_zone_ids = {zone.id for zone in zones}
+        if referenced_zone_ids - supplied_zone_ids:
+            raise ValueError("Нельзя удалить участок, в котором уже есть посадки")
         borders = [shape(feature["geometry"]) for feature in project.geometry.feature_collection.get("features", []) if feature.get("properties", {}).get("kind") == "site_border"]
         site = unary_union(borders).buffer(0) if borders else None
         seen_ids: set[str] = set()
@@ -517,14 +523,21 @@ class ProjectApplication:
             if site is not None and not site.covers(parsed):
                 raise ValueError(f"Участок «{zone.label}» выходит за границы территории")
             for other_label, other_geometry in parsed_zones:
-                if parsed.intersection(other_geometry).area > 0.5:  # type: ignore[attr-defined]
+                overlap = parsed.intersection(other_geometry)  # type: ignore[attr-defined]
+                # A local task may be carved inside a broad territory such as
+                # SITE_BORDER. Nested areas are intentional; partial overlaps
+                # remain ambiguous and are rejected.
+                nested = parsed.covers(other_geometry) or other_geometry.covers(parsed)  # type: ignore[attr-defined]
+                if overlap.area > 0.5 and not nested:
                     raise ValueError(f"Участки «{other_label}» и «{zone.label}» пересекаются")
             parsed_zones.append((zone.label, parsed))
         project.planting_zones = [zone.model_copy(deep=True) for zone in zones]
         if project.geometry is not None:
             self._attach_planting_zone_features(project)
             project.geometry_version += 1
-        project.status = ProjectStatus.ZONES_SELECTED
+        project.status = ProjectStatus.EDITING if project.plan is not None else ProjectStatus.ZONES_SELECTED
+        if project.plan is not None:
+            self._refresh_plan(project, project.plan, increment_version=False)
         saved = self.repository.save(project)
         self._discard_spatial_indexes(project.id)
         self.history.clear(project.id)
@@ -566,7 +579,11 @@ class ProjectApplication:
 
     @staticmethod
     def _planting_zone_at(project: Project, x: float, y: float, radius: float) -> PlantingZoneAssignment | None:
-        return next((zone for zone in project.planting_zones if shape(zone.geometry).covers(Point(x, y).buffer(radius))), None)
+        footprint = Point(x, y).buffer(radius)
+        matching = [zone for zone in project.planting_zones if shape(zone.geometry).covers(footprint)]
+        # Prefer the most specific nested task instead of the broad site
+        # contour that contains it.
+        return min(matching, key=lambda zone: shape(zone.geometry).area, default=None)
 
     def check_placement(self, project_id: str, payload: PlacementCheckRequest) -> PlacementCheck:
         project = self.get(project_id)
@@ -675,6 +692,16 @@ class ProjectApplication:
             if revision.kind != object_.kind:
                 raise ValueError("Порода не соответствует типу посадочного места")
             object_.canopy_forecast, object_.root_forecast = growth_forecasts(revision, object_.size_class)
+            canopy_20 = next((item for item in object_.canopy_forecast if item.horizon_year == 20), None)
+            roots_20 = next((item for item in object_.root_forecast if item.horizon_year == 20), None)
+            if canopy_20 and roots_20:
+                advisory = self.geometry.future_growth_advisory(
+                    project,
+                    object_.x,
+                    object_.y,
+                    canopy_20.radius_max_m,
+                    roots_20.radius_max_m,
+                ) or advisory
         if not (spacing_index or PlantSpacingIndex(plan.objects)).respects(object_):
             raise ValueError("Объект расположен слишком близко к существующим посадкам")
         return object_, advisory
@@ -714,6 +741,16 @@ class ProjectApplication:
             canopy, roots = growth_forecasts(revision, str(next_size_class))
             updates["canopy_forecast"] = canopy
             updates["root_forecast"] = roots
+            canopy_20 = next((item for item in canopy if item.horizon_year == 20), None)
+            roots_20 = next((item for item in roots if item.horizon_year == 20), None)
+            if canopy_20 and roots_20:
+                advisory = self.geometry.future_growth_advisory(
+                    project,
+                    next_x,
+                    next_y,
+                    canopy_20.radius_max_m,
+                    roots_20.radius_max_m,
+                ) or advisory
         else:
             updates["canopy_forecast"] = []
             updates["root_forecast"] = []
@@ -860,7 +897,16 @@ class ProjectApplication:
         if project.plan.version != request.base_plan_version:
             raise PlanVersionConflict(request.base_plan_version, project.plan.version)
 
-        candidates = self.candidate_generator.generate(request, project.planting_zones)
+        requested_target = request.target_count if request.type == "fill" and request.placement_mode == "count" else None
+        generation_request = request
+        if requested_target is not None:
+            # Generate alternatives as well as the requested positions. Hard
+            # constraints are project-specific and are applied below; a
+            # requested count must not mean merely "number of attempts".
+            generation_request = request.model_copy(update={
+                "target_count": min(5000, max(requested_target, requested_target * 8)),
+            })
+        candidates = self.candidate_generator.generate(generation_request, project.planting_zones)
         pattern_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         pattern_id = f"pattern-{pattern_digest[:16]}"
         label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
@@ -884,7 +930,7 @@ class ProjectApplication:
             return PatternPreview(
                 pattern_id=pattern_id,
                 type=request.type,
-                requested_count=0,
+                requested_count=requested_target or 0,
                 accepted_count=0,
                 skipped=[],
             )
@@ -895,19 +941,25 @@ class ProjectApplication:
             label=label,
             operations=operations,
         ))
-        accepted_indices = {
-            item.operation_index for item in initial.candidate_results if item.status != "blocked"
-        }
-        skipped = [
-            PatternSkippedCandidate(
-                x=candidates[item.operation_index].x,
-                y=candidates[item.operation_index].y,
+        accepted_indices: list[int] = []
+        skipped: list[PatternSkippedCandidate] = []
+        for item in initial.candidate_results:
+            # Automatic placement is conservative: unresolved evidence is a
+            # reason to skip a candidate, not permission to silently include
+            # it in a bulk operation. Manual correction can still accept an
+            # explicitly reviewed warning later.
+            if item.status == "allowed":
+                accepted_indices.append(item.operation_index)
+                if requested_target is not None and len(accepted_indices) >= requested_target:
+                    break
+                continue
+            candidate = candidates[item.operation_index]
+            skipped.append(PatternSkippedCandidate(
+                x=candidate.x,
+                y=candidate.y,
                 reason=item.reason,
-            )
-            for item in initial.candidate_results
-            if item.status == "blocked"
-        ]
-        accepted_operations = [operation for index, operation in enumerate(operations) if index in accepted_indices]
+            ))
+        accepted_operations = [operations[index] for index in accepted_indices]
         change_set = None
         if accepted_operations:
             change_set = self.preview_change_set(project_id, PlanChangeSetDraft(
@@ -919,7 +971,7 @@ class ProjectApplication:
         return PatternPreview(
             pattern_id=pattern_id,
             type=request.type,
-            requested_count=len(candidates),
+            requested_count=requested_target if requested_target is not None else len(candidates),
             accepted_count=len(accepted_operations),
             skipped=skipped,
             change_set=change_set,
