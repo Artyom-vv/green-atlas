@@ -839,6 +839,16 @@ test('placement flow creates a typed group across the selected area as one revis
   await expect(page.getByText(/из 8 допустимы/)).toBeVisible();
   await expect(page.getByText('Почему позиции исключены')).toBeVisible();
   await expect(page.locator('.ui-message').filter({ hasText: 'Почему позиции исключены' }).getByRole('listitem').first()).toBeVisible();
+  const horizon = page.getByRole('slider', { name: 'Горизонт прогноза' });
+  await expect(horizon).toHaveValue('0');
+  await horizon.focus();
+  for (let year = 0; year < 23; year += 1) await page.keyboard.press('ArrowRight');
+  await expect(horizon).toHaveValue('23');
+  await expect(page.getByText('23 лет')).toBeVisible();
+  await expect(map).toHaveAttribute('data-growth-horizon', '23');
+  await expect(map).toHaveAttribute('data-growth-overlay', /:canopy:/);
+  const beforeApply = await page.request.get(`${apiBase}/projects/${projectId}`);
+  expect((await beforeApply.json() as { plan: { objects: unknown[] } }).plan.objects).toHaveLength(beforeProject.plan.objects.length);
   await page.getByRole('button', { name: /Добавить/ }).click();
 
   await expect.poll(async () => {
