@@ -67,4 +67,37 @@ describe('PatternToolPanel', () => {
     expect(screen.getByText('Почему позиции исключены')).toBeVisible();
     expect(screen.getByText('3 — Контур пересекает существующее озеленение')).toBeVisible();
   });
+
+  it('shows derived group spacing without a second fill control', () => {
+    const preview: PatternPreview = {
+      pattern_id: 'pattern-2',
+      type: 'fill',
+      requested_count: 8,
+      accepted_count: 6,
+      effective_spacing_m: 7.4,
+      skipped: [],
+      unverified_data: [],
+      data_confidence: 'verified',
+      data_confidence_reasons: [],
+      reason_summary: [],
+      change_set: {
+        id: 'preview-2',
+        digest: 'digest',
+        base_plan_version: 1,
+        source: 'pattern',
+        label: 'Заполнение участков',
+        can_apply: true,
+        additions: [],
+        updates: [],
+        deletion_ids: [],
+        candidate_results: [],
+        expires_at: '2026-09-01T00:00:00Z',
+      },
+    };
+
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} preview={preview} onPreview={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.queryByRole('spinbutton', { name: 'Шаг между посадками' })).not.toBeInTheDocument();
+    expect(screen.getByText('Расчётный шаг 7.4 м')).toBeVisible();
+  });
 });

@@ -1281,6 +1281,37 @@ def test_fill_reports_when_safe_geometry_cannot_hold_the_requested_count() -> No
     assert any(item["code"] == "SAFE_CAPACITY_REACHED" for item in payload["reason_summary"])
 
 
+def test_fill_density_intent_derives_spacing_from_the_selected_species() -> None:
+    project_id = prepare_project("Плотность по кроне")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    species_id = next(
+        item["id"] for item in client.get("/api/species", params={"kind": "tree"}).json()
+        if item["species_id"] == "sorbus-aucuparia"
+    )
+    common = {
+        "type": "fill",
+        "base_plan_version": version,
+        "plant_kind": "tree",
+        "zone_ids": ["work"],
+        "placement_mode": "count",
+        "target_count": 80,
+        "layout": "natural",
+        "spacing_m": 6,
+        "edge_offset_m": 1,
+        "seed": 47,
+        "size_class": "standard",
+        "species_revision_id": species_id,
+    }
+
+    dense = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={**common, "spacing_policy": "canopy"})
+    open_ = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={**common, "spacing_policy": "open"})
+
+    assert dense.status_code == open_.status_code == 200
+    assert dense.json()["effective_spacing_m"] < open_.json()["effective_spacing_m"]
+    assert dense.json()["accepted_count"] >= open_.json()["accepted_count"]
+
+
 def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -> None:
     catalog = client.get("/api/species", params={"kind": "tree"})
     assert catalog.status_code == 200

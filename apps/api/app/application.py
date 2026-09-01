@@ -69,7 +69,7 @@ from app.geometry.domain import PositionAdvisory, PositionChecker, PositionViola
 from app.history.ports import ProjectHistoryPort
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
-from app.planning.domain import PlanVersionConflict, PlantSpacingIndex
+from app.planning.domain import PlanVersionConflict, PlantSpacingIndex, required_spacing
 from app.planning.ports import CandidateGeneratorPort
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.projects.ports import ProjectRepository
@@ -934,6 +934,29 @@ class ProjectApplication:
             result.append(zone.model_copy(update={"geometry": mapping(geometry)}))
         return result
 
+    def _effective_pattern_spacing(self, request: PatternPreviewRequest) -> float:
+        if request.type != "fill" or not request.species_revision_id:
+            return request.spacing_m
+        revision = get_species(request.species_revision_id)
+        if revision.kind != request.plant_kind:
+            raise ValueError("Порода не соответствует типу посадочного места")
+        radius = request.layout_radius_m or self._default_layout_radius(request.plant_kind)
+        canopy, roots = growth_forecasts(revision, request.size_class)
+        prototype = PlanObject(
+            kind=request.plant_kind,
+            x=0,
+            y=0,
+            radius=radius,
+            layout_radius_m=radius,
+            size_class=request.size_class,
+            species_revision_id=revision.id,
+            canopy_forecast=canopy,
+            root_forecast=roots,
+            group_ids=["pattern-spacing-preview"],
+            spacing_policy=request.spacing_policy,
+        )
+        return round(required_spacing(prototype, prototype), 2)
+
     def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate, spacing_index: PlantSpacingIndex | None = None) -> tuple[PlanObject, _CandidateIssue | None]:
         radius = payload.layout_radius_m or payload.radius or self._default_layout_radius(payload.kind)
         violation = self.geometry.position_violation(project, payload.x, payload.y, radius, payload.kind)
@@ -1177,12 +1200,13 @@ class ProjectApplication:
         unverified_data = list(passport.gaps)
 
         requested_target = request.target_count if request.type == "fill" and request.placement_mode == "count" else None
-        generation_request = request
+        effective_spacing = self._effective_pattern_spacing(request)
+        generation_request = request.model_copy(update={"spacing_m": effective_spacing})
         if requested_target is not None:
             # Generate alternatives as well as the requested positions. Hard
             # constraints are project-specific and are applied below; a
             # requested count must not mean merely "number of attempts".
-            generation_request = request.model_copy(update={
+            generation_request = generation_request.model_copy(update={
                 "target_count": min(5000, max(requested_target, requested_target * 8)),
             })
         generation_zones = self._automatic_generation_zones(
@@ -1217,6 +1241,7 @@ class ProjectApplication:
                 type=request.type,
                 requested_count=requested_target or 0,
                 accepted_count=0,
+                effective_spacing_m=effective_spacing,
                 skipped=[],
                 unverified_data=unverified_data,
                 data_confidence=passport.mass_placement_status,
@@ -1280,6 +1305,7 @@ class ProjectApplication:
             type=request.type,
             requested_count=requested_target if requested_target is not None else len(candidates),
             accepted_count=len(accepted_operations),
+            effective_spacing_m=effective_spacing,
             skipped=skipped,
             reason_summary=reason_summary,
             unverified_data=unverified_data,

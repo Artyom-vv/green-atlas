@@ -622,6 +622,8 @@ test('placement flow creates a typed group across the selected area as one revis
   );
   await expect(zoneCheckbox).toBeChecked();
   await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  await expect(page.getByRole('spinbutton', { name: 'Шаг между посадками' })).toHaveCount(0);
+  await expect(page.getByText(/Расчётный шаг \d/)).toBeVisible();
   const placementPreview = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
     && response.request().method() === 'POST'
     && response.request().postData()?.includes('"target_count":8') === true);

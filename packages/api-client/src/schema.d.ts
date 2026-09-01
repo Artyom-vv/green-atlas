@@ -1196,6 +1196,8 @@ export interface components {
             requested_count: number;
             /** Accepted Count */
             accepted_count: number;
+            /** Effective Spacing M */
+            effective_spacing_m?: number | null;
             /** Skipped */
             skipped?: components["schemas"]["PatternSkippedCandidate"][];
             /** Reason Summary */

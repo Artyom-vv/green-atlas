@@ -3707,6 +3707,18 @@
             "minimum": 0.0,
             "title": "Accepted Count"
           },
+          "effective_spacing_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Spacing M"
+          },
           "skipped": {
             "items": {
               "$ref": "#/components/schemas/PatternSkippedCandidate"

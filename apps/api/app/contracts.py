@@ -556,6 +556,7 @@ class PatternPreview(BaseModel):
     type: Literal["row", "fill"]
     requested_count: int = Field(ge=0)
     accepted_count: int = Field(ge=0)
+    effective_spacing_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
     reason_summary: list[CandidateReasonSummary] = Field(default_factory=list)
     unverified_data: list[str] = Field(default_factory=list)
