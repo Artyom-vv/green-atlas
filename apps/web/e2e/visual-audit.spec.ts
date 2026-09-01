@@ -1155,6 +1155,57 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
   await expectNoViewportOverflow(page);
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
 
+  const largeProjectId = new URL(page.url()).pathname.split('/')[2];
+  const rectangle = (left: number, bottom: number, right: number, top: number) => ({
+    type: 'Polygon',
+    coordinates: [[[left, bottom], [right, bottom], [right, top], [left, top], [left, bottom]]],
+  });
+  const zones = [
+    { id: 'large-west', label: 'Западный участок', geometry: rectangle(-797.7992, -829.5, -652.7448, -684.4456) },
+    { id: 'large-east', label: 'Восточный участок', geometry: rectangle(-435.1632, -829.5, -290.1088, -684.4456) },
+  ];
+  const zonesResponse = await page.request.put(`${apiBase}/projects/${largeProjectId}/planting-zones`, { data: { zones } });
+  expect(zonesResponse.ok(), await zonesResponse.text()).toBeTruthy();
+  const manualResponse = await page.request.post(`${apiBase}/projects/${largeProjectId}/plan/manual`);
+  const manualProject = await manualResponse.json() as { plan: { version: number } };
+  const speciesResponse = await page.request.get(`${apiBase}/species?kind=tree`);
+  const species = await speciesResponse.json() as Array<{ id: string; species_id: string }>;
+  const rowan = species.find((item) => item.species_id === 'sorbus-aucuparia')!;
+  const previewResponse = await page.request.post(`${apiBase}/projects/${largeProjectId}/plan/patterns/preview`, { data: {
+    type: 'fill',
+    base_plan_version: manualProject.plan.version,
+    plant_kind: 'tree',
+    zone_ids: zones.map((zone) => zone.id),
+    placement_mode: 'count',
+    target_count: 30,
+    layout: 'natural',
+    spacing_m: 6,
+    edge_offset_m: 1,
+    seed: 47,
+    size_class: 'standard',
+    species_revision_id: rowan.id,
+    spacing_policy: 'balanced',
+  }, timeout: 25_000 });
+  expect(previewResponse.ok()).toBeTruthy();
+  const placement = await previewResponse.json() as { accepted_count: number; skipped: unknown[]; reason_summary: unknown[]; change_set: { id: string; digest: string; base_plan_version: number; additions: Array<{ planting_zone_id: string }> } };
+  expect(placement.accepted_count).toBeGreaterThan(1);
+  expect(new Set(placement.change_set.additions.map((item) => item.planting_zone_id))).toEqual(new Set(zones.map((zone) => zone.id)));
+  expect(placement.reason_summary.length).toBeGreaterThan(0);
+  const appliedResponse = await page.request.post(`${apiBase}/projects/${largeProjectId}/plan/change-sets/apply`, { data: {
+    preview_id: placement.change_set.id,
+    digest: placement.change_set.digest,
+    base_plan_version: placement.change_set.base_plan_version,
+  } });
+  expect(appliedResponse.ok()).toBeTruthy();
+  await page.reload();
+  const undoLargePlacement = page.getByRole('button', { name: /Отменить: Заполнение участков/ });
+  await expect(undoLargePlacement).toBeEnabled();
+  await undoLargePlacement.click();
+  await expect.poll(async () => {
+    const response = await page.request.get(`${apiBase}/projects/${largeProjectId}`);
+    return (await response.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBe(0);
+
   await page.goto('/projects/new/import');
   const denseStarted = Date.now();
   await page.setInputFiles('input[type=file]', { name: 'dense-topography.dxf', mimeType: 'application/dxf', buffer: denseDxfBuffer() });

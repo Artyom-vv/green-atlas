@@ -407,6 +407,10 @@ class ShapelyGeometryEngine:
     def position_violation(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree"):
         return self._position_checker(project).check(x, y, radius, plant_kind)  # type: ignore[arg-type]
 
+    def automatic_safe_geometry(self, project: Project, geometry: dict, radius: float, plant_kind: str = "tree") -> dict:
+        safe = self._position_checker(project).hard_safe_area(shape(geometry), radius, plant_kind)  # type: ignore[arg-type]
+        return mapping(safe)
+
     def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None:
         advisory = self._position_checker(project).advisory(x, y, radius)
         return advisory.description if advisory else None

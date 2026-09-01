@@ -7,7 +7,7 @@ import json
 from math import isfinite
 from threading import RLock
 
-from shapely.geometry import Point, mapping, shape
+from shapely.geometry import Point, shape
 from shapely.ops import unary_union
 
 from app.contracts import (
@@ -65,7 +65,7 @@ from app.data_passport import build_data_passport
 from app.dxf_import.ports import DxfReaderPort
 from app.exporting.ports import DxfWriterPort
 from app.geometry.ports import GeometryEnginePort, GeometryQueryPort
-from app.geometry.domain import PositionAdvisory, PositionChecker, PositionViolation
+from app.geometry.domain import PositionAdvisory, PositionViolation
 from app.history.ports import ProjectHistoryPort
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
@@ -927,11 +927,10 @@ class ProjectApplication:
     ) -> list[PlantingZoneAssignment]:
         kind = "shrub" if plant_kind == "shrub" else "tree"
         radius = layout_radius_m or self._default_layout_radius(kind)
-        checker = PositionChecker(project)
         result: list[PlantingZoneAssignment] = []
         for zone in project.planting_zones:
-            geometry = checker.hard_safe_area(shape(zone.geometry), radius, kind)
-            result.append(zone.model_copy(update={"geometry": mapping(geometry)}))
+            geometry = self.geometry.automatic_safe_geometry(project, zone.geometry, radius, kind)
+            result.append(zone.model_copy(update={"geometry": geometry}))
         return result
 
     def _effective_pattern_spacing(self, request: PatternPreviewRequest) -> float:
