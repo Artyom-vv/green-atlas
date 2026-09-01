@@ -115,9 +115,9 @@ export function PatternToolPanel({ mode, zones, species, axis, axisSource, selec
         {zones.flatMap((zone) => zone.id ? [<Checkbox key={zone.id} label={zone.label} checked={selectedZoneLabels.has(zone.id)} onChange={(event) => onSelectedZoneIdsChange?.(event.target.checked ? [...new Set([...selectedZoneIds, zone.id!])] : selectedZoneIds.filter((id) => id !== zone.id))} />] : [])}
         <Button variant="secondary" disabled={loading} onClick={drawingZone ? onCancel : onDrawZone}>{drawingZone ? 'Отменить обводку' : 'Обвести новый участок'}</Button>
       </fieldset> : null}
-      {mode === 'fill' && !drawingZone ? <FormField label="Способ размещения"><Select value={layout} onChange={(event) => setLayout(event.target.value as typeof layout)}><option value="natural">Естественно</option><option value="staggered">Равномерно</option></Select></FormField> : null}
+      {mode === 'fill' && canPreview && !drawingZone ? <FormField label="Способ размещения"><Select value={layout} onChange={(event) => setLayout(event.target.value as typeof layout)}><option value="natural">Естественно</option><option value="staggered">Равномерно</option></Select></FormField> : null}
       {drawingZone ? <InlineMessage tone="info">Поставьте точки по границе участка и замкните контур</InlineMessage> : null}
-      {!drawingZone ? <>
+      {!drawingZone && canPreview ? <>
       <FormField label="Растительность"><Select value={plantKind} onChange={(event) => { const value = event.target.value as 'tree' | 'shrub'; setPlantKind(value); setSpacing(value === 'tree' ? 6 : 2); }}><option value="tree">Деревья</option><option value="shrub">Кустарники</option></Select></FormField>
       <fieldset className="species-choice"><legend>Порода</legend>{availableSpecies.map((item) => { const forecast = forecastAt(item.canopy_forecast, growthHorizon ?? 20); return <button type="button" key={item.id} className={speciesId === item.id ? 'species-choice__item is-selected' : 'species-choice__item'} onClick={() => setSpeciesId(item.id)}><span><strong>{item.common_name}</strong><small>{item.crown_shape === 'spreading' ? 'раскидистая' : item.crown_shape === 'conical' ? 'коническая' : item.crown_shape === 'oval' ? 'овальная' : 'компактная'} крона</small></span><b>{forecast ? `${(forecast.radius_min_m * 2).toFixed(1)}–${(forecast.radius_max_m * 2).toFixed(1)} м` : 'нет данных'}</b></button>; })}</fieldset>
       <FormField label="Плотность группы"><Select value={spacingPolicy} onChange={(event) => setSpacingPolicy(event.target.value as typeof spacingPolicy)}><option value="canopy">Плотно, кроны сомкнутся</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select></FormField>
@@ -136,6 +136,6 @@ export function PatternToolPanel({ mode, zones, species, axis, axisSource, selec
       </> : null}
     </div>
     <div className="inspector-spacer" />
-    {!drawingZone ? <footer><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!canPreview || !speciesId || Boolean(preview && !preview.change_set)} onClick={preview?.change_set ? onApply : submit}>{preview?.change_set ? `Добавить ${preview.accepted_count}` : 'Показать'}</Button></footer> : null}
+    {!drawingZone ? <footer><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!canPreview || !speciesId || Boolean(preview && !preview.change_set)} onClick={preview?.change_set ? onApply : submit}>{!canPreview ? (mode === 'row' ? 'Выберите линию' : 'Выберите участок') : preview?.change_set ? `Добавить ${preview.accepted_count}` : 'Показать'}</Button></footer> : null}
   </div>;
 }

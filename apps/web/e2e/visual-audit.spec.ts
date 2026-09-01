@@ -240,6 +240,14 @@ test('a user can choose several local areas before opening the editor', async ({
   await expect(page.getByText('Выбрано', { exact: true })).toBeVisible();
   await expect(page.getByText('Рабочая область', { exact: true })).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Открыть редактор' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Открыть редактор' }).click();
+  const previewRequest = page.waitForRequest((request) => request.url().includes('/plan/patterns/preview') && request.method() === 'POST');
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await expect(page.getByRole('checkbox', { name: 'Контур DXF: газон A' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Контур DXF: газон B' })).toBeChecked();
+  const payload = JSON.parse((await previewRequest).postData() ?? '{}') as { zone_ids?: string[] };
+  expect(payload.zone_ids).toEqual(['area-a', 'area-b']);
+  await expect(page.getByText('Выберите участок на карте или обведите новый')).toHaveCount(0);
 });
 
 test('selecting the same DXF contour twice keeps one visible draft area', async ({ page }) => {
@@ -780,8 +788,7 @@ test('placement flow creates a typed group across the selected area as one revis
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.getByText('По выбранным участкам')).toBeVisible();
   const zoneCheckbox = page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' });
-  await expect(zoneCheckbox).not.toBeChecked();
-  await expect(page.getByText('Выберите участок на карте или обведите новый')).toBeVisible();
+  await expect(zoneCheckbox).toBeChecked();
   const map = page.getByLabel('Карта проекта озеленения');
   const box = await map.boundingBox();
   expect(box).not.toBeNull();
@@ -839,7 +846,7 @@ test('primary workspace exposes one guided placement action and direct numeric i
   await expect(page.getByLabel('Приоритет')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
-  await page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' }).check();
+  await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
   const count = page.getByRole('spinbutton', { name: 'Количество посадок' });
   await count.fill('5000');
   await expect(count).toHaveValue('5000');

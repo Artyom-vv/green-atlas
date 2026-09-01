@@ -226,6 +226,7 @@ export function WorkspacePage() {
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : undefined;
   const selectedObject = useMemo(() => planObjects.find((item) => item.id === selectedId), [planObjects, selectedId]);
   const selectedPatternZone = useMemo(() => (project?.planting_zones ?? []).find((zone) => zone.id === selectedPatternZoneIds[0]), [project?.planting_zones, selectedPatternZoneIds]);
+  const plantingZoneIds = useMemo(() => (project?.planting_zones ?? []).flatMap((zone) => zone.id ? [zone.id] : []), [project?.planting_zones]);
   const selectedObjects = useMemo(() => {
     const ids = new Set(selectedIds);
     return planObjects.filter((item) => item.id && ids.has(item.id));
@@ -299,6 +300,9 @@ export function WorkspacePage() {
     },
     onSuccess: async (nextProject) => {
       queryClient.setQueryData(['workspace-project', projectId], nextProject);
+      const nextZones = nextProject.planting_zones ?? [];
+      setDraftZones(nextZones);
+      setSelectedPatternZoneIds(nextZones.flatMap((zone) => zone.id ? [zone.id] : []));
       setPanel(null);
       editor.setTool('select');
       await refresh({ mapGeometry: true });
@@ -494,9 +498,12 @@ export function WorkspacePage() {
       setPanel(null);
       openRightPanel();
     }
-    if (nextTool === 'pattern_fill' && mapAreaTarget?.plantingZoneId) setSelectedPatternZoneIds([mapAreaTarget.plantingZoneId]);
+    if (nextTool === 'pattern_fill') {
+      if (mapAreaTarget?.plantingZoneId) setSelectedPatternZoneIds([mapAreaTarget.plantingZoneId]);
+      else if (!selectedPatternZoneIds.length && plantingZoneIds.length === 1) setSelectedPatternZoneIds(plantingZoneIds);
+    }
     editor.setTool(tool === nextTool && nextTool !== 'select' ? 'select' : nextTool);
-  }, [editor, editorBusy, mapAreaTarget?.plantingZoneId, openRightPanel, planLocked, projectHasPlan, sourcePreview, tool]);
+  }, [editor, editorBusy, mapAreaTarget?.plantingZoneId, openRightPanel, planLocked, plantingZoneIds, projectHasPlan, selectedPatternZoneIds.length, sourcePreview, tool]);
 
   const previewSelectionTransform = (mode: 'move' | 'copy', coordinate: [number, number]) => {
     const plan = project?.plan;
