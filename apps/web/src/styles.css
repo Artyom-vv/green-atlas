@@ -406,6 +406,12 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .release-package > .ui-button { width: 100%; }
 .export-panel .ui-status { width: 100%; }
 .validation-panel { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.issue-list { display: flex; flex-direction: column; gap: 16px; }
+.issue-group > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--color-neutral-200); }
+.issue-group > header span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.issue-group > header strong { font-family: var(--font-mono); font-size: 12px; line-height: 18px; }
+.issue-group > header small { max-width: 32ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.issue-group > header b { color: var(--color-neutral-600); font-family: var(--font-mono); font-size: 12px; line-height: 18px; }
 .issue-list .ui-list-row { min-height: 64px; align-items: flex-start; padding: 12px 0; }
 .issue-icon { width: 20px; height: 20px; display: grid; place-items: center; color: var(--color-warning); }
 .issue-icon--error { color: var(--color-error); }

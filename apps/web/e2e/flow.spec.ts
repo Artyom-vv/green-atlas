@@ -38,6 +38,10 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
   // findings instead of creating a competing "check" stage or request.
   await page.getByRole('button', { name: 'Проверка' }).click();
   await expect(page.getByText('Проверка плана', { exact: true })).toBeVisible();
+  const groupedFindings = page.getByRole('region', { name: 'Основание PP-743-3.6.3-note-1' });
+  await expect(groupedFindings).toBeVisible();
+  await expect(groupedFindings.getByText(/Действие: Уточнить сорт и проектный отступ/).first()).toBeVisible();
+  await expect(groupedFindings.getByRole('button', { name: 'Показать' }).first()).toBeEnabled();
 
   await page.getByRole('button', { name: 'Выпустить пакет' }).click();
   await page.getByRole('button', { name: 'Собрать черновой пакет' }).click();
