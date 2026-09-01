@@ -7,6 +7,22 @@ import { Button, Dialog, IconButton, InlineMessage } from '@green/ui';
 
 const date = (value: string) => new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 const fileSize = (value?: number | null) => value ? `${(value / 1024 / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МБ` : '—';
+const countLabel = (value: number, one: string, few: string, many: string) => {
+  const modulo100 = value % 100;
+  const modulo10 = value % 10;
+  if (modulo100 >= 11 && modulo100 <= 14) return `${value} ${many}`;
+  if (modulo10 === 1) return `${value} ${one}`;
+  if (modulo10 >= 2 && modulo10 <= 4) return `${value} ${few}`;
+  return `${value} ${many}`;
+};
+
+function projectState(project: ProjectSummary) {
+  if (!project.source_name) return { title: 'Нужен DXF', detail: 'Исходник не загружен' };
+  if (!project.has_geometry) return { title: 'Подготовьте карту', detail: 'Проверьте слои DXF' };
+  if (!project.planting_zone_count) return { title: 'Выберите участки', detail: 'Карта подготовлена' };
+  const detail = `${countLabel(project.plan_object_count, 'посадка', 'посадки', 'посадок')}, ${countLabel(project.planting_zone_count, 'участок', 'участка', 'участков')}`;
+  return { title: project.plan_object_count ? 'Редактируется' : 'Готов к размещению', detail };
+}
 
 function projectRoute(project: ProjectSummary) {
   if (!project.source_name) return `/projects/${project.id}/import`;
@@ -34,7 +50,7 @@ export function ProjectsPage() {
         {projectsQuery.isLoading ? <div className="projects-state">Загружаем проекты</div> : null}
         {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
         {!projectsQuery.isLoading && !error && !projects.length ? <div className="projects-empty"><FolderOpen size={24} /><strong>Проектов пока нет</strong><span>Загрузите DXF, чтобы подготовить первый план озеленения.</span><Button variant="primary" icon={FilePlus2} onClick={() => navigate('/projects/new/import')}>Загрузить DXF</Button></div> : null}
-        {projects.length ? <div className="projects-table-wrap"><table className="projects-table"><thead><tr><th>Проект</th><th>Изменён</th><th><span className="sr-only">Действия</span></th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><Link className="project-name" to={projectRoute(project)}><strong>{project.name}</strong><span>{project.source_name ?? 'DXF не загружен'}{project.source_name ? `, ${fileSize(project.source_size)}` : ''}</span></Link></td><td><time dateTime={project.updated_at}>{date(project.updated_at)}</time></td><td><div className="project-row-actions"><IconButton icon={Trash2} label={`Удалить ${project.name}`} variant="danger" onClick={() => setDeleteCandidate(project)} /><Link className="project-open" to={projectRoute(project)} aria-label={`Открыть ${project.name}`}><ArrowRight size={16} /></Link></div></td></tr>)}</tbody></table></div> : null}
+        {projects.length ? <div className="projects-table-wrap"><table className="projects-table"><thead><tr><th>Проект</th><th>Состояние</th><th>Изменён</th><th><span className="sr-only">Действия</span></th></tr></thead><tbody>{projects.map((project) => { const state = projectState(project); return <tr key={project.id}><td><Link className="project-name" to={projectRoute(project)}><strong>{project.name}</strong><span>{project.source_name ?? 'DXF не загружен'}{project.source_name ? `, ${fileSize(project.source_size)}` : ''}</span></Link></td><td><span className="project-state"><strong>{state.title}</strong><small>{state.detail}</small></span></td><td><time dateTime={project.updated_at}>{date(project.updated_at)}</time></td><td><div className="project-row-actions"><IconButton icon={Trash2} label={`Удалить ${project.name}`} variant="danger" onClick={() => setDeleteCandidate(project)} /><Link className="project-open" to={projectRoute(project)} aria-label={`Открыть ${project.name}`}><ArrowRight size={16} /></Link></div></td></tr>; })}</tbody></table></div> : null}
       </main>
       <Dialog open={Boolean(deleteCandidate)} title="Удалить проект навсегда?" onClose={() => setDeleteCandidate(undefined)} footer={<><Button variant="secondary" onClick={() => setDeleteCandidate(undefined)} disabled={deleteProject.isPending}>Отмена</Button><Button variant="danger" icon={Trash2} loading={deleteProject.isPending} onClick={() => deleteCandidate && deleteProject.mutate(deleteCandidate)}>Удалить</Button></>}><p>Проект «{deleteCandidate?.name}», исходный DXF, планы и результаты проверки будут удалены без возможности восстановления.</p></Dialog>
     </div>

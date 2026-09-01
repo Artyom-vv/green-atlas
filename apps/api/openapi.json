@@ -5156,6 +5156,30 @@
             "title": "Has Geometry",
             "default": false
           },
+          "planting_zone_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Planting Zone Count",
+            "default": 0
+          },
+          "plan_object_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Plan Object Count",
+            "default": 0
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
           "import_status": {
             "$ref": "#/components/schemas/ImportStatus"
           },

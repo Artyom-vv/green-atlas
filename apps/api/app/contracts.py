@@ -370,6 +370,9 @@ class ProjectSummary(BaseModel):
     source_name: str | None = None
     source_size: int | None = None
     has_geometry: bool = False
+    planting_zone_count: int = Field(default=0, ge=0)
+    plan_object_count: int = Field(default=0, ge=0)
+    plan_version: int | None = Field(default=None, ge=1)
     import_status: ImportStatus = Field(default_factory=ImportStatus)
     state_version: int = Field(default=1, ge=1)
     created_at: str

@@ -1060,6 +1060,20 @@ def test_projects_can_be_deleted() -> None:
     assert client.get(f"/api/projects/{project_id}").status_code == 404
 
 
+def test_project_list_exposes_working_context_without_loading_map_geometry() -> None:
+    project_id = prepare_project("Контекст в списке")
+    select_areas(project_id, [area("work", "Главная аллея", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
+    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
+
+    summary = next(item for item in client.get("/api/projects").json() if item["id"] == project_id)
+
+    assert summary["has_geometry"] is True
+    assert summary["planting_zone_count"] == 1
+    assert summary["plan_object_count"] == 1
+    assert summary["plan_version"] >= 2
+
+
 def test_change_set_previews_and_applies_several_objects_as_one_revision() -> None:
     project_id = prepare_project("Атомарный набор")
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])

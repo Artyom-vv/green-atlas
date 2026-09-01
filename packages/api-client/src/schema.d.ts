@@ -1688,6 +1688,18 @@ export interface components {
              * @default false
              */
             has_geometry: boolean;
+            /**
+             * Planting Zone Count
+             * @default 0
+             */
+            planting_zone_count: number;
+            /**
+             * Plan Object Count
+             * @default 0
+             */
+            plan_object_count: number;
+            /** Plan Version */
+            plan_version?: number | null;
             import_status?: components["schemas"]["ImportStatus"];
             /**
              * State Version
