@@ -960,7 +960,16 @@ def test_final_release_requires_species_and_has_an_honest_process_scope() -> Non
     manifest_artifact = next(item for item in final.json()["artifacts"] if item["kind"] == "manifest")
     manifest = client.get(manifest_artifact["download_url"]).json()
     assert manifest["missing_species_object_ids"] == []
-    assert manifest["regulatory_scope"]["pp_616"].endswith("not implemented")
+    registry = manifest["regulatory_registry"]
+    records = {item["id"]: item for item in registry["records"]}
+    assert registry["revision"].startswith("moscow-greening-registry@")
+    assert "pp616-compensation-process" in registry["applied_rule_ids"]
+    assert "pp1160-permit-service" in registry["applied_rule_ids"]
+    assert records["pp616-compensation-process"]["coverage"] == "partial"
+    assert records["pp1160-permit-service"]["machine_checkable"] is False
+    assert all("geometry_complete" not in layer for layer in manifest["layer_mappings"])
+    assert all(layer["parsing_status"] in {"complete", "partial"} for layer in manifest["layer_mappings"])
+    assert all("used_in_calculation" in layer for layer in manifest["layer_mappings"])
     assert "approved" not in json.dumps(manifest).lower()
     dxf_artifact = next(item for item in final.json()["artifacts"] if item["kind"] == "dxf")
     document = ezdxf.read(StringIO(client.get(dxf_artifact["download_url"]).content.decode("utf-8")))

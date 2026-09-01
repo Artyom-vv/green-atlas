@@ -132,6 +132,16 @@ test('release bundle reopens as an editable revision and exports the edited ID',
   const secondPayload = await secondRelease.json() as { artifacts: Array<{ kind: string; download_url: string }> };
   const manifestPath = secondPayload.artifacts.find((artifact) => artifact.kind === 'manifest')?.download_url;
   expect(manifestPath).toBeTruthy();
-  const manifest = await (await page.request.get(`${apiBase}${manifestPath}`)).json() as { plan: { objects: Array<{ id: string; x: number; species_revision_id?: string }> } };
+  const manifest = await (await page.request.get(`${apiBase}${manifestPath}`)).json() as {
+    plan: { objects: Array<{ id: string; x: number; species_revision_id?: string }> };
+    regulatory_registry: { applied_rule_ids: string[]; records: Array<{ id: string; coverage: string; machine_checkable: boolean }> };
+    layer_mappings: Array<{ parsing_status: string; used_in_calculation: boolean; geometry_complete?: boolean }>;
+  };
   expect(manifest.plan.objects).toEqual(expect.arrayContaining([expect.objectContaining({ id: objectId, x: 20, species_revision_id: 'quercus-robur@2026-08-28.1' })]));
+  expect(manifest.regulatory_registry.applied_rule_ids).toEqual(expect.arrayContaining(['pp616-compensation-process', 'pp1160-permit-service']));
+  expect(manifest.regulatory_registry.records).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'pp616-compensation-process', coverage: 'partial', machine_checkable: false }),
+    expect.objectContaining({ id: 'pp1160-permit-service', coverage: 'partial', machine_checkable: false }),
+  ]));
+  expect(manifest.layer_mappings.every((layer) => layer.geometry_complete === undefined && ['complete', 'partial'].includes(layer.parsing_status))).toBe(true);
 });

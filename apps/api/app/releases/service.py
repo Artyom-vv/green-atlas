@@ -16,6 +16,7 @@ from typing import Any
 from app.contracts import GeometrySnapshot, Plan, PlantingZoneAssignment, Project, ReleaseArtifact, ReleaseCreateRequest, ReleasePackage, SceneSnapshot
 from app.species.catalog import forecast_at, get_species
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, validate_dxf_filename
+from app.regulations.registry import REGISTRY_REVISION, applied_record_ids, registry_snapshot
 
 
 RULE_SET_REVISION = "green-atlas-spatial-draft@2026-08-28.1"
@@ -290,6 +291,8 @@ def release_identity(project: Project, request: ReleaseCreateRequest) -> str:
         "mode": request.mode,
         "scene_horizon": request.scene_horizon,
         "rules": RULE_SET_REVISION,
+        "regulatory_registry": REGISTRY_REVISION,
+        "applied_rule_ids": applied_record_ids([issue.rule_id for issue in project.plan.issues]),
         "catalog": SPECIES_CATALOG_REVISION,
     }
     digest = sha256(json.dumps(basis, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -452,7 +455,14 @@ def build_release(
             "units_assumed": project.source_file.units_assumed,
         },
         "layer_mappings": [
-            {"layer_id": layer.id, "source_name": layer.source_name, "kind": layer.mapped_kind, "geometry_complete": layer.geometry_complete}
+            {
+                "layer_id": layer.id,
+                "source_name": layer.source_name,
+                "kind": layer.mapped_kind,
+                "parsing_status": "complete" if layer.geometry_complete else "partial",
+                "semantic_status": "excluded" if str(layer.mapped_kind) == "LayerKind.IGNORE" or getattr(layer.mapped_kind, "value", layer.mapped_kind) == "ignore" else "classified",
+                "used_in_calculation": bool(layer.geometry_complete and getattr(layer.mapped_kind, "value", layer.mapped_kind) not in {None, "ignore", "unclassified"}),
+            }
             for layer in sorted(project.layers, key=lambda item: item.id)
         ],
         "objects": sorted(item.id for item in project.plan.objects),
@@ -468,6 +478,7 @@ def build_release(
         "missing_species_object_ids": missing_species,
         "hard_error_ids": hard_errors,
         "rule_set_revision": RULE_SET_REVISION,
+        "regulatory_registry": registry_snapshot([issue.rule_id for issue in project.plan.issues]),
         "species_catalog_revision": SPECIES_CATALOG_REVISION,
         "regulatory_scope": {
             "spatial_draft": "implemented",
