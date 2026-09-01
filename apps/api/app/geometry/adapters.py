@@ -404,10 +404,19 @@ class ShapelyGeometryEngine:
         if violation:
             raise ValueError(violation.description)
 
+    def position_violation(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree"):
+        return self._position_checker(project).check(x, y, radius, plant_kind)  # type: ignore[arg-type]
+
     def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None:
         advisory = self._position_checker(project).advisory(x, y, radius)
         return advisory.description if advisory else None
 
+    def placement_advisory_detail(self, project: Project, x: float, y: float, radius: float):
+        return self._position_checker(project).advisory(x, y, radius)
+
     def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> str | None:
         advisory = self._position_checker(project).growth_advisory(x, y, canopy_radius, root_radius)
         return advisory.description if advisory else None
+
+    def future_growth_advisory_detail(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float):
+        return self._position_checker(project).growth_advisory(x, y, canopy_radius, root_radius)

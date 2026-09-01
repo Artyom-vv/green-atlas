@@ -801,6 +801,34 @@ def test_position_reports_untyped_network_as_unknown_not_safe() -> None:
     assert any(item["code"] == "UNTYPED_UTILITY_REVIEW" for item in added.json()["issues"])
 
 
+def test_unknown_candidate_does_not_occupy_preview_spacing_or_enter_automatic_plan() -> None:
+    project_id = prepare_project("Неизвестная сеть в наборе")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [80, 12], [80, 55], [12, 55]])])
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": base_version,
+        "source": "pattern",
+        "label": "Проверка сети и безопасной позиции",
+        "operations": [
+            {"type": "add", "object": {"kind": "tree", "x": 75, "y": 40}},
+            {"type": "add", "object": {"kind": "tree", "x": 77, "y": 40}},
+        ],
+    })
+
+    assert preview.status_code == 200, preview.json()
+    payload = preview.json()
+    assert payload["can_apply"] is False
+    assert [item["status"] for item in payload["candidate_results"]] == ["unknown", "allowed"]
+    unknown = payload["candidate_results"][0]
+    assert unknown["code"] == "UNTYPED_UTILITY_REVIEW"
+    assert unknown["category"] == "data"
+    assert unknown["source_layer"] == "UTIL_HEAT"
+    assert unknown["source_feature_ids"]
+    assert payload["candidate_results"][1]["code"] == "POSITION_ACCEPTED"
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
+
+
 def test_manual_edit_rejects_outside_and_verified_building_conflicts() -> None:
     project_id = prepare_project("Проверка расположения")
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
@@ -1133,6 +1161,11 @@ def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
     assert pattern.json()["requested_count"] == 8
     assert pattern.json()["accepted_count"] == 7
     assert any("существующее озеленение" in item["reason"].lower() for item in pattern.json()["skipped"])
+    existing_green = next(item for item in pattern.json()["skipped"] if item["code"] == "EXISTING_GREEN_OVERLAP")
+    assert existing_green["status"] == "blocked"
+    assert existing_green["category"] == "constraint"
+    assert existing_green["source_layer"] == "GREEN_EXISTING"
+    assert any(item["code"] == "EXISTING_GREEN_OVERLAP" and item["count"] >= 1 for item in pattern.json()["reason_summary"])
     assert preview["can_apply"] is True
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
 

@@ -21,6 +21,7 @@ export type RowPatternRequest = components['schemas']['RowPatternRequest'];
 export type FillPatternRequest = components['schemas']['FillPatternRequest'];
 export type PatternPreviewRequest = RowPatternRequest | FillPatternRequest;
 export type PatternSkippedCandidate = components['schemas']['PatternSkippedCandidate'];
+export type CandidateReasonSummary = components['schemas']['CandidateReasonSummary'];
 export type PatternPreview = Omit<components['schemas']['PatternPreview'], 'change_set' | 'skipped'> & { skipped: PatternSkippedCandidate[]; change_set?: ChangeSetPreview | null };
 export type SpeciesRevision = components['schemas']['SpeciesRevision'];
 export type GrowthEnvelopeForecast = components['schemas']['GrowthEnvelopeForecast'];

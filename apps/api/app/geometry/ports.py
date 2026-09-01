@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from app.contracts import GeometrySnapshot, Project
+from app.geometry.domain import PositionAdvisory, PositionViolation
 from app.operations.progress import ProgressReporter
 
 
@@ -9,9 +10,15 @@ class GeometryEnginePort(Protocol):
 
     def validate_position(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree") -> None: ...
 
+    def position_violation(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree") -> PositionViolation | None: ...
+
     def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None: ...
 
+    def placement_advisory_detail(self, project: Project, x: float, y: float, radius: float) -> PositionAdvisory | None: ...
+
     def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> str | None: ...
+
+    def future_growth_advisory_detail(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> PositionAdvisory | None: ...
 
 
 class GeometryQueryPort(Protocol):

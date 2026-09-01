@@ -688,6 +688,25 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** CandidateReasonSummary */
+        CandidateReasonSummary: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "blocked" | "soft_conflict" | "unknown";
+            /** Code */
+            code: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "constraint" | "growth" | "data" | "spacing" | "operation";
+            /** Count */
+            count: number;
+            /** Message */
+            message: string;
+        };
         /** ChangeSetCandidateResult */
         ChangeSetCandidateResult: {
             /** Operation Index */
@@ -701,11 +720,32 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "allowed" | "blocked" | "unknown";
+            status: "allowed" | "blocked" | "soft_conflict" | "unknown";
+            /** Code */
+            code: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "accepted" | "constraint" | "growth" | "data" | "spacing" | "operation";
             /** Reason */
             reason: string;
             /** Object Id */
             object_id?: string | null;
+            /** Rule Id */
+            rule_id?: string | null;
+            /** Source Layer */
+            source_layer?: string | null;
+            /** Source Feature Ids */
+            source_feature_ids?: string[];
+            /** Actual Distance M */
+            actual_distance_m?: number | null;
+            /** Required Distance M */
+            required_distance_m?: number | null;
+            /** Suggested Action */
+            suggested_action?: string | null;
+            /** Zone Id */
+            zone_id?: string | null;
         };
         /** ChangeSetPreview */
         ChangeSetPreview: {
@@ -1156,6 +1196,8 @@ export interface components {
             accepted_count: number;
             /** Skipped */
             skipped?: components["schemas"]["PatternSkippedCandidate"][];
+            /** Reason Summary */
+            reason_summary?: components["schemas"]["CandidateReasonSummary"][];
             /** Unverified Data */
             unverified_data?: string[];
             /**
@@ -1174,8 +1216,39 @@ export interface components {
             x: number;
             /** Y */
             y: number;
+            /**
+             * Status
+             * @default blocked
+             * @enum {string}
+             */
+            status: "blocked" | "soft_conflict" | "unknown";
+            /**
+             * Code
+             * @default PLACEMENT_BLOCKED
+             */
+            code: string;
+            /**
+             * Category
+             * @default constraint
+             * @enum {string}
+             */
+            category: "constraint" | "growth" | "data" | "spacing" | "operation";
             /** Reason */
             reason: string;
+            /** Rule Id */
+            rule_id?: string | null;
+            /** Source Layer */
+            source_layer?: string | null;
+            /** Source Feature Ids */
+            source_feature_ids?: string[];
+            /** Actual Distance M */
+            actual_distance_m?: number | null;
+            /** Required Distance M */
+            required_distance_m?: number | null;
+            /** Suggested Action */
+            suggested_action?: string | null;
+            /** Zone Id */
+            zone_id?: string | null;
         };
         /** PlacementCheck */
         PlacementCheck: {

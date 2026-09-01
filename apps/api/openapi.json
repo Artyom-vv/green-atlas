@@ -2530,6 +2530,52 @@
         ],
         "title": "BrushStroke"
       },
+      "CandidateReasonSummary": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "blocked",
+              "soft_conflict",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "constraint",
+              "growth",
+              "data",
+              "spacing",
+              "operation"
+            ],
+            "title": "Category"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Count"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "code",
+          "category",
+          "count",
+          "message"
+        ],
+        "title": "CandidateReasonSummary"
+      },
       "ChangeSetCandidateResult": {
         "properties": {
           "operation_index": {
@@ -2551,9 +2597,26 @@
             "enum": [
               "allowed",
               "blocked",
+              "soft_conflict",
               "unknown"
             ],
             "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "constraint",
+              "growth",
+              "data",
+              "spacing",
+              "operation"
+            ],
+            "title": "Category"
           },
           "reason": {
             "type": "string",
@@ -2569,6 +2632,81 @@
               }
             ],
             "title": "Object Id"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "source_layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Layer"
+          },
+          "source_feature_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Feature Ids"
+          },
+          "actual_distance_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Distance M"
+          },
+          "required_distance_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Distance M"
+          },
+          "suggested_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Action"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
           }
         },
         "type": "object",
@@ -2576,6 +2714,8 @@
           "operation_index",
           "type",
           "status",
+          "code",
+          "category",
           "reason"
         ],
         "title": "ChangeSetCandidateResult"
@@ -3567,6 +3707,13 @@
             "type": "array",
             "title": "Skipped"
           },
+          "reason_summary": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateReasonSummary"
+            },
+            "type": "array",
+            "title": "Reason Summary"
+          },
           "unverified_data": {
             "items": {
               "type": "string"
@@ -3621,9 +3768,111 @@
             "type": "number",
             "title": "Y"
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "blocked",
+              "soft_conflict",
+              "unknown"
+            ],
+            "title": "Status",
+            "default": "blocked"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "PLACEMENT_BLOCKED"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "constraint",
+              "growth",
+              "data",
+              "spacing",
+              "operation"
+            ],
+            "title": "Category",
+            "default": "constraint"
+          },
           "reason": {
             "type": "string",
             "title": "Reason"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "source_layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Layer"
+          },
+          "source_feature_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Feature Ids"
+          },
+          "actual_distance_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Distance M"
+          },
+          "required_distance_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Distance M"
+          },
+          "suggested_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Action"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
           }
         },
         "type": "object",

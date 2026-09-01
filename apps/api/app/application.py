@@ -1,4 +1,4 @@
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -65,6 +65,7 @@ from app.data_passport import build_data_passport
 from app.dxf_import.ports import DxfReaderPort
 from app.exporting.ports import DxfWriterPort
 from app.geometry.ports import GeometryEnginePort, GeometryQueryPort
+from app.geometry.domain import PositionAdvisory, PositionViolation
 from app.history.ports import ProjectHistoryPort
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
@@ -84,6 +85,103 @@ _OPERATION_VALUE_UNSET = object()
 class _CachedChangeSet:
     preview: ChangeSetPreview
     plan: Plan
+
+
+@dataclass(frozen=True)
+class _CandidateIssue:
+    status: str
+    code: str
+    category: str
+    message: str
+    rule_id: str | None = None
+    source_layer: str | None = None
+    source_feature_ids: tuple[str, ...] = ()
+    actual_distance_m: float | None = None
+    required_distance_m: float | None = None
+    suggested_action: str | None = None
+    zone_id: str | None = None
+
+
+class _CandidateRejected(ValueError):
+    def __init__(self, issue: _CandidateIssue) -> None:
+        super().__init__(issue.message)
+        self.issue = issue
+
+
+def _violation_issue(violation: PositionViolation) -> _CandidateIssue:
+    return _CandidateIssue(
+        status="blocked",
+        code=violation.code,
+        category="constraint",
+        message=violation.description,
+        rule_id=violation.rule_id,
+        source_layer=violation.source_layer,
+        source_feature_ids=violation.source_feature_ids,
+        actual_distance_m=violation.actual,
+        required_distance_m=violation.required,
+        suggested_action=violation.suggested_action,
+    )
+
+
+def _advisory_issue(advisory: PositionAdvisory) -> _CandidateIssue:
+    growth = advisory.code.startswith(("GROWTH_", "ROOT_", "CANOPY_", "CROWN_"))
+    return _CandidateIssue(
+        status="soft_conflict" if growth else "unknown",
+        code=advisory.code,
+        category="growth" if growth else "data",
+        message=advisory.description,
+        source_layer=advisory.source_layer,
+        source_feature_ids=advisory.source_feature_ids,
+        suggested_action=advisory.suggested_action,
+    )
+
+
+def _candidate_result(
+    operation_index: int,
+    operation_type: str,
+    issue: _CandidateIssue | None,
+    object_id: str | None,
+    accepted_message: str,
+    zone_id: str | None = None,
+) -> ChangeSetCandidateResult:
+    if issue is None:
+        return ChangeSetCandidateResult(
+            operation_index=operation_index,
+            type=operation_type,
+            status="allowed",
+            code="POSITION_ACCEPTED",
+            category="accepted",
+            reason=accepted_message,
+            object_id=object_id,
+            zone_id=zone_id,
+        )
+    return ChangeSetCandidateResult(
+        operation_index=operation_index,
+        type=operation_type,
+        status=issue.status,
+        code=issue.code,
+        category=issue.category,
+        reason=issue.message,
+        object_id=object_id,
+        rule_id=issue.rule_id,
+        source_layer=issue.source_layer,
+        source_feature_ids=list(issue.source_feature_ids),
+        actual_distance_m=issue.actual_distance_m,
+        required_distance_m=issue.required_distance_m,
+        suggested_action=issue.suggested_action,
+        zone_id=issue.zone_id or zone_id,
+    )
+
+
+def _reason_summary(skipped: list[PatternSkippedCandidate]) -> list[dict[str, object]]:
+    counts = Counter((item.status, item.code, item.category, item.reason) for item in skipped)
+    return [
+        {"status": status, "code": code, "category": category, "count": count, "message": message}
+        for (status, code, category, message), count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0][1], item[0][3]),
+        )
+    ]
 
 
 class ProjectApplication:
@@ -821,13 +919,22 @@ class ProjectApplication:
     def _default_layout_radius(kind: str) -> float:
         return 1.6 if kind == "tree" else 0.65
 
-    def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate, spacing_index: PlantSpacingIndex | None = None) -> tuple[PlanObject, str | None]:
+    def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate, spacing_index: PlantSpacingIndex | None = None) -> tuple[PlanObject, _CandidateIssue | None]:
         radius = payload.layout_radius_m or payload.radius or self._default_layout_radius(payload.kind)
-        self.geometry.validate_position(project, payload.x, payload.y, radius, payload.kind)
+        violation = self.geometry.position_violation(project, payload.x, payload.y, radius, payload.kind)
+        if violation is not None:
+            raise _CandidateRejected(_violation_issue(violation))
         zone = self._planting_zone_at(project, payload.x, payload.y, radius)
         if project.planting_zones and zone is None:
-            raise ValueError("Выберите позицию внутри одного из участков задания")
-        advisory = self.geometry.placement_advisory(project, payload.x, payload.y, radius)
+            raise _CandidateRejected(_CandidateIssue(
+                status="blocked",
+                code="PLANTING_ZONE",
+                category="constraint",
+                message="Выберите позицию внутри одного из участков задания",
+                rule_id="planting_zone",
+                suggested_action="Переместить посадку внутрь выбранного участка",
+            ))
+        advisory = self.geometry.placement_advisory_detail(project, payload.x, payload.y, radius)
         object_ = PlanObject(
             **payload.model_dump(exclude={"radius", "layout_radius_m"}),
             radius=radius,
@@ -843,16 +950,28 @@ class ProjectApplication:
             canopy_20 = next((item for item in object_.canopy_forecast if item.horizon_year == 20), None)
             roots_20 = next((item for item in object_.root_forecast if item.horizon_year == 20), None)
             if canopy_20 and roots_20:
-                advisory = self.geometry.future_growth_advisory(
+                growth_advisory = self.geometry.future_growth_advisory_detail(
                     project,
                     object_.x,
                     object_.y,
                     canopy_20.radius_max_m,
                     roots_20.radius_max_m,
-                ) or advisory
+                )
+                advisory = advisory or growth_advisory
         if not (spacing_index or PlantSpacingIndex(plan.objects)).respects(object_):
-            raise ValueError("Объект расположен слишком близко к существующим посадкам")
-        return object_, advisory
+            raise _CandidateRejected(_CandidateIssue(
+                status="blocked",
+                code="PLANT_SPACING",
+                category="spacing",
+                message="Объект расположен слишком близко к существующим посадкам",
+                rule_id="group-spacing",
+                suggested_action="Увеличить расстояние или изменить политику плотности",
+                zone_id=zone.id if zone else None,
+            ))
+        issue = _advisory_issue(advisory) if advisory else None
+        if issue and zone:
+            issue = _CandidateIssue(**{**issue.__dict__, "zone_id": zone.id})
+        return object_, issue
 
     def _preview_update(self, project: Project, plan: Plan, object_id: str, payload: PlanObjectUpdate) -> tuple[PlanObject, str | None]:
         current = next((item for item in plan.objects if item.id == object_id), None)
@@ -929,34 +1048,29 @@ class ProjectApplication:
         deletion_ids: list[str] = []
         results: list[ChangeSetCandidateResult] = []
         spacing_index: PlantSpacingIndex | None = PlantSpacingIndex(working.objects)
+        manual_single_review = draft.source == "manual" and len(draft.operations) == 1
         for index, operation in enumerate(draft.operations):
             try:
                 if operation.type == "add":
                     if spacing_index is None:
                         spacing_index = PlantSpacingIndex(working.objects)
-                    candidate, advisory = self._preview_addition(project, working, operation.object, spacing_index)
-                    working.objects.append(candidate)
-                    spacing_index.add(candidate)
+                    candidate, issue = self._preview_addition(project, working, operation.object, spacing_index)
                     additions.append(candidate.model_copy(deep=True))
-                    results.append(ChangeSetCandidateResult(
-                        operation_index=index,
-                        type="add",
-                        status="unknown" if advisory else "allowed",
-                        reason=advisory or "Позиция проходит текущую проверку",
-                        object_id=candidate.id,
-                    ))
+                    results.append(_candidate_result(index, "add", issue, candidate.id, "Позиция проходит текущую проверку", candidate.planting_zone_id))
+                    # A warning remains visible as a ghost candidate, but it
+                    # must not occupy the temporary spacing index or enter the
+                    # cached plan before an explicit review contract exists.
+                    if issue is None or manual_single_review:
+                        working.objects.append(candidate)
+                        spacing_index.add(candidate)
                 elif operation.type == "update":
                     candidate, advisory = self._preview_update(project, working, operation.object_id, operation.changes)
-                    working.objects = [candidate if item.id == candidate.id else item for item in working.objects]
-                    spacing_index = None
                     updates.append(candidate.model_copy(deep=True))
-                    results.append(ChangeSetCandidateResult(
-                        operation_index=index,
-                        type="update",
-                        status="unknown" if advisory else "allowed",
-                        reason=advisory or "Изменение проходит текущую проверку",
-                        object_id=candidate.id,
-                    ))
+                    issue = _CandidateIssue(status="unknown", code="REVIEW_REQUIRED", category="data", message=advisory) if advisory else None
+                    results.append(_candidate_result(index, "update", issue, candidate.id, "Изменение проходит текущую проверку"))
+                    if issue is None or manual_single_review:
+                        working.objects = [candidate if item.id == candidate.id else item for item in working.objects]
+                        spacing_index = None
                 else:
                     current = next((item for item in working.objects if item.id == operation.object_id), None)
                     if current is None:
@@ -966,22 +1080,21 @@ class ProjectApplication:
                     working.objects = [item for item in working.objects if item.id != operation.object_id]
                     spacing_index = None
                     deletion_ids.append(operation.object_id)
-                    results.append(ChangeSetCandidateResult(
-                        operation_index=index,
-                        type="delete",
-                        status="allowed",
-                        reason="Объект будет удалён",
-                        object_id=operation.object_id,
-                    ))
+                    results.append(_candidate_result(index, "delete", None, operation.object_id, "Объект будет удалён"))
+            except _CandidateRejected as error:
+                results.append(_candidate_result(index, operation.type, error.issue, getattr(operation, "object_id", None), ""))
             except (KeyError, ValueError) as error:
-                results.append(ChangeSetCandidateResult(
-                    operation_index=index,
-                    type=operation.type,
+                issue = _CandidateIssue(
                     status="blocked",
-                    reason=str(error).strip("'"),
-                    object_id=getattr(operation, "object_id", None),
-                ))
-        can_apply = all(item.status != "blocked" for item in results)
+                    code="OPERATION_REJECTED",
+                    category="operation",
+                    message=str(error).strip("'"),
+                )
+                results.append(_candidate_result(index, operation.type, issue, getattr(operation, "object_id", None), ""))
+        can_apply = all(
+            item.status == "allowed" or (manual_single_review and item.status in {"unknown", "soft_conflict"})
+            for item in results
+        )
         self._refresh_plan(project, working, increment_version=True)
         digest = self._change_set_digest(draft, additions, updates, deletion_ids)
         preview = ChangeSetPreview(
@@ -1112,7 +1225,17 @@ class ProjectApplication:
             skipped.append(PatternSkippedCandidate(
                 x=candidate.x,
                 y=candidate.y,
+                status=item.status,
+                code=item.code,
+                category=item.category,
                 reason=item.reason,
+                rule_id=item.rule_id,
+                source_layer=item.source_layer,
+                source_feature_ids=item.source_feature_ids,
+                actual_distance_m=item.actual_distance_m,
+                required_distance_m=item.required_distance_m,
+                suggested_action=item.suggested_action,
+                zone_id=item.zone_id,
             ))
         accepted_operations = [operations[index] for index in accepted_indices]
         change_set = None
@@ -1129,6 +1252,7 @@ class ProjectApplication:
             requested_count=requested_target if requested_target is not None else len(candidates),
             accepted_count=len(accepted_operations),
             skipped=skipped,
+            reason_summary=_reason_summary(skipped),
             unverified_data=unverified_data,
             data_confidence=passport.mass_placement_status,
             data_confidence_reasons=list(passport.gaps),
@@ -1228,12 +1352,25 @@ class ProjectApplication:
             ))
             for result in initial.candidate_results:
                 candidate = candidates[result.operation_index]
-                if result.status == "blocked":
-                    skipped.append(PatternSkippedCandidate(x=candidate.x, y=candidate.y, reason=result.reason))
-                elif len(accepted_operations) < request.max_sites:
+                if result.status == "allowed" and len(accepted_operations) < request.max_sites:
                     accepted_operations.append(operations[result.operation_index])
                 else:
-                    skipped.append(PatternSkippedCandidate(x=candidate.x, y=candidate.y, reason="Не включено из-за заданного лимита предложения"))
+                    reason = result.reason if result.status != "allowed" else "Не включено из-за заданного лимита предложения"
+                    skipped.append(PatternSkippedCandidate(
+                        x=candidate.x,
+                        y=candidate.y,
+                        status=result.status if result.status != "allowed" else "blocked",
+                        code=result.code if result.status != "allowed" else "RECOMMENDATION_LIMIT",
+                        category=result.category if result.status != "allowed" else "operation",
+                        reason=reason,
+                        rule_id=result.rule_id,
+                        source_layer=result.source_layer,
+                        source_feature_ids=result.source_feature_ids,
+                        actual_distance_m=result.actual_distance_m,
+                        required_distance_m=result.required_distance_m,
+                        suggested_action=result.suggested_action,
+                        zone_id=result.zone_id,
+                    ))
 
         change_set = None
         if accepted_operations:

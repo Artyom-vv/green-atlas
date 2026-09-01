@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { PatternPreview } from '@green/api-client';
 import { PatternToolPanel } from './PatternToolPanel';
 
 afterEach(cleanup);
@@ -46,5 +47,24 @@ describe('PatternToolPanel', () => {
 
     rerender(<PatternToolPanel mode="row" zones={zones} species={species} axis={{ type: 'LineString', coordinates: [[0, 0], [10, 0]] }} onPreview={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Показать' })).toBeEnabled();
+  });
+
+  it('groups rejected positions by a stable machine-readable reason', () => {
+    const preview: PatternPreview = {
+      pattern_id: 'pattern-1',
+      type: 'fill',
+      requested_count: 8,
+      accepted_count: 5,
+      skipped: [],
+      unverified_data: [],
+      data_confidence: 'verified',
+      data_confidence_reasons: [],
+      reason_summary: [{ status: 'blocked', code: 'EXISTING_GREEN_OVERLAP', category: 'constraint', count: 3, message: 'Контур пересекает существующее озеленение' }],
+    };
+
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} preview={preview} onPreview={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByText('Почему позиции исключены')).toBeVisible();
+    expect(screen.getByText('3 — Контур пересекает существующее озеленение')).toBeVisible();
   });
 });

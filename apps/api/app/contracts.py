@@ -448,9 +448,18 @@ class PlanChangeSetDraft(BaseModel):
 class ChangeSetCandidateResult(BaseModel):
     operation_index: int = Field(ge=0)
     type: Literal["add", "update", "delete"]
-    status: Literal["allowed", "blocked", "unknown"]
+    status: Literal["allowed", "blocked", "soft_conflict", "unknown"]
+    code: str
+    category: Literal["accepted", "constraint", "growth", "data", "spacing", "operation"]
     reason: str
     object_id: str | None = None
+    rule_id: str | None = None
+    source_layer: str | None = None
+    source_feature_ids: list[str] = Field(default_factory=list)
+    actual_distance_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    required_distance_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    suggested_action: str | None = None
+    zone_id: str | None = None
 
 
 class ChangeSetPreview(BaseModel):
@@ -521,7 +530,25 @@ PatternPreviewRequest = Annotated[RowPatternRequest | FillPatternRequest, Field(
 class PatternSkippedCandidate(BaseModel):
     x: float = Field(allow_inf_nan=False)
     y: float = Field(allow_inf_nan=False)
+    status: Literal["blocked", "soft_conflict", "unknown"] = "blocked"
+    code: str = "PLACEMENT_BLOCKED"
+    category: Literal["constraint", "growth", "data", "spacing", "operation"] = "constraint"
     reason: str
+    rule_id: str | None = None
+    source_layer: str | None = None
+    source_feature_ids: list[str] = Field(default_factory=list)
+    actual_distance_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    required_distance_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    suggested_action: str | None = None
+    zone_id: str | None = None
+
+
+class CandidateReasonSummary(BaseModel):
+    status: Literal["blocked", "soft_conflict", "unknown"]
+    code: str
+    category: Literal["constraint", "growth", "data", "spacing", "operation"]
+    count: int = Field(ge=1)
+    message: str
 
 
 class PatternPreview(BaseModel):
@@ -530,6 +557,7 @@ class PatternPreview(BaseModel):
     requested_count: int = Field(ge=0)
     accepted_count: int = Field(ge=0)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
+    reason_summary: list[CandidateReasonSummary] = Field(default_factory=list)
     unverified_data: list[str] = Field(default_factory=list)
     data_confidence: Literal["verified", "limited", "blocked"] = "verified"
     data_confidence_reasons: list[str] = Field(default_factory=list)

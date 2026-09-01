@@ -20,6 +20,8 @@ class PositionViolation:
     actual: float
     required: float
     suggested_action: str
+    source_layer: str | None = None
+    source_feature_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,8 @@ class PositionAdvisory:
     title: str
     description: str
     suggested_action: str
+    source_layer: str | None = None
+    source_feature_ids: tuple[str, ...] = ()
 
 
 # The first registry slice is deliberately narrow. It contains only rows
@@ -127,6 +131,27 @@ class PositionChecker:
         self.constraints[kind] = constraint
         return constraint
 
+    def _evidence(self, kind: str, center: Point, distance: float) -> tuple[str | None, tuple[str, ...]]:
+        layers: set[str] = set()
+        identifiers: list[str] = []
+        for feature in self.features:
+            properties = feature.get("properties", {})
+            if properties.get("kind") != kind:
+                continue
+            try:
+                geometry = shape(feature["geometry"])
+            except Exception:
+                continue
+            if geometry.is_empty or center.distance(geometry) > distance + 1e-6:
+                continue
+            source_layer = str(properties.get("source_layer", "")).strip()
+            if source_layer:
+                layers.add(source_layer)
+            feature_id = feature.get("id")
+            if feature_id is not None and len(identifiers) < 20:
+                identifiers.append(str(feature_id))
+        return (", ".join(sorted(layers)) or None, tuple(identifiers))
+
     def check(self, x: float, y: float, radius: float, plant_kind: Literal["tree", "shrub"] = "tree") -> PositionViolation | None:
         if self.project.geometry is None:
             return PositionViolation("GEOMETRY_NOT_READY", "Зоны не рассчитаны", "Сначала рассчитайте допустимые зоны.", "geometry", 0, 0, "Рассчитать зоны")
@@ -171,6 +196,7 @@ class PositionChecker:
             # distance. Crown and root envelopes are checked separately.
             actual = max(0.0, center.distance(geometry))
             if actual + 1e-6 < required:
+                source_layer, source_feature_ids = self._evidence(kind, center, required)
                 return PositionViolation(
                     f"{rule_id.upper()}_CLEARANCE",
                     label,
@@ -179,12 +205,15 @@ class PositionChecker:
                     round(actual, 2),
                     round(required, 2),
                     f"Переместить посадку минимум на {required - actual:.2f} м дальше",
+                    source_layer,
+                    source_feature_ids,
                 )
         for kind, (code, label) in OCCUPIED_KINDS.items():
             geometry = self._constraint(kind)
             if geometry is None or not geometry.intersects(footprint):
                 continue
             actual = max(0.0, center.distance(geometry))
+            source_layer, source_feature_ids = self._evidence(kind, center, radius)
             return PositionViolation(
                 code,
                 f"Пересечение: {label.lower()}",
@@ -193,6 +222,8 @@ class PositionChecker:
                 round(actual, 2),
                 round(radius, 2),
                 "Переместить посадку за пределы занятого контура",
+                source_layer,
+                source_feature_ids,
             )
         return None
 
@@ -210,11 +241,14 @@ class PositionChecker:
             return None
         if not utility.intersects(Point(x, y).buffer(radius)):
             return None
+        source_layer, source_feature_ids = self._evidence("utility", Point(x, y), radius)
         return PositionAdvisory(
             code="UNTYPED_UTILITY_REVIEW",
             title="Требуется уточнение сети",
             description="Посадка пересекает слой коммуникаций без типа сети. Нормативный отступ нельзя определить по имени слоя.",
             suggested_action="Уточнить вид сети и применимое техническое условие",
+            source_layer=source_layer,
+            source_feature_ids=source_feature_ids,
         )
 
     def growth_advisory(self, x: float, y: float, canopy_radius: float, root_radius: float) -> PositionAdvisory | None:
@@ -242,27 +276,36 @@ class PositionChecker:
             )
         utility = self._constraint("utility")
         if utility is not None and center.distance(utility) + 1e-6 < root_radius:
+            source_layer, source_feature_ids = self._evidence("utility", center, root_radius)
             return PositionAdvisory(
                 code="ROOT_UTILITY_REVIEW",
                 title="Корневая зона пересекает сеть",
                 description=f"Прогноз корней на 20 лет достигает сети при радиусе до {root_radius:.2f} м",
                 suggested_action="Уточнить тип сети или выбрать другое место",
+                source_layer=source_layer,
+                source_feature_ids=source_feature_ids,
             )
         building = self._constraint("building")
         if building is not None and center.distance(building) + 1e-6 < canopy_radius:
+            source_layer, source_feature_ids = self._evidence("building", center, canopy_radius)
             return PositionAdvisory(
                 code="CANOPY_BUILDING_REVIEW",
                 title="Крона достигает здания",
                 description=f"Прогноз кроны на 20 лет достигает здания при радиусе до {canopy_radius:.2f} м",
                 suggested_action="Увеличить отступ или выбрать более компактную породу",
+                source_layer=source_layer,
+                source_feature_ids=source_feature_ids,
             )
         road = self._constraint("road")
         if road is not None and center.distance(road) + 1e-6 < canopy_radius:
+            source_layer, source_feature_ids = self._evidence("road", center, canopy_radius)
             return PositionAdvisory(
                 code="CROWN_ROAD_REVIEW",
                 title="Крона достигает дороги",
                 description=f"Прогноз кроны на 20 лет достигает дороги при радиусе до {canopy_radius:.2f} м",
                 suggested_action="Сместить посадку или выбрать более компактную породу",
+                source_layer=source_layer,
+                source_feature_ids=source_feature_ids,
             )
         for kind, code, title, label in (
             ("existing_green", "GROWTH_EXISTING_GREEN_REVIEW", "Не хватает места рядом с существующей зеленью", "существующего озеленения"),
@@ -272,11 +315,14 @@ class PositionChecker:
             geometry = self._constraint(kind)
             if geometry is None or center.distance(geometry) + 1e-6 >= full_envelope:
                 continue
+            source_layer, source_feature_ids = self._evidence(kind, center, full_envelope)
             return PositionAdvisory(
                 code=code,
                 title=title,
                 description=f"Прогноз кроны или корней на 20 лет достигает {label} при радиусе до {full_envelope:.2f} м",
                 suggested_action="Сместить посадку или выбрать более компактную породу",
+                source_layer=source_layer,
+                source_feature_ids=source_feature_ids,
             )
         return None
 

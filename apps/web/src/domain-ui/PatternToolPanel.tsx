@@ -123,6 +123,7 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
       {resultNote ? <InlineMessage tone="warning">{resultNote}</InlineMessage> : null}
       {preview?.data_confidence && preview.data_confidence !== 'verified' ? <InlineMessage tone={preview.data_confidence === 'blocked' ? 'error' : 'warning'} title="Достоверность проверки ограничена">{preview.data_confidence_reasons?.join('; ') || 'Часть исходных ограничений не подтверждена'}</InlineMessage> : null}
+      {preview?.reason_summary?.length ? <InlineMessage tone="info" title="Почему позиции исключены"><ul>{preview.reason_summary.map((item) => <li key={`${item.status}:${item.code}`}>{item.count} — {item.message}</li>)}</ul></InlineMessage> : null}
       {preview?.change_set ? <><section className="pattern-live-summary" aria-live="polite"><strong>Черновик на карте</strong><span>{preview.accepted_count} из {preview.requested_count} допустимы</span></section>{onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} forecasts={selectedSpecies ? [selectedSpecies] : []} onChange={onGrowthHorizon} /> : null}</> : null}
       </> : null}
     </div>

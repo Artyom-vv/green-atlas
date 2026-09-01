@@ -625,6 +625,8 @@ test('placement flow creates a typed group across the selected area as one revis
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
   await expect(page.getByText('Черновик на карте')).toBeVisible();
   await expect(page.getByText(/из 8 допустимы/)).toBeVisible();
+  await expect(page.getByText('Почему позиции исключены')).toBeVisible();
+  await expect(page.locator('.ui-message').filter({ hasText: 'Почему позиции исключены' }).getByRole('listitem').first()).toBeVisible();
   await page.getByRole('button', { name: /Добавить/ }).click();
 
   await expect.poll(async () => {
