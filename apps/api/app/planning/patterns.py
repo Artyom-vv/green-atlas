@@ -202,6 +202,11 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
 
 
 def generate_brush(request: BrushPreviewRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]:
+    requested_ids = set(request.zone_ids)
+    selected = [zone for zone in zones if zone.id in requested_ids]
+    missing = requested_ids - {zone.id for zone in selected}
+    if missing:
+        raise ValueError("Один из выбранных участков больше не существует")
     add_corridors = []
     subtract_corridors = []
     for stroke in request.strokes:
@@ -215,7 +220,7 @@ def generate_brush(request: BrushPreviewRequest, zones: list[PlantingZoneAssignm
     target = unary_union(add_corridors)
     if subtract_corridors:
         target = target.difference(unary_union(subtract_corridors))
-    zone_geometry = unary_union([shape(zone.geometry) for zone in zones])
+    zone_geometry = unary_union([shape(zone.geometry) for zone in selected])
     target = target.intersection(zone_geometry)
     if target.is_empty:
         return []

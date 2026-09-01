@@ -572,6 +572,7 @@ class BrushStroke(BaseModel):
 
 class BrushPreviewRequest(BaseModel):
     base_plan_version: int = Field(ge=1)
+    zone_ids: list[str] = Field(min_length=1, max_length=40)
     strokes: list[BrushStroke] = Field(min_length=1, max_length=40)
     width_m: float = Field(default=12, ge=1, le=100, allow_inf_nan=False)
     spacing_m: float = Field(default=6, ge=1, le=30, allow_inf_nan=False)

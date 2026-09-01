@@ -637,6 +637,8 @@ export interface components {
         BrushPreviewRequest: {
             /** Base Plan Version */
             base_plan_version: number;
+            /** Zone Ids */
+            zone_ids: string[];
             /** Strokes */
             strokes: components["schemas"]["BrushStroke"][];
             /**

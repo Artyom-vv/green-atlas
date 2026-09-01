@@ -1424,7 +1424,7 @@ def test_recommendation_is_deterministic_and_stale_versions_are_rejected() -> No
     assert stale.json()["code"] == "PLAN_VERSION_CONFLICT"
 
 
-def test_brush_subtracts_only_from_its_draft_and_never_deletes_saved_objects() -> None:
+def test_brush_subtracts_saved_objects_but_preserves_locked_objects_in_one_revision() -> None:
     project_id = prepare_project("Кисть посадок")
     select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
     client.post(f"/api/projects/{project_id}/plan/manual")
@@ -1436,6 +1436,7 @@ def test_brush_subtracts_only_from_its_draft_and_never_deletes_saved_objects() -
 
     response = client.post(f"/api/projects/{project_id}/plan/brush/preview", json={
         "base_plan_version": second["version"],
+        "zone_ids": ["work"],
         "strokes": [
             {"mode": "add", "geometry": {"type": "LineString", "coordinates": [[16, 44], [66, 44]]}},
             {"mode": "subtract", "geometry": {"type": "LineString", "coordinates": [[16, 20], [34, 20]]}},
@@ -1451,9 +1452,10 @@ def test_brush_subtracts_only_from_its_draft_and_never_deletes_saved_objects() -
     brush = response.json()
     preview = brush["change_set"]
     assert brush["added_count"] > 4
-    assert brush["removed_count"] == 0
-    assert removable_id not in preview["deletion_ids"]
+    assert brush["removed_count"] == 1
+    assert removable_id in preview["deletion_ids"]
     assert locked_id not in preview["deletion_ids"]
+    assert any(item["code"] == "LOCKED_OBJECT" for item in brush["skipped"])
     assert {item["kind"] for item in preview["additions"]} == {"tree", "shrub"}
 
     applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
@@ -1463,7 +1465,7 @@ def test_brush_subtracts_only_from_its_draft_and_never_deletes_saved_objects() -
     })
     assert applied.status_code == 200, applied.json()
     assert any(item["id"] == locked_id and item["locked"] for item in applied.json()["plan"]["objects"])
-    assert any(item["id"] == removable_id for item in applied.json()["plan"]["objects"])
+    assert all(item["id"] != removable_id for item in applied.json()["plan"]["objects"])
     undone = client.post(f"/api/projects/{project_id}/plan/history/undo").json()["plan"]
     assert {item["id"] for item in undone["objects"]} == {locked_id, removable_id}
 
@@ -1474,6 +1476,7 @@ def test_brush_density_depends_on_geometry_not_pointer_event_frequency() -> None
     version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
     base = {
         "base_plan_version": version,
+        "zone_ids": ["work"],
         "width_m": 10,
         "spacing_m": 4,
         "density": "balanced",

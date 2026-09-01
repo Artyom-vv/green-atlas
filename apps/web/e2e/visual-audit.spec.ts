@@ -775,6 +775,50 @@ test.skip('legacy brush surface is removed from the primary flow', async ({ page
   await expect(page.getByRole('button', { name: /Отменить: Кисть/ })).toBeEnabled();
 });
 
+test('area-scoped brush subtraction preserves locked plants and undoes as one revision', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const projectResponse = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const projectPayload = await projectResponse.json() as { planting_zones: Array<{ id: string }>; plan: { objects: Array<{ id: string; x: number; y: number }> } };
+  const [lockedObject, removableObject] = projectPayload.plan.objects;
+  const originalIds = projectPayload.plan.objects.map((item) => item.id).sort();
+  const lockedId = lockedObject.id;
+  const removableId = removableObject.id;
+  const lockedResponse = await page.request.patch(`${apiBase}/projects/${projectId}/plan/objects/${lockedId}`, { data: { locked: true } });
+  const lockedPlan = await lockedResponse.json() as { version: number };
+
+  const previewResponse = await page.request.post(`${apiBase}/projects/${projectId}/plan/brush/preview`, { data: {
+    base_plan_version: lockedPlan.version,
+    zone_ids: [projectPayload.planting_zones[0].id],
+    strokes: [{ mode: 'subtract', geometry: { type: 'LineString', coordinates: [[lockedObject.x, lockedObject.y], [removableObject.x, removableObject.y]] } }],
+    width_m: 6,
+    spacing_m: 5,
+    density: 'dense',
+    composition: 'trees',
+    seed: 71,
+  } });
+  const brush = await previewResponse.json() as { removed_count: number; skipped: Array<{ code: string }>; change_set: { id: string; digest: string; base_plan_version: number; deletion_ids: string[] } };
+  expect(brush.removed_count).toBe(1);
+  expect(brush.change_set.deletion_ids).toEqual([removableId]);
+  expect(brush.skipped.some((item) => item.code === 'LOCKED_OBJECT')).toBe(true);
+  await page.request.post(`${apiBase}/projects/${projectId}/plan/change-sets/apply`, { data: {
+    preview_id: brush.change_set.id,
+    digest: brush.change_set.digest,
+    base_plan_version: brush.change_set.base_plan_version,
+  } });
+
+  await page.reload();
+  const undo = page.getByRole('button', { name: /Отменить: Кисть/ });
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect.poll(async () => {
+    const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+    const payload = await response.json() as { plan: { objects: Array<{ id: string }> } };
+    return payload.plan.objects.map((item) => item.id).sort();
+  }).toEqual(originalIds);
+});
+
 test('row placement creates a checked linear planting group', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);

@@ -11,10 +11,10 @@ describe('BrushToolPanel', () => {
       { mode: 'add' as const, geometry: { type: 'LineString', coordinates: [[0, 0], [20, 0]] } },
       { mode: 'subtract' as const, geometry: { type: 'LineString', coordinates: [[5, 0], [8, 0]] } },
     ];
-    render(<BrushToolPanel strokes={strokes} onPreview={onPreview} onClear={vi.fn()} onCancel={vi.fn()} />);
+    render(<BrushToolPanel strokes={strokes} zoneIds={['work']} onPreview={onPreview} onClear={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByText('Добавление: 1. Вычитание: 1.')).toBeVisible();
     fireEvent.change(screen.getByLabelText('Состав кисти'), { target: { value: 'mixed' } });
     fireEvent.click(screen.getByRole('button', { name: 'Показать' }));
-    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ strokes, composition: 'mixed', spacing_m: 6, max_sites: 500 }));
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ zone_ids: ['work'], strokes, composition: 'mixed', spacing_m: 6, max_sites: 500 }));
   });
 });

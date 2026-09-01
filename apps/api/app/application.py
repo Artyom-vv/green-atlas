@@ -1500,14 +1500,45 @@ class ProjectApplication:
 
         request_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         brush_id = f"brush-{request_digest[:16]}"
+        known_zone_ids = {zone.id for zone in project.planting_zones}
+        if set(request.zone_ids) - known_zone_ids:
+            raise ValueError("Один из выбранных участков больше не существует")
+        selected_zone_geometry = unary_union([
+            shape(zone.geometry) for zone in project.planting_zones if zone.id in set(request.zone_ids)
+        ])
+        subtract_corridors = []
         for stroke in request.strokes:
             geometry = shape(stroke.geometry)
             if geometry.geom_type != "LineString" or geometry.is_empty or len(geometry.coords) < 2:  # type: ignore[attr-defined]
                 raise ValueError("Мазок должен быть линией минимум из двух точек")
+            if stroke.mode == "subtract":
+                subtract_corridors.append(geometry.buffer(request.width_m / 2, cap_style="round", join_style="round"))
 
         skipped: list[PatternSkippedCandidate] = []
         operations: list[dict[str, object]] = []
         operation_points: list[tuple[float, float]] = []
+        removal_candidates = []
+        if subtract_corridors:
+            subtract_geometry = unary_union(subtract_corridors).intersection(selected_zone_geometry)
+            removal_candidates = [
+                object_ for object_ in project.plan.objects
+                if subtract_geometry.covers(Point(object_.x, object_.y))
+            ]
+            for object_ in removal_candidates:
+                if object_.locked:
+                    skipped.append(PatternSkippedCandidate(
+                        x=object_.x,
+                        y=object_.y,
+                        status="blocked",
+                        code="LOCKED_OBJECT",
+                        category="operation",
+                        reason="Закреплённая посадка не удалена кистью",
+                        suggested_action="Снять закрепление после проверки объекта",
+                        zone_id=object_.planting_zone_id,
+                    ))
+                    continue
+                operations.append({"type": "delete", "object_id": object_.id})
+                operation_points.append((object_.x, object_.y))
         brush_kind = "shrub" if request.composition == "shrubs" else "tree"
         candidates = self.candidate_generator.generate(
             request,
@@ -1531,11 +1562,12 @@ class ProjectApplication:
         if not operations:
             return BrushPreview(
                 brush_id=brush_id,
-                requested_count=len(candidates),
+                requested_count=len(candidates) + len(removal_candidates),
                 accepted_count=0,
                 added_count=0,
                 removed_count=0,
                 skipped=skipped,
+                reason_summary=_reason_summary(skipped),
             )
 
         initial = self.preview_change_set(project_id, PlanChangeSetDraft(
@@ -1583,7 +1615,7 @@ class ProjectApplication:
             ))
         return BrushPreview(
             brush_id=brush_id,
-            requested_count=len(candidates),
+            requested_count=len(candidates) + len(removal_candidates),
             accepted_count=len(accepted_operations),
             added_count=accepted_additions,
             removed_count=accepted_removals,

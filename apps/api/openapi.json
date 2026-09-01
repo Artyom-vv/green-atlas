@@ -2442,6 +2442,15 @@
             "minimum": 1.0,
             "title": "Base Plan Version"
           },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Zone Ids"
+          },
           "strokes": {
             "items": {
               "$ref": "#/components/schemas/BrushStroke"
@@ -2510,6 +2519,7 @@
         "type": "object",
         "required": [
           "base_plan_version",
+          "zone_ids",
           "strokes"
         ],
         "title": "BrushPreviewRequest"

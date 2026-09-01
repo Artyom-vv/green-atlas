@@ -132,6 +132,7 @@ def test_brush_uses_stable_blue_noise_and_density_changes_capacity() -> None:
     )
     common = {
         "base_plan_version": 1,
+        "zone_ids": ["work"],
         "strokes": [{"mode": "add", "geometry": {"type": "LineString", "coordinates": [[10, 40], [110, 40]]}}],
         "width_m": 40,
         "spacing_m": 5,

@@ -4,8 +4,9 @@ import { Button, FormField, InlineMessage, NumberStepper, Select } from '@green/
 
 type BrushDraft = Omit<BrushPreviewRequest, 'base_plan_version'>;
 
-export function BrushToolPanel({ strokes, loading, error, resultNote, onPreview, onClear, onCancel }: {
+export function BrushToolPanel({ strokes, zoneIds, loading, error, resultNote, onPreview, onClear, onCancel }: {
   strokes: BrushStroke[];
+  zoneIds: string[];
   loading?: boolean;
   error?: string;
   resultNote?: string;
@@ -41,6 +42,6 @@ export function BrushToolPanel({ strokes, loading, error, resultNote, onPreview,
       {resultNote ? <InlineMessage tone="warning">{resultNote}</InlineMessage> : null}
     </div>
     <div className="inspector-spacer" />
-    <footer><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!strokes.length} onClick={() => onPreview({ strokes, width_m: width, spacing_m: spacing, density, composition, tree_share: treeShare / 100, seed, max_sites: 500 })}>Показать</Button></footer>
+    <footer><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!strokes.length || !zoneIds.length} onClick={() => onPreview({ zone_ids: zoneIds, strokes, width_m: width, spacing_m: spacing, density, composition, tree_share: treeShare / 100, seed, max_sites: 500 })}>Показать</Button></footer>
   </div>;
 }
