@@ -5500,6 +5500,15 @@
             "title": "Plant Kind",
             "default": "tree"
           },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Zone Ids"
+          },
           "axis": {
             "additionalProperties": true,
             "type": "object",
@@ -5609,6 +5618,7 @@
         "type": "object",
         "required": [
           "base_plan_version",
+          "zone_ids",
           "axis"
         ],
         "title": "RowPatternRequest"

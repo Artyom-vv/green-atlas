@@ -1828,6 +1828,8 @@ export interface components {
              * @enum {string}
              */
             plant_kind: "tree" | "shrub";
+            /** Zone Ids */
+            zone_ids: string[];
             /** Axis */
             axis: {
                 [key: string]: unknown;

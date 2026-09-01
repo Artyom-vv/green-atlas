@@ -207,7 +207,9 @@ export function WorkspacePage() {
   useEffect(() => {
     if (!project || initializedProjectRef.current === project.id) return;
     initializedProjectRef.current = project.id;
-    setDraftZones(project.planting_zones ?? []);
+    const projectZones = project.planting_zones ?? [];
+    setDraftZones(projectZones);
+    setSelectedPatternZoneIds(projectZones.flatMap((zone) => zone.id ? [zone.id] : []));
     setPanel(project.plan ? null : 'zones');
   }, [project]);
 
@@ -266,8 +268,16 @@ export function WorkspacePage() {
     // Wheel/toolbar zoom emits a short burst of camera updates. Keep drawing
     // the buffered snapshot immediately, then ask the server once for the
     // settled viewport instead of racing two expensive DXF fragments.
-    mapRequestTimerRef.current = window.setTimeout(() => { setMapRequest(next); mapRequestTimerRef.current = undefined; }, 180);
-  }, [projectId]);
+    mapRequestTimerRef.current = window.setTimeout(() => {
+      mapRequestTimerRef.current = undefined;
+      void queryClient.cancelQueries({ queryKey: ['map-features', projectId] }).then(() => {
+        // A newer camera position may have arrived while the previous network
+        // request was being aborted. Only the latest buffered viewport may
+        // start the next fetch.
+        if (mapRequestRef.current === next) setMapRequest(next);
+      });
+    }, 180);
+  }, [projectId, queryClient]);
 
   const handlePointerCoordinate = useCallback((coordinate?: [number, number]) => {
     const adding = tool === 'add_tree' || tool === 'add_shrub';

@@ -247,7 +247,7 @@ test('a user can choose several local areas before opening the editor', async ({
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: газон B' })).toBeChecked();
   const payload = JSON.parse((await previewRequest).postData() ?? '{}') as { zone_ids?: string[] };
   expect(payload.zone_ids).toEqual(['area-a', 'area-b']);
-  await expect(page.getByText('Выберите участок на карте или обведите новый')).toHaveCount(0);
+  await expect(page.getByText('Выберите рабочий участок')).toHaveCount(0);
 });
 
 test('selecting the same DXF contour twice keeps one visible draft area', async ({ page }) => {
@@ -432,11 +432,16 @@ test('map hover exposes the object stack below the working-area overlay', async 
   const sourceExtent = [-5, -5, 125, 95] as const;
   const padding = 28;
   const resolution = Math.max((sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2), (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2));
-  await page.mouse.move(
-    box!.x + box!.width / 2 + (26 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
-    box!.y + box!.height / 2 - (28 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
-  );
+  const point = {
+    x: box!.x + box!.width / 2 + (26 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (28 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
+  };
   const hover = page.locator('.map-hover-hint');
+  await expect.poll(async () => {
+    await page.mouse.move(point.x - 4, point.y - 4);
+    await page.mouse.move(point.x, point.y);
+    return hover.getByText('Существующее озеленение', { exact: true }).count();
+  }, { timeout: 10_000 }).toBe(1);
   await expect(hover.getByText('Существующее озеленение', { exact: true })).toBeVisible();
   await expect(hover.getByText('Контур DXF: тестовая область', { exact: true })).toBeVisible();
 });
@@ -498,13 +503,21 @@ test('rapid navigation reuses one live map without overlapping viewport requests
   await viewport.evaluate((element) => element.setAttribute('data-e2e-map-instance', 'rapid-navigation'));
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
 
-  let pendingViewportRequests = 0;
+  const activeViewportRequests = new Set<object>();
+  let maximumConcurrentViewportRequests = 0;
+  const isViewportRequest = (request: { url: () => string }) => request.url().includes('/map-features?');
+  page.on('request', (request) => {
+    if (!isViewportRequest(request)) return;
+    activeViewportRequests.add(request);
+    maximumConcurrentViewportRequests = Math.max(maximumConcurrentViewportRequests, activeViewportRequests.size);
+  });
+  page.on('requestfinished', (request) => { if (isViewportRequest(request)) activeViewportRequests.delete(request); });
+  page.on('requestfailed', (request) => { if (isViewportRequest(request)) activeViewportRequests.delete(request); });
   await page.route('**/map-features?*', async (route) => {
-    pendingViewportRequests += 1;
     // This makes several move events overlap like a large drawing on a slow
     // connection. The test must keep the old drawing responsive throughout.
     await new Promise((resolve) => setTimeout(resolve, 600));
-    await route.continue();
+    try { await route.continue(); } catch { /* An obsolete viewport was cancelled. */ }
   });
   const box = await map.boundingBox();
   expect(box).not.toBeNull();
@@ -525,7 +538,8 @@ test('rapid navigation reuses one live map without overlapping viewport requests
   }
 
   await page.waitForTimeout(900);
-  expect(pendingViewportRequests).toBeLessThanOrEqual(1);
+  expect(maximumConcurrentViewportRequests).toBeLessThanOrEqual(1);
+  expect(activeViewportRequests.size).toBeLessThanOrEqual(1);
   await expect(map.locator('.ol-viewport[data-e2e-map-instance="rapid-navigation"]')).toHaveCount(1);
   await expect.poll(async () => map.locator('canvas').evaluateAll((canvases) => canvases.every((canvas) => canvas.width > 0 && canvas.height > 0))).toBe(true);
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
@@ -1017,9 +1031,15 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   const start = point(34, 7);
 
   await page.getByRole('button', { name: 'Посадки вдоль линии' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
   await expect(page.getByText('Выберите линию на карте')).toBeVisible();
+  const rowPreviewRequest = page.waitForRequest((request) => request.url().includes('/plan/patterns/preview')
+    && request.method() === 'POST'
+    && request.postData()?.includes('"type":"row"') === true);
   await page.mouse.click(start.x, start.y);
   await expect(page.getByText('Линия выбрана')).toBeVisible();
+  const rowPayload = JSON.parse((await rowPreviewRequest).postData() ?? '{}') as { zone_ids?: string[] };
+  expect(rowPayload.zone_ids).toEqual(['area-e2e']);
   await expect(page.getByText('Источник', { exact: true })).toBeVisible();
   await expect(page.getByText('Длина', { exact: true })).toBeVisible();
   await expect(page.locator('.pattern-tool-panel__axis dd').last()).toContainText(/\d+\.\d м/);

@@ -1221,11 +1221,15 @@ class ProjectApplication:
 
         passport = build_data_passport(project)
         unverified_data = list(passport.gaps)
+        requested_zone_ids = set(request.zone_ids)
+        known_zone_ids = {zone.id for zone in project.planting_zones}
+        if requested_zone_ids - known_zone_ids:
+            raise ValueError("Один из выбранных участков больше не существует")
 
-        requested_target = request.target_count if request.type == "fill" and request.placement_mode == "count" else None
+        requested_target = request.target_count if request.placement_mode == "count" else None
         effective_spacing = self._effective_pattern_spacing(request)
         generation_request = request.model_copy(update={"spacing_m": effective_spacing})
-        if requested_target is not None:
+        if requested_target is not None and request.type == "fill":
             # Generate alternatives as well as the requested positions. Hard
             # constraints are project-specific and are applied below; a
             # requested count must not mean merely "number of attempts".
@@ -1237,7 +1241,26 @@ class ProjectApplication:
             request.plant_kind,
             request.layout_radius_m,
         )
-        candidates = self.candidate_generator.generate(generation_request, generation_zones)
+        generated_candidates = self.candidate_generator.generate(generation_request, generation_zones)
+        layout_radius = request.layout_radius_m or self._default_layout_radius(request.plant_kind)
+        candidates = []
+        skipped: list[PatternSkippedCandidate] = []
+        for candidate in generated_candidates:
+            zone = self._planting_zone_at(project, candidate.x, candidate.y, layout_radius)
+            if zone is not None and zone.id in requested_zone_ids:
+                candidates.append(candidate)
+                continue
+            skipped.append(PatternSkippedCandidate(
+                x=candidate.x,
+                y=candidate.y,
+                status="blocked",
+                code="OUTSIDE_SELECTED_ZONE",
+                category="constraint",
+                reason="Позиция находится вне выбранных рабочих участков",
+                rule_id="selected-planting-zone",
+                suggested_action="Выберите другой участок или сократите ось",
+                zone_id=zone.id if zone else None,
+            ))
         pattern_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         pattern_id = f"pattern-{pattern_digest[:16]}"
         label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
@@ -1265,7 +1288,8 @@ class ProjectApplication:
                 requested_count=requested_target or 0,
                 accepted_count=0,
                 effective_spacing_m=effective_spacing,
-                skipped=[],
+                skipped=skipped,
+                reason_summary=_reason_summary(skipped),
                 unverified_data=unverified_data,
                 data_confidence=passport.mass_placement_status,
                 data_confidence_reasons=list(passport.gaps),
@@ -1278,7 +1302,6 @@ class ProjectApplication:
             operations=operations,
         ))
         accepted_indices: list[int] = []
-        skipped: list[PatternSkippedCandidate] = []
         for item in initial.candidate_results:
             # Automatic placement is conservative: unresolved evidence is a
             # reason to skip a candidate, not permission to silently include

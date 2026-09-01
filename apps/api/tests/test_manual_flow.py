@@ -1184,6 +1184,7 @@ def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
         "type": "row",
         "base_plan_version": base_version,
         "plant_kind": "tree",
+        "zone_ids": ["row-zone"],
         "axis": {"type": "LineString", "coordinates": [[18, 20], [60, 20]]},
         "spacing_m": 6,
     })
@@ -1221,6 +1222,7 @@ def test_row_pattern_can_be_defined_by_count_instead_of_repeated_clicks() -> Non
         "type": "row",
         "base_plan_version": version,
         "plant_kind": "shrub",
+        "zone_ids": ["row-zone"],
         "axis": {"type": "LineString", "coordinates": [[15, 30], [85, 30]]},
         "placement_mode": "count",
         "target_count": 12,
@@ -1231,6 +1233,36 @@ def test_row_pattern_can_be_defined_by_count_instead_of_repeated_clicks() -> Non
     assert pattern.json()["requested_count"] == 12
     assert pattern.json()["accepted_count"] > 0
     assert all(item["spacing_policy"] == "canopy" for item in pattern.json()["change_set"]["additions"])
+
+
+def test_row_pattern_is_limited_to_the_selected_working_areas() -> None:
+    project_id = prepare_project("Ряд в выбранном участке")
+    select_areas(project_id, [
+        area("west", "Запад", [[10, 10], [40, 10], [40, 40], [10, 40]]),
+        area("east", "Восток", [[60, 10], [90, 10], [90, 40], [60, 40]]),
+    ])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+
+    pattern = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        "type": "row",
+        "base_plan_version": version,
+        "plant_kind": "shrub",
+        "zone_ids": ["east"],
+        "axis": {"type": "LineString", "coordinates": [[15, 30], [85, 30]]},
+        "placement_mode": "count",
+        "target_count": 12,
+        "spacing_policy": "canopy",
+    })
+
+    assert pattern.status_code == 200, pattern.json()
+    payload = pattern.json()
+    assert payload["accepted_count"] > 0
+    assert payload["change_set"] is not None
+    assert {item["planting_zone_id"] for item in payload["change_set"]["additions"]} == {"east"}
+    outside = [item for item in payload["skipped"] if item["code"] == "OUTSIDE_SELECTED_ZONE"]
+    assert outside
+    assert all(item["x"] < 60 for item in outside)
+    assert any(item["code"] == "OUTSIDE_SELECTED_ZONE" for item in payload["reason_summary"])
 
 
 def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips() -> None:

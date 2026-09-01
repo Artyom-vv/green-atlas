@@ -486,6 +486,7 @@ class RowPatternRequest(BaseModel):
     type: Literal["row"] = "row"
     base_plan_version: int = Field(ge=1)
     plant_kind: Literal["tree", "shrub"] = "tree"
+    zone_ids: list[str] = Field(min_length=1, max_length=40)
     axis: dict[str, Any]
     spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
     placement_mode: Literal["count", "spacing"] = "spacing"

@@ -48,7 +48,7 @@ export function PatternToolPanel({ mode, zones, species, axis, axisSource, selec
     if (!availableSpecies.some((item) => item.id === speciesId)) setSpeciesId(availableSpecies[0]?.id);
   }, [availableSpecies, speciesId]);
 
-  const canPreview = mode === 'row' ? Boolean(axis) : selectedZoneIds.length > 0;
+  const canPreview = selectedZoneIds.length > 0 && (mode === 'row' ? Boolean(axis) : true);
   const axisCoordinates = useMemo(() => Array.isArray(axis?.coordinates)
     ? axis.coordinates.filter((coordinate): coordinate is number[] => Array.isArray(coordinate) && coordinate.length >= 2 && coordinate.every((value) => typeof value === 'number'))
     : [], [axis]);
@@ -63,6 +63,7 @@ export function PatternToolPanel({ mode, zones, species, axis, axisSource, selec
       previewRef.current({
         type: 'row',
         plant_kind: plantKind,
+        zone_ids: selectedZoneIds,
         axis,
         spacing_m: spacing,
         placement_mode: rowPlacementMode,
@@ -104,17 +105,17 @@ export function PatternToolPanel({ mode, zones, species, axis, axisSource, selec
   return <div className="project-inspector pattern-tool-panel">
     <header><span><strong>{mode === 'row' ? 'Ряд посадок' : 'Разместить посадки'}</strong><small>{mode === 'row' ? 'По выбранной линии' : 'По выбранным участкам'}</small></span></header>
     <div className="pattern-tool-panel__content">
-      <StepProgress current={preview ? 2 : mode === 'fill' && !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
+      <StepProgress current={preview ? 2 : !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
+      <fieldset className="pattern-tool-panel__zones">
+        <legend>Участки</legend>
+        {!selectedZoneIds.length ? <InlineMessage tone="info">Выберите рабочий участок</InlineMessage> : null}
+        {zones.flatMap((zone) => zone.id ? [<Checkbox key={zone.id} label={zone.label} checked={selectedZoneLabels.has(zone.id)} onChange={(event) => onSelectedZoneIdsChange?.(event.target.checked ? [...new Set([...selectedZoneIds, zone.id!])] : selectedZoneIds.filter((id) => id !== zone.id))} />] : [])}
+        {mode === 'fill' ? <Button variant="secondary" disabled={loading} onClick={drawingZone ? onCancel : onDrawZone}>{drawingZone ? 'Отменить обводку' : 'Обвести новый участок'}</Button> : null}
+      </fieldset>
       {mode === 'row' ? <section className="pattern-tool-panel__axis">
         <strong>{axis ? 'Линия выбрана' : 'Выберите линию на карте'}</strong>
         {axis ? <dl><dt>Источник</dt><dd>{axisSource?.label ?? 'Линия DXF'}</dd><dt>Длина</dt><dd>{axisLength?.toFixed(1)} м</dd></dl> : <span>Кликните по линии DXF. Shift — нарисовать свою ось</span>}
       </section> : null}
-      {mode === 'fill' ? <fieldset className="pattern-tool-panel__zones">
-        <legend>Участки</legend>
-        {!selectedZoneIds.length ? <InlineMessage tone="info">Выберите участок на карте или обведите новый</InlineMessage> : null}
-        {zones.flatMap((zone) => zone.id ? [<Checkbox key={zone.id} label={zone.label} checked={selectedZoneLabels.has(zone.id)} onChange={(event) => onSelectedZoneIdsChange?.(event.target.checked ? [...new Set([...selectedZoneIds, zone.id!])] : selectedZoneIds.filter((id) => id !== zone.id))} />] : [])}
-        <Button variant="secondary" disabled={loading} onClick={drawingZone ? onCancel : onDrawZone}>{drawingZone ? 'Отменить обводку' : 'Обвести новый участок'}</Button>
-      </fieldset> : null}
       {mode === 'fill' && canPreview && !drawingZone ? <FormField label="Способ размещения"><Select value={layout} onChange={(event) => setLayout(event.target.value as typeof layout)}><option value="natural">Естественно</option><option value="staggered">Равномерно</option></Select></FormField> : null}
       {drawingZone ? <InlineMessage tone="info">Поставьте точки по границе участка и замкните контур</InlineMessage> : null}
       {!drawingZone && canPreview ? <>

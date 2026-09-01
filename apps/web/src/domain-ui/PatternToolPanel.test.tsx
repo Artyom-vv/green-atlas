@@ -35,7 +35,7 @@ describe('PatternToolPanel', () => {
   it('requires an explicit area and can start drawing one', () => {
     const onDrawZone = vi.fn();
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={[]} onDrawZone={onDrawZone} onPreview={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.getByText('Выберите участок на карте или обведите новый')).toBeVisible();
+    expect(screen.getByText('Выберите рабочий участок')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Выберите участок' })).toBeDisabled();
     expect(screen.queryByLabelText('Растительность')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Количество посадок')).not.toBeInTheDocument();
@@ -44,16 +44,19 @@ describe('PatternToolPanel', () => {
   });
 
   it('requires an axis before previewing a row', () => {
-    const { rerender } = render(<PatternToolPanel mode="row" zones={zones} species={species} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    const onPreview = vi.fn();
+    const { rerender } = render(<PatternToolPanel mode="row" zones={zones} species={species} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Выберите линию' })).toBeDisabled();
     expect(screen.queryByLabelText('Растительность')).not.toBeInTheDocument();
 
-    rerender(<PatternToolPanel mode="row" zones={zones} species={species} axis={{ type: 'LineString', coordinates: [[0, 0], [10, 0]] }} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    rerender(<PatternToolPanel mode="row" zones={zones} species={species} selectedZoneIds={['west']} axis={{ type: 'LineString', coordinates: [[0, 0], [10, 0]] }} onPreview={onPreview} onCancel={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Показать' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Показать' }));
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ type: 'row', zone_ids: ['west'] }));
   });
 
   it('identifies the selected row axis before placement', () => {
-    render(<PatternToolPanel mode="row" zones={zones} species={species} axis={{ type: 'LineString', coordinates: [[0, 0], [3, 4], [6, 4]] }} axisSource={{ type: 'dxf', label: 'ROAD_AXIS' }} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    render(<PatternToolPanel mode="row" zones={zones} species={species} selectedZoneIds={['west']} axis={{ type: 'LineString', coordinates: [[0, 0], [3, 4], [6, 4]] }} axisSource={{ type: 'dxf', label: 'ROAD_AXIS' }} onPreview={vi.fn()} onCancel={vi.fn()} />);
 
     expect(screen.getByText('Источник')).toBeVisible();
     expect(screen.getByText('ROAD_AXIS')).toBeVisible();
