@@ -122,6 +122,7 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
       {mode === 'row' ? <><div className="pattern-tool-panel__setting"><span>От начала, м</span><NumberStepper label="Отступ от начала" value={startOffset} onChange={setStartOffset} min={0} max={100} step={0.5} /></div><div className="pattern-tool-panel__setting"><span>От конца, м</span><NumberStepper label="Отступ от конца" value={endOffset} onChange={setEndOffset} min={0} max={100} step={0.5} /></div></> : null}
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
       {resultNote ? <InlineMessage tone="warning">{resultNote}</InlineMessage> : null}
+      {preview?.data_confidence && preview.data_confidence !== 'verified' ? <InlineMessage tone={preview.data_confidence === 'blocked' ? 'error' : 'warning'} title="Достоверность проверки ограничена">{preview.data_confidence_reasons?.join('; ') || 'Часть исходных ограничений не подтверждена'}</InlineMessage> : null}
       {preview?.change_set ? <><section className="pattern-live-summary" aria-live="polite"><strong>Черновик на карте</strong><span>{preview.accepted_count} из {preview.requested_count} допустимы</span></section>{onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} forecasts={selectedSpecies ? [selectedSpecies] : []} onChange={onGrowthHorizon} /> : null}</> : null}
       </> : null}
     </div>

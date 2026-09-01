@@ -17,6 +17,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects/{project_id}/layer-mappings",
         "/api/projects/{project_id}/planting-zones",
         "/api/projects/{project_id}/map-features",
+        "/api/projects/{project_id}/data-passport",
         "/api/projects/{project_id}/operations/geometry",
         "/api/projects/{project_id}/operations/latest",
         "/api/projects/{project_id}/operations/{operation_id}",

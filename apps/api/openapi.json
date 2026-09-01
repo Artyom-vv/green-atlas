@@ -752,6 +752,61 @@
         }
       }
     },
+    "/api/projects/{project_id}/data-passport": {
+      "get": {
+        "summary": "Get Data Passport",
+        "operationId": "get_data_passport_api_projects__project_id__data_passport_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataPassport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/operations/geometry": {
       "post": {
         "summary": "Start Geometry Operation",
@@ -2691,6 +2746,167 @@
         "type": "object",
         "title": "CoordinateReference"
       },
+      "DataPassport": {
+        "properties": {
+          "overall_status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "limited",
+              "not_ready"
+            ],
+            "title": "Overall Status"
+          },
+          "calculation_status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Calculation Status"
+          },
+          "mass_placement_status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "limited",
+              "blocked"
+            ],
+            "title": "Mass Placement Status"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DataPassportEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "unclassified_layers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unclassified Layers"
+          },
+          "incomplete_layers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Incomplete Layers"
+          },
+          "excluded_layers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Excluded Layers"
+          },
+          "used_in_calculation": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Used In Calculation"
+          },
+          "missing_classes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Classes"
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gaps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overall_status",
+          "calculation_status",
+          "mass_placement_status",
+          "summary"
+        ],
+        "title": "DataPassport",
+        "description": "Evidence summary shown before an operator starts mass placement."
+      },
+      "DataPassportEntry": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "site_border",
+              "building",
+              "road",
+              "utility",
+              "existing_green",
+              "water",
+              "restricted",
+              "unclassified"
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "partial",
+              "missing",
+              "excluded"
+            ],
+            "title": "Status"
+          },
+          "layer_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Layer Names"
+          },
+          "object_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Object Count",
+            "default": 0
+          },
+          "used_object_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Used Object Count",
+            "default": 0
+          },
+          "used_in_calculation": {
+            "type": "boolean",
+            "title": "Used In Calculation",
+            "default": false
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "label",
+          "status",
+          "note"
+        ],
+        "title": "DataPassportEntry",
+        "description": "One source-data class and its role in the current calculation.\n\nThe passport is deliberately a compact audit contract.  It reports what\nthe importer can prove from the DXF and never treats an absent layer as an\nempty physical area."
+      },
       "EffectEstimate": {
         "properties": {
           "effect": {
@@ -3357,6 +3573,23 @@
             },
             "type": "array",
             "title": "Unverified Data"
+          },
+          "data_confidence": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "limited",
+              "blocked"
+            ],
+            "title": "Data Confidence",
+            "default": "verified"
+          },
+          "data_confidence_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Confidence Reasons"
           },
           "change_set": {
             "anyOf": [

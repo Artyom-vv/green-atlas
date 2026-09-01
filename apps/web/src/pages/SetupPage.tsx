@@ -6,6 +6,7 @@ import { Button, InlineMessage, Progress } from '@green/ui';
 import { Map as MapIcon } from 'lucide-react';
 import { AppHeader } from '../domain-ui/AppHeader';
 import { LayerMappingTable } from '../domain-ui/LayerMappingTable';
+import { DataPassportPanel } from '../domain-ui/DataPassportPanel';
 import { OperationProgress } from '../domain-ui/OperationProgress';
 import { ProjectConflictNotice } from '../domain-ui/ProjectConflictNotice';
 import { isProjectConflict } from '../domain-ui/projectConflict';
@@ -18,6 +19,7 @@ export function SetupPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: ['setup-project', projectId], queryFn: () => api.getProject(projectId, false), enabled: Boolean(projectId) });
+  const dataPassportQuery = useQuery({ queryKey: ['data-passport', projectId], queryFn: () => api.getDataPassport(projectId), enabled: Boolean(projectId), staleTime: 10_000 });
   const [mappings, setMappings] = useState<Record<string, LayerMapping>>({});
   const [operationId, setOperationId] = useState<string>();
   const layers = projectQuery.data?.layers ?? EMPTY_LAYERS;
@@ -91,6 +93,7 @@ export function SetupPage() {
           {incompleteConstraintLayers.length ? <InlineMessage tone="error" title="Нужен рабочий фрагмент">Часть объектов не попала на карту. Исключите эти слои из ограничений или загрузите меньший фрагмент DXF.</InlineMessage> : null}
           {!hasPlanningBoundary ? <InlineMessage tone="info" title="Границу можно задать на карте">В DXF нет замкнутой границы участка. После подготовки карты обведите рабочую область вручную; ограничения от подтверждённых слоёв всё равно останутся видны.</InlineMessage> : null}
           <LayerMappingTable layers={layers} mappings={mappings} onChange={setMappings} />
+          {dataPassportQuery.data ? <DataPassportPanel passport={dataPassportQuery.data} /> : null}
           {operation ? <OperationProgress operation={operation} title="Подготовка карты" actionBusy={cancelOperation.isPending || retryOperation.isPending} onCancel={() => cancelOperation.mutate(operation.id!)} onRetry={() => retryOperation.mutate()} onDownloadSource={() => { window.location.href = api.sourceDownloadUrl(projectId); }} /> : null}
           {mutationError ? isProjectConflict(mutationError) ? <ProjectConflictNotice error={mutationError} onReload={() => void reloadAfterConflict()} reloading={projectQuery.isFetching} /> : <InlineMessage tone="error">Не удалось подготовить карту. Проверьте слои и повторите попытку.</InlineMessage> : null}
         </div>

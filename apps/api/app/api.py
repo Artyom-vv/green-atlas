@@ -10,6 +10,7 @@ from app.contracts import (
     ApiError,
     BrushPreview,
     BrushPreviewRequest,
+    DataPassport,
     ExportArtifact,
     GeometrySnapshot,
     ChangeSetPreview,
@@ -258,6 +259,14 @@ def get_map_features(
 ) -> GeometrySnapshot:
     try:
         return application.query_geometry(project_id, (min_x, min_y, max_x, max_y), resolution)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/data-passport", response_model=DataPassport)
+def get_data_passport(project_id: str) -> DataPassport:
+    try:
+        return application.get_data_passport(project_id)
     except Exception as error:
         raise handle(error) from error
 

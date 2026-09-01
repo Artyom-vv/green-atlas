@@ -13,6 +13,7 @@ from shapely.ops import unary_union
 from app.contracts import (
     BrushPreview,
     BrushPreviewRequest,
+    DataPassport,
     ExportArtifact,
     EvidenceAssessment,
     EffectEstimate,
@@ -60,6 +61,7 @@ from app.contracts import (
     SpeciesShortlistItem,
 )
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, dxf_size_error, validate_dxf_filename
+from app.data_passport import build_data_passport
 from app.dxf_import.ports import DxfReaderPort
 from app.exporting.ports import DxfWriterPort
 from app.geometry.ports import GeometryEnginePort, GeometryQueryPort
@@ -415,6 +417,11 @@ class ProjectApplication:
             )
             for project in self.repository.list(lightweight=True)
         ]
+
+    def get_data_passport(self, project_id: str) -> DataPassport:
+        """Return the source-data evidence for the current project revision."""
+
+        return build_data_passport(self.get(project_id))
 
     def delete_project(self, project_id: str) -> None:
         # A geometry worker can be between two progress callbacks while a
@@ -1038,12 +1045,8 @@ class ProjectApplication:
         if project.plan.version != request.base_plan_version:
             raise PlanVersionConflict(request.base_plan_version, project.plan.version)
 
-        mapped_kinds = {layer.mapped_kind.value for layer in project.layers}
-        unverified_data = []
-        if "utility" not in mapped_kinds:
-            unverified_data.append("подземные сети")
-        if "restricted" not in mapped_kinds:
-            unverified_data.append("малые сооружения и технические зоны")
+        passport = build_data_passport(project)
+        unverified_data = list(passport.gaps)
 
         requested_target = request.target_count if request.type == "fill" and request.placement_mode == "count" else None
         generation_request = request
@@ -1083,6 +1086,8 @@ class ProjectApplication:
                 accepted_count=0,
                 skipped=[],
                 unverified_data=unverified_data,
+                data_confidence=passport.mass_placement_status,
+                data_confidence_reasons=list(passport.gaps),
             )
 
         initial = self.preview_change_set(project_id, PlanChangeSetDraft(
@@ -1125,6 +1130,8 @@ class ProjectApplication:
             accepted_count=len(accepted_operations),
             skipped=skipped,
             unverified_data=unverified_data,
+            data_confidence=passport.mass_placement_status,
+            data_confidence_reasons=list(passport.gaps),
             change_set=change_set,
         )
 

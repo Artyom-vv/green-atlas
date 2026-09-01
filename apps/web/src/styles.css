@@ -103,6 +103,24 @@ code { font-family: var(--font-mono); font-weight: 400; }
 
 /* Layer mapping */
 .mapping-content { display: flex; flex-direction: column; gap: 12px; }
+.data-passport { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.data-passport__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.data-passport__header h2 { margin: 0; color: var(--color-neutral-800); font-size: 16px; line-height: 22px; font-weight: 600; }
+.data-passport__header p { max-width: 480px; margin: 4px 0 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.data-passport__table { table-layout: fixed; }
+.data-passport__table th:first-child, .data-passport__table td:first-child { width: 44%; }
+.data-passport__table th:nth-child(2), .data-passport__table td:nth-child(2) { width: 96px; }
+.data-passport__table th:nth-child(3), .data-passport__table td:nth-child(3) { width: 124px; }
+.data-passport__table th:last-child, .data-passport__table td:last-child { width: 124px; }
+.data-passport__class { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.data-passport__class > small { overflow: hidden; color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 10px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.data-passport__usage { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; }
+.data-passport__usage--used { color: var(--color-green-700); }
+.data-passport__usage--not-used { color: var(--color-neutral-500); }
+.data-passport__status { color: var(--color-neutral-600); font-size: 11px; white-space: nowrap; }
+.data-passport__gaps { display: block; max-width: 700px; }
+.data-passport__footnote { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
+.data-passport__footnote svg { flex: none; color: var(--color-green-700); }
 .mapping-content .ui-table th:first-child, .mapping-content .ui-table td:first-child { width: 44%; }
 .mapping-content .ui-table th:nth-child(2) { width: 320px; }
 .mapping-content .ui-table th:nth-child(3) { width: 84px; text-align: right; }

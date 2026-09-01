@@ -5,6 +5,8 @@ export type ProjectSummary = components['schemas']['ProjectSummary'];
 export type ImportStatus = components['schemas']['ImportStatus'];
 export type SourceFile = components['schemas']['SourceFile'];
 export type Layer = components['schemas']['Layer'];
+export type DataPassportEntry = components['schemas']['DataPassportEntry'];
+export type DataPassport = components['schemas']['DataPassport'];
 export type LayerKind = components['schemas']['LayerKind'];
 export type LayerMapping = components['schemas']['LayerMapping'];
 export type PlantingZoneAssignment = components['schemas']['PlantingZoneAssignment'];
@@ -115,6 +117,7 @@ export const api = {
     const params = new URLSearchParams({ min_x: String(extent[0]), min_y: String(extent[1]), max_x: String(extent[2]), max_y: String(extent[3]), resolution: String(resolution) });
     return request<GeometrySnapshot>(`/api/projects/${projectId}/map-features?${params}`, { signal });
   },
+  getDataPassport: (projectId: string) => request<DataPassport>(`/api/projects/${projectId}/data-passport`),
   uploadDxf: (projectId: string, file: File) => {
     const body = new FormData();
     body.append('file', file);

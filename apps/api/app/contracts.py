@@ -124,6 +124,49 @@ class Layer(BaseModel):
     visible: bool = True
 
 
+class DataPassportEntry(BaseModel):
+    """One source-data class and its role in the current calculation.
+
+    The passport is deliberately a compact audit contract.  It reports what
+    the importer can prove from the DXF and never treats an absent layer as an
+    empty physical area.
+    """
+
+    kind: Literal[
+        "site_border",
+        "building",
+        "road",
+        "utility",
+        "existing_green",
+        "water",
+        "restricted",
+        "unclassified",
+    ]
+    label: str
+    status: Literal["verified", "partial", "missing", "excluded"]
+    layer_names: list[str] = Field(default_factory=list)
+    object_count: int = Field(default=0, ge=0)
+    used_object_count: int = Field(default=0, ge=0)
+    used_in_calculation: bool = False
+    note: str
+
+
+class DataPassport(BaseModel):
+    """Evidence summary shown before an operator starts mass placement."""
+
+    overall_status: Literal["verified", "limited", "not_ready"]
+    calculation_status: Literal["ready", "not_ready"]
+    mass_placement_status: Literal["verified", "limited", "blocked"]
+    summary: str
+    entries: list[DataPassportEntry] = Field(default_factory=list)
+    unclassified_layers: list[str] = Field(default_factory=list)
+    incomplete_layers: list[str] = Field(default_factory=list)
+    excluded_layers: list[str] = Field(default_factory=list)
+    used_in_calculation: list[str] = Field(default_factory=list)
+    missing_classes: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+
+
 class LayerMapping(BaseModel):
     layer_id: str
     kind: LayerKind
@@ -488,6 +531,8 @@ class PatternPreview(BaseModel):
     accepted_count: int = Field(ge=0)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
     unverified_data: list[str] = Field(default_factory=list)
+    data_confidence: Literal["verified", "limited", "blocked"] = "verified"
+    data_confidence_reasons: list[str] = Field(default_factory=list)
     change_set: ChangeSetPreview | None = None
 
 

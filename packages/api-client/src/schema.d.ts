@@ -176,6 +176,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/data-passport": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Data Passport */
+        get: operations["get_data_passport_api_projects__project_id__data_passport_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/operations/geometry": {
         parameters: {
             query?: never;
@@ -751,6 +768,84 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
         };
+        /**
+         * DataPassport
+         * @description Evidence summary shown before an operator starts mass placement.
+         */
+        DataPassport: {
+            /**
+             * Overall Status
+             * @enum {string}
+             */
+            overall_status: "verified" | "limited" | "not_ready";
+            /**
+             * Calculation Status
+             * @enum {string}
+             */
+            calculation_status: "ready" | "not_ready";
+            /**
+             * Mass Placement Status
+             * @enum {string}
+             */
+            mass_placement_status: "verified" | "limited" | "blocked";
+            /** Summary */
+            summary: string;
+            /** Entries */
+            entries?: components["schemas"]["DataPassportEntry"][];
+            /** Unclassified Layers */
+            unclassified_layers?: string[];
+            /** Incomplete Layers */
+            incomplete_layers?: string[];
+            /** Excluded Layers */
+            excluded_layers?: string[];
+            /** Used In Calculation */
+            used_in_calculation?: string[];
+            /** Missing Classes */
+            missing_classes?: string[];
+            /** Gaps */
+            gaps?: string[];
+        };
+        /**
+         * DataPassportEntry
+         * @description One source-data class and its role in the current calculation.
+         *
+         *     The passport is deliberately a compact audit contract.  It reports what
+         *     the importer can prove from the DXF and never treats an absent layer as an
+         *     empty physical area.
+         */
+        DataPassportEntry: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "site_border" | "building" | "road" | "utility" | "existing_green" | "water" | "restricted" | "unclassified";
+            /** Label */
+            label: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "verified" | "partial" | "missing" | "excluded";
+            /** Layer Names */
+            layer_names?: string[];
+            /**
+             * Object Count
+             * @default 0
+             */
+            object_count: number;
+            /**
+             * Used Object Count
+             * @default 0
+             */
+            used_object_count: number;
+            /**
+             * Used In Calculation
+             * @default false
+             */
+            used_in_calculation: boolean;
+            /** Note */
+            note: string;
+        };
         /** EffectEstimate */
         EffectEstimate: {
             /**
@@ -1063,6 +1158,14 @@ export interface components {
             skipped?: components["schemas"]["PatternSkippedCandidate"][];
             /** Unverified Data */
             unverified_data?: string[];
+            /**
+             * Data Confidence
+             * @default verified
+             * @enum {string}
+             */
+            data_confidence: "verified" | "limited" | "blocked";
+            /** Data Confidence Reasons */
+            data_confidence_reasons?: string[];
             change_set?: components["schemas"]["ChangeSetPreview"] | null;
         };
         /** PatternSkippedCandidate */
@@ -2316,6 +2419,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeometrySnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_passport_api_projects__project_id__data_passport_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataPassport"];
                 };
             };
             /** @description Validation Error */

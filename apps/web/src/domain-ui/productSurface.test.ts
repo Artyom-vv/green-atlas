@@ -15,6 +15,7 @@ describe('assisted planning product surface', () => {
       'deletePlanObjects',
       'deleteProject',
       'downloadUrl',
+      'getDataPassport',
       'getLatestOperation',
       'getMapFeatures',
       'getOperation',
