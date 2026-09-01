@@ -705,6 +705,57 @@ test('a group cannot be moved outside the assigned area and the original layout 
   expect(positions).toEqual([[20, 20], [20, 30], [40, 20]]);
 });
 
+test('copy creates a distinct checked group and Enter commits one undoable revision', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const map = page.getByLabel('Карта проекта озеленения');
+  await page.getByLabel('Показать посадки').click();
+  await page.waitForTimeout(250);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
+  const padding = 72;
+  const resolution = Math.max(
+    (planExtent[2] - planExtent[0]) / (box!.width - padding * 2),
+    (planExtent[3] - planExtent[1]) / (box!.height - padding * 2),
+  );
+  const point = (x: number, y: number) => ({
+    x: box!.x + box!.width / 2 + (x - (planExtent[0] + planExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (y - (planExtent[1] + planExtent[3]) / 2) / resolution,
+  });
+  const first = point(20, 20);
+  const second = point(40, 20);
+  await page.getByRole('button', { name: 'Выбрать рамкой' }).click();
+  await page.mouse.move(first.x - 18, first.y + 18);
+  await page.mouse.down();
+  await page.mouse.move(second.x + 18, second.y - 18, { steps: 8 });
+  await page.mouse.up();
+
+  await page.getByRole('button', { name: 'Копировать', exact: true }).click();
+  await page.mouse.click(point(30, 25).x, point(30, 25).y);
+  await expect(page.getByText('Копирование группы (2)')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Добавить 2' })).toBeEnabled();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Копирование группы (2)')).toHaveCount(0);
+
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  await expect.poll(async () => {
+    const current = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await current.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBe(5);
+  const project = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const objects = (await project.json() as { plan: { objects: Array<{ group_ids?: string[] }> } }).plan.objects;
+  const copiedGroupIds = objects.slice(3).map((object) => object.group_ids?.[0]);
+  expect(copiedGroupIds[0]).toBeTruthy();
+  expect(copiedGroupIds[1]).toBe(copiedGroupIds[0]);
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => {
+    const current = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await current.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBe(3);
+});
+
 test('placement flow creates a typed group across the selected area as one revision', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);

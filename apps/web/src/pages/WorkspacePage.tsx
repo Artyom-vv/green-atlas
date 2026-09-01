@@ -493,6 +493,7 @@ export function WorkspacePage() {
     if (!plan || !selectedObjects.length) return;
     const center = selectedObjects.reduce(([x, y], object) => [x + object.x, y + object.y] as [number, number], [0, 0] as [number, number]);
     const delta: [number, number] = [coordinate[0] - center[0] / selectedObjects.length, coordinate[1] - center[1] / selectedObjects.length];
+    const copiedGroupId = mode === 'copy' ? `group-${globalThis.crypto.randomUUID()}` : undefined;
     const operations: PlanChangeSetDraft['operations'] = mode === 'move'
       ? selectedObjects.flatMap((object) => object.id ? [{ type: 'update' as const, object_id: object.id, changes: { x: object.x + delta[0], y: object.y + delta[1] } }] : [])
       : selectedObjects.map((object) => ({
@@ -505,8 +506,7 @@ export function WorkspacePage() {
           layout_radius_m: object.layout_radius_m ?? object.radius,
           size_class: object.size_class,
           species_revision_id: object.species_revision_id,
-          pattern_id: object.pattern_id,
-          group_ids: object.group_ids ?? [],
+          group_ids: copiedGroupId ? [copiedGroupId] : [],
           spacing_policy: object.spacing_policy,
           locked: false,
         },
