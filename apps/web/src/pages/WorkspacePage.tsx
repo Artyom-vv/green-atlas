@@ -97,6 +97,7 @@ export function WorkspacePage() {
   const [zonePendingDelete, setZonePendingDelete] = useState<PlantingZoneAssignment>();
   const [release, setRelease] = useState<ReleasePackage>();
   const [rowAxis, setRowAxis] = useState<{ type: 'LineString'; coordinates: number[][] }>();
+  const [rowAxisSource, setRowAxisSource] = useState<{ type: 'dxf' | 'manual'; label: string }>();
   const [patternPreview, setPatternPreview] = useState<PatternPreview>();
   const [selectedPatternZoneIds, setSelectedPatternZoneIds] = useState<string[]>([]);
   const [placementAreaDrawing, setPlacementAreaDrawing] = useState(false);
@@ -188,6 +189,7 @@ export function WorkspacePage() {
     setZonePendingDelete(undefined);
     setRelease(undefined);
     setRowAxis(undefined);
+    setRowAxisSource(undefined);
     setPatternPreview(undefined);
     setSelectedPatternZoneIds([]);
     setPlacementAreaDrawing(false);
@@ -373,7 +375,7 @@ export function WorkspacePage() {
   const applyChanges = useMutation({ mutationFn: () => {
     if (!changePreview) throw new Error('Предпросмотр изменений недоступен');
     return api.applyPlanChanges(projectId, changePreview);
-  }, onSuccess: async (result) => { setPatternPreview(undefined); setRecommendationOpen(false); setRecommendationPreview(undefined); setBrushStrokes([]); setBrushPreview(undefined); setRowAxis(undefined); setSpeciesAssignmentOpen(false); editor.setPreview(undefined); editor.setTool('select'); editor.select([...(result.added_ids ?? []), ...(result.updated_ids ?? [])], 'replace'); await refresh(); } });
+  }, onSuccess: async (result) => { setPatternPreview(undefined); setRecommendationOpen(false); setRecommendationPreview(undefined); setBrushStrokes([]); setBrushPreview(undefined); setRowAxis(undefined); setRowAxisSource(undefined); setSpeciesAssignmentOpen(false); editor.setPreview(undefined); editor.setTool('select'); editor.select([...(result.added_ids ?? []), ...(result.updated_ids ?? [])], 'replace'); await refresh(); } });
   const deleteObjects = useMutation({ mutationFn: (ids: string[]) => api.deletePlanObjects(projectId, ids), onSuccess: async () => { editor.clearSelection(); await refresh(); } });
   const undoChange = useMutation({ mutationFn: () => api.undoPlanChange(projectId), onSuccess: async () => { editor.clearSelection(); editor.setTool('select'); await refresh(); } });
   const redoChange = useMutation({ mutationFn: () => api.redoPlanChange(projectId), onSuccess: async () => { editor.clearSelection(); editor.setTool('select'); await refresh(); } });
@@ -408,6 +410,7 @@ export function WorkspacePage() {
     setPlacementCheck(undefined);
     setCursor(undefined);
     setRowAxis(undefined);
+    setRowAxisSource(undefined);
     setPatternPreview(undefined);
     setPlacementAreaDrawing(false);
     setRecommendationOpen(false);
@@ -477,7 +480,10 @@ export function WorkspacePage() {
     setBrushPreview(undefined);
     setSpeciesAssignmentOpen(false);
     editor.setPreview(undefined);
-    if (nextTool !== 'pattern_row') setRowAxis(undefined);
+    if (nextTool !== 'pattern_row') {
+      setRowAxis(undefined);
+      setRowAxisSource(undefined);
+    }
     if (nextTool === 'pattern_row' || nextTool === 'pattern_fill' || nextTool === 'brush') {
       editor.clearSelection();
       setActiveLayerId(undefined);
@@ -604,6 +610,7 @@ export function WorkspacePage() {
         setBrushStrokes([]);
         setBrushPreview(undefined);
         setRowAxis(undefined);
+        setRowAxisSource(undefined);
         setSpeciesAssignmentOpen(false);
         editor.setPreview(undefined);
         editor.setTool('select');
@@ -666,7 +673,7 @@ export function WorkspacePage() {
           if (projectHasPlan || planLocked) return;
           addMapArea(geometry, `Ручной участок ${draftZones.length + 1}`);
           editor.setTool('select');
-        }} onDrawAxis={(geometry) => { setRowAxis(geometry); setPatternPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onDrawBrush={(stroke, mode) => { setBrushStrokes((current) => mode === 'replace' ? [stroke] : [...current, stroke]); setBrushPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onMapArea={handleMapArea} onMapHover={setMapHoverTarget} onSelect={(id, mode = 'replace') => {
+        }} onDrawAxis={(geometry, source) => { setRowAxis(geometry); setRowAxisSource(source); setPatternPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onDrawBrush={(stroke, mode) => { setBrushStrokes((current) => mode === 'replace' ? [stroke] : [...current, stroke]); setBrushPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onMapArea={handleMapArea} onMapHover={setMapHoverTarget} onSelect={(id, mode = 'replace') => {
           if (!projectHasPlan) return;
           if (!id) { if (mode === 'replace') editor.clearSelection(); return; }
           editor.select([id], mode);
@@ -706,7 +713,7 @@ export function WorkspacePage() {
         {!panel && !activeLayer && changePreview && !recommendationPreview && !patternPreview ? <ChangeSetReviewPanel preview={changePreview} applying={applyChanges.isPending} note={brushPreview ? `Будет добавлено ${brushPreview.added_count}${brushPreview.skipped.length ? `, не размещено ${brushPreview.skipped.length}` : ''}` : undefined} onApply={() => applyChanges.mutate()} onCancel={() => { setBrushPreview(undefined); editor.setPreview(undefined); }} /> : null}
         {!panel && !activeLayer && !changePreview && recommendationOpen && project.plan ? <RecommendationPanel zones={project.planting_zones ?? []} loading={previewRecommendation.isPending} error={previewRecommendation.error ? message(previewRecommendation.error) : undefined} onPreview={(draft) => previewRecommendation.mutate({ ...draft, base_plan_version: project.plan!.version })} onCancel={() => { recommendationAbortRef.current?.abort(); setRecommendationOpen(false); setRecommendationPreview(undefined); }} /> : null}
         {!panel && !activeLayer && !changePreview && speciesAssignmentOpen && selectedObjects.length ? <SpeciesAssignmentPanel objects={selectedObjects} shortlist={speciesShortlistQuery.data} loading={speciesShortlistQuery.isLoading} previewing={previewChanges.isPending} error={speciesShortlistQuery.error ? message(speciesShortlistQuery.error) : undefined} onAssign={previewSpeciesAssignment} onCancel={() => setSpeciesAssignmentOpen(false)} /> : null}
-        {!panel && !activeLayer && (!changePreview || Boolean(patternPreview)) && (tool === 'pattern_row' || tool === 'pattern_fill' || (tool === 'draw_area' && placementAreaDrawing)) && project.plan ? <PatternToolPanel mode={tool === 'pattern_row' ? 'row' : 'fill'} zones={project.planting_zones ?? []} species={speciesQuery.data ?? []} axis={rowAxis} selectedZoneIds={selectedPatternZoneIds} drawingZone={placementAreaDrawing} preview={patternPreview} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} loading={previewPattern.isPending || applyChanges.isPending || savePlacementZone.isPending} error={previewPattern.error ? message(previewPattern.error) : savePlacementZone.error ? message(savePlacementZone.error) : undefined} resultNote={patternPreview && !patternPreview.change_set ? `Допустимых позиций нет: ${patternPreview.skipped[0]?.reason ?? 'измените параметры'}` : patternPreview?.skipped.length ? `${patternPreview.skipped.length} позиций исключено: ${patternPreview.skipped[0]?.reason}` : undefined} onSelectedZoneIdsChange={setSelectedPatternZoneIds} onDrawZone={() => { setPlacementAreaDrawing(true); setMapAreaTarget(undefined); editor.setTool('draw_area'); }} onPreview={(draft) => previewPattern.mutate({ ...draft, base_plan_version: project.plan!.version } as PatternPreviewRequest)} onApply={() => applyChanges.mutate()} onCancel={() => { patternAbortRef.current?.abort(); setPatternPreview(undefined); editor.setPreview(undefined); setRowAxis(undefined); setPlacementAreaDrawing(false); editor.setTool('select'); }} /> : null}
+        {!panel && !activeLayer && (!changePreview || Boolean(patternPreview)) && (tool === 'pattern_row' || tool === 'pattern_fill' || (tool === 'draw_area' && placementAreaDrawing)) && project.plan ? <PatternToolPanel mode={tool === 'pattern_row' ? 'row' : 'fill'} zones={project.planting_zones ?? []} species={speciesQuery.data ?? []} axis={rowAxis} axisSource={rowAxisSource} selectedZoneIds={selectedPatternZoneIds} drawingZone={placementAreaDrawing} preview={patternPreview} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} loading={previewPattern.isPending || applyChanges.isPending || savePlacementZone.isPending} error={previewPattern.error ? message(previewPattern.error) : savePlacementZone.error ? message(savePlacementZone.error) : undefined} resultNote={patternPreview && !patternPreview.change_set ? `Допустимых позиций нет: ${patternPreview.skipped[0]?.reason ?? 'измените параметры'}` : patternPreview?.skipped.length ? `${patternPreview.skipped.length} позиций исключено: ${patternPreview.skipped[0]?.reason}` : undefined} onSelectedZoneIdsChange={setSelectedPatternZoneIds} onDrawZone={() => { setPlacementAreaDrawing(true); setMapAreaTarget(undefined); editor.setTool('draw_area'); }} onPreview={(draft) => previewPattern.mutate({ ...draft, base_plan_version: project.plan!.version } as PatternPreviewRequest)} onApply={() => applyChanges.mutate()} onCancel={() => { patternAbortRef.current?.abort(); setPatternPreview(undefined); editor.setPreview(undefined); setRowAxis(undefined); setRowAxisSource(undefined); setPlacementAreaDrawing(false); editor.setTool('select'); }} /> : null}
         {!panel && !activeLayer && !changePreview && tool === 'brush' && project.plan ? <BrushToolPanel strokes={brushStrokes} zoneIds={selectedPatternZoneIds} loading={previewBrush.isPending} error={previewBrush.error ? message(previewBrush.error) : undefined} resultNote={brushPreview && !brushPreview.change_set ? `Изменений нет. Пропущено: ${brushPreview.skipped.length}.` : undefined} onPreview={(draft) => previewBrush.mutate({ ...draft, base_plan_version: project.plan!.version })} onClear={() => { setBrushStrokes([]); setBrushPreview(undefined); editor.setPreview(undefined); }} onCancel={() => { brushAbortRef.current?.abort(); setBrushStrokes([]); setBrushPreview(undefined); editor.setTool('select'); }} /> : null}
         {!panel && !activeLayer && !changePreview && !speciesAssignmentOpen && selectedObject ? <ObjectInspector object={selectedObject} speciesName={selectedObject.species_revision_id ? speciesNames.get(selectedObject.species_revision_id) : undefined} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} editable={!planLocked && !editorBusy && !selectedObject.locked} onSpecies={() => setSpeciesAssignmentOpen(true)} onMove={() => editor.setTool('move')} onDelete={() => setDeleteSelectionOpen(true)} /> : null}
         {!panel && !activeLayer && !changePreview && !speciesAssignmentOpen && selectedIds.length > 1 ? <GroupInspector objects={selectedObjects} disabled={editorBusy || planLocked} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} onSpecies={() => setSpeciesAssignmentOpen(true)} onMove={() => editor.setTool('move')} onCopy={() => editor.setTool('copy')} onLock={previewSelectionLock} onDelete={() => setDeleteSelectionOpen(true)} /> : null}

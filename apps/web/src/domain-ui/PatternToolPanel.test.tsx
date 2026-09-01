@@ -49,6 +49,15 @@ describe('PatternToolPanel', () => {
     expect(screen.getByRole('button', { name: 'Показать' })).toBeEnabled();
   });
 
+  it('identifies the selected row axis before placement', () => {
+    render(<PatternToolPanel mode="row" zones={zones} species={species} axis={{ type: 'LineString', coordinates: [[0, 0], [3, 4], [6, 4]] }} axisSource={{ type: 'dxf', label: 'ROAD_AXIS' }} onPreview={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByText('Источник')).toBeVisible();
+    expect(screen.getByText('ROAD_AXIS')).toBeVisible();
+    expect(screen.getByText('Длина')).toBeVisible();
+    expect(screen.getByText('8.0 м')).toBeVisible();
+  });
+
   it('groups rejected positions by a stable machine-readable reason', () => {
     const preview: PatternPreview = {
       pattern_id: 'pattern-1',

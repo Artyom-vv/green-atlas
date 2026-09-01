@@ -999,6 +999,9 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   await expect(page.getByText('Выберите линию на карте')).toBeVisible();
   await page.mouse.click(start.x, start.y);
   await expect(page.getByText('Линия выбрана')).toBeVisible();
+  await expect(page.getByText('Источник', { exact: true })).toBeVisible();
+  await expect(page.getByText('Длина', { exact: true })).toBeVisible();
+  await expect(page.locator('.pattern-tool-panel__axis dd').last()).toContainText(/\d+\.\d м/);
   await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
   await page.getByRole('combobox', { name: 'Сторона оси' }).selectOption('left');
   await page.getByRole('spinbutton', { name: 'Поперечный отступ' }).fill('12');

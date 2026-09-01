@@ -7,11 +7,12 @@ import { forecastAt } from './growthForecast';
 type Axis = RowPatternRequest['axis'];
 type PatternDraft = Omit<RowPatternRequest, 'base_plan_version'> | Omit<FillPatternRequest, 'base_plan_version'>;
 
-export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds = [], drawingZone = false, loading, error, resultNote, preview, growthHorizon, onGrowthHorizon, onSelectedZoneIdsChange, onDrawZone, onPreview, onApply, onCancel }: {
+export function PatternToolPanel({ mode, zones, species, axis, axisSource, selectedZoneIds = [], drawingZone = false, loading, error, resultNote, preview, growthHorizon, onGrowthHorizon, onSelectedZoneIdsChange, onDrawZone, onPreview, onApply, onCancel }: {
   mode: 'row' | 'fill';
   zones: PlantingZoneAssignment[];
   species: SpeciesRevision[];
   axis?: Axis;
+  axisSource?: { type: 'dxf' | 'manual'; label: string };
   selectedZoneIds?: string[];
   drawingZone?: boolean;
   loading?: boolean;
@@ -48,6 +49,13 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
   }, [availableSpecies, speciesId]);
 
   const canPreview = mode === 'row' ? Boolean(axis) : selectedZoneIds.length > 0;
+  const axisCoordinates = useMemo(() => Array.isArray(axis?.coordinates)
+    ? axis.coordinates.filter((coordinate): coordinate is number[] => Array.isArray(coordinate) && coordinate.length >= 2 && coordinate.every((value) => typeof value === 'number'))
+    : [], [axis]);
+  const axisLength = useMemo(() => axisCoordinates.slice(1).reduce((length, coordinate, index) => {
+    const previous = axisCoordinates[index];
+    return length + Math.hypot(coordinate[0] - previous[0], coordinate[1] - previous[1]);
+  }, 0), [axisCoordinates]);
   const selectedSpecies = availableSpecies.find((item) => item.id === speciesId);
   const selectedZoneLabels = useMemo(() => new Set(selectedZoneIds), [selectedZoneIds]);
   const submit = useCallback(() => {
@@ -99,7 +107,7 @@ export function PatternToolPanel({ mode, zones, species, axis, selectedZoneIds =
       <StepProgress current={preview ? 2 : mode === 'fill' && !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
       {mode === 'row' ? <section className="pattern-tool-panel__axis">
         <strong>{axis ? 'Линия выбрана' : 'Выберите линию на карте'}</strong>
-        <span>{axis ? 'Черновик обновляется автоматически' : 'Кликните по линии DXF. Shift — нарисовать свою ось'}</span>
+        {axis ? <dl><dt>Источник</dt><dd>{axisSource?.label ?? 'Линия DXF'}</dd><dt>Длина</dt><dd>{axisLength?.toFixed(1)} м</dd></dl> : <span>Кликните по линии DXF. Shift — нарисовать свою ось</span>}
       </section> : null}
       {mode === 'fill' ? <fieldset className="pattern-tool-panel__zones">
         <legend>Участки</legend>

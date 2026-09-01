@@ -494,7 +494,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -780,13 +780,17 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
           .sort((left, right) => left.distance - right.distance)[0]?.candidate;
         const lineFeature = directHit ?? nearest;
         const lineGeometry = lineFeature?.getGeometry();
+        const lineSource = {
+          type: 'dxf' as const,
+          label: String(lineFeature?.get('source_layer') ?? lineFeature?.get('label') ?? 'Линия DXF'),
+        };
         if (lineGeometry instanceof LineString) {
-          callbackRef.current.onDrawAxis?.({ type: 'LineString', coordinates: lineGeometry.getCoordinates() });
+          callbackRef.current.onDrawAxis?.({ type: 'LineString', coordinates: lineGeometry.getCoordinates() }, lineSource);
           return;
         }
         if (lineGeometry instanceof MultiLineString) {
           const closest = lineGeometry.getLineStrings().sort((left, right) => left.getClosestPoint(event.coordinate).reduce((sum, value, index) => sum + (value - event.coordinate[index]) ** 2, 0) - right.getClosestPoint(event.coordinate).reduce((sum, value, index) => sum + (value - event.coordinate[index]) ** 2, 0))[0];
-          if (closest) callbackRef.current.onDrawAxis?.({ type: 'LineString', coordinates: closest.getCoordinates() });
+          if (closest) callbackRef.current.onDrawAxis?.({ type: 'LineString', coordinates: closest.getCoordinates() }, lineSource);
           return;
         }
       }
@@ -957,7 +961,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         }
         const geometry = { type: 'LineString' as const, coordinates: featureGeometry.getCoordinates() };
         if (tool === 'brush') callbackRef.current.onDrawBrush?.({ mode: brushModeRef.current === 'subtract' ? 'subtract' : 'add', geometry }, brushModeRef.current);
-        else callbackRef.current.onDrawAxis?.(geometry);
+        else callbackRef.current.onDrawAxis?.(geometry, { type: 'manual', label: 'Нарисована вручную' });
         areaDrawingSourceRef.current.clear();
       }
     });
