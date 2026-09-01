@@ -339,6 +339,38 @@ test('keyboard focus covers the manual editor workflow', async ({ page }) => {
   await expectNoSeriousAccessibilityViolations(page);
 });
 
+test('escape cancels the active map operation before it clears selection', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await openManualPlan(page);
+  const map = page.getByLabel('Карта проекта озеленения');
+  await page.getByLabel('Показать посадки').click();
+  await page.waitForTimeout(250);
+  const mapBox = await map.boundingBox();
+  expect(mapBox).not.toBeNull();
+  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
+  const padding = 72;
+  const resolution = Math.max(
+    (planExtent[2] - planExtent[0]) / (mapBox!.width - padding * 2),
+    (planExtent[3] - planExtent[1]) / (mapBox!.height - padding * 2),
+  );
+  await page.mouse.click(
+    mapBox!.x + mapBox!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
+    mapBox!.y + mapBox!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
+  );
+  const contextBar = page.getByRole('toolbar', { name: 'Действия с выделением' });
+  await expect(contextBar).toBeVisible();
+  const contextBox = await contextBar.boundingBox();
+  expect(contextBox).not.toBeNull();
+  expect(contextBox!.x).toBeGreaterThanOrEqual(mapBox!.x);
+  expect(contextBox!.x + contextBox!.width).toBeLessThanOrEqual(mapBox!.x + mapBox!.width);
+
+  await contextBar.getByRole('button', { name: 'Переместить выделение' }).click();
+  await page.keyboard.press('Escape');
+  await expect(contextBar).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(contextBar).toHaveCount(0);
+});
+
 test('map navigation keeps the canvas live without auxiliary CAD modes', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openManualPlan(page);
@@ -584,7 +616,7 @@ test('box selection moves a group through one confirmed change set', async ({ pa
   page.on('request', (request) => {
     if (request.url().includes('/map-features?')) viewportRequests += 1;
   });
-  await page.getByRole('button', { name: 'Применить' }).click();
+  await page.keyboard.press('F2');
   await expect(page.getByText('Перемещение группы (2)')).toHaveCount(0);
   await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
   await page.waitForTimeout(150);

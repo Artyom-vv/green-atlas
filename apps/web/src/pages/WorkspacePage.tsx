@@ -579,8 +579,20 @@ export function WorkspacePage() {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
       if (event.key === 'Escape') {
+        event.preventDefault();
         if (sceneOpen) {
           setSceneOpen(false);
+          return;
+        }
+        const hasActiveOperation = tool !== 'select'
+          || Boolean(changePreview)
+          || recommendationOpen
+          || Boolean(recommendationPreview)
+          || Boolean(patternPreview)
+          || brushStrokes.length > 0
+          || speciesAssignmentOpen;
+        if (!hasActiveOperation) {
+          if (selectedIds.length) editor.clearSelection();
           return;
         }
         patternAbortRef.current?.abort();
@@ -597,7 +609,7 @@ export function WorkspacePage() {
         editor.setTool('select');
         return;
       }
-      if (event.key === 'Enter' && changePreview?.can_apply && !editorBusy) {
+      if ((event.key === 'Enter' || event.code === 'F2') && changePreview?.can_apply && !editorBusy) {
         event.preventDefault();
         applyChanges.mutate();
         return;
@@ -620,7 +632,7 @@ export function WorkspacePage() {
     };
     window.addEventListener('keydown', handleHistoryShortcut);
     return () => window.removeEventListener('keydown', handleHistoryShortcut);
-  }, [applyChanges, changePreview?.can_apply, editor, editorBusy, historyQuery.data?.can_redo, historyQuery.data?.can_undo, planLocked, redoChange, sceneOpen, selectedIds.length, undoChange]);
+  }, [applyChanges, brushStrokes.length, changePreview, editor, editorBusy, historyQuery.data?.can_redo, historyQuery.data?.can_undo, patternPreview, planLocked, recommendationOpen, recommendationPreview, redoChange, sceneOpen, selectedIds.length, speciesAssignmentOpen, tool, undoChange]);
 
   if (projectQuery.isLoading) return <div className="app-shell"><AppHeader /><main className="center-status"><Progress label="Загрузка рабочей области" /></main></div>;
   if (!project) return <div className="app-shell"><AppHeader /><main className="center-status"><InlineMessage tone="error">{message(projectQuery.error)}</InlineMessage></main></div>;
@@ -670,7 +682,7 @@ export function WorkspacePage() {
           setPanel(null);
           openRightPanel();
         }} onCoordinate={handleCoordinate} onTranslateSelectionEnd={handleCoordinate} onSelectionAnchor={setSelectionAnchor} onPointerCoordinate={handlePointerCoordinate} onExtentChange={handleMapExtent} />
-        {!sceneOpen && !changePreview && selectionAnchor && selectedObjects.length ? <div className="selection-context-bar" style={{ left: selectionAnchor[0], top: Math.max(56, selectionAnchor[1] - 60) }} role="toolbar" aria-label="Действия с выделением"><strong>{selectedObjects.length}</strong><IconButton icon={Leaf} label="Изменить породу" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setSpeciesAssignmentOpen(true)} /><Select aria-label="Плотность выделения" value={selectedObjects.every((object) => object.spacing_policy === selectedObjects[0]?.spacing_policy) ? selectedObjects[0]?.spacing_policy : ''} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onChange={(event) => previewSelectionSpacing(event.target.value as 'open' | 'balanced' | 'canopy')}><option value="" disabled>Плотность</option><option value="canopy">Плотно</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select><IconButton icon={Move} label={tool === 'move' ? 'Завершить перемещение' : 'Переместить выделение'} active={tool === 'move'} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => editor.setTool(tool === 'move' ? 'select' : 'move')} /><IconButton icon={Trash2} label="Удалить выделение" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setDeleteSelectionOpen(true)} /></div> : null}
+        {!sceneOpen && !changePreview && selectionAnchor && selectedObjects.length ? <div className="selection-context-bar" style={{ left: `clamp(180px, ${selectionAnchor[0]}px, calc(100% - 180px))`, top: `clamp(56px, ${selectionAnchor[1] - 60}px, calc(100% - 56px))` }} role="toolbar" aria-label="Действия с выделением"><strong>{selectedObjects.length}</strong><IconButton icon={Leaf} label="Изменить породу" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setSpeciesAssignmentOpen(true)} /><Select aria-label="Плотность выделения" value={selectedObjects.every((object) => object.spacing_policy === selectedObjects[0]?.spacing_policy) ? selectedObjects[0]?.spacing_policy : ''} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onChange={(event) => previewSelectionSpacing(event.target.value as 'open' | 'balanced' | 'canopy')}><option value="" disabled>Плотность</option><option value="canopy">Плотно</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select><IconButton icon={Move} label={tool === 'move' ? 'Завершить перемещение' : 'Переместить выделение'} active={tool === 'move'} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => editor.setTool(tool === 'move' ? 'select' : 'move')} /><IconButton icon={Trash2} label="Удалить выделение" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setDeleteSelectionOpen(true)} /></div> : null}
         {!sceneOpen && !selectedObjects.length && mapHoverTarget && (tool === 'select' || tool === 'pattern_fill') ? <div className={`map-hover-hint ${mapHoverTarget.pixel[0] > 520 ? 'is-left' : ''}`} style={{ left: mapHoverTarget.pixel[0] + 14, top: mapHoverTarget.pixel[1] + 14 }} role="status" aria-label="Выбор объекта карты" onMouseDown={(event) => event.stopPropagation()}>{mapHoverTarget.items.map((item) => <button className={`map-hover-hint__item ${item.target.selectable ? 'is-selectable' : 'is-reference'}`} key={item.id} type="button" aria-label={`Выбрать ${item.label}`} onClick={(event) => { event.stopPropagation(); handleMapStackSelect(item); }}><strong>{item.label}</strong><span>{item.detail}</span></button>)}</div> : null}
         {!sceneOpen && projectHasPlan ? <div className="map-edit-tools"><MapToolbar tool={tool} onTool={activateTool} editable={!sourcePreview && !planLocked && !editorBusy} canDelete={selectedIds.length > 0} onDelete={() => setDeleteSelectionOpen(true)} /></div> : null}
         {!sceneOpen ? <div className="map-zoom-tools"><IconButton icon={Plus} label="Увеличить" variant="ghost" onClick={() => mapViewport.current?.zoomIn()} /><IconButton icon={Minus} label="Уменьшить" variant="ghost" onClick={() => mapViewport.current?.zoomOut()} /><IconButton icon={Maximize2} label="Показать весь чертёж" variant="ghost" onClick={() => mapViewport.current?.fit()} /></div> : null}
