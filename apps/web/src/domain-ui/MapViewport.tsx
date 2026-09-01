@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef } from 'react';
-import type { BrushStroke, ChangeSetPreview, GrowthEnvelopeForecast, PlanObject, PlantingZoneAssignment } from '@green/api-client';
+import type { BrushStroke, ChangeSetPreview, PlanObject, PlantingZoneAssignment } from '@green/api-client';
 import Feature from 'ol/Feature';
 import Collection from 'ol/Collection';
 import GeoJSON from 'ol/format/GeoJSON';
@@ -30,7 +30,7 @@ import { containsCoordinate, createEmpty, extend } from 'ol/extent';
 import { BoundedLruCache } from './BoundedLruCache';
 import type { MapTool } from './MapToolbar';
 import type { SelectionMode } from './selection';
-import { forecastAt } from './growthForecast';
+import { growthOverlayForecasts } from './growthOverlayForecasts';
 import { paddedMapExtent } from './mapExtent';
 import { isPrimarySingleBlockComponent, sourceBlockCaption } from './sourceLabels';
 
@@ -48,43 +48,6 @@ export type MapExtent = [number, number, number, number];
 export type MapAreaTarget = { sourceId: string; plantingZoneId?: string; geometry?: { type: 'Polygon'; coordinates: number[][][] }; kind: string; label: string; detail: string; selectable: boolean };
 export type MapHoverItem = { id: string; kind: string; label: string; detail: string; target: MapAreaTarget };
 export type MapHoverTarget = { items: MapHoverItem[]; pixel: [number, number] };
-
-export type GrowthOverlayForecast = {
-  object: PlanObject;
-  selected: boolean;
-  canopy?: GrowthEnvelopeForecast;
-  roots?: GrowthEnvelopeForecast;
-};
-
-/**
- * Resolve every growth envelope from the same bounded forecast source used by
- * the inspector. The result is also used for the map's accessible summary so
- * a changed horizon cannot move a visual layer without changing its meaning.
- */
-export function growthOverlayForecasts(
-  objects: readonly PlanObject[],
-  selectedIds: readonly string[],
-  year: number | undefined,
-  previewObjects: readonly PlanObject[] = [],
-): GrowthOverlayForecast[] {
-  if (year === undefined) return [];
-  const selected = new Set(selectedIds);
-  const candidates = new globalThis.Map<string, PlanObject>();
-  for (const object of objects) {
-    if (object.id && selected.has(object.id)) candidates.set(object.id, object);
-  }
-  // A preview update has the same id as its durable object. Replace it in
-  // place so the envelope is rendered once and always describes the preview.
-  for (const object of previewObjects) {
-    if (object.id) candidates.set(object.id, object);
-  }
-  return [...candidates.values()].flatMap((object) => {
-    if (!object.id) return [];
-    const canopy = forecastAt(object.canopy_forecast, year);
-    const roots = forecastAt(object.root_forecast, year);
-    return canopy || roots ? [{ object, selected: selected.has(object.id), canopy, roots }] : [];
-  });
-}
 
 const mapHitPriority: Record<string, number> = { forbidden: 0, restricted: 1, water: 2, building: 3, road: 4, utility: 5, existing_green: 6, ignore: 7, planting_area: 8, allowed: 9, site_border: 10 };
 

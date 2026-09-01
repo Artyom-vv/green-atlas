@@ -98,6 +98,7 @@ class SourceFile(BaseModel):
     name: str
     size: int
     imported_at: str
+    owner: str | None = None
     dxf_version: str
     units: str
     units_assumed: bool = False
@@ -148,6 +149,11 @@ class DataPassportEntry(BaseModel):
     object_count: int = Field(default=0, ge=0)
     used_object_count: int = Field(default=0, ge=0)
     used_in_calculation: bool = False
+    semantic_confidence: Literal["high", "medium", "low"] = "low"
+    decision_level: Literal["stop", "warning", "advisory"] = "advisory"
+    source_file_name: str | None = None
+    source_imported_at: str | None = None
+    source_owner: str | None = None
     note: str
 
 
@@ -158,6 +164,10 @@ class DataPassport(BaseModel):
     calculation_status: Literal["ready", "not_ready"]
     mass_placement_status: Literal["verified", "limited", "blocked"]
     summary: str
+    source_file_name: str | None = None
+    source_imported_at: str | None = None
+    source_owner: str | None = None
+    coordinate_reference: CoordinateReference = Field(default_factory=lambda: CoordinateReference())
     entries: list[DataPassportEntry] = Field(default_factory=list)
     unclassified_layers: list[str] = Field(default_factory=list)
     incomplete_layers: list[str] = Field(default_factory=list)
@@ -514,6 +524,8 @@ class FillPatternRequest(BaseModel):
     type: Literal["fill"] = "fill"
     base_plan_version: int = Field(ge=1)
     plant_kind: Literal["tree", "shrub"] = "tree"
+    composition: Literal["trees", "shrubs", "mixed"] | None = None
+    tree_share: float = Field(default=0.65, ge=0, le=1, allow_inf_nan=False)
     zone_ids: list[str] = Field(min_length=1, max_length=40)
     placement_mode: Literal["count", "spacing"] = "spacing"
     target_count: int = Field(default=40, ge=1, le=5000)
@@ -525,7 +537,21 @@ class FillPatternRequest(BaseModel):
     layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
     size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
     species_revision_id: str | None = None
+    tree_species_revision_id: str | None = None
+    shrub_species_revision_id: str | None = None
     spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
+
+    @model_validator(mode="after")
+    def normalize_composition(self) -> "FillPatternRequest":
+        if self.composition is None:
+            self.composition = "shrubs" if self.plant_kind == "shrub" else "trees"
+        if self.composition == "shrubs":
+            self.plant_kind = "shrub"
+        else:
+            # Mixed layouts use the stricter tree footprint for candidate
+            # generation; individual candidate kinds are assigned later.
+            self.plant_kind = "tree"
+        return self
 
 
 PatternPreviewRequest = Annotated[RowPatternRequest | FillPatternRequest, Field(discriminator="type")]
@@ -559,7 +585,10 @@ class PatternPreview(BaseModel):
     pattern_id: str
     type: Literal["row", "fill"]
     requested_count: int = Field(ge=0)
+    generated_count: int = Field(default=0, ge=0)
     accepted_count: int = Field(ge=0)
+    rejected_count: int = Field(default=0, ge=0)
+    capacity_shortfall: int = Field(default=0, ge=0)
     effective_spacing_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
     reason_summary: list[CandidateReasonSummary] = Field(default_factory=list)
@@ -622,12 +651,26 @@ class SpeciesRevision(BaseModel):
 
 
 class SpeciesShortlistRequest(BaseModel):
-    object_ids: list[str] = Field(min_length=1, max_length=5000)
+    object_ids: list[str] = Field(default_factory=list, max_length=5000)
+    zone_ids: list[str] = Field(default_factory=list, max_length=40)
+    kind: Literal["tree", "shrub"] | None = None
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> "SpeciesShortlistRequest":
+        if self.object_ids:
+            return self
+        if self.zone_ids:
+            return self
+        raise ValueError("Выберите посадки либо участки")
 
 
 class SpeciesShortlistItem(BaseModel):
     species: SpeciesRevision
     status: Literal["available", "review"]
+    selected_area_m2: float | None = Field(default=None, ge=0)
+    estimated_safe_area_m2: float | None = Field(default=None, ge=0)
+    estimated_capacity: int | None = Field(default=None, ge=0)
+    estimated_mature_diameter_m: float | None = Field(default=None, gt=0)
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -742,9 +785,25 @@ class ExportArtifact(BaseModel):
     media_type: str = "application/dxf"
 
 
+class RegulatoryReleaseBasis(BaseModel):
+    """Human-confirmed process basis attached to a final project revision.
+
+    This is deliberately not a claim that the service issued a permit.  It
+    makes the PP-616/PP-1160 decision explicit, attributable and auditable
+    before a package may be labelled final.
+    """
+
+    pp616_status: Literal["pending", "not_applicable", "documented"] = "pending"
+    pp616_reference: str = Field(default="", max_length=240)
+    pp1160_status: Literal["pending", "not_required", "documented"] = "pending"
+    pp1160_reference: str = Field(default="", max_length=240)
+    confirmed_by: str = Field(default="", max_length=160)
+
+
 class ReleaseCreateRequest(BaseModel):
     mode: Literal["draft", "final"] = "draft"
     scene_horizon: int = Field(default=20, ge=0, le=40)
+    regulatory_basis: RegulatoryReleaseBasis | None = None
 
 
 class ReleaseArtifact(BaseModel):

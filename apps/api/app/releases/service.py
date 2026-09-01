@@ -14,6 +14,7 @@ import zipfile
 from typing import Any
 
 from app.contracts import GeometrySnapshot, Plan, PlantingZoneAssignment, Project, ReleaseArtifact, ReleaseCreateRequest, ReleasePackage, SceneSnapshot
+from app.data_passport import build_data_passport
 from app.species.catalog import forecast_at, get_species
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, validate_dxf_filename
 from app.regulations.registry import REGISTRY_REVISION, applied_record_ids, registry_snapshot
@@ -290,6 +291,7 @@ def release_identity(project: Project, request: ReleaseCreateRequest) -> str:
         "geometry_version": project.geometry_version,
         "mode": request.mode,
         "scene_horizon": request.scene_horizon,
+        "regulatory_basis": request.regulatory_basis.model_dump(mode="json") if request.regulatory_basis is not None else None,
         "rules": RULE_SET_REVISION,
         "regulatory_registry": REGISTRY_REVISION,
         "applied_rule_ids": applied_record_ids([issue.rule_id for issue in project.plan.issues]),
@@ -413,7 +415,7 @@ def build_release(
     hard_errors = sorted(issue.id for issue in project.plan.issues if issue.severity == "error")
     warnings = [
         "Выпуск является проектным материалом и не означает согласование или выдачу порубочного билета.",
-        "ПП-616 и ПП-1160 отражены как обязательные процессные основания, но их полный машиночитаемый реестр ещё не подключён.",
+        "Решения по ПП-616 и ПП-1160 зафиксированы в выпуске; сервис не проверяет полный состав административных документов.",
         "Почва, влажность, инсоляция, рельеф и высоты зданий не подтверждены исходным DXF.",
     ]
     if missing_species:
@@ -483,9 +485,11 @@ def build_release(
         "regulatory_scope": {
             "spatial_draft": "implemented",
             "pp_743": "catalogue context only; specialist review required",
-            "pp_616": "process requirement recorded; full machine-readable rules not implemented",
-            "pp_1160": "process requirement recorded; full machine-readable rules not implemented",
+            "pp_616": "release decision gate implemented; full compensation procedure remains specialist-reviewed",
+            "pp_1160": "release decision gate implemented; permit service outcome remains external",
         },
+        "regulatory_basis": request.regulatory_basis.model_dump(mode="json") if request.regulatory_basis is not None else None,
+        "data_passport": build_data_passport(project).model_dump(mode="json"),
         "data_gaps": scene.data_gaps,
         "limitations": warnings,
         "files": entry_hashes,

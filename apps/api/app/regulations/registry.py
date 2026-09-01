@@ -16,8 +16,10 @@ class RegulatoryRecord:
     revision: str
     coverage: Literal["implemented", "partial", "unavailable"]
     machine_checkable: bool
+    machine_checkable_scope: str | None
     scope: str
     source_url: str
+    release_gate_machine_checkable: bool = False
 
 
 RECORDS = (
@@ -29,6 +31,7 @@ RECORDS = (
         revision="с изменениями, действующими с 2026-07-01",
         coverage="implemented",
         machine_checkable=True,
+        machine_checkable_scope="Пространственный отступ по распознанному контуру",
         scope="Минимальный отступ дерева или кустарника от наружной стены здания при распознанном контуре",
         source_url="https://www.mos.ru/authority/documents/doc/550220/",
     ),
@@ -40,6 +43,7 @@ RECORDS = (
         revision="с изменениями, действующими с 2026-07-01",
         coverage="implemented",
         machine_checkable=True,
+        machine_checkable_scope="Пространственный отступ по распознанному контуру",
         scope="Минимальный отступ дерева или кустарника от края проезжей части при распознанном контуре",
         source_url="https://www.mos.ru/authority/documents/doc/550220/",
     ),
@@ -51,6 +55,7 @@ RECORDS = (
         revision="с изменениями, действующими с 2026-07-01",
         coverage="partial",
         machine_checkable=False,
+        machine_checkable_scope=None,
         scope="Дополнительный проектный отступ для древесных пород с широкой кроной требует решения специалиста",
         source_url="https://www.mos.ru/authority/documents/doc/550220/",
     ),
@@ -62,8 +67,10 @@ RECORDS = (
         revision="с изменениями, действующими с 2026-07-01",
         coverage="partial",
         machine_checkable=False,
-        scope="Процессное основание проекта, связь удаляемых и компенсирующих посадок и расчётные последствия",
+        machine_checkable_scope="Шлюз финального выпуска требует явного статуса применимости, основания и ответственного",
+        scope="Процессное основание проекта; полный расчёт компенсационного озеленения остаётся вне автоматической проверки",
         source_url="https://www.mos.ru/upload/documents/files/4822/PostanovleniePravitelstvaMoskviot29072003g616PP.pdf",
+        release_gate_machine_checkable=True,
     ),
     RegulatoryRecord(
         id="pp1160-permit-service",
@@ -73,8 +80,10 @@ RECORDS = (
         revision="2026-04-24",
         coverage="partial",
         machine_checkable=False,
+        machine_checkable_scope="Шлюз финального выпуска требует явного статуса процедуры, основания и ответственного",
         scope="Состав и прохождение административной услуги; выпуск Green Atlas не является решением по услуге",
         source_url="https://vestnikmoscow.mos.ru/wp-content/uploads/2026/04/zhurnal-vestnik-moskvy-%E2%84%96-24-1.pdf",
+        release_gate_machine_checkable=True,
     ),
 )
 
@@ -101,4 +110,3 @@ def registry_snapshot(rule_ids: list[str | None]) -> dict[str, object]:
             "unavailable": sum(record.coverage == "unavailable" for record in RECORDS),
         },
     }
-

@@ -8,10 +8,14 @@ const passport: DataPassport = {
   calculation_status: 'ready',
   mass_placement_status: 'limited',
   summary: 'Расчёт доступен с ограничениями',
+  source_file_name: 'site.dxf',
+  source_imported_at: '2026-09-01T12:00:00Z',
+  source_owner: null,
+  coordinate_reference: { status: 'declared', crs_id: 'EPSG:32637', source: 'dxf_geodata', axis_order: 'xy', control_points_count: 2, evidence: 'DXF geodata' },
   entries: [
-    { kind: 'site_border', label: 'Граница участка', status: 'verified', layer_names: ['SITE_BORDER'], object_count: 1, used_object_count: 1, used_in_calculation: true, note: 'Слой участвовал в расчёте' },
-    { kind: 'utility', label: 'Инженерные сети', status: 'partial', layer_names: ['UTIL_HEAT'], object_count: 18, used_object_count: 0, used_in_calculation: false, note: 'Часть слоя неполна' },
-    { kind: 'unclassified', label: 'Нераспознанные слои', status: 'partial', layer_names: ['NOTES'], object_count: 4, used_object_count: 0, used_in_calculation: false, note: 'Не участвуют в расчёте' },
+    { kind: 'site_border', label: 'Граница участка', status: 'verified', semantic_confidence: 'high', decision_level: 'advisory', source_file_name: 'site.dxf', source_imported_at: '2026-09-01T12:00:00Z', source_owner: null, layer_names: ['SITE_BORDER'], object_count: 1, used_object_count: 1, used_in_calculation: true, note: 'Слой участвовал в расчёте' },
+    { kind: 'utility', label: 'Инженерные сети', status: 'partial', semantic_confidence: 'medium', decision_level: 'warning', source_file_name: 'site.dxf', source_imported_at: '2026-09-01T12:00:00Z', source_owner: null, layer_names: ['UTIL_HEAT'], object_count: 18, used_object_count: 0, used_in_calculation: false, note: 'Часть слоя неполна' },
+    { kind: 'unclassified', label: 'Нераспознанные слои', status: 'partial', semantic_confidence: 'low', decision_level: 'advisory', source_file_name: 'site.dxf', source_imported_at: '2026-09-01T12:00:00Z', source_owner: null, layer_names: ['NOTES'], object_count: 4, used_object_count: 0, used_in_calculation: false, note: 'Не участвуют в расчёте' },
   ],
   unclassified_layers: ['NOTES'],
   incomplete_layers: ['UTIL_HEAT'],
@@ -33,6 +37,11 @@ describe('DataPassportPanel', () => {
     expect(screen.getAllByText('Не участвует')).not.toHaveLength(0);
     expect(screen.getByText('Массовая посадка требует проверки')).toBeInTheDocument();
     expect(screen.getByText(/Дороги и проезды/)).toBeInTheDocument();
+    expect(screen.getAllByText('site.dxf')).toHaveLength(4);
+    expect(screen.getAllByText('Владелец не указан')).toHaveLength(3);
+    expect(screen.getByText('EPSG:32637')).toBeInTheDocument();
+    expect(screen.getByText('Контрольные точки')).toBeInTheDocument();
+    expect(screen.getByText('Нужна проверка')).toBeInTheDocument();
   });
 
   it('does not render a warning when every reported class is verified', () => {

@@ -17,9 +17,30 @@ describe('ReleasePanel', () => {
     const onCreate = vi.fn();
     render(<ReleasePanel plan={draftPlan} onCreate={onCreate} onDownload={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Собрать черновой пакет' }));
-    expect(onCreate).toHaveBeenCalledWith('draft');
+    expect(onCreate).toHaveBeenCalledWith({ mode: 'draft', scene_horizon: 0 });
     expect(screen.getByRole('button', { name: 'Собрать финальный пакет' })).toBeDisabled();
     expect(screen.getByText(/не является согласованием/)).toBeVisible();
+  });
+
+  it('requires attributable PP-616 and PP-1160 decisions before a final package', () => {
+    const onCreate = vi.fn();
+    const assignedPlan = { ...draftPlan, objects: [{ ...draftPlan.objects![0], species_revision_id: 'tilia@1' }] } as Plan;
+    render(<ReleasePanel plan={assignedPlan} onCreate={onCreate} onDownload={vi.fn()} />);
+
+    const finalButton = screen.getByRole('button', { name: 'Собрать финальный пакет' });
+    expect(finalButton).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Решение по ПП-616'), { target: { value: 'not_applicable' } });
+    fireEvent.change(screen.getByLabelText('Основание решения по ПП-616'), { target: { value: 'Новые посадки без удаления' } });
+    fireEvent.change(screen.getByLabelText('Решение по ПП-1160'), { target: { value: 'not_required' } });
+    fireEvent.change(screen.getByLabelText('Основание решения по ПП-1160'), { target: { value: 'Удаление не предусмотрено' } });
+    fireEvent.change(screen.getByLabelText('Ответственный за проверку'), { target: { value: 'Иванов И И' } });
+
+    expect(finalButton).toBeEnabled();
+    fireEvent.click(finalButton);
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'final',
+      regulatory_basis: expect.objectContaining({ confirmed_by: 'Иванов И И' }),
+    }));
   });
 
   it('downloads the bundle and exposes its individual files', () => {

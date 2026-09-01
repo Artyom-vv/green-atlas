@@ -1,6 +1,6 @@
 import type { PlanObject } from '@green/api-client';
 import { describe, expect, it } from 'vitest';
-import { growthOverlayForecasts } from './MapViewport';
+import { growthOverlayForecasts } from './growthOverlayForecasts';
 
 const object = {
   id: 'tree-1',

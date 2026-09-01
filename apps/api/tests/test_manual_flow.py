@@ -954,7 +954,21 @@ def test_final_release_requires_species_and_has_an_honest_process_scope() -> Non
         json={"species_revision_id": "tilia-cordata@2026-08-28.1", "size_class": "standard"},
     )
     assert assigned.status_code == 200, assigned.json()
-    final = client.post(f"/api/projects/{project_id}/releases", json={"mode": "final", "scene_horizon": 20})
+    missing_basis = client.post(f"/api/projects/{project_id}/releases", json={"mode": "final", "scene_horizon": 20})
+    assert missing_basis.status_code == 400
+    assert "основания ПП-616 и ПП-1160" in missing_basis.json()["message"]
+
+    final = client.post(f"/api/projects/{project_id}/releases", json={
+        "mode": "final",
+        "scene_horizon": 20,
+        "regulatory_basis": {
+            "pp616_status": "not_applicable",
+            "pp616_reference": "Новые посадки без удаления существующих насаждений",
+            "pp1160_status": "not_required",
+            "pp1160_reference": "Удаление и пересадка не входят в эту ревизию",
+            "confirmed_by": "Иванов И И",
+        },
+    })
     assert final.status_code == 200, final.json()
     assert final.json()["status"] == "ready"
     manifest_artifact = next(item for item in final.json()["artifacts"] if item["kind"] == "manifest")
@@ -967,6 +981,9 @@ def test_final_release_requires_species_and_has_an_honest_process_scope() -> Non
     assert "pp1160-permit-service" in registry["applied_rule_ids"]
     assert records["pp616-compensation-process"]["coverage"] == "partial"
     assert records["pp1160-permit-service"]["machine_checkable"] is False
+    assert records["pp1160-permit-service"]["release_gate_machine_checkable"] is True
+    assert "финального выпуска" in records["pp1160-permit-service"]["machine_checkable_scope"]
+    assert manifest["regulatory_basis"]["confirmed_by"] == "Иванов И И"
     assert all("geometry_complete" not in layer for layer in manifest["layer_mappings"])
     assert all(layer["parsing_status"] in {"complete", "partial"} for layer in manifest["layer_mappings"])
     assert all("used_in_calculation" in layer for layer in manifest["layer_mappings"])
@@ -1409,6 +1426,64 @@ def test_fill_density_intent_derives_spacing_from_the_selected_species() -> None
     assert dense.json()["accepted_count"] >= open_.json()["accepted_count"]
 
 
+def test_primary_fill_can_preview_a_deterministic_mixed_group_with_versioned_species() -> None:
+    project_id = prepare_project("Смешанная группа")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [88, 12], [88, 88], [12, 88]])])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    tree_species = next(
+        item for item in client.get("/api/species", params={"kind": "tree"}).json()
+        if item["species_id"] == "sorbus-aucuparia"
+    )
+    shrub_species = next(
+        item for item in client.get("/api/species", params={"kind": "shrub"}).json()
+        if item["species_id"] == "cornus-alba"
+    )
+    request = {
+        "type": "fill",
+        "base_plan_version": version,
+        "plant_kind": "tree",
+        "composition": "mixed",
+        "tree_share": 0.65,
+        "tree_species_revision_id": tree_species["id"],
+        "shrub_species_revision_id": shrub_species["id"],
+        "zone_ids": ["work"],
+        "placement_mode": "count",
+        "target_count": 24,
+        "layout": "natural",
+        "spacing_m": 5,
+        "edge_offset_m": 2,
+        "seed": 47,
+        "spacing_policy": "canopy",
+    }
+
+    first = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json=request)
+    second = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json=request)
+
+    assert first.status_code == second.status_code == 200
+    first_objects = first.json()["change_set"]["additions"]
+    second_objects = second.json()["change_set"]["additions"]
+    assert [(item["kind"], item["x"], item["y"]) for item in first_objects] == [
+        (item["kind"], item["x"], item["y"]) for item in second_objects
+    ]
+    assert {item["kind"] for item in first_objects} == {"tree", "shrub"}
+    assert {item["species_revision_id"] for item in first_objects if item["kind"] == "tree"} == {tree_species["id"]}
+    assert {item["species_revision_id"] for item in first_objects if item["kind"] == "shrub"} == {shrub_species["id"]}
+    assert first.json()["generated_count"] >= first.json()["accepted_count"]
+    assert first.json()["capacity_shortfall"] == max(0, 24 - first.json()["accepted_count"])
+
+    open_trees = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        **request,
+        "composition": "trees",
+        "species_revision_id": tree_species["id"],
+        "tree_species_revision_id": None,
+        "shrub_species_revision_id": None,
+        "spacing_policy": "open",
+    })
+    assert open_trees.status_code == 200, open_trees.json()
+    assert first.json()["effective_spacing_m"] < open_trees.json()["effective_spacing_m"]
+    assert first.json()["accepted_count"] >= open_trees.json()["accepted_count"]
+
+
 def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -> None:
     catalog = client.get("/api/species", params={"kind": "tree"})
     assert catalog.status_code == 200
@@ -1418,7 +1493,10 @@ def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -
     assert len(lime["source_urls"]) >= 2
 
     project_id = prepare_project("Породы и рост")
-    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    select_areas(project_id, [
+        area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]]),
+        area("small", "Малый участок", [[70, 12], [80, 12], [80, 22], [70, 22]]),
+    ])
     opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
     added = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
     object_id = added["objects"][0]["id"]
@@ -1438,6 +1516,28 @@ def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -
     shortlist = client.post(f"/api/projects/{project_id}/species/shortlist", json={"object_ids": [object_id]})
     assert shortlist.status_code == 200
     assert any(item["species"]["id"] == lime["id"] and item["status"] == "review" for item in shortlist.json())
+
+    zone_shortlist = client.post(f"/api/projects/{project_id}/species/shortlist", json={"zone_ids": ["work"]})
+    assert zone_shortlist.status_code == 200, zone_shortlist.json()
+    assert {item["species"]["kind"] for item in zone_shortlist.json()} == {"tree", "shrub"}
+    rowan = next(item for item in zone_shortlist.json() if item["species"]["species_id"] == "sorbus-aucuparia")
+    assert rowan["status"] == "available"
+    assert rowan["selected_area_m2"] == 1104.0
+    assert rowan["estimated_safe_area_m2"] > 0
+    assert rowan["estimated_capacity"] > 0
+    assert rowan["reasons"][0] == "Предварительный выбор для 1 выбранных участков"
+    assert "Ориентировочно до" in rowan["reasons"][1]
+    assert rowan["reasons"][2] == "Корневая архитектура учтена прогнозным диапазоном"
+
+    small_shortlist = client.post(f"/api/projects/{project_id}/species/shortlist", json={"zone_ids": ["small"]})
+    assert small_shortlist.status_code == 200, small_shortlist.json()
+    small_rowan = next(item for item in small_shortlist.json() if item["species"]["species_id"] == "sorbus-aucuparia")
+    assert small_rowan["selected_area_m2"] == 100.0
+    assert small_rowan["estimated_capacity"] < rowan["estimated_capacity"]
+
+    missing_zone = client.post(f"/api/projects/{project_id}/species/shortlist", json={"zone_ids": ["missing"]})
+    assert missing_zone.status_code == 400
+    assert missing_zone.json()["code"] == "BAD_REQUEST"
 
 
 def test_species_kind_mismatch_is_blocked_without_changing_the_plan() -> None:

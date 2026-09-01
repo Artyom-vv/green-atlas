@@ -373,7 +373,7 @@ def get_plan_scene(project_id: str, horizon_year: int = Query(default=0, ge=0, l
 @router.post("/projects/{project_id}/species/shortlist", response_model=list[SpeciesShortlistItem])
 def shortlist_project_species(project_id: str, payload: SpeciesShortlistRequest) -> list[SpeciesShortlistItem]:
     try:
-        return application.shortlist_species(project_id, payload.object_ids)
+        return application.shortlist_species(project_id, payload.object_ids, payload.zone_ids, payload.kind)
     except Exception as error:
         raise handle(error) from error
 

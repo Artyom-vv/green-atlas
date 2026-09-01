@@ -16,6 +16,12 @@ const statusTone: Record<DataPassportEntry['status'], 'success' | 'warning' | 'e
   excluded: 'neutral',
 };
 
+const decisionLabels: Record<DataPassportEntry['decision_level'], string> = {
+  stop: 'Блокирует',
+  warning: 'Нужна проверка',
+  advisory: 'Справочно',
+};
+
 function PassportEntry({ entry }: { entry: DataPassportEntry }) {
   const status = entry.status;
   const layerNames = entry.layer_names ?? [];
@@ -35,6 +41,14 @@ function PassportEntry({ entry }: { entry: DataPassportEntry }) {
         </span>
       </td>
       <td><span className="data-passport__status">{statusLabels[status]}</span></td>
+      <td><span className="data-passport__status">{decisionLabels[entry.decision_level ?? 'advisory']}</span></td>
+      <td>
+        <span className="data-passport__provenance-cell">
+          <small>{entry.source_file_name ?? 'Источник не указан'}</small>
+          <small>{entry.source_imported_at ? new Date(entry.source_imported_at).toLocaleDateString('ru-RU') : 'Дата не указана'}</small>
+          <small>{entry.source_owner ?? 'Владелец не указан'}</small>
+        </span>
+      </td>
     </tr>
   );
 }
@@ -55,8 +69,15 @@ export function DataPassportPanel({ passport }: { passport: DataPassport }) {
           label={isBlocked ? 'Не готово' : isLimited ? 'Ограниченная проверка' : 'Проверено'}
         />
       </header>
+      <dl className="data-passport__provenance">
+        <div><dt>Источник</dt><dd>{passport.source_file_name ?? 'Не указан'}</dd></div>
+        <div><dt>Дата импорта</dt><dd>{passport.source_imported_at ? new Date(passport.source_imported_at).toLocaleDateString('ru-RU') : 'Не указана'}</dd></div>
+        <div><dt>Владелец данных</dt><dd>{passport.source_owner ?? 'Не указан'}</dd></div>
+        <div><dt>Система координат</dt><dd>{passport.coordinate_reference?.crs_id ?? 'Не подтверждена'}</dd></div>
+        <div><dt>Контрольные точки</dt><dd>{passport.coordinate_reference?.control_points_count ?? 0}</dd></div>
+      </dl>
       <DataTable className="data-passport__table">
-        <thead><tr><th>Класс</th><th>Объектов</th><th>В расчёте</th><th>Состояние</th></tr></thead>
+        <thead><tr><th>Класс</th><th>Объектов</th><th>В расчёте</th><th>Состояние</th><th>Решение</th><th>Происхождение</th></tr></thead>
         <tbody>{(passport.entries ?? []).map((entry) => <PassportEntry key={entry.kind} entry={entry} />)}</tbody>
       </DataTable>
       {(passport.gaps ?? []).length ? (

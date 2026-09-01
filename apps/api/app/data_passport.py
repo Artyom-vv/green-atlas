@@ -86,6 +86,11 @@ def build_data_passport(project: Project) -> DataPassport:
     ]
 
     entries: list[DataPassportEntry] = []
+    source_provenance = {
+        "source_file_name": project.source_file.name if project.source_file else None,
+        "source_imported_at": project.source_file.imported_at if project.source_file else None,
+        "source_owner": project.source_file.owner if project.source_file else None,
+    }
     missing_classes: list[str] = []
     critical_gaps: list[str] = []
     used_layers: list[str] = []
@@ -135,6 +140,18 @@ def build_data_passport(project: Project) -> DataPassport:
         else:
             status = "verified"
             note = "Слой распознан и готов к проверке" if not used else "Слой участвовал в расчёте"
+        if status == "verified":
+            semantic_confidence = "high"
+            decision_level = "advisory"
+        elif key == "site_border" and status in {"missing", "excluded"}:
+            semantic_confidence = "low"
+            decision_level = "stop"
+        elif key in CRITICAL_CLASSES:
+            semantic_confidence = "medium" if status == "partial" else "low"
+            decision_level = "warning"
+        else:
+            semantic_confidence = "medium" if status == "partial" else "low"
+            decision_level = "advisory"
         entries.append(DataPassportEntry(
             kind=key,
             label=label,
@@ -143,6 +160,9 @@ def build_data_passport(project: Project) -> DataPassport:
             object_count=object_count,
             used_object_count=used_object_count if used else 0,
             used_in_calculation=used,
+            semantic_confidence=semantic_confidence,
+            decision_level=decision_level,
+            **source_provenance,
             note=note,
         ))
 
@@ -155,6 +175,9 @@ def build_data_passport(project: Project) -> DataPassport:
             object_count=sum(layer.object_count for layer in source_layers if layer.source_name in unclassified),
             used_object_count=0,
             used_in_calculation=False,
+            semantic_confidence="low",
+            decision_level="warning",
+            **source_provenance,
             note="Не участвуют в расчёте, пока им не назначен класс",
         ))
 
@@ -200,6 +223,10 @@ def build_data_passport(project: Project) -> DataPassport:
         calculation_status=calculation_status,
         mass_placement_status=mass_status,
         summary=summary,
+        source_file_name=project.source_file.name if project.source_file else None,
+        source_imported_at=project.source_file.imported_at if project.source_file else None,
+        source_owner=project.source_file.owner if project.source_file else None,
+        coordinate_reference=project.coordinate_reference.model_copy(deep=True),
         entries=entries,
         unclassified_layers=unclassified,
         incomplete_layers=incomplete,

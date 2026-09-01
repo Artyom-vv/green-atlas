@@ -834,6 +834,13 @@ export interface components {
             mass_placement_status: "verified" | "limited" | "blocked";
             /** Summary */
             summary: string;
+            /** Source File Name */
+            source_file_name?: string | null;
+            /** Source Imported At */
+            source_imported_at?: string | null;
+            /** Source Owner */
+            source_owner?: string | null;
+            coordinate_reference?: components["schemas"]["CoordinateReference"];
             /** Entries */
             entries?: components["schemas"]["DataPassportEntry"][];
             /** Unclassified Layers */
@@ -887,6 +894,24 @@ export interface components {
              * @default false
              */
             used_in_calculation: boolean;
+            /**
+             * Semantic Confidence
+             * @default low
+             * @enum {string}
+             */
+            semantic_confidence: "high" | "medium" | "low";
+            /**
+             * Decision Level
+             * @default advisory
+             * @enum {string}
+             */
+            decision_level: "stop" | "warning" | "advisory";
+            /** Source File Name */
+            source_file_name?: string | null;
+            /** Source Imported At */
+            source_imported_at?: string | null;
+            /** Source Owner */
+            source_owner?: string | null;
             /** Note */
             note: string;
         };
@@ -984,6 +1009,13 @@ export interface components {
              * @enum {string}
              */
             plant_kind: "tree" | "shrub";
+            /** Composition */
+            composition?: ("trees" | "shrubs" | "mixed") | null;
+            /**
+             * Tree Share
+             * @default 0.65
+             */
+            tree_share: number;
             /** Zone Ids */
             zone_ids: string[];
             /**
@@ -1033,6 +1065,10 @@ export interface components {
             size_class: "unspecified" | "sapling" | "standard" | "large";
             /** Species Revision Id */
             species_revision_id?: string | null;
+            /** Tree Species Revision Id */
+            tree_species_revision_id?: string | null;
+            /** Shrub Species Revision Id */
+            shrub_species_revision_id?: string | null;
             /**
              * Spacing Policy
              * @default balanced
@@ -1196,8 +1232,23 @@ export interface components {
             type: "row" | "fill";
             /** Requested Count */
             requested_count: number;
+            /**
+             * Generated Count
+             * @default 0
+             */
+            generated_count: number;
             /** Accepted Count */
             accepted_count: number;
+            /**
+             * Rejected Count
+             * @default 0
+             */
+            rejected_count: number;
+            /**
+             * Capacity Shortfall
+             * @default 0
+             */
+            capacity_shortfall: number;
             /** Effective Spacing M */
             effective_spacing_m?: number | null;
             /** Skipped */
@@ -1758,6 +1809,43 @@ export interface components {
              */
             max_sites: number;
         };
+        /**
+         * RegulatoryReleaseBasis
+         * @description Human-confirmed process basis attached to a final project revision.
+         *
+         *     This is deliberately not a claim that the service issued a permit.  It
+         *     makes the PP-616/PP-1160 decision explicit, attributable and auditable
+         *     before a package may be labelled final.
+         */
+        RegulatoryReleaseBasis: {
+            /**
+             * Pp616 Status
+             * @default pending
+             * @enum {string}
+             */
+            pp616_status: "pending" | "not_applicable" | "documented";
+            /**
+             * Pp616 Reference
+             * @default
+             */
+            pp616_reference: string;
+            /**
+             * Pp1160 Status
+             * @default pending
+             * @enum {string}
+             */
+            pp1160_status: "pending" | "not_required" | "documented";
+            /**
+             * Pp1160 Reference
+             * @default
+             */
+            pp1160_reference: string;
+            /**
+             * Confirmed By
+             * @default
+             */
+            confirmed_by: string;
+        };
         /** ReleaseArtifact */
         ReleaseArtifact: {
             /** Id */
@@ -1791,6 +1879,7 @@ export interface components {
              * @default 20
              */
             scene_horizon: number;
+            regulatory_basis?: components["schemas"]["RegulatoryReleaseBasis"] | null;
         };
         /** ReleasePackage */
         ReleasePackage: {
@@ -1980,6 +2069,8 @@ export interface components {
             size: number;
             /** Imported At */
             imported_at: string;
+            /** Owner */
+            owner?: string | null;
             /** Dxf Version */
             dxf_version: string;
             /** Units */
@@ -2066,13 +2157,25 @@ export interface components {
              * @enum {string}
              */
             status: "available" | "review";
+            /** Selected Area M2 */
+            selected_area_m2?: number | null;
+            /** Estimated Safe Area M2 */
+            estimated_safe_area_m2?: number | null;
+            /** Estimated Capacity */
+            estimated_capacity?: number | null;
+            /** Estimated Mature Diameter M */
+            estimated_mature_diameter_m?: number | null;
             /** Reasons */
             reasons?: string[];
         };
         /** SpeciesShortlistRequest */
         SpeciesShortlistRequest: {
             /** Object Ids */
-            object_ids: string[];
+            object_ids?: string[];
+            /** Zone Ids */
+            zone_ids?: string[];
+            /** Kind */
+            kind?: ("tree" | "shrub") | null;
         };
         /** ValidationError */
         ValidationError: {

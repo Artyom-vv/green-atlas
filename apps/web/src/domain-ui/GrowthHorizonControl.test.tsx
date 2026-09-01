@@ -40,7 +40,7 @@ describe('GrowthHorizonControl', () => {
 
     expect(onChange).toHaveBeenCalledWith(23);
     expect(slider).toHaveValue('23');
-    expect(screen.getByText('23 лет')).toBeVisible();
+    expect(screen.getByText('23 года')).toBeVisible();
     expect(screen.getByText('Диаметр кроны').nextElementSibling).toHaveTextContent('6.8–14.1 м');
     expect(screen.getByText('Корневая зона').nextElementSibling).toHaveTextContent('5.1–17.0 м');
   });
@@ -56,7 +56,7 @@ describe('GrowthHorizonControl', () => {
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenLastCalledWith(23);
-    expect(screen.getByText('23 лет')).toBeVisible();
+    expect(screen.getByText('23 года')).toBeVisible();
   });
 
   it('uses change as a fallback and leaves unsupported years without a forecast', () => {
@@ -71,7 +71,7 @@ describe('GrowthHorizonControl', () => {
     fireEvent.change(slider, { target: { value: '23' } });
 
     expect(onChange).toHaveBeenCalledWith(23);
-    expect(screen.getByText('Нет данных для этого горизонта.')).toBeVisible();
+    expect(screen.getByText('Нет данных для этого горизонта')).toBeVisible();
     expect(screen.queryByText('Диаметр кроны')).not.toBeInTheDocument();
   });
 });

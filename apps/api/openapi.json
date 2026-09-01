@@ -2935,6 +2935,42 @@
             "type": "string",
             "title": "Summary"
           },
+          "source_file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File Name"
+          },
+          "source_imported_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Imported At"
+          },
+          "source_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Owner"
+          },
+          "coordinate_reference": {
+            "$ref": "#/components/schemas/CoordinateReference"
+          },
           "entries": {
             "items": {
               "$ref": "#/components/schemas/DataPassportEntry"
@@ -3048,6 +3084,59 @@
             "type": "boolean",
             "title": "Used In Calculation",
             "default": false
+          },
+          "semantic_confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Semantic Confidence",
+            "default": "low"
+          },
+          "decision_level": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "warning",
+              "advisory"
+            ],
+            "title": "Decision Level",
+            "default": "advisory"
+          },
+          "source_file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File Name"
+          },
+          "source_imported_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Imported At"
+          },
+          "source_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Owner"
           },
           "note": {
             "type": "string",
@@ -3251,6 +3340,29 @@
             "title": "Plant Kind",
             "default": "tree"
           },
+          "composition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "trees",
+                  "shrubs",
+                  "mixed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composition"
+          },
+          "tree_share": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Tree Share",
+            "default": 0.65
+          },
           "zone_ids": {
             "items": {
               "type": "string"
@@ -3348,6 +3460,28 @@
               }
             ],
             "title": "Species Revision Id"
+          },
+          "tree_species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tree Species Revision Id"
+          },
+          "shrub_species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shrub Species Revision Id"
           },
           "spacing_policy": {
             "type": "string",
@@ -3712,10 +3846,28 @@
             "minimum": 0.0,
             "title": "Requested Count"
           },
+          "generated_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Generated Count",
+            "default": 0
+          },
           "accepted_count": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Accepted Count"
+          },
+          "rejected_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rejected Count",
+            "default": 0
+          },
+          "capacity_shortfall": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Capacity Shortfall",
+            "default": 0
           },
           "effective_spacing_m": {
             "anyOf": [
@@ -5344,6 +5496,51 @@
         ],
         "title": "RecommendationRequest"
       },
+      "RegulatoryReleaseBasis": {
+        "properties": {
+          "pp616_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "not_applicable",
+              "documented"
+            ],
+            "title": "Pp616 Status",
+            "default": "pending"
+          },
+          "pp616_reference": {
+            "type": "string",
+            "maxLength": 240,
+            "title": "Pp616 Reference",
+            "default": ""
+          },
+          "pp1160_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "not_required",
+              "documented"
+            ],
+            "title": "Pp1160 Status",
+            "default": "pending"
+          },
+          "pp1160_reference": {
+            "type": "string",
+            "maxLength": 240,
+            "title": "Pp1160 Reference",
+            "default": ""
+          },
+          "confirmed_by": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Confirmed By",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "RegulatoryReleaseBasis",
+        "description": "Human-confirmed process basis attached to a final project revision.\n\nThis is deliberately not a claim that the service issued a permit.  It\nmakes the PP-616/PP-1160 decision explicit, attributable and auditable\nbefore a package may be labelled final."
+      },
       "ReleaseArtifact": {
         "properties": {
           "id": {
@@ -5413,6 +5610,16 @@
             "minimum": 0.0,
             "title": "Scene Horizon",
             "default": 20
+          },
+          "regulatory_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegulatoryReleaseBasis"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -5857,6 +6064,17 @@
             "type": "string",
             "title": "Imported At"
           },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
           "dxf_version": {
             "type": "string",
             "title": "Dxf Version"
@@ -6076,6 +6294,54 @@
             ],
             "title": "Status"
           },
+          "selected_area_m2": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Area M2"
+          },
+          "estimated_safe_area_m2": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Safe Area M2"
+          },
+          "estimated_capacity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Capacity"
+          },
+          "estimated_mature_diameter_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Mature Diameter M"
+          },
           "reasons": {
             "items": {
               "type": "string"
@@ -6099,14 +6365,33 @@
             },
             "type": "array",
             "maxItems": 5000,
-            "minItems": 1,
             "title": "Object Ids"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Zone Ids"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "shrub"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
           }
         },
         "type": "object",
-        "required": [
-          "object_ids"
-        ],
         "title": "SpeciesShortlistRequest"
       },
       "ValidationError": {

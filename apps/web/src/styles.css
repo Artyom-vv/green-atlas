@@ -111,17 +111,25 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .data-passport__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .data-passport__header h2 { margin: 0; color: var(--color-neutral-800); font-size: 16px; line-height: 22px; font-weight: 600; }
 .data-passport__header p { max-width: 480px; margin: 4px 0 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.data-passport__provenance { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 10px 0; border-block: 1px solid var(--color-neutral-200); }
+.data-passport__provenance div { min-width: 0; }
+.data-passport__provenance dt { color: var(--color-neutral-500); font-size: 10px; line-height: 14px; }
+.data-passport__provenance dd { overflow: hidden; margin: 2px 0 0; color: var(--color-neutral-800); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .data-passport__table { table-layout: fixed; }
-.data-passport__table th:first-child, .data-passport__table td:first-child { width: 44%; }
-.data-passport__table th:nth-child(2), .data-passport__table td:nth-child(2) { width: 96px; }
-.data-passport__table th:nth-child(3), .data-passport__table td:nth-child(3) { width: 124px; }
-.data-passport__table th:last-child, .data-passport__table td:last-child { width: 124px; }
+.data-passport__table th:first-child, .data-passport__table td:first-child { width: 26%; }
+.data-passport__table th:nth-child(2), .data-passport__table td:nth-child(2) { width: 68px; }
+.data-passport__table th:nth-child(3), .data-passport__table td:nth-child(3) { width: 104px; }
+.data-passport__table th:nth-child(4), .data-passport__table td:nth-child(4) { width: 90px; }
+.data-passport__table th:nth-child(5), .data-passport__table td:nth-child(5) { width: 104px; }
+.data-passport__table th:last-child, .data-passport__table td:last-child { width: 150px; }
 .data-passport__class { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .data-passport__class > small { overflow: hidden; color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 10px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .data-passport__usage { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; }
 .data-passport__usage--used { color: var(--color-green-700); }
 .data-passport__usage--not-used { color: var(--color-neutral-500); }
 .data-passport__status { color: var(--color-neutral-600); font-size: 11px; white-space: nowrap; }
+.data-passport__provenance-cell { display: flex; min-width: 0; flex-direction: column; gap: 2px; color: var(--color-neutral-500); font-size: 10px; line-height: 13px; }
+.data-passport__provenance-cell small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .data-passport__gaps { display: block; max-width: 700px; }
 .data-passport__footnote { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .data-passport__footnote svg { flex: none; color: var(--color-green-700); }
@@ -333,6 +341,10 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .pattern-live-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-left: 2px solid var(--color-blue-600); background: var(--color-blue-100); }
 .pattern-live-summary strong, .pattern-live-summary span { font-size: 12px; line-height: 18px; }
 .pattern-live-summary span { color: var(--color-neutral-600); font-family: var(--font-mono); }
+.pattern-funnel { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.pattern-funnel div { min-width: 0; }
+.pattern-funnel dt { color: var(--color-neutral-500); font-size: 10px; line-height: 14px; }
+.pattern-funnel dd { margin: 2px 0 0; color: var(--color-neutral-800); font: 500 12px/16px var(--font-mono); }
 .pattern-tool-panel > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
 .growth-horizon-control { display: grid; gap: 8px; padding: 12px 0; }
 .growth-horizon-control__heading { display: flex; align-items: baseline; justify-content: space-between; }
@@ -351,6 +363,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .species-choice__item strong { font-size: 13px; line-height: 18px; }
 .species-choice__item small { color: var(--color-neutral-500); font-size: 11px; line-height: 16px; }
 .species-choice__item b { flex: none; color: var(--color-neutral-600); font: 500 11px/16px 'IBM Plex Mono', monospace; }
+.species-choice__item .species-choice__measure { flex: none; justify-items: end; text-align: right; }
 .species-choice__item.is-selected { border-color: var(--color-blue-600); background: var(--color-blue-100); }
 .object-species > strong { font-size: 13px; line-height: 18px; }
 .object-species > span { max-width: 28ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
@@ -404,6 +417,9 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .release-package__summary strong { color: var(--color-neutral-800); font-size: 13px; line-height: 18px; }
 .release-package__summary span, .release-package__note { max-width: 30ch; color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .release-package__readiness { display: grid; gap: 8px; padding-block: 4px; }
+.release-package__basis { display: grid; gap: 10px; padding-block: 12px; border-block: 1px solid var(--color-neutral-200); }
+.release-package__basis h3 { margin: 0; color: var(--color-neutral-800); font-size: 13px; line-height: 18px; }
+.release-package__basis .ui-form-field { gap: 4px; }
 .release-package__files { display: grid; border-top: 1px solid var(--color-neutral-200); }
 .release-package__files button { min-height: 52px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 20px; gap: 8px; align-items: center; padding: 8px 0; border: 0; border-bottom: 1px solid var(--color-neutral-200); color: var(--color-neutral-700); background: transparent; text-align: left; cursor: pointer; }
 .release-package__files button:hover { color: var(--color-primary); }

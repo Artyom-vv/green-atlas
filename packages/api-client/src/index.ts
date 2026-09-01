@@ -45,6 +45,7 @@ export type SceneSnapshot = Omit<components['schemas']['SceneSnapshot'], 'object
 export type ValidationIssue = components['schemas']['ValidationIssue'];
 export type PlacementCheck = components['schemas']['PlacementCheck'];
 export type ExportArtifact = components['schemas']['ExportArtifact'];
+export type RegulatoryReleaseBasis = components['schemas']['RegulatoryReleaseBasis'];
 export type ReleaseCreateRequest = components['schemas']['ReleaseCreateRequest'];
 export type ReleaseArtifact = components['schemas']['ReleaseArtifact'];
 export type ReleasePackage = components['schemas']['ReleasePackage'];
@@ -146,7 +147,7 @@ export const api = {
   previewRecommendation: (projectId: string, recommendation: RecommendationRequest, signal?: AbortSignal) => request<RecommendationPreview>(`/api/projects/${projectId}/plan/recommendations/preview`, { ...json(recommendation), signal }),
   previewBrush: (projectId: string, brush: BrushPreviewRequest, signal?: AbortSignal) => request<BrushPreview>(`/api/projects/${projectId}/plan/brush/preview`, { ...json(brush), signal }),
   getPlanScene: (projectId: string, horizonYear: number) => request<SceneSnapshot>(`/api/projects/${projectId}/plan/scene?horizon_year=${horizonYear}`),
-  shortlistSpecies: (projectId: string, objectIds: string[]) => request<SpeciesShortlistItem[]>(`/api/projects/${projectId}/species/shortlist`, json({ object_ids: objectIds })),
+  shortlistSpecies: (projectId: string, scope: string[] | { zoneIds: string[] }) => request<SpeciesShortlistItem[]>(`/api/projects/${projectId}/species/shortlist`, json(Array.isArray(scope) ? { object_ids: scope } : { zone_ids: scope.zoneIds })),
   updatePlanObject: (projectId: string, objectId: string, object: { x?: number; y?: number; radius?: number }) => request<Plan>(`/api/projects/${projectId}/plan/objects/${objectId}`, { ...json(object), method: 'PATCH' }),
   deletePlanObjects: (projectId: string, ids: string[]) => request<Plan>(`/api/projects/${projectId}/plan/objects/delete`, json({ ids })),
   getPlanHistory: (projectId: string) => request<PlanHistoryState>(`/api/projects/${projectId}/plan/history`),

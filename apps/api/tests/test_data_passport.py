@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app import api as api_module
-from app.contracts import CoordinateReference, GeometrySnapshot, Layer, LayerKind, Project
+from app.contracts import CoordinateReference, GeometrySnapshot, Layer, LayerKind, Project, SourceFile
 from app.data_passport import build_data_passport
 from app.main import app
 
@@ -57,6 +57,7 @@ def test_data_passport_reports_real_layers_used_by_calculated_map() -> None:
             {"type": "Feature", "id": "green", "properties": {"source_layer": "GREEN_EXISTING", "kind": "existing_green"}, "geometry": {"type": "Point", "coordinates": [8, 8]}},
         ]}),
         coordinate_reference=CoordinateReference(status="declared", crs_id="EPSG:32637", name="test", source="dxf_geodata", axis_order="xy"),
+        source_file=SourceFile(name="survey.dxf", size=100, imported_at="2026-09-01T10:00:00+00:00", owner="ГБУ Озеленение", dxf_version="R2018", units="m", entity_count=17),
     )
 
     passport = build_data_passport(project)
@@ -64,6 +65,15 @@ def test_data_passport_reports_real_layers_used_by_calculated_map() -> None:
 
     assert passport.calculation_status == "ready"
     assert passport.mass_placement_status == "limited"
+    assert passport.source_file_name == "survey.dxf"
+    assert passport.source_imported_at == "2026-09-01T10:00:00+00:00"
+    assert passport.source_owner == "ГБУ Озеленение"
+    assert passport.coordinate_reference.crs_id == "EPSG:32637"
+    assert by_kind["building"].semantic_confidence == "medium"
+    assert by_kind["building"].decision_level == "warning"
+    assert all(entry.source_file_name == "survey.dxf" for entry in passport.entries)
+    assert all(entry.source_imported_at == "2026-09-01T10:00:00+00:00" for entry in passport.entries)
+    assert all(entry.source_owner == "ГБУ Озеленение" for entry in passport.entries)
     assert by_kind["site_border"].used_in_calculation is True
     assert by_kind["road"].used_in_calculation is True
     assert by_kind["existing_green"].used_in_calculation is True

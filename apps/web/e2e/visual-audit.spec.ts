@@ -814,8 +814,15 @@ test('placement flow creates a typed group across the selected area as one revis
   const before = await page.request.get(`${apiBase}/projects/${projectId}`);
   const beforeProject = await before.json() as { plan: { version: number; objects: unknown[] } };
 
+  const shortlistResponse = page.waitForResponse((response) => response.url().includes('/species/shortlist')
+    && response.request().method() === 'POST'
+    && response.request().postData()?.includes('"zone_ids":["area-e2e"]') === true);
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  expect((await shortlistResponse).ok()).toBe(true);
   await expect(page.getByText('По выбранным участкам')).toBeVisible();
+  await expect(page.getByText('Порода для участка')).toBeVisible();
+  await expect(page.getByText(/Корни:/).first()).toBeVisible();
+  await expect(page.getByText(/Предварительно подходит|Нужна проверка/).first()).toBeVisible();
   const zoneCheckbox = page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' });
   await expect(zoneCheckbox).toBeChecked();
   const map = page.getByLabel('Карта проекта озеленения');
@@ -850,7 +857,7 @@ test('placement flow creates a typed group across the selected area as one revis
   await horizon.focus();
   for (let year = 0; year < 23; year += 1) await page.keyboard.press('ArrowRight');
   await expect(horizon).toHaveValue('23');
-  await expect(page.getByText('23 лет')).toBeVisible();
+  await expect(page.getByText('23 года')).toBeVisible();
   await expect(map).toHaveAttribute('data-growth-horizon', '23');
   await expect(map).toHaveAttribute('data-growth-overlay', /:canopy:/);
   const beforeApply = await page.request.get(`${apiBase}/projects/${projectId}`);
@@ -886,10 +893,52 @@ test('primary workspace exposes one guided placement action and direct numeric i
 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
+  const mixedResponse = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
+    && response.request().method() === 'POST'
+    && response.request().postData()?.includes('"composition":"mixed"') === true
+    && response.request().postData()?.includes('"spacing_policy":"canopy"') === true);
+  await page.getByLabel('Состав группы').selectOption('mixed');
+  await page.getByLabel('Плотность группы').selectOption('canopy');
+  const mixedHttp = await mixedResponse;
+  const mixedRequest = mixedHttp.request().postDataJSON() as { composition: string; tree_species_revision_id?: string; shrub_species_revision_id?: string };
+  const mixed = await mixedHttp.json() as { accepted_count: number; effective_spacing_m: number; change_set: { additions: Array<{ kind: string }> } };
+  expect(mixedRequest).toEqual(expect.objectContaining({ composition: 'mixed' }));
+  expect(mixedRequest.tree_species_revision_id).toBeTruthy();
+  expect(mixedRequest.shrub_species_revision_id).toBeTruthy();
+  expect(mixed.change_set.additions.some((item) => item.kind === 'shrub')).toBe(true);
+
+  const treesResponse = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
+    && response.request().method() === 'POST'
+    && response.request().postData()?.includes('"composition":"trees"') === true
+    && response.request().postData()?.includes('"spacing_policy":"open"') === true);
+  await page.getByLabel('Состав группы').selectOption('trees');
+  await page.getByLabel('Плотность группы').selectOption('open');
+  const treesHttp = await treesResponse;
+  const treesRequest = treesHttp.request().postDataJSON() as { composition: string; species_revision_id?: string; shrub_species_revision_id?: string };
+  const trees = await treesHttp.json() as { accepted_count: number; effective_spacing_m: number };
+  expect(treesRequest.composition).toBe('trees');
+  expect(treesRequest.species_revision_id).toBeTruthy();
+  expect(treesRequest.shrub_species_revision_id).toBeUndefined();
+  expect(mixed.effective_spacing_m).toBeLessThan(trees.effective_spacing_m);
+  expect(mixed.accepted_count).toBeGreaterThanOrEqual(trees.accepted_count);
+
   const count = page.getByRole('spinbutton', { name: 'Количество посадок' });
+  const previewResponse = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
+    && response.request().method() === 'POST'
+    && response.request().postData()?.includes('"target_count":5000') === true);
   await count.fill('5000');
   await expect(count).toHaveValue('5000');
-  await expect(page.getByText('Шаг 2 из 3')).toBeVisible();
+  const preview = await (await previewResponse).json() as { requested_count: number; generated_count: number; accepted_count: number; rejected_count: number; capacity_shortfall: number };
+  expect(preview.requested_count).toBe(5000);
+  expect(preview.generated_count).toBeGreaterThan(0);
+  expect(preview.accepted_count + preview.rejected_count + preview.capacity_shortfall).toBe(5000);
+  const funnel = page.getByRole('group', { name: 'Воронка расчёта' });
+  await expect(funnel).toContainText('Запрошено5000');
+  await expect(funnel).toContainText(`Сгенерировано${preview.generated_count}`);
+  await expect(funnel).toContainText(`Допустимо${preview.accepted_count}`);
+  await expect(funnel).toContainText(`Отклонено${preview.rejected_count}`);
+  await expect(funnel).toContainText(`Не вместилось${preview.capacity_shortfall}`);
+  await expect(page.getByText('Шаг 3 из 3')).toBeVisible();
 });
 
 test('working areas remain manageable after the editor is opened', async ({ page }) => {
@@ -927,86 +976,6 @@ test('working areas remain manageable after the editor is opened', async ({ page
   await expect(page.getByText('Сначала перенесите или удалите 3 посадки')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Удалить Главная аллея' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Удалить Резервный участок' })).toBeEnabled();
-});
-
-test.skip('legacy recommendation surface is removed from the primary flow', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openManualPlan(page);
-  const projectId = new URL(page.url()).pathname.split('/')[2];
-  const before = await page.request.get(`${apiBase}/projects/${projectId}`);
-  const beforePlan = (await before.json() as { plan: { version: number; objects: unknown[] } }).plan;
-
-  await page.getByRole('button', { name: 'Предложить посадки' }).click();
-  await expect(page.getByText('Один проверяемый вариант')).toBeVisible();
-  await page.getByLabel('Приоритет').selectOption('low_future_conflict');
-  await page.getByRole('button', { name: 'Показать', exact: true }).click();
-  await expect(page.getByText('Предложение готово')).toBeVisible();
-  await expect(page.getByText('Чего пока не знаем')).toBeVisible();
-  await expect(page.getByText(/Инсоляция и тени/)).toBeVisible();
-
-  let viewportRequests = 0;
-  page.on('request', (request) => { if (request.url().includes('/map-features?')) viewportRequests += 1; });
-  await page.getByRole('button', { name: 'Применить' }).click();
-  await expect(page.getByText('Предложение готово')).toHaveCount(0);
-  await page.waitForTimeout(180);
-  expect(viewportRequests).toBe(0);
-
-  const after = await page.request.get(`${apiBase}/projects/${projectId}`);
-  const afterPlan = (await after.json() as { plan: { version: number; objects: unknown[] } }).plan;
-  expect(afterPlan.version).toBe(beforePlan.version + 1);
-  expect(afterPlan.objects.length).toBeGreaterThan(beforePlan.objects.length);
-  await expect(page.getByRole('button', { name: /Отменить: Предложение посадок/ })).toBeEnabled();
-});
-
-test.skip('legacy brush surface is removed from the primary flow', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openManualPlan(page);
-  const projectId = new URL(page.url()).pathname.split('/')[2];
-  const before = await page.request.get(`${apiBase}/projects/${projectId}`);
-  const beforePlan = (await before.json() as { plan: { version: number; objects: unknown[] } }).plan;
-  const map = page.getByLabel('Карта проекта озеленения');
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const sourceExtent = [-5, -5, 125, 95] as const;
-  const padding = 28;
-  const resolution = Math.max((sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2), (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2));
-  const point = (x: number, y: number) => ({
-    x: box!.x + box!.width / 2 + (x - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (y - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
-  });
-  const drag = async (start: { x: number; y: number }, end: { x: number; y: number }) => {
-    await page.mouse.move(start.x, start.y);
-    await page.mouse.down();
-    await page.mouse.move(end.x, end.y, { steps: 12 });
-    await page.mouse.up();
-  };
-
-  await page.getByRole('button', { name: 'Кисть посадок' }).click();
-  await expect(page.getByText('Проведите по карте')).toBeVisible();
-  await drag(point(16, 30), point(56, 30));
-  await page.keyboard.down('Shift');
-  await drag(point(16, 34), point(56, 34));
-  await page.keyboard.up('Shift');
-  await page.keyboard.down('Alt');
-  await drag(point(16, 20), point(44, 20));
-  await page.keyboard.up('Alt');
-  await expect(page.getByText('3 мазка в черновике')).toBeVisible();
-  await expect(page.getByText('Добавление: 2. Вычитание: 1.')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Показать', exact: true }).click();
-  await expect(page.getByText(/Добавится:/)).toBeVisible();
-  await expect(page.getByText(/Удалится: 2/)).toBeVisible();
-  let viewportRequests = 0;
-  page.on('request', (request) => { if (request.url().includes('/map-features?')) viewportRequests += 1; });
-  await page.getByRole('button', { name: 'Применить' }).click();
-  await page.waitForTimeout(180);
-  expect(viewportRequests).toBe(0);
-
-  const after = await page.request.get(`${apiBase}/projects/${projectId}`);
-  const afterPlan = (await after.json() as { plan: { version: number; objects: unknown[] } }).plan;
-  expect(afterPlan.version).toBe(beforePlan.version + 1);
-  expect(afterPlan.objects.length).toBeGreaterThan(3);
-  await expect(page.getByRole('button', { name: /Отменить: Кисть/ })).toBeEnabled();
 });
 
 test('area-scoped brush subtraction preserves locked plants and undoes as one revision', async ({ page }) => {
@@ -1172,54 +1141,38 @@ test('growth horizon is controlled at an arbitrary year and updates dimensions p
   const initialOverlay = await map.getAttribute('data-growth-overlay');
   expect(initialOverlay).toContain(':canopy:');
 
-  // Drive the native range through its real keyboard interaction. No value
-  // property is assigned from the test; each ArrowRight produces the same
-  // input/change sequence as an operator's key press.
-  await slider.focus();
-  for (let year = 0; year < 23; year += 1) await page.keyboard.press('ArrowRight');
-
+  const sliderBox = await slider.boundingBox();
+  expect(sliderBox).not.toBeNull();
+  const thumbRadius = 8;
+  await page.mouse.click(sliderBox!.x + thumbRadius + (sliderBox!.width - thumbRadius * 2) * 23 / 40, sliderBox!.y + sliderBox!.height / 2);
   await expect(slider).toHaveValue('23');
-  await expect(page.getByText('23 лет')).toBeVisible();
+  await expect(page.getByText('23 года')).toBeVisible();
   await expect(page.getByText('Диаметр кроны').locator('..').getByText('6.8–14.0 м')).toBeVisible();
   await expect(page.getByText('Корневая зона').locator('..').getByText('5.1–16.8 м')).toBeVisible();
   await expect(map).toHaveAttribute('data-growth-horizon', '23');
   await expect(overlay).toContainText('Слой прогноза:');
   await expect(map).toHaveAttribute('data-growth-overlay', /:canopy:3\.423-7\.000/);
   expect(await map.getAttribute('data-growth-overlay')).not.toBe(initialOverlay);
-});
 
-test.skip('decorative 3D stays hidden until it is linked to the DXF context', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openManualPlan(page);
-  const loadedBefore = await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('SceneReview')));
-  expect(loadedBefore).toBe(false);
-  await page.evaluate(() => { (window as unknown as { __greenMapNode?: Element }).__greenMapNode = document.querySelector('[aria-label="Карта проекта озеленения"]') ?? undefined; });
-  let sceneRequests = 0;
-  let viewportRequests = 0;
-  page.on('request', (request) => {
-    if (request.url().includes('/plan/scene')) sceneRequests += 1;
-    if (request.url().includes('/map-features?')) viewportRequests += 1;
-  });
-  await page.waitForTimeout(250);
-  viewportRequests = 0;
+  await slider.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(slider).toHaveValue('24');
+  await expect(page.getByText('24 года')).toBeVisible();
+  const diameterText = await page.getByText('Диаметр кроны').locator('xpath=following-sibling::dd[1]').textContent();
+  const diameterMax = Number(diameterText?.match(/–([\d.]+) м/)?.[1]);
+  expect(diameterMax).toBeGreaterThan(0);
 
-  await page.getByRole('button', { name: '3D', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Параметрический 3D-предпросмотр' })).toBeVisible();
-  await expect(page.getByLabel('3D-сцена посадок')).toBeVisible();
-  await expect(page.getByText('3 объектов')).toBeVisible();
-  await expect(page.getByText('Рельеф и высоты зданий не заданы')).toBeVisible();
-  await expect.poll(() => sceneRequests).toBe(1);
-  const loadedAfter = await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('SceneReview')));
-  expect(loadedAfter).toBe(true);
-
-  const futureResponse = page.waitForResponse((response) => response.url().includes('/plan/scene?horizon_year=20'));
-  await page.getByRole('button', { name: '20 лет' }).click();
-  await futureResponse;
-  await page.getByRole('button', { name: 'Вернуться к карте' }).click();
-  await expect(page.getByLabel('Карта проекта озеленения')).toBeVisible();
-  const sameMap = await page.evaluate(() => (window as unknown as { __greenMapNode?: Element }).__greenMapNode?.isSameNode(document.querySelector('[aria-label="Карта проекта озеленения"]')));
-  expect(sameMap).toBe(true);
-  expect(viewportRequests).toBe(0);
+  await page.getByRole('button', { name: 'Выпустить пакет' }).click();
+  const releaseResponse = page.waitForResponse((response) => response.url().includes('/releases') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Собрать черновой пакет' }).click();
+  const released = await releaseResponse;
+  expect(released.ok()).toBe(true);
+  const release = await released.json() as { scene_horizon: number; artifacts: Array<{ kind: string; download_url: string }> };
+  expect(release.scene_horizon).toBe(24);
+  const scenePath = release.artifacts.find((artifact) => artifact.kind === 'scene')?.download_url;
+  expect(scenePath).toBeTruthy();
+  const scene = await (await page.request.get(`http://127.0.0.1:${process.env.E2E_API_PORT ?? '18000'}${scenePath}`)).json() as { objects: Array<{ canopy_radius_max_m: number }> };
+  expect(Number((scene.objects[0].canopy_radius_max_m * 2).toFixed(1))).toBe(diameterMax);
 });
 
 test('opening another workspace directly drops the prior map selection', async ({ page }) => {
@@ -1272,124 +1225,8 @@ test('opening another workspace directly drops the prior map selection', async (
   await expect(page.getByText('Создайте первую схему')).toBeVisible();
 });
 
-test.skip('legacy single-click planting is removed from the primary flow', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openManualPlan(page);
-  const map = page.getByLabel('Карта проекта озеленения');
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  // ``site.dxf`` starts at [-5, -5, 125, 95]; calculate the exact map-view
-  // projection instead of borrowing a coordinate from a fit animation.
-  const sourceExtent = [-5, -5, 125, 95] as const;
-  const padding = 28;
-  const resolution = Math.max(
-    (sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2),
-    (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2),
-  );
-  const plantingPoint = {
-    x: box!.x + box!.width / 2 + (30 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (27 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
-  };
-  const addTree = page.getByRole('button', { name: 'Добавить дерево' });
-  await addTree.click();
-  await page.mouse.move(plantingPoint.x, plantingPoint.y);
-  await expect(page.getByText('Позиция проходит текущую проверку')).toBeVisible();
-
-  let persistedRequests = 0;
-  let viewportRequests = 0;
-  page.on('request', (request) => {
-    if (request.url().includes('/map-features?')) viewportRequests += 1;
-  });
-  await page.route('**/api/projects/*/plan/objects', async (route) => {
-    persistedRequests += 1;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await route.continue();
-  });
-  await page.mouse.click(plantingPoint.x, plantingPoint.y);
-  // OpenLayers emits ``singleclick`` only after its double-click interval.
-  // The next real user click lands while the first write is still pending;
-  // the in-flight guard must then suppress a duplicate placement.
-  await page.waitForTimeout(280);
-  await page.mouse.click(plantingPoint.x, plantingPoint.y);
-
-  await expect.poll(() => persistedRequests).toBe(1);
-  await expect(page.getByText('4 посадки')).toBeVisible();
-  await expect(addTree).toHaveAttribute('aria-pressed', 'true');
-  // A placement changes only the dedicated plan overlay. Fetching and
-  // decoding the current DXF viewport here would make dense maps stutter.
-  await page.waitForTimeout(180);
-  expect(viewportRequests).toBe(0);
-  await expect(page.getByText('Проект изменён в другой вкладке')).toHaveCount(0);
-});
-
-test.skip('legacy single-object release race no longer belongs to the primary flow', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openManualPlan(page);
-  await page.getByRole('button', { name: 'Выпустить пакет' }).click();
-
-  let manualWriteRequests = 0;
-  page.on('request', (request) => {
-    if (request.url().includes('/plan/objects') || request.url().includes('/plan/history/undo')) manualWriteRequests += 1;
-  });
-  await page.route('**/api/projects/*/releases', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    await route.continue();
-  });
-  await page.getByRole('button', { name: 'Собрать черновой пакет' }).click();
-
-  const addTree = page.getByRole('button', { name: 'Добавить дерево' });
-  await expect(addTree).toBeDisabled();
-  await page.keyboard.press('Control+z');
-  await page.waitForTimeout(150);
-  expect(manualWriteRequests).toBe(0);
-
-  await expect(page.getByText('Черновой пакет готов')).toBeVisible();
-  await expect(addTree).toBeEnabled();
-  const projectId = new URL(page.url()).pathname.split('/')[2];
-  const savedProject = await page.request.get(`${apiBase}/projects/${projectId}`);
-  expect(savedProject.ok()).toBeTruthy();
-  expect((await savedProject.json() as { plan: { objects: unknown[] } }).plan.objects).toHaveLength(3);
-});
-
-test.skip('legacy single-object conflict path no longer belongs to the primary flow', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openManualPlan(page);
-  const projectId = new URL(page.url()).pathname.split('/')[2];
-  const externalEdit = await page.request.post(`${apiBase}/projects/${projectId}/plan/objects`, { data: { kind: 'tree', x: 30, y: 27 } });
-  expect(externalEdit.ok()).toBeTruthy();
-
-  const map = page.getByLabel('Карта проекта озеленения');
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const sourceExtent = [-5, -5, 125, 95] as const;
-  const padding = 28;
-  const resolution = Math.max(
-    (sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2),
-    (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2),
-  );
-  const plantingPoint = {
-    x: box!.x + box!.width / 2 + (50 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (27 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
-  };
-  await page.getByRole('button', { name: 'Добавить дерево' }).click();
-  await page.mouse.move(plantingPoint.x, plantingPoint.y);
-  await expect(page.getByText('Позиция проходит текущую проверку')).toBeVisible();
-  await page.mouse.click(plantingPoint.x, plantingPoint.y);
-  await expect(page.getByText('Проект обновлён в другой вкладке')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Обновить проект' }).click();
-  await expect(page.getByText('Проект обновлён в другой вкладке')).toHaveCount(0);
-  await expect(page.getByText('4 посадки')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Добавить дерево' }).click();
-  await page.mouse.move(plantingPoint.x, plantingPoint.y);
-  await expect(page.getByText('Позиция проходит текущую проверку')).toBeVisible();
-  await page.mouse.click(plantingPoint.x, plantingPoint.y);
-  await expect(page.getByText('5 посадок')).toBeVisible();
-});
-
 test('real and dense DXF files remain interactive behind the viewport budget', async ({ page }) => {
-  test.setTimeout(100_000);
+  test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/projects/new/import');
   const largeStarted = Date.now();
@@ -1403,55 +1240,116 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
 
   const largeProjectId = new URL(page.url()).pathname.split('/')[2];
-  const rectangle = (left: number, bottom: number, right: number, top: number) => ({
-    type: 'Polygon',
-    coordinates: [[[left, bottom], [right, bottom], [right, top], [left, top], [left, bottom]]],
+  const largeMap = page.getByLabel('Карта проекта озеленения');
+  const largeBox = await largeMap.boundingBox();
+  expect(largeBox).not.toBeNull();
+  const openEditor = page.getByRole('button', { name: 'Открыть редактор' });
+  for (const [x, y] of [[0.38, 0.38], [0.50, 0.50], [0.62, 0.38], [0.38, 0.62], [0.62, 0.62]]) {
+    await page.mouse.move(largeBox!.x + largeBox!.width * x, largeBox!.y + largeBox!.height * y);
+    await page.waitForTimeout(80);
+    await page.mouse.click(largeBox!.x + largeBox!.width * x, largeBox!.y + largeBox!.height * y);
+    if (await openEditor.isEnabled() && await page.getByText(/выходит за границы территории/).count() === 0) break;
+  }
+  await expect(openEditor).toBeEnabled();
+  await expect(page.getByText(/выходит за границы территории/)).toHaveCount(0);
+  await openEditor.click();
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await expect(page.locator('.pattern-tool-panel input[type="checkbox"]:checked')).toHaveCount(1);
+  await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('60');
+
+  const denseMixedResponse = page.waitForResponse((response) => {
+    if (!response.url().includes('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
+    const body = response.request().postDataJSON() as { composition?: string; spacing_policy?: string; target_count?: number };
+    return body.composition === 'mixed' && body.spacing_policy === 'canopy' && body.target_count === 60;
   });
-  const zones = [
-    { id: 'large-west', label: 'Западный участок', geometry: rectangle(-797.7992, -829.5, -652.7448, -684.4456) },
-    { id: 'large-east', label: 'Восточный участок', geometry: rectangle(-435.1632, -829.5, -290.1088, -684.4456) },
-  ];
-  const zonesResponse = await page.request.put(`${apiBase}/projects/${largeProjectId}/planting-zones`, { data: { zones } });
-  expect(zonesResponse.ok(), await zonesResponse.text()).toBeTruthy();
-  const manualResponse = await page.request.post(`${apiBase}/projects/${largeProjectId}/plan/manual`);
-  const manualProject = await manualResponse.json() as { plan: { version: number } };
-  const speciesResponse = await page.request.get(`${apiBase}/species?kind=tree`);
-  const species = await speciesResponse.json() as Array<{ id: string; species_id: string }>;
-  const rowan = species.find((item) => item.species_id === 'sorbus-aucuparia')!;
-  const previewResponse = await page.request.post(`${apiBase}/projects/${largeProjectId}/plan/patterns/preview`, { data: {
-    type: 'fill',
-    base_plan_version: manualProject.plan.version,
-    plant_kind: 'tree',
-    zone_ids: zones.map((zone) => zone.id),
-    placement_mode: 'count',
-    target_count: 30,
-    layout: 'natural',
-    spacing_m: 6,
-    edge_offset_m: 1,
-    seed: 47,
-    size_class: 'standard',
-    species_revision_id: rowan.id,
-    spacing_policy: 'balanced',
-  }, timeout: 25_000 });
-  expect(previewResponse.ok()).toBeTruthy();
-  const placement = await previewResponse.json() as { accepted_count: number; skipped: unknown[]; reason_summary: unknown[]; change_set: { id: string; digest: string; base_plan_version: number; additions: Array<{ planting_zone_id: string }> } };
-  expect(placement.accepted_count).toBeGreaterThan(1);
-  expect(new Set(placement.change_set.additions.map((item) => item.planting_zone_id))).toEqual(new Set(zones.map((zone) => zone.id)));
-  expect(placement.reason_summary.length).toBeGreaterThan(0);
-  const appliedResponse = await page.request.post(`${apiBase}/projects/${largeProjectId}/plan/change-sets/apply`, { data: {
-    preview_id: placement.change_set.id,
-    digest: placement.change_set.digest,
-    base_plan_version: placement.change_set.base_plan_version,
-  } });
-  expect(appliedResponse.ok()).toBeTruthy();
-  await page.reload();
-  const undoLargePlacement = page.getByRole('button', { name: /Отменить: Заполнение участков/ });
-  await expect(undoLargePlacement).toBeEnabled();
-  await undoLargePlacement.click();
+  await page.getByLabel('Состав группы').selectOption('mixed');
+  await page.getByLabel('Плотность группы').selectOption('canopy');
+  const denseMixed = await (await denseMixedResponse).json() as { accepted_count: number; effective_spacing_m: number; reason_summary: Array<{ message: string }>; change_set?: { additions: Array<{ kind: string }> } };
+  expect(denseMixed.accepted_count).toBeGreaterThan(1);
+  expect(new Set(denseMixed.change_set?.additions.map((item) => item.kind))).toEqual(new Set(['tree', 'shrub']));
+  await expect(page.getByText(`Расчётный шаг ${denseMixed.effective_spacing_m} м`)).toBeVisible();
+  if (denseMixed.reason_summary.length) await expect(page.getByText(denseMixed.reason_summary[0].message, { exact: false }).first()).toBeVisible();
+
+  const openTreesResponse = page.waitForResponse((response) => {
+    if (!response.url().includes('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
+    const body = response.request().postDataJSON() as { composition?: string; spacing_policy?: string; target_count?: number };
+    return body.composition === 'trees' && body.spacing_policy === 'open' && body.target_count === 60;
+  });
+  await page.getByLabel('Состав группы').selectOption('trees');
+  await page.getByLabel('Плотность группы').selectOption('open');
+  const openTrees = await (await openTreesResponse).json() as { accepted_count: number; effective_spacing_m: number; reason_summary: Array<{ message: string }> };
+  expect(denseMixed.effective_spacing_m).toBeLessThan(openTrees.effective_spacing_m);
+  expect(denseMixed.accepted_count).toBeGreaterThanOrEqual(openTrees.accepted_count);
+  await expect(page.getByText(`Расчётный шаг ${openTrees.effective_spacing_m} м`)).toBeVisible();
+  if (openTrees.reason_summary.length) await expect(page.getByText(openTrees.reason_summary[0].message, { exact: false }).first()).toBeVisible();
+
+  const finalMixedResponse = page.waitForResponse((response) => {
+    if (!response.url().includes('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
+    const body = response.request().postDataJSON() as { composition?: string; spacing_policy?: string; target_count?: number };
+    return body.composition === 'mixed' && body.spacing_policy === 'canopy' && body.target_count === 60;
+  });
+  await page.getByLabel('Состав группы').selectOption('mixed');
+  await page.getByLabel('Плотность группы').selectOption('canopy');
+  const finalMixed = await (await finalMixedResponse).json() as { accepted_count: number };
+  await expect(page.getByText('Черновик на карте')).toBeVisible({ timeout: 25_000 });
+  const largeAccepted = finalMixed.accepted_count;
+  expect(largeAccepted).toBeGreaterThan(1);
+  await page.getByRole('button', { name: /Добавить/ }).click();
   await expect.poll(async () => {
     const response = await page.request.get(`${apiBase}/projects/${largeProjectId}`);
     return (await response.json() as { plan: { objects: unknown[] } }).plan.objects.length;
-  }).toBe(0);
+  }).toBe(largeAccepted);
+
+  const horizon = page.getByRole('slider', { name: 'Горизонт прогноза' });
+  await expect(horizon).toBeVisible();
+  await horizon.focus();
+  for (let year = 0; year < 23; year += 1) await page.keyboard.press('ArrowRight');
+  await expect(horizon).toHaveValue('23');
+  await expect(largeMap).toHaveAttribute('data-growth-horizon', '23');
+
+  await page.getByRole('button', { name: 'Закрепить', exact: true }).click();
+  await expect(page.getByText(`Закрепление объектов (${largeAccepted})`)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Применить', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(page.getByText(`Закрепление объектов (${largeAccepted})`)).toHaveCount(0);
+  const beforeRelease = await page.request.get(`${apiBase}/projects/${largeProjectId}`);
+  const beforeReleaseObjects = (await beforeRelease.json() as { plan: { objects: Array<{ id: string; kind: string; x: number; y: number; species_revision_id?: string; pattern_id?: string; group_ids: string[]; spacing_policy: string; locked: boolean }> } }).plan.objects;
+  expect(beforeReleaseObjects.every((object) => object.spacing_policy === 'canopy' && object.locked)).toBe(true);
+
+  await page.getByRole('button', { name: 'Проверка' }).click();
+  await expect(page.getByText('Проверка плана', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Выпустить пакет' }).click();
+  await expect(page.getByText('Основания финального выпуска')).toBeVisible();
+  const releaseResponse = page.waitForResponse((response) => response.url().includes('/releases') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Собрать черновой пакет' }).click();
+  await expect(page.getByText('Черновой пакет готов')).toBeVisible({ timeout: 25_000 });
+  const releasePayload = await (await releaseResponse).json() as { artifacts: Array<{ kind: string; download_url: string }> };
+  const auditScreenshots = path.resolve('../../docs/audits/2026-08-31-department-field-audit/screenshots');
+  await page.screenshot({ path: path.join(auditScreenshots, '19-after-dense-release-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expectNoViewportOverflow(page);
+  await page.screenshot({ path: path.join(auditScreenshots, '20-after-dense-release-1280.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  const bundlePath = releasePayload.artifacts.find((artifact) => artifact.kind === 'bundle')?.download_url;
+  expect(bundlePath).toBeTruthy();
+  const bundle = await (await page.request.get(`http://127.0.0.1:${process.env.E2E_API_PORT ?? '18000'}${bundlePath}`)).body();
+  const revisionResponse = await page.request.post(`${apiBase}/projects`, { data: { name: 'ВДНХ, продолжение ревизии' } });
+  expect(revisionResponse.ok()).toBeTruthy();
+  const revisionId = (await revisionResponse.json() as { id: string }).id;
+  await page.goto(`/projects/${revisionId}/import`);
+  await page.setInputFiles('input[type=file]', { name: 'vdnkh-release.zip', mimeType: 'application/zip', buffer: bundle });
+  await expect(page).toHaveURL(/\/workspace$/, { timeout: 30_000 });
+  await expect(page.getByRole('main').getByText('План озеленения', { exact: true })).toBeVisible();
+  const importedRevision = await page.request.get(`${apiBase}/projects/${revisionId}`);
+  const importedObjects = (await importedRevision.json() as { plan: { objects: typeof beforeReleaseObjects } }).plan.objects;
+  const semanticProjection = (objects: typeof beforeReleaseObjects) => objects.map((object) => ({
+    id: object.id, kind: object.kind, x: object.x, y: object.y, species_revision_id: object.species_revision_id,
+    pattern_id: object.pattern_id, group_ids: object.group_ids, spacing_policy: object.spacing_policy, locked: object.locked,
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  expect(semanticProjection(importedObjects)).toEqual(semanticProjection(beforeReleaseObjects));
+  await expect(page.getByText(`${largeAccepted} посадок`)).toBeVisible();
 
   await page.goto('/projects/new/import');
   const denseStarted = Date.now();

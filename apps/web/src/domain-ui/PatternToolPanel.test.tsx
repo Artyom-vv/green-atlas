@@ -10,6 +10,7 @@ const zones = [
   { id: 'east', label: 'Восточный участок', geometry: { type: 'Polygon', coordinates: [] } },
 ];
 const species = [{ id: 'tree@1', species_id: 'tree', revision: 1, common_name: 'Липа', scientific_name: 'Tilia', kind: 'tree' as const, crown_shape: 'round' as const, mature_height_min_m: 10, mature_height_max_m: 20, mature_crown_diameter_min_m: 5, mature_crown_diameter_max_m: 8, growth_rate: 'moderate' as const, root_architecture: 'mixed' as const, provenance: 'native' as const, territory_policy: 'general_draft' as const, risk_flags: [], evidence_note: 'test', source_urls: ['https://example.test'] }];
+const shrub = { ...species[0], id: 'shrub@1', species_id: 'shrub', common_name: 'Дёрен', scientific_name: 'Cornus', kind: 'shrub' as const, mature_height_min_m: 2, mature_height_max_m: 3, mature_crown_diameter_min_m: 2, mature_crown_diameter_max_m: 4 };
 
 describe('PatternToolPanel', () => {
   it('previews a fill across several selected zones', () => {
@@ -32,12 +33,48 @@ describe('PatternToolPanel', () => {
     }));
   });
 
+  it('explains the pre-plant species shortlist for the selected area', () => {
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} shortlist={[{
+      species: species[0],
+      status: 'review',
+      selected_area_m2: 1150,
+      estimated_safe_area_m2: 820,
+      estimated_capacity: 18,
+      estimated_mature_diameter_m: 8,
+      reasons: ['Предварительный выбор для 2 выбранных участков', 'Корневая архитектура учтена прогнозным диапазоном'],
+    }]} selectedZoneIds={['west', 'east']} onPreview={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByText('Порода для участка')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Липа. Нужна проверка' })).toHaveAttribute('title', expect.stringContaining('Корневая архитектура'));
+    expect(screen.getByText('Корни: смешанные')).toBeVisible();
+    expect(screen.getByText('Нужна проверка')).toBeVisible();
+    expect(screen.getByText('Оценка: до 18 на участке')).toBeVisible();
+  });
+
+  it('previews a mixed tree and shrub group through the primary fill flow', () => {
+    const onPreview = vi.fn();
+    render(<PatternToolPanel mode="fill" zones={zones} species={[...species, shrub]} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Состав группы'), { target: { value: 'mixed' } });
+    expect(screen.getByLabelText('Порода кустарника')).toHaveValue('shrub@1');
+    fireEvent.click(screen.getByRole('button', { name: 'Показать' }));
+
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'fill',
+      composition: 'mixed',
+      plant_kind: 'tree',
+      tree_share: 0.65,
+      tree_species_revision_id: 'tree@1',
+      shrub_species_revision_id: 'shrub@1',
+    }));
+  });
+
   it('requires an explicit area and can start drawing one', () => {
     const onDrawZone = vi.fn();
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={[]} onDrawZone={onDrawZone} onPreview={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByText('Выберите рабочий участок')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Выберите участок' })).toBeDisabled();
-    expect(screen.queryByLabelText('Растительность')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Состав группы')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Количество посадок')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Обвести новый участок' }));
     expect(onDrawZone).toHaveBeenCalledOnce();
@@ -47,7 +84,7 @@ describe('PatternToolPanel', () => {
     const onPreview = vi.fn();
     const { rerender } = render(<PatternToolPanel mode="row" zones={zones} species={species} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Выберите линию' })).toBeDisabled();
-    expect(screen.queryByLabelText('Растительность')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Состав группы')).not.toBeInTheDocument();
 
     rerender(<PatternToolPanel mode="row" zones={zones} species={species} selectedZoneIds={['west']} axis={{ type: 'LineString', coordinates: [[0, 0], [10, 0]] }} onPreview={onPreview} onCancel={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Показать' })).toBeEnabled();
@@ -69,7 +106,10 @@ describe('PatternToolPanel', () => {
       pattern_id: 'pattern-1',
       type: 'fill',
       requested_count: 8,
+      generated_count: 8,
       accepted_count: 5,
+      rejected_count: 3,
+      capacity_shortfall: 3,
       skipped: [],
       unverified_data: [],
       data_confidence: 'verified',
@@ -91,7 +131,10 @@ describe('PatternToolPanel', () => {
       pattern_id: 'pattern-2',
       type: 'fill',
       requested_count: 8,
+      generated_count: 8,
       accepted_count: 6,
+      rejected_count: 2,
+      capacity_shortfall: 2,
       effective_spacing_m: 7.4,
       skipped: [],
       unverified_data: [],

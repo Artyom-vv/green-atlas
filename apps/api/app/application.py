@@ -940,9 +940,12 @@ class ProjectApplication:
         return result
 
     def _effective_pattern_spacing(self, request: PatternPreviewRequest) -> float:
-        if request.type != "fill" or not request.species_revision_id:
+        if request.type != "fill":
             return request.spacing_m
-        revision = get_species(request.species_revision_id)
+        revision_id = request.tree_species_revision_id if request.composition == "mixed" else request.species_revision_id
+        if not revision_id:
+            return request.spacing_m
+        revision = get_species(revision_id)
         if revision.kind != request.plant_kind:
             raise ValueError("Порода не соответствует типу посадочного места")
         radius = request.layout_radius_m or self._default_layout_radius(request.plant_kind)
@@ -1192,31 +1195,70 @@ class ProjectApplication:
             raise ValueError("Неизвестный тип посадки")
         return list_species(kind)
 
-    def shortlist_species(self, project_id: str, object_ids: list[str]) -> list[SpeciesShortlistItem]:
+    def shortlist_species(self, project_id: str, object_ids: list[str], zone_ids: list[str] | None = None, kind: str | None = None) -> list[SpeciesShortlistItem]:
         project = self.get(project_id)
         if project.plan is None:
             raise ValueError("План ещё не создан")
-        requested = set(object_ids)
-        selected = [item for item in project.plan.objects if item.id in requested]
-        if len(selected) != len(requested):
-            raise KeyError("Одна из выбранных посадок не найдена")
-        kinds = {item.kind for item in selected}
-        if len(kinds) != 1:
-            raise ValueError("Для подбора породы выберите посадки одного типа")
-        kind = next(iter(kinds))
+        if object_ids:
+            requested = set(object_ids)
+            selected = [item for item in project.plan.objects if item.id in requested]
+            if len(selected) != len(requested):
+                raise KeyError("Одна из выбранных посадок не найдена")
+            kinds = {item.kind for item in selected}
+            if len(kinds) != 1:
+                raise ValueError("Для подбора породы выберите посадки одного типа")
+            kind = next(iter(kinds))
+            scope_reason = "Соответствует типу выбранных посадочных мест"
+        else:
+            requested_zones = set(zone_ids or [])
+            known_zones = {zone.id: zone for zone in project.planting_zones}
+            if not requested_zones or requested_zones - set(known_zones):
+                raise ValueError("Один из выбранных участков больше не существует")
+            if kind not in {None, "tree", "shrub"}:
+                raise ValueError("Укажите тип растительности")
+            scope_reason = f"Предварительный выбор для {len(requested_zones)} выбранных участков"
+        selected_area_m2: float | None = None
+        estimated_safe_area_m2: float | None = None
+        if not object_ids:
+            selected_geometry = unary_union([shape(known_zones[zone_id].geometry) for zone_id in sorted(requested_zones)])
+            selected_area_m2 = round(float(selected_geometry.area), 1)
+            if project.allowed_area_m2 is not None and project.planning_area_m2:
+                safe_ratio = min(1.0, max(0.0, project.allowed_area_m2 / project.planning_area_m2))
+                estimated_safe_area_m2 = round(selected_area_m2 * safe_ratio, 1)
+            else:
+                estimated_safe_area_m2 = selected_area_m2
         result: list[SpeciesShortlistItem] = []
         for revision in list_species(kind):
-            reasons = ["Соответствует типу выбранных посадочных мест"]
+            reasons = [scope_reason]
+            mature_diameter = revision.mature_crown_diameter_max_m
+            capacity: int | None = None
+            if estimated_safe_area_m2 is not None:
+                # This is an explainable capacity cue, not a placement result:
+                # the preview still validates every concrete position against
+                # hard objects and statutory offsets.
+                footprint = max(1.0, mature_diameter ** 2)
+                capacity = max(0, int(estimated_safe_area_m2 / footprint))
+                reasons.append(f"Ориентировочно до {capacity} посадок при кроне до {mature_diameter:g} м")
             if revision.territory_policy == "specialist_review":
                 reasons.append("Широкая крона: проектный отступ нужно уточнить по ПП-743")
             if "shallow_roots" in revision.risk_flags:
                 reasons.append("Поверхностная корневая архитектура требует проверки сетей")
+            elif revision.root_architecture == "deep":
+                reasons.append("Глубокая корневая архитектура требует достаточного почвенного объёма")
+            elif revision.root_architecture == "uncertain":
+                reasons.append("Корневая архитектура недостаточно подтверждена")
+            else:
+                reasons.append("Корневая архитектура учтена прогнозным диапазоном")
             result.append(SpeciesShortlistItem(
                 species=revision,
                 status="review" if revision.territory_policy == "specialist_review" or revision.risk_flags else "available",
+                selected_area_m2=selected_area_m2,
+                estimated_safe_area_m2=estimated_safe_area_m2,
+                estimated_capacity=capacity,
+                estimated_mature_diameter_m=mature_diameter,
                 reasons=reasons,
             ))
-        return result
+        return sorted(result, key=lambda item: (item.status != "available", -(item.estimated_capacity or 0), item.species.common_name))
 
     def preview_pattern(self, project_id: str, request: PatternPreviewRequest) -> PatternPreview:
         project = self.get(project_id)
@@ -1270,29 +1312,37 @@ class ProjectApplication:
         pattern_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         pattern_id = f"pattern-{pattern_digest[:16]}"
         label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
-        operations = [
-            {
+        operations = []
+        for index, candidate in enumerate(candidates):
+            candidate_kind = request.plant_kind
+            species_revision_id = getattr(request, "species_revision_id", None)
+            if isinstance(request, FillPatternRequest) and request.composition == "mixed":
+                sample = int(sha256(f"{request.seed}:{index}:{candidate.x}:{candidate.y}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+                candidate_kind = "tree" if sample < request.tree_share else "shrub"
+                species_revision_id = request.tree_species_revision_id if candidate_kind == "tree" else request.shrub_species_revision_id
+            operations.append({
                 "type": "add",
                 "object": {
-                    "kind": request.plant_kind,
+                    "kind": candidate_kind,
                     "x": candidate.x,
                     "y": candidate.y,
                     "layout_radius_m": request.layout_radius_m,
                     "size_class": request.size_class,
-                    "species_revision_id": getattr(request, "species_revision_id", None),
+                    "species_revision_id": species_revision_id,
                     "pattern_id": pattern_id,
                     "group_ids": [pattern_id],
                     "spacing_policy": request.spacing_policy,
                 },
-            }
-            for candidate in candidates
-        ]
+            })
         if not operations:
             return PatternPreview(
                 pattern_id=pattern_id,
                 type=request.type,
                 requested_count=requested_target or 0,
+                generated_count=len(generated_candidates),
                 accepted_count=0,
+                rejected_count=min(len(skipped), requested_target or len(skipped)),
+                capacity_shortfall=max(0, (requested_target or 0) - len(skipped)),
                 effective_spacing_m=effective_spacing,
                 skipped=skipped,
                 reason_summary=_reason_summary(skipped),
@@ -1314,9 +1364,8 @@ class ProjectApplication:
             # it in a bulk operation. Manual correction can still accept an
             # explicitly reviewed warning later.
             if item.status == "allowed":
-                accepted_indices.append(item.operation_index)
-                if requested_target is not None and len(accepted_indices) >= requested_target:
-                    break
+                if requested_target is None or len(accepted_indices) < requested_target:
+                    accepted_indices.append(item.operation_index)
                 continue
             candidate = candidates[item.operation_index]
             skipped.append(PatternSkippedCandidate(
@@ -1352,11 +1401,17 @@ class ProjectApplication:
                 "count": requested_target - len(candidates),
                 "message": "В проверенной части участка больше безопасных позиций не найдено",
             })
+        requested_total = requested_target if requested_target is not None else len(candidates)
+        rejected_count = min(len(skipped), max(0, requested_total - len(accepted_operations)))
+        capacity_shortfall = max(0, requested_total - len(accepted_operations) - rejected_count)
         return PatternPreview(
             pattern_id=pattern_id,
             type=request.type,
-            requested_count=requested_target if requested_target is not None else len(candidates),
+            requested_count=requested_total,
+            generated_count=len(generated_candidates),
             accepted_count=len(accepted_operations),
+            rejected_count=rejected_count,
+            capacity_shortfall=capacity_shortfall,
             effective_spacing_m=effective_spacing,
             skipped=skipped,
             reason_summary=reason_summary,
@@ -1891,12 +1946,28 @@ class ProjectApplication:
         if request.mode == "final":
             error_count = sum(issue.severity == "error" for issue in project.plan.issues)
             missing_species = sum(not item.species_revision_id for item in project.plan.objects)
-            if error_count or missing_species:
+            basis = request.regulatory_basis
+            regulatory_reasons: list[str] = []
+            if basis is None:
+                regulatory_reasons.append("заполните основания ПП-616 и ПП-1160")
+            else:
+                if basis.pp616_status == "pending":
+                    regulatory_reasons.append("определите применимость ПП-616")
+                elif not basis.pp616_reference.strip():
+                    regulatory_reasons.append("укажите основание решения по ПП-616")
+                if basis.pp1160_status == "pending":
+                    regulatory_reasons.append("определите необходимость процедуры по ПП-1160")
+                elif not basis.pp1160_reference.strip():
+                    regulatory_reasons.append("укажите основание решения по ПП-1160")
+                if not basis.confirmed_by.strip():
+                    regulatory_reasons.append("укажите ответственного за проверку")
+            if error_count or missing_species or regulatory_reasons:
                 reasons: list[str] = []
                 if error_count:
                     reasons.append(f"устраните ошибки: {error_count}")
                 if missing_species:
                     reasons.append(f"назначьте виды: {missing_species}")
+                reasons.extend(regulatory_reasons)
                 raise ValueError("Финальный выпуск недоступен: " + "; ".join(reasons))
         release_id = release_identity(project, request)
         existing = self.repository.get_release(project.id, release_id)
