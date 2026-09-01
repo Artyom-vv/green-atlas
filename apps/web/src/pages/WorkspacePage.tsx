@@ -9,6 +9,7 @@ import { ReleasePanel } from '../domain-ui/ReleasePanel';
 import { ChangeSetReviewPanel } from '../domain-ui/ChangeSetReviewPanel';
 import { BrushToolPanel } from '../domain-ui/BrushToolPanel';
 import { GroupInspector } from '../domain-ui/GroupInspector';
+import { HistoryPanel } from '../domain-ui/HistoryPanel';
 import type { GrowthHorizon } from '../domain-ui/GrowthHorizonControl';
 import { LayerInspector } from '../domain-ui/LayerInspector';
 import { MapToolbar, type MapTool } from '../domain-ui/MapToolbar';
@@ -29,7 +30,7 @@ import { ValidationPanel } from '../domain-ui/ValidationPanel';
 import { useWorkspaceEditor } from '../features/workspace/useWorkspaceEditor';
 import type { SelectionMode } from '../domain-ui/selection';
 
-type WorkspacePanel = 'zones' | 'issues' | 'export' | null;
+type WorkspacePanel = 'zones' | 'issues' | 'history' | 'export' | null;
 type MapGeometryMetadata = { returned_features?: number; total_matches?: number; truncated?: boolean };
 type BufferedMapRequest = { projectId: string; extent: MapExtent; resolution: number };
 
@@ -56,7 +57,7 @@ function bufferedMapRequest(extent: MapExtent, resolution: number) {
 }
 
 function RailPanelHeader({ title, subtitle, onBack, onClose }: { title: string; subtitle: string; onBack: () => void; onClose: () => void }) {
-  return <header className="rail-panel__header"><IconButton icon={ChevronLeft} label="Назад к сводке" variant="ghost" onClick={onBack} /><span><strong>{title}</strong><small>{subtitle}</small></span><IconButton icon={X} label="Свернуть боковую панель" variant="ghost" onClick={onClose} /></header>;
+  return <header className="rail-panel__header"><IconButton icon={ChevronLeft} label="Назад к сводке" variant="ghost" onClick={onBack} /><span><h2>{title}</h2><small>{subtitle}</small></span><IconButton icon={X} label="Свернуть боковую панель" variant="ghost" onClick={onClose} /></header>;
 }
 
 export function WorkspacePage() {
@@ -261,7 +262,10 @@ export function WorkspacePage() {
     const next = { projectId, ...bufferedMapRequest(extent, resolution) };
     mapRequestRef.current = next;
     if (mapRequestTimerRef.current !== undefined) window.clearTimeout(mapRequestTimerRef.current);
-    mapRequestTimerRef.current = window.setTimeout(() => { setMapRequest(next); mapRequestTimerRef.current = undefined; }, 100);
+    // Wheel/toolbar zoom emits a short burst of camera updates. Keep drawing
+    // the buffered snapshot immediately, then ask the server once for the
+    // settled viewport instead of racing two expensive DXF fragments.
+    mapRequestTimerRef.current = window.setTimeout(() => { setMapRequest(next); mapRequestTimerRef.current = undefined; }, 180);
   }, [projectId]);
 
   const handlePointerCoordinate = useCallback((coordinate?: [number, number]) => {
@@ -652,7 +656,7 @@ export function WorkspacePage() {
   );
 
   return <div className="app-shell workspace-screen">
-    <AppHeader workspace projectName={project.name} onReview={project.plan ? () => { setPanel('issues'); openRightPanel(); } : undefined} onExport={project.plan ? () => { setPanel('export'); openRightPanel(); } : undefined} exporting={createRelease.isPending} onUndo={!planLocked && historyQuery.data?.can_undo ? () => undoChange.mutate() : undefined} onRedo={!planLocked && historyQuery.data?.can_redo ? () => redoChange.mutate() : undefined} undoLabel={historyQuery.data?.undo_label} redoLabel={historyQuery.data?.redo_label} historyBusy={undoChange.isPending || redoChange.isPending} actionsDisabled={editorBusy || createManualPlan.isPending} />
+    <AppHeader workspace projectName={project.name} onReview={project.plan ? () => { setPanel('issues'); openRightPanel(); } : undefined} onHistory={project.plan ? () => { setPanel('history'); openRightPanel(); } : undefined} onExport={project.plan ? () => { setPanel('export'); openRightPanel(); } : undefined} exporting={createRelease.isPending} onUndo={!planLocked && historyQuery.data?.can_undo ? () => undoChange.mutate() : undefined} onRedo={!planLocked && historyQuery.data?.can_redo ? () => redoChange.mutate() : undefined} undoLabel={historyQuery.data?.undo_label} redoLabel={historyQuery.data?.redo_label} historyBusy={undoChange.isPending || redoChange.isPending} actionsDisabled={editorBusy || createManualPlan.isPending} />
     <main className={`workspace-layout ${leftOpen ? '' : 'is-left-collapsed'} ${rightOpen ? '' : 'is-right-collapsed'}`}>
       <aside className="workspace-left"><ProjectLayers layers={layers} visibility={visibility} activeLayerId={activeLayerId} onVisibility={(id, visible) => setVisibility((current) => ({ ...current, [id]: visible }))} onSelect={(id) => { setActiveLayerId((current) => current === id ? undefined : id); editor.clearSelection(); setPanel(null); openRightPanel(); }} onZones={() => { setDraftZones(project.planting_zones ?? []); setActiveLayerId(undefined); setPanel('zones'); editor.clearSelection(); openRightPanel(); }} onClose={() => setLeftOpen(false)} /></aside>
       <aside className="workspace-left-collapsed"><IconButton icon={ChevronRight} label="Развернуть слои" variant="ghost" onClick={openLeftPanel} /><IconButton icon={Layers3} label="Слои" active onClick={openLeftPanel} /><IconButton icon={MapPinned} label="Рабочие участки" variant="ghost" onClick={() => { setDraftZones(project.planting_zones ?? []); setActiveLayerId(undefined); setPanel('zones'); editor.clearSelection(); openRightPanel(); }} /></aside>
@@ -705,6 +709,7 @@ export function WorkspacePage() {
         {panel === 'zones' && !project.plan ? <div className="workspace-zones-panel"><button className="right-close" type="button" aria-label="Свернуть панель участков" onClick={closeRightPanel}><PanelRightClose size={16} /></button><PlantingZonesPanel assignments={draftZones} drawingManual={tool === 'draw_area'} saving={createManualPlan.isPending} error={createManualPlan.error ? message(createManualPlan.error) : undefined} onRemove={(id) => setDraftZones((current) => current.filter((item) => item.id !== id))} onSave={() => createManualPlan.mutate()} onManual={() => editor.setTool('draw_area')} onCancelManual={() => editor.setTool('select')} /></div> : null}
         {panel === 'zones' && project.plan ? <div className="rail-panel"><RailPanelHeader title="Рабочие участки" subtitle={`${draftZones.length} на карте`} onBack={returnToInspector} onClose={closeRightPanel} /><PlantingZoneManager zones={draftZones} activeId={selectedPatternZoneIds[0]} drawing={Boolean(zoneDrawingMode)} saving={saveManagedZones.isPending} error={saveManagedZones.error ? message(saveManagedZones.error) : undefined} onFocus={(zone) => { if (zone.id) setSelectedPatternZoneIds([zone.id]); mapViewport.current?.fitGeometry(zone.geometry); }} onRename={(zone, label) => { if (label === zone.label) return; const zones = draftZones.map((item) => item.id === zone.id ? { ...item, label } : item); setDraftZones(zones); saveManagedZones.mutate({ zones, focusId: zone.id }); }} onRedraw={(zone) => { if (!zone.id) return; setSelectedPatternZoneIds([zone.id]); setZoneDrawingMode(zone.id); editor.setTool('draw_area'); }} onDelete={setZonePendingDelete} onDraw={() => { setZoneDrawingMode('new'); editor.setTool('draw_area'); }} onCancelDraw={() => { setZoneDrawingMode(undefined); editor.setTool('select'); }} /></div> : null}
         {panel === 'issues' ? <div className="rail-panel"><RailPanelHeader title="Проверка плана" subtitle={issueCount ? `${issueCount} замечания` : 'Нарушений нет'} onBack={returnToInspector} onClose={closeRightPanel} /><ValidationPanel issues={issues} onLocate={(id) => { if (id) editor.select([id], 'replace'); else editor.clearSelection(); editor.setTool('select'); setPanel(null); if (id) requestAnimationFrame(() => mapViewport.current?.fitSelection(id)); }} /></div> : null}
+        {panel === 'history' ? <div className="rail-panel"><RailPanelHeader title="История изменений" subtitle={`${historyQuery.data?.entries?.length ?? 0} ревизий`} onBack={returnToInspector} onClose={closeRightPanel} /><HistoryPanel history={historyQuery.data} busy={undoChange.isPending || redoChange.isPending} onUndo={() => undoChange.mutate()} onRedo={() => redoChange.mutate()} /></div> : null}
         {panel === 'export' && project.plan ? <div className="rail-panel export-panel"><RailPanelHeader title="Выпускной пакет" subtitle="Ревизия для дальнейшей работы" onBack={returnToInspector} onClose={closeRightPanel} /><div className="rail-panel__content"><ReleasePanel plan={project.plan} release={release} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} loading={createRelease.isPending} error={createRelease.error ? message(createRelease.error) : undefined} onCreate={(mode) => createRelease.mutate(mode)} onDownload={(path) => { window.location.href = api.downloadUrl(path); }} /></div></div> : null}
         {!panel && activeLayer ? <LayerInspector layer={activeLayer} visible={visibility[activeLayer.id] !== false} onVisibility={(visible) => setVisibility((current) => ({ ...current, [activeLayer.id]: visible }))} onFit={() => mapViewport.current?.fitLayer(activeLayer.source_name)} /> : null}
         {!panel && !activeLayer && mapAreaTarget && project.plan && tool !== 'pattern_fill' && !placementAreaDrawing ? <div className="project-inspector"><header><span><strong>{mapAreaTarget.label}</strong><small>{mapAreaTarget.plantingZoneId ? 'Участок проекта' : 'Объект исходного DXF'}</small></span></header><section className="plan-summary"><strong>{mapAreaTarget.detail}</strong><span>{mapAreaTarget.plantingZoneId ? 'Участок готов к размещению' : 'Контур доступен для проверки'}</span>{mapAreaTarget.plantingZoneId ? <Button variant="primary" onClick={() => activateTool('pattern_fill')}>Разместить здесь</Button> : null}</section></div> : null}

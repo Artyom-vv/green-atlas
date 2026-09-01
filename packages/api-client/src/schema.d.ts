@@ -1341,6 +1341,27 @@ export interface components {
             /** Operations */
             operations: (components["schemas"]["PlanObjectAddOperation"] | components["schemas"]["PlanObjectUpdateOperation"] | components["schemas"]["PlanObjectDeleteOperation"])[];
         };
+        /** PlanHistoryEntry */
+        PlanHistoryEntry: {
+            /** Id */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Label */
+            label: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Author
+             * @default Локальная сессия
+             */
+            author: string;
+            /**
+             * Applied
+             * @default true
+             */
+            applied: boolean;
+        };
         /** PlanHistoryState */
         PlanHistoryState: {
             /**
@@ -1357,6 +1378,8 @@ export interface components {
             undo_label?: string | null;
             /** Redo Label */
             redo_label?: string | null;
+            /** Entries */
+            entries?: components["schemas"]["PlanHistoryEntry"][];
         };
         /** PlanMutationResult */
         PlanMutationResult: {

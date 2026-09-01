@@ -711,11 +711,21 @@ class PlanObjectsDeleteRequest(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=5000)
 
 
+class PlanHistoryEntry(BaseModel):
+    id: str
+    ordinal: int = Field(ge=1)
+    label: str
+    created_at: str
+    author: str = "Локальная сессия"
+    applied: bool = True
+
+
 class PlanHistoryState(BaseModel):
     can_undo: bool = False
     can_redo: bool = False
     undo_label: str | None = None
     redo_label: str | None = None
+    entries: list[PlanHistoryEntry] = Field(default_factory=list)
 
 
 class ExportArtifact(BaseModel):

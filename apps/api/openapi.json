@@ -4148,6 +4148,45 @@
         ],
         "title": "PlanChangeSetDraft"
       },
+      "PlanHistoryEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Ordinal"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author",
+            "default": "Локальная сессия"
+          },
+          "applied": {
+            "type": "boolean",
+            "title": "Applied",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ordinal",
+          "label",
+          "created_at"
+        ],
+        "title": "PlanHistoryEntry"
+      },
       "PlanHistoryState": {
         "properties": {
           "can_undo": {
@@ -4181,6 +4220,13 @@
               }
             ],
             "title": "Redo Label"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/PlanHistoryEntry"
+            },
+            "type": "array",
+            "title": "Entries"
           }
         },
         "type": "object",

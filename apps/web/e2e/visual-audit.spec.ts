@@ -749,11 +749,25 @@ test('copy creates a distinct checked group and Enter commits one undoable revis
   expect(copiedGroupIds[0]).toBeTruthy();
   expect(copiedGroupIds[1]).toBe(copiedGroupIds[0]);
 
-  await page.keyboard.press('Control+z');
+  await page.getByRole('button', { name: 'История изменений' }).click();
+  const historyPanel = page.locator('.history-panel');
+  await expect(page.getByRole('heading', { name: 'История изменений' })).toBeVisible();
+  const copiedRevision = historyPanel.getByRole('listitem').filter({ hasText: 'Копирование группы (2)' });
+  await expect(copiedRevision.getByText('Копирование группы (2)')).toBeVisible();
+  await expect(copiedRevision.getByText('Локальная сессия')).toBeVisible();
+  await expect(copiedRevision.getByText('Применено')).toBeVisible();
+  await historyPanel.getByRole('button', { name: 'Отменить' }).click();
   await expect.poll(async () => {
     const current = await page.request.get(`${apiBase}/projects/${projectId}`);
     return (await current.json() as { plan: { objects: unknown[] } }).plan.objects.length;
   }).toBe(3);
+  await expect(copiedRevision.getByText('Отменено')).toBeVisible();
+  await historyPanel.getByRole('button', { name: 'Повторить' }).click();
+  await expect.poll(async () => {
+    const current = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await current.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBe(5);
+  await expect(copiedRevision.getByText('Применено')).toBeVisible();
 });
 
 test('placement flow creates a typed group across the selected area as one revision', async ({ page }) => {
@@ -838,7 +852,7 @@ test('working areas remain manageable after the editor is opened', async ({ page
   const projectId = new URL(page.url()).pathname.split('/')[2];
 
   await page.getByRole('button', { name: 'Рабочие участки' }).click();
-  await expect(page.locator('.rail-panel__header strong', { hasText: 'Рабочие участки' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Рабочие участки' })).toBeVisible();
   const name = page.getByRole('textbox', { name: 'Название Контур DXF: тестовая область' });
   await name.fill('Главная аллея');
   await name.press('Enter');

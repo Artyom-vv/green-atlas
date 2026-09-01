@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, Download, Redo2, Undo2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Download, History, Redo2, Undo2 } from 'lucide-react';
 import { Button, IconButton } from '@green/ui';
 import { Link } from 'react-router-dom';
 
@@ -7,6 +7,7 @@ type AppHeaderProps = {
   projectName?: string;
   workspace?: boolean;
   onReview?: () => void;
+  onHistory?: () => void;
   onExport?: () => void;
   exporting?: boolean;
   onUndo?: () => void;
@@ -20,7 +21,7 @@ type AppHeaderProps = {
   endActions?: ReactNode;
 };
 
-export function AppHeader({ projectName, workspace = false, onReview, onExport, exporting = false, onUndo, onRedo, undoLabel, redoLabel, historyBusy = false, actionsDisabled = false, backTo = '/projects', subtitle = 'План озеленения', endActions }: AppHeaderProps) {
+export function AppHeader({ projectName, workspace = false, onReview, onHistory, onExport, exporting = false, onUndo, onRedo, undoLabel, redoLabel, historyBusy = false, actionsDisabled = false, backTo = '/projects', subtitle = 'План озеленения', endActions }: AppHeaderProps) {
   if (!workspace) {
     return (
       <header className="app-header app-header--flow">
@@ -42,6 +43,7 @@ export function AppHeader({ projectName, workspace = false, onReview, onExport, 
           <IconButton icon={Undo2} label={undoLabel ? `Отменить: ${undoLabel}` : 'Отменить'} variant="ghost" disabled={!onUndo || historyBusy || actionsDisabled} onClick={onUndo} />
           <IconButton icon={Redo2} label={redoLabel ? `Повторить: ${redoLabel}` : 'Повторить'} variant="ghost" disabled={!onRedo || historyBusy || actionsDisabled} onClick={onRedo} />
           <span className="header-divider" />
+          {onHistory ? <IconButton icon={History} label="История изменений" variant="ghost" disabled={actionsDisabled} onClick={onHistory} /> : null}
           {onReview ? <Button variant="secondary" icon={AlertTriangle} disabled={actionsDisabled} onClick={onReview}>Проверка</Button> : null}
           {onExport ? <Button variant="primary" icon={Download} loading={exporting} disabled={actionsDisabled} onClick={onExport}>Выпустить пакет</Button> : null}
         </>}

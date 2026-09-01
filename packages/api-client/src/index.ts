@@ -12,6 +12,7 @@ export type LayerMapping = components['schemas']['LayerMapping'];
 export type PlantingZoneAssignment = components['schemas']['PlantingZoneAssignment'];
 export type Plan = components['schemas']['Plan'];
 export type PlanHistoryState = components['schemas']['PlanHistoryState'];
+export type PlanHistoryEntry = components['schemas']['PlanHistoryEntry'];
 export type PlanObject = components['schemas']['PlanObject'];
 export type PlanChangeSetDraft = components['schemas']['PlanChangeSetDraft'];
 export type ChangeSetPreview = Omit<components['schemas']['ChangeSetPreview'], 'id'> & { id: string };

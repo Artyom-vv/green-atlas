@@ -4,7 +4,7 @@ import json
 from threading import RLock
 from uuid import uuid4
 
-from app.contracts import Plan, PlanHistoryState, PlantingZoneAssignment, Project, ProjectStatus
+from app.contracts import Plan, PlanHistoryEntry, PlanHistoryState, PlantingZoneAssignment, Project, ProjectStatus
 from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import ProjectVersionConflict, advance_expected_project_version, expected_project_version
 
@@ -15,6 +15,8 @@ class _Snapshot:
     planting_zones: list[PlantingZoneAssignment]
     plan: Plan | None
     status: ProjectStatus
+    id: str = ""
+    created_at: str = ""
 
 
 class InMemoryProjectHistory:
@@ -37,6 +39,8 @@ class InMemoryProjectHistory:
             planting_zones=[zone.model_copy(deep=True) for zone in project.planting_zones],
             plan=project.plan.model_copy(deep=True) if project.plan else None,
             status=project.status,
+            id=str(uuid4()),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     def _restore(self, project: Project, snapshot: _Snapshot) -> Project:
@@ -63,11 +67,19 @@ class InMemoryProjectHistory:
         with self._lock:
             undo = self._undo.get(project_id, [])
             redo = self._redo.get(project_id, [])
+            entries = [
+                PlanHistoryEntry(id=item.id, ordinal=index + 1, label=item.label, created_at=item.created_at, applied=True)
+                for index, item in enumerate(undo)
+            ] + [
+                PlanHistoryEntry(id=item.id, ordinal=len(undo) + index + 1, label=item.label, created_at=item.created_at, applied=False)
+                for index, item in enumerate(reversed(redo))
+            ]
             return PlanHistoryState(
                 can_undo=bool(undo),
                 can_redo=bool(redo),
                 undo_label=undo[-1].label if undo else None,
                 redo_label=redo[-1].label if redo else None,
+                entries=list(reversed(entries)),
             )
 
     def undo(self, project: Project) -> Project:
@@ -77,7 +89,10 @@ class InMemoryProjectHistory:
                 raise ValueError("Нет изменений для отмены")
             snapshot = undo.pop()
             redo = self._redo.setdefault(project.id, [])
-            redo.append(self._snapshot(project, snapshot.label))
+            current = self._snapshot(project, snapshot.label)
+            current.id = snapshot.id
+            current.created_at = snapshot.created_at
+            redo.append(current)
             return self._restore(project, snapshot)
 
     def redo(self, project: Project) -> Project:
@@ -87,7 +102,10 @@ class InMemoryProjectHistory:
                 raise ValueError("Нет изменений для повтора")
             snapshot = redo.pop()
             undo = self._undo.setdefault(project.id, [])
-            undo.append(self._snapshot(project, snapshot.label))
+            current = self._snapshot(project, snapshot.label)
+            current.id = snapshot.id
+            current.created_at = snapshot.created_at
+            undo.append(current)
             return self._restore(project, snapshot)
 
 
@@ -257,11 +275,31 @@ class SqliteProjectHistory:
                 "SELECT label FROM plan_changes WHERE project_id = ? AND ordinal = ?",
                 (project_id, cursor + 1),
             ).fetchone()
+            rows = self._connection.execute(
+                """
+                SELECT ordinal, change_set_id, label, created_at
+                FROM plan_changes
+                WHERE project_id = ?
+                ORDER BY ordinal DESC
+                LIMIT 20
+                """,
+                (project_id,),
+            ).fetchall()
         return PlanHistoryState(
             can_undo=undo is not None,
             can_redo=redo is not None,
             undo_label=str(undo["label"]) if undo is not None else None,
             redo_label=str(redo["label"]) if redo is not None else None,
+            entries=[
+                PlanHistoryEntry(
+                    id=str(row["change_set_id"]),
+                    ordinal=int(row["ordinal"]),
+                    label=str(row["label"]),
+                    created_at=str(row["created_at"]),
+                    applied=int(row["ordinal"]) <= cursor,
+                )
+                for row in rows
+            ],
         )
 
     def undo(self, project: Project) -> Project:
