@@ -131,6 +131,33 @@ class PositionChecker:
         self.constraints[kind] = constraint
         return constraint
 
+    def hard_safe_area(
+        self,
+        area: BaseGeometry,
+        radius: float,
+        plant_kind: Literal["tree", "shrub"],
+    ) -> BaseGeometry:
+        """Remove known hard constraints before automatic candidate search.
+
+        This is an optimisation boundary, not a substitute for ``check``.
+        Every generated point is still validated afterwards so a stale or
+        simplified safe geometry can never weaken the placement contract.
+        """
+        safe = area.buffer(-radius)
+        if safe.is_empty:
+            return safe
+        if self.site is not None:
+            safe = safe.intersection(self.site.buffer(-radius))
+        for kind in CONSTRAINT_KINDS:
+            geometry = self._constraint(kind)
+            if geometry is not None:
+                safe = safe.difference(geometry.buffer(rule_distance(kind, plant_kind)))
+        for kind in OCCUPIED_KINDS:
+            geometry = self._constraint(kind)
+            if geometry is not None:
+                safe = safe.difference(geometry.buffer(radius))
+        return safe
+
     def _evidence(self, kind: str, center: Point, distance: float) -> tuple[str | None, tuple[str, ...]]:
         layers: set[str] = set()
         identifiers: list[str] = []

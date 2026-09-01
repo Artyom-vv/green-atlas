@@ -2407,6 +2407,13 @@
             "type": "array",
             "title": "Skipped"
           },
+          "reason_summary": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateReasonSummary"
+            },
+            "type": "array",
+            "title": "Reason Summary"
+          },
           "change_set": {
             "anyOf": [
               {

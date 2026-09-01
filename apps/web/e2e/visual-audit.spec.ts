@@ -622,7 +622,15 @@ test('placement flow creates a typed group across the selected area as one revis
   );
   await expect(zoneCheckbox).toBeChecked();
   await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  const placementPreview = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
+    && response.request().method() === 'POST'
+    && response.request().postData()?.includes('"target_count":8') === true);
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
+  const placementPayload = await (await placementPreview).json() as { change_set?: { additions: Array<{ x: number; y: number }> } };
+  const generated = placementPayload.change_set?.additions ?? [];
+  expect(generated.length).toBeGreaterThan(1);
+  expect(new Set(generated.map((item) => item.x)).size).toBe(generated.length);
+  expect(new Set(generated.map((item) => item.y)).size).toBe(generated.length);
   await expect(page.getByText('Черновик на карте')).toBeVisible();
   await expect(page.getByText(/из 8 допустимы/)).toBeVisible();
   await expect(page.getByText('Почему позиции исключены')).toBeVisible();

@@ -7,7 +7,7 @@ import json
 from math import isfinite
 from threading import RLock
 
-from shapely.geometry import Point, shape
+from shapely.geometry import Point, mapping, shape
 from shapely.ops import unary_union
 
 from app.contracts import (
@@ -65,7 +65,7 @@ from app.data_passport import build_data_passport
 from app.dxf_import.ports import DxfReaderPort
 from app.exporting.ports import DxfWriterPort
 from app.geometry.ports import GeometryEnginePort, GeometryQueryPort
-from app.geometry.domain import PositionAdvisory, PositionViolation
+from app.geometry.domain import PositionAdvisory, PositionChecker, PositionViolation
 from app.history.ports import ProjectHistoryPort
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
@@ -919,6 +919,21 @@ class ProjectApplication:
     def _default_layout_radius(kind: str) -> float:
         return 1.6 if kind == "tree" else 0.65
 
+    def _automatic_generation_zones(
+        self,
+        project: Project,
+        plant_kind: str,
+        layout_radius_m: float | None,
+    ) -> list[PlantingZoneAssignment]:
+        kind = "shrub" if plant_kind == "shrub" else "tree"
+        radius = layout_radius_m or self._default_layout_radius(kind)
+        checker = PositionChecker(project)
+        result: list[PlantingZoneAssignment] = []
+        for zone in project.planting_zones:
+            geometry = checker.hard_safe_area(shape(zone.geometry), radius, kind)
+            result.append(zone.model_copy(update={"geometry": mapping(geometry)}))
+        return result
+
     def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate, spacing_index: PlantSpacingIndex | None = None) -> tuple[PlanObject, _CandidateIssue | None]:
         radius = payload.layout_radius_m or payload.radius or self._default_layout_radius(payload.kind)
         violation = self.geometry.position_violation(project, payload.x, payload.y, radius, payload.kind)
@@ -1170,7 +1185,12 @@ class ProjectApplication:
             generation_request = request.model_copy(update={
                 "target_count": min(5000, max(requested_target, requested_target * 8)),
             })
-        candidates = self.candidate_generator.generate(generation_request, project.planting_zones)
+        generation_zones = self._automatic_generation_zones(
+            project,
+            request.plant_kind,
+            request.layout_radius_m,
+        )
+        candidates = self.candidate_generator.generate(generation_request, generation_zones)
         pattern_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         pattern_id = f"pattern-{pattern_digest[:16]}"
         label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
@@ -1246,13 +1266,22 @@ class ProjectApplication:
                 label=f"{label}: {len(accepted_operations)}",
                 operations=accepted_operations,
             ))
+        reason_summary = _reason_summary(skipped)
+        if requested_target is not None and len(candidates) < requested_target:
+            reason_summary.append({
+                "status": "blocked",
+                "code": "SAFE_CAPACITY_REACHED",
+                "category": "constraint",
+                "count": requested_target - len(candidates),
+                "message": "В проверенной части участка больше безопасных позиций не найдено",
+            })
         return PatternPreview(
             pattern_id=pattern_id,
             type=request.type,
             requested_count=requested_target if requested_target is not None else len(candidates),
             accepted_count=len(accepted_operations),
             skipped=skipped,
-            reason_summary=_reason_summary(skipped),
+            reason_summary=reason_summary,
             unverified_data=unverified_data,
             data_confidence=passport.mass_placement_status,
             data_confidence_reasons=list(passport.gaps),
@@ -1322,7 +1351,10 @@ class ProjectApplication:
             placement_mode="count",
             target_count=request.max_sites,
         )
-        candidates = self.candidate_generator.generate(fill, project.planting_zones)
+        candidates = self.candidate_generator.generate(
+            fill,
+            self._automatic_generation_zones(project, fill.plant_kind, fill.layout_radius_m),
+        )
         digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         recommendation_id = f"recommendation-{digest[:16]}"
         operations = [
@@ -1450,7 +1482,11 @@ class ProjectApplication:
         skipped: list[PatternSkippedCandidate] = []
         operations: list[dict[str, object]] = []
         operation_points: list[tuple[float, float]] = []
-        candidates = self.candidate_generator.generate(request, project.planting_zones)
+        brush_kind = "shrub" if request.composition == "shrubs" else "tree"
+        candidates = self.candidate_generator.generate(
+            request,
+            self._automatic_generation_zones(project, brush_kind, None),
+        )
         for candidate in candidates:
             kind = candidate.kind or "tree"
             operations.append({
@@ -1486,9 +1522,23 @@ class ProjectApplication:
         accepted_additions = 0
         accepted_removals = 0
         for result in initial.candidate_results:
-            if result.status == "blocked":
+            if result.status != "allowed":
                 x, y = operation_points[result.operation_index]
-                skipped.append(PatternSkippedCandidate(x=x, y=y, reason=result.reason))
+                skipped.append(PatternSkippedCandidate(
+                    x=x,
+                    y=y,
+                    status=result.status,
+                    code=result.code,
+                    category=result.category,
+                    reason=result.reason,
+                    rule_id=result.rule_id,
+                    source_layer=result.source_layer,
+                    source_feature_ids=result.source_feature_ids,
+                    actual_distance_m=result.actual_distance_m,
+                    required_distance_m=result.required_distance_m,
+                    suggested_action=result.suggested_action,
+                    zone_id=result.zone_id,
+                ))
                 continue
             operation = operations[result.operation_index]
             accepted_operations.append(operation)
@@ -1512,6 +1562,7 @@ class ProjectApplication:
             added_count=accepted_additions,
             removed_count=accepted_removals,
             skipped=skipped,
+            reason_summary=_reason_summary(skipped),
             change_set=change_set,
         )
 

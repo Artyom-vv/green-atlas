@@ -1257,6 +1257,30 @@ def test_count_fill_is_bounded_and_spans_a_large_area() -> None:
     assert len({round(item.x % 5, 3) for item in candidates[:30]}) > 10
 
 
+def test_fill_reports_when_safe_geometry_cannot_hold_the_requested_count() -> None:
+    project_id = prepare_project("Ограниченная ёмкость")
+    select_areas(project_id, [area("small", "Малый участок", [[20, 20], [30, 20], [30, 30], [20, 30]])])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+
+    response = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        "type": "fill",
+        "base_plan_version": version,
+        "plant_kind": "tree",
+        "zone_ids": ["small"],
+        "placement_mode": "count",
+        "target_count": 20,
+        "layout": "natural",
+        "spacing_m": 6,
+        "edge_offset_m": 1,
+        "seed": 47,
+    })
+
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+    assert payload["accepted_count"] < payload["requested_count"]
+    assert any(item["code"] == "SAFE_CAPACITY_REACHED" for item in payload["reason_summary"])
+
+
 def test_versioned_species_assignment_adds_bounded_canopy_and_root_forecasts() -> None:
     catalog = client.get("/api/species", params={"kind": "tree"})
     assert catalog.status_code == 200

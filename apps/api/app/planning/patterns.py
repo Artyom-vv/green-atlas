@@ -20,12 +20,13 @@ def _bounded(candidates: list[PatternCandidate]) -> list[PatternCandidate]:
     return candidates
 
 
-def _natural_candidates(geometry, spacing: float, target: int, seed: int) -> list[PatternCandidate]:
-    """Deterministic blue-noise-like points without an underlying grid.
+def _poisson_candidates(geometry, spacing: float, target: int, seed: int) -> list[PatternCandidate]:
+    """Generate a deterministic random-sequential Poisson sample.
 
-    A low-discrepancy sequence covers the whole extent while a spatial hash
-    enforces the requested minimum distance. This avoids the visible square
-    lattice and remains bounded for a 5k preview.
+    Candidates are drawn over the whole extent instead of walking an implicit
+    lattice. A spatial hash keeps the minimum-distance check local. The result
+    is stable for the same geometry and seed, but it has no repeated X/Y rails
+    that can be mistaken for an engineering placement grid.
     """
     min_x, min_y, max_x, max_y = geometry.bounds
     width, height = max_x - min_x, max_y - min_y
@@ -34,20 +35,15 @@ def _natural_candidates(geometry, spacing: float, target: int, seed: int) -> lis
     cell = max(spacing, 1e-6)
     buckets: dict[tuple[int, int], list[tuple[float, float]]] = {}
     accepted: list[PatternCandidate] = []
-    offset = seed % 1_000_003
-    # The R2 sequence uses two irrational increments. Unlike a rectangular
-    # lattice (or dyadic coordinates scaled to a round CAD extent), it does
-    # not repeat a visible set of X/Y rails.
-    plastic = 1.324717957244746
-    alpha_x = 1 / plastic
-    alpha_y = 1 / (plastic * plastic)
-    max_attempts = max(2_000, target * 160)
-    for attempt in range(1, max_attempts + 1):
-        index = attempt + offset
-        x = min_x + ((0.5 + index * alpha_x) % 1) * width
-        y = min_y + ((0.5 + index * alpha_y) % 1) * height
+    random = Random(f"poisson:{seed}")
+    max_attempts = max(4_000, target * 120)
+    attempts_without_acceptance = 0
+    for _ in range(max_attempts):
+        x = min_x + random.random() * width
+        y = min_y + random.random() * height
         point = Point(x, y)
         if not geometry.covers(point):
+            attempts_without_acceptance += 1
             continue
         bucket = (floor(x / cell), floor(y / cell))
         too_close = False
@@ -62,9 +58,13 @@ def _natural_candidates(geometry, spacing: float, target: int, seed: int) -> lis
             if too_close:
                 break
         if too_close:
+            attempts_without_acceptance += 1
+            if accepted and attempts_without_acceptance >= max(2_000, len(accepted) * 20):
+                break
             continue
         buckets.setdefault(bucket, []).append((x, y))
         accepted.append(PatternCandidate(round(x, 6), round(y, 6)))
+        attempts_without_acceptance = 0
         if len(accepted) >= target:
             break
     return accepted
@@ -126,7 +126,9 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
     usable_parts = []
     for zone in selected:
         polygon = shape(zone.geometry)
-        if polygon.is_empty or polygon.geom_type not in {"Polygon", "MultiPolygon"}:
+        if polygon.is_empty:
+            continue
+        if polygon.geom_type not in {"Polygon", "MultiPolygon"}:
             raise ValueError(f"Участок «{zone.label}» не является замкнутой областью")
         usable = polygon.buffer(-request.edge_offset_m) if request.edge_offset_m else polygon
         if usable.is_empty:
@@ -139,7 +141,7 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
 
     if request.layout == "natural":
         target = request.target_count if request.placement_mode == "count" else MAX_PATTERN_CANDIDATES
-        return _natural_candidates(usable_geometry, request.spacing_m, target, request.seed)
+        return _poisson_candidates(usable_geometry, request.spacing_m, target, request.seed)
 
     def candidates_at(spacing: float, limit: int | None = None) -> list[PatternCandidate]:
         candidates: list[PatternCandidate] = []
@@ -218,33 +220,19 @@ def generate_brush(request: BrushPreviewRequest, zones: list[PlantingZoneAssignm
     if target.is_empty:
         return []
 
-    min_x, min_y, max_x, max_y = target.bounds
-    first_x = floor(min_x / request.spacing_m) * request.spacing_m
-    first_y = floor(min_y / request.spacing_m) * request.spacing_m
     threshold = {"sparse": 0.42, "balanced": 0.7, "dense": 1.0}[request.density]
+    effective_spacing = request.spacing_m / sqrt(threshold)
+    points = _poisson_candidates(target, effective_spacing, request.max_sites, request.seed)
     candidates: list[PatternCandidate] = []
-    row = 0
-    y = first_y
-    while y <= max_y + 1e-9:
-        col = 0
-        x = first_x + (request.spacing_m / 2 if row % 2 else 0)
-        while x <= max_x + 1e-9:
-            point = Point(x, y)
-            random = Random(f"brush:{request.seed}:{row}:{col}")
-            if target.covers(point) and random.random() <= threshold:
-                if request.composition == "trees":
-                    kind = "tree"
-                elif request.composition == "shrubs":
-                    kind = "shrub"
-                else:
-                    kind = "tree" if random.random() < request.tree_share else "shrub"
-                candidates.append(PatternCandidate(round(x, 6), round(y, 6), kind))
-                if len(candidates) >= request.max_sites:
-                    return candidates
-            x += request.spacing_m
-            col += 1
-        y += request.spacing_m
-        row += 1
+    for index, point in enumerate(points):
+        random = Random(f"brush-kind:{request.seed}:{index}:{point.x}:{point.y}")
+        if request.composition == "trees":
+            kind = "tree"
+        elif request.composition == "shrubs":
+            kind = "shrub"
+        else:
+            kind = "tree" if random.random() < request.tree_share else "shrub"
+        candidates.append(PatternCandidate(point.x, point.y, kind))
     return candidates
 
 

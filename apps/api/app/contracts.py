@@ -588,6 +588,7 @@ class BrushPreview(BaseModel):
     added_count: int = Field(ge=0)
     removed_count: int = Field(ge=0)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
+    reason_summary: list[CandidateReasonSummary] = Field(default_factory=list)
     change_set: ChangeSetPreview | None = None
 
 

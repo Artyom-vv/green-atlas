@@ -629,6 +629,8 @@ export interface components {
             removed_count: number;
             /** Skipped */
             skipped?: components["schemas"]["PatternSkippedCandidate"][];
+            /** Reason Summary */
+            reason_summary?: components["schemas"]["CandidateReasonSummary"][];
             change_set?: components["schemas"]["ChangeSetPreview"] | null;
         };
         /** BrushPreviewRequest */
