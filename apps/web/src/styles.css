@@ -220,6 +220,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .placement-check--allowed { color: var(--color-green-700) !important; }
 .placement-check--blocked { color: var(--color-red-700, #B42318) !important; }
 .placement-check--unknown { color: var(--color-neutral-500) !important; }
+.placement-check--checking { color: var(--color-blue-700) !important; }
 .map-lod-warning { color: var(--color-warning-700, #9A5500); font-weight: 500; }
 .map-statusbar .ui-button { --control-height: 32px; padding-inline: 8px; color: var(--color-neutral-600); font-size: 11px; }
 .map-statusbar .ui-button.is-active { color: var(--color-blue-700); background: var(--color-blue-100); }

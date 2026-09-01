@@ -9,6 +9,7 @@ import { ReleasePanel } from '../domain-ui/ReleasePanel';
 import { ChangeSetReviewPanel } from '../domain-ui/ChangeSetReviewPanel';
 import { BrushToolPanel } from '../domain-ui/BrushToolPanel';
 import { GroupInspector } from '../domain-ui/GroupInspector';
+import { groupTransformDraft } from '../domain-ui/groupTransform';
 import { HistoryPanel } from '../domain-ui/HistoryPanel';
 import type { GrowthHorizon } from '../domain-ui/GrowthHorizonControl';
 import { LayerInspector } from '../domain-ui/LayerInspector';
@@ -73,6 +74,9 @@ export function WorkspacePage() {
   const patternAbortRef = useRef<AbortController | undefined>(undefined);
   const recommendationAbortRef = useRef<AbortController | undefined>(undefined);
   const brushAbortRef = useRef<AbortController | undefined>(undefined);
+  const movePreviewTimerRef = useRef<number | undefined>(undefined);
+  const movePreviewAbortRef = useRef<AbortController | undefined>(undefined);
+  const movePreviewRequestRef = useRef(0);
   const mapEditInFlightRef = useRef(false);
   const initializedProjectRef = useRef<string | undefined>(undefined);
 
@@ -92,6 +96,7 @@ export function WorkspacePage() {
   const [selectionAnchor, setSelectionAnchor] = useState<[number, number]>();
   const [mapAreaTarget, setMapAreaTarget] = useState<MapAreaTarget>();
   const [placementCheck, setPlacementCheck] = useState<PlacementCheck>();
+  const [moveLiveCheck, setMoveLiveCheck] = useState<{ status: 'checking' | 'allowed' | 'blocked' | 'unknown'; reason: string }>();
   const [mapRequest, setMapRequest] = useState<BufferedMapRequest>();
   const [draftZones, setDraftZones] = useState<PlantingZoneAssignment[]>([]);
   const [zoneDrawingMode, setZoneDrawingMode] = useState<'new' | string>();
@@ -171,10 +176,14 @@ export function WorkspacePage() {
     patternAbortRef.current?.abort();
     recommendationAbortRef.current?.abort();
     brushAbortRef.current?.abort();
+    movePreviewRequestRef.current += 1;
+    movePreviewAbortRef.current?.abort();
     if (mapRequestTimerRef.current !== undefined) window.clearTimeout(mapRequestTimerRef.current);
     if (placementTimerRef.current !== undefined) window.clearTimeout(placementTimerRef.current);
+    if (movePreviewTimerRef.current !== undefined) window.clearTimeout(movePreviewTimerRef.current);
     mapRequestTimerRef.current = undefined;
     placementTimerRef.current = undefined;
+    movePreviewTimerRef.current = undefined;
     setPanel(null);
     setLeftOpen(false);
     setRightOpen(true);
@@ -184,6 +193,7 @@ export function WorkspacePage() {
     setCursor(undefined);
     setMapHoverTarget(undefined);
     setPlacementCheck(undefined);
+    setMoveLiveCheck(undefined);
     setMapRequest(undefined);
     setDraftZones([]);
     setZoneDrawingMode(undefined);
@@ -220,6 +230,8 @@ export function WorkspacePage() {
     patternAbortRef.current?.abort();
     recommendationAbortRef.current?.abort();
     brushAbortRef.current?.abort();
+    if (movePreviewTimerRef.current !== undefined) window.clearTimeout(movePreviewTimerRef.current);
+    movePreviewAbortRef.current?.abort();
   }, []);
 
   const initialExtent = useMemo(() => paddedMapExtent(project?.source_file?.bounds, 20, sourcePreview ? 0.3 : 0), [project?.source_file?.bounds, sourcePreview]);
@@ -522,34 +534,45 @@ export function WorkspacePage() {
   const previewSelectionTransform = (mode: 'move' | 'copy', coordinate: [number, number]) => {
     const plan = project?.plan;
     if (!plan || !selectedObjects.length) return;
-    const center = selectedObjects.reduce(([x, y], object) => [x + object.x, y + object.y] as [number, number], [0, 0] as [number, number]);
-    const delta: [number, number] = [coordinate[0] - center[0] / selectedObjects.length, coordinate[1] - center[1] / selectedObjects.length];
     const copiedGroupId = mode === 'copy' ? `group-${globalThis.crypto.randomUUID()}` : undefined;
-    const operations: PlanChangeSetDraft['operations'] = mode === 'move'
-      ? selectedObjects.flatMap((object) => object.id ? [{ type: 'update' as const, object_id: object.id, changes: { x: object.x + delta[0], y: object.y + delta[1] } }] : [])
-      : selectedObjects.map((object) => ({
-        type: 'add' as const,
-        object: {
-          kind: object.kind,
-          x: object.x + delta[0],
-          y: object.y + delta[1],
-          radius: object.layout_radius_m ?? object.radius,
-          layout_radius_m: object.layout_radius_m ?? object.radius,
-          size_class: object.size_class,
-          species_revision_id: object.species_revision_id,
-          group_ids: copiedGroupId ? [copiedGroupId] : [],
-          spacing_policy: object.spacing_policy,
-          locked: false,
-        },
-      }));
-    previewChanges.mutate({
-      base_plan_version: plan.version,
-      source: 'group',
-      label: mode === 'move' ? `Перемещение группы (${selectedObjects.length})` : `Копирование группы (${selectedObjects.length})`,
-      policy: 'all_or_nothing',
-      operations,
-    });
+    const draft = groupTransformDraft(plan.version, selectedObjects, mode, coordinate, copiedGroupId);
+    if (draft) previewChanges.mutate(draft);
   };
+
+  const previewSelectionMoveLive = useCallback((coordinate?: [number, number]) => {
+    const plan = project?.plan;
+    if (!coordinate || tool !== 'move' || !plan || !selectedObjects.length || planLocked) {
+      if (movePreviewTimerRef.current !== undefined) window.clearTimeout(movePreviewTimerRef.current);
+      movePreviewTimerRef.current = undefined;
+      movePreviewAbortRef.current?.abort();
+      setMoveLiveCheck(undefined);
+      return;
+    }
+    const draft = groupTransformDraft(plan.version, selectedObjects, 'move', coordinate);
+    if (!draft) return;
+    setMoveLiveCheck({ status: 'checking', reason: 'Проверяем новое положение' });
+    if (movePreviewTimerRef.current !== undefined) window.clearTimeout(movePreviewTimerRef.current);
+    movePreviewTimerRef.current = window.setTimeout(() => {
+      movePreviewAbortRef.current?.abort();
+      const controller = new AbortController();
+      movePreviewAbortRef.current = controller;
+      const requestId = movePreviewRequestRef.current + 1;
+      movePreviewRequestRef.current = requestId;
+      void api.previewPlanChanges(projectId, draft, controller.signal).then((preview) => {
+        if (requestId !== movePreviewRequestRef.current) return;
+        const results = preview.candidate_results ?? [];
+        const issue = results.find((item) => item.status === 'blocked')
+          ?? results.find((item) => item.status !== 'allowed');
+        setMoveLiveCheck(preview.can_apply
+          ? { status: 'allowed', reason: 'Можно переместить' }
+          : { status: issue?.status === 'blocked' ? 'blocked' : 'unknown', reason: issue?.reason ?? 'Положение требует проверки' });
+      }).catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (requestId === movePreviewRequestRef.current) setMoveLiveCheck({ status: 'unknown', reason: 'Не удалось проверить положение' });
+      });
+      movePreviewTimerRef.current = undefined;
+    }, 120);
+  }, [planLocked, project?.plan, projectId, selectedObjects, tool]);
 
   const previewSelectionLock = (locked: boolean) => {
     const plan = project?.plan;
@@ -599,6 +622,10 @@ export function WorkspacePage() {
       );
     }
     if ((tool === 'move' || tool === 'copy') && selectedObjects.length && !mapEditInFlightRef.current) {
+      if (movePreviewTimerRef.current !== undefined) window.clearTimeout(movePreviewTimerRef.current);
+      movePreviewTimerRef.current = undefined;
+      movePreviewAbortRef.current?.abort();
+      setMoveLiveCheck(undefined);
       mapEditInFlightRef.current = true;
       previewSelectionTransform(tool, coordinate);
       mapEditInFlightRef.current = false;
@@ -672,6 +699,7 @@ export function WorkspacePage() {
   const operationError = createManualPlan.error ?? savePlacementZone.error ?? saveManagedZones.error ?? addObject.error ?? previewChanges.error ?? previewPattern.error ?? previewRecommendation.error ?? previewBrush.error ?? applyChanges.error ?? deleteObjects.error ?? undoChange.error ?? redoChange.error ?? mapGeometryQuery.error;
   const showMapStatus = Boolean(
     (placementCheck && (tool === 'add_tree' || tool === 'add_shrub'))
+    || (moveLiveCheck && tool === 'move')
     || mapGeometryQuery.isFetching
     || mapGeometryMetadata?.truncated,
   );
@@ -713,14 +741,14 @@ export function WorkspacePage() {
           setActiveLayerId(undefined);
           setPanel(null);
           openRightPanel();
-        }} onCoordinate={handleCoordinate} onTranslateSelectionEnd={handleCoordinate} onSelectionAnchor={setSelectionAnchor} onPointerCoordinate={handlePointerCoordinate} onExtentChange={handleMapExtent} />
+        }} onCoordinate={handleCoordinate} onTranslateSelectionEnd={handleCoordinate} onMoveCoordinate={previewSelectionMoveLive} onSelectionAnchor={setSelectionAnchor} onPointerCoordinate={handlePointerCoordinate} onExtentChange={handleMapExtent} />
         {!sceneOpen && !changePreview && selectionAnchor && selectedObjects.length ? <div className="selection-context-bar" style={{ left: `clamp(180px, ${selectionAnchor[0]}px, calc(100% - 180px))`, top: `clamp(56px, ${selectionAnchor[1] - 60}px, calc(100% - 56px))` }} role="toolbar" aria-label="Действия с выделением"><strong>{selectedObjects.length}</strong><IconButton icon={Leaf} label="Изменить породу" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setSpeciesAssignmentOpen(true)} /><Select aria-label="Плотность выделения" value={selectedObjects.every((object) => object.spacing_policy === selectedObjects[0]?.spacing_policy) ? selectedObjects[0]?.spacing_policy : ''} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onChange={(event) => previewSelectionSpacing(event.target.value as 'open' | 'balanced' | 'canopy')}><option value="" disabled>Плотность</option><option value="canopy">Плотно</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select><IconButton icon={Move} label={tool === 'move' ? 'Завершить перемещение' : 'Переместить выделение'} active={tool === 'move'} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => editor.setTool(tool === 'move' ? 'select' : 'move')} /><IconButton icon={Trash2} label="Удалить выделение" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setDeleteSelectionOpen(true)} /></div> : null}
         {!sceneOpen && !selectedObjects.length && mapHoverTarget && (tool === 'select' || tool === 'pattern_fill') ? <div className={`map-hover-hint ${mapHoverTarget.pixel[0] > 520 ? 'is-left' : ''}`} style={{ left: mapHoverTarget.pixel[0] + 14, top: mapHoverTarget.pixel[1] + 14 }} role="status" aria-label="Выбор объекта карты" onMouseDown={(event) => event.stopPropagation()}>{mapHoverTarget.items.map((item) => <button className={`map-hover-hint__item ${item.target.selectable ? 'is-selectable' : 'is-reference'}`} key={item.id} type="button" aria-label={`Выбрать ${item.label}`} onClick={(event) => { event.stopPropagation(); handleMapStackSelect(item); }}><strong>{item.label}</strong><span>{item.detail}</span></button>)}</div> : null}
         {!sceneOpen && projectHasPlan ? <div className="map-edit-tools"><MapToolbar tool={tool} onTool={activateTool} editable={!sourcePreview && !planLocked && !editorBusy} canDelete={selectedIds.length > 0} onDelete={() => setDeleteSelectionOpen(true)} /></div> : null}
         {!sceneOpen ? <div className="map-zoom-tools"><IconButton icon={Plus} label="Увеличить" variant="ghost" onClick={() => mapViewport.current?.zoomIn()} /><IconButton icon={Minus} label="Уменьшить" variant="ghost" onClick={() => mapViewport.current?.zoomOut()} /><IconButton icon={Maximize2} label="Показать весь чертёж" variant="ghost" onClick={() => mapViewport.current?.fit()} /></div> : null}
         {!sceneOpen && project.plan ? <div className="map-plan-focus"><IconButton icon={Crosshair} label="Показать посадки" variant="ghost" onClick={() => mapViewport.current?.fitPlan()} /></div> : null}
         {!rightOpen ? <div className="right-dock"><IconButton icon={ChevronLeft} label="Развернуть панель" variant="ghost" onClick={openRightPanel} /><IconButton icon={project.plan ? AlertTriangle : Scan} label={project.plan ? 'Проверка' : 'Участки'} variant="ghost" onClick={() => { setPanel(project.plan ? 'issues' : 'zones'); openRightPanel(); }} /></div> : null}
-        {showMapStatus ? <div className="map-statusbar">{placementCheck && (tool === 'add_tree' || tool === 'add_shrub') ? <span className={`placement-check placement-check--${placementCheck.status}`} role="status">{placementCheck.reason}</span> : null}{mapGeometryQuery.isFetching ? <span className="map-stream-status">Обновляем карту</span> : null}{mapGeometryMetadata?.truncated ? <span className="map-lod-warning" role="status">Приблизьте карту, чтобы увидеть детали</span> : null}</div> : null}
+        {showMapStatus ? <div className="map-statusbar">{placementCheck && (tool === 'add_tree' || tool === 'add_shrub') ? <span className={`placement-check placement-check--${placementCheck.status}`} role="status">{placementCheck.reason}</span> : null}{moveLiveCheck && tool === 'move' ? <span className={`placement-check placement-check--${moveLiveCheck.status}`} role="status">{moveLiveCheck.reason}</span> : null}{mapGeometryQuery.isFetching ? <span className="map-stream-status">Обновляем карту</span> : null}{mapGeometryMetadata?.truncated ? <span className="map-lod-warning" role="status">Приблизьте карту, чтобы увидеть детали</span> : null}</div> : null}
         {busy ? <div className="map-busy"><Progress label="Сохраняем изменения" /></div> : null}
         {operationError ? <div className="map-operation-error">{isProjectConflict(operationError) ? <ProjectConflictNotice error={operationError} onReload={() => void reloadAfterConflict()} reloading={projectQuery.isFetching} /> : <InlineMessage tone="error">{message(operationError)}</InlineMessage>}</div> : null}
         {sceneOpen ? <Suspense fallback={<div className="scene-review scene-review--loading"><Progress label="Загрузка 3D" /></div>}><SceneReview snapshot={sceneQuery.data} horizon={sceneHorizon} selectedIds={selectedIds} loading={sceneQuery.isLoading || sceneQuery.isFetching} error={sceneQuery.error ? message(sceneQuery.error) : undefined} onHorizon={setSceneHorizon} onSelect={(id) => editor.select([id], 'replace')} onClose={() => setSceneOpen(false)} /></Suspense> : null}

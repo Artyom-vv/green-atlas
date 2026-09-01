@@ -660,8 +660,12 @@ test('box selection moves a group through one confirmed change set', async ({ pa
   await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
   await expect(page.getByText('2 объектов')).toBeVisible();
   await page.getByRole('button', { name: 'Переместить', exact: true }).click();
-  const destination = point(30, 25);
-  await page.mouse.click(destination.x, destination.y);
+  const dragDestination = point(20, 25);
+  await page.mouse.move(first.x, first.y);
+  await page.mouse.down();
+  await page.mouse.move(dragDestination.x, dragDestination.y, { steps: 8 });
+  await expect(page.locator('.map-statusbar .placement-check')).toHaveText('Можно переместить');
+  await page.mouse.up();
   await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
   await expect(page.getByText('Пунктиром показан результат до сохранения')).toBeVisible();
 
@@ -723,6 +727,8 @@ test('a group cannot be moved outside the assigned area and the original layout 
   // The selection centre moves from x=30 to x=35. The right-hand tree would
   // end at x=45, outside the assigned contour ending at x=42.
   const outsideAssignedArea = point(35, 25);
+  await page.mouse.move(outsideAssignedArea.x, outsideAssignedArea.y);
+  await expect(page.locator('.map-statusbar .placement-check')).toContainText(/пересекает объект|внутри одного из участков задания/);
   await page.mouse.click(outsideAssignedArea.x, outsideAssignedArea.y);
   await expect(page.getByText('Перемещение недоступно')).toBeVisible();
   await expect(page.getByText(/пересекает объект|внутри одного из участков задания/)).toBeVisible();
@@ -900,6 +906,7 @@ test('working areas remain manageable after the editor is opened', async ({ page
     const response = await page.request.get(`${apiBase}/projects/${projectId}`);
     return (await response.json() as { planting_zones: Array<{ label: string }> }).planting_zones[0]?.label;
   }).toBe('Главная аллея');
+  await expect(page.getByRole('button', { name: /Отменить: Добавление дерева/ })).toBeEnabled();
 
   await expect(page.getByRole('button', { name: 'Удалить Главная аллея' })).toBeDisabled();
   await expect(page.getByText('Сначала создайте другой рабочий участок')).toBeVisible();
@@ -1077,6 +1084,10 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   await expect(page.getByText('Источник', { exact: true })).toBeVisible();
   await expect(page.getByText('Длина', { exact: true })).toBeVisible();
   await expect(page.locator('.pattern-tool-panel__axis dd').last()).toContainText(/\d+\.\d м/);
+  const existingPlant = point(20, 20);
+  await page.mouse.move(existingPlant.x, existingPlant.y);
+  await expect(page.getByText('Ряд посадок', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Выбор объекта карты')).toHaveCount(0);
   await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
   await page.getByRole('combobox', { name: 'Сторона оси' }).selectOption('left');
   await page.getByRole('spinbutton', { name: 'Поперечный отступ' }).fill('12');

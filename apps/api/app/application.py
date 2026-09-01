@@ -787,7 +787,10 @@ class ProjectApplication:
             self._refresh_plan(project, project.plan, increment_version=False)
         saved = self.repository.save(project)
         self._discard_spatial_indexes(project.id)
-        self.history.clear(project.id)
+        if project.plan is None:
+            self.history.clear(project.id)
+        else:
+            self.history.rebase_planting_zones(project.id, saved.planting_zones)
         return saved
 
     def query_geometry(self, project_id: str, extent: tuple[float, float, float, float], resolution: float) -> GeometrySnapshot:

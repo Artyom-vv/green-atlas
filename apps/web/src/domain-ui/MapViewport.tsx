@@ -494,7 +494,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMoveCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -532,13 +532,13 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const selectionModifierRef = useRef<SelectionMode>('replace');
   const brushModeRef = useRef<BrushDrawMode>('replace');
   const spacePanRef = useRef(false);
-  const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd });
+  const callbackRef = useRef({ onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd });
 
   selectedRef.current = new Set(selectedIds);
   hiddenLayerNamesRef.current = new Set(hiddenLayerNames ?? []);
   toolRef.current = tool;
   initialExtentRef.current = initialExtent;
-  callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd };
+  callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd };
 
   const growthOverlay = growthOverlayForecasts(
     objects,
@@ -818,6 +818,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     });
     map.on('pointermove', (event) => {
       if (event.dragging) {
+        if (toolRef.current === 'move') callbackRef.current.onMoveCoordinate?.([event.coordinate[0], event.coordinate[1]]);
         callbackRef.current.onPointerCoordinate?.(undefined);
         callbackRef.current.onMapHover?.(undefined);
         mapHoverSourceRef.current.clear();
@@ -827,6 +828,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         return;
       }
       const coordinate: [number, number] = [event.coordinate[0], event.coordinate[1]];
+      callbackRef.current.onMoveCoordinate?.(toolRef.current === 'move' ? coordinate : undefined);
       callbackRef.current.onPointerCoordinate?.(coordinate);
       let hoveredFeature: Feature | undefined;
       let hoverItems: MapHoverItem[] = [];
@@ -867,6 +869,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     target.addEventListener('wheel', preventPageZoom, { passive: false });
     const clearPointer = () => {
       callbackRef.current.onPointerCoordinate?.(undefined);
+      callbackRef.current.onMoveCoordinate?.(undefined);
       mapHoverSourceRef.current.clear();
       hoveredMapFeatureRef.current = null;
       hoveredMapGeometryKeyRef.current = undefined;
@@ -907,6 +910,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   }, []);
 
   useEffect(() => {
+    if (tool !== 'move') callbackRef.current.onMoveCoordinate?.(undefined);
     if (tool === 'select') return;
     callbackRef.current.onMapHover?.(undefined);
     mapHoverSourceRef.current.clear();
@@ -1188,6 +1192,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       });
       if (!centers.length) return;
       const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
+      callbackRef.current.onMoveCoordinate?.(center);
       const pixel = map.getPixelFromCoordinate(center);
       callbackRef.current.onSelectionAnchor?.([pixel[0], pixel[1]]);
     });
@@ -1200,6 +1205,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
         callbackRef.current.onTranslateSelectionEnd?.(center);
       }
+      callbackRef.current.onMoveCoordinate?.(undefined);
       syncPlanFeatures(planSourceRef.current, objects);
       planLayerRef.current?.changed();
     });

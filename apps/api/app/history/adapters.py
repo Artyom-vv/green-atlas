@@ -54,6 +54,12 @@ class InMemoryProjectHistory:
             self._undo.pop(project_id, None)
             self._redo.pop(project_id, None)
 
+    def rebase_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> None:
+        """Keep plan undo/redo valid after an independently managed area rename."""
+        with self._lock:
+            for snapshot in [*self._undo.get(project_id, []), *self._redo.get(project_id, [])]:
+                snapshot.planting_zones = [zone.model_copy(deep=True) for zone in zones]
+
     def record(self, project: Project, label: str) -> PlanHistoryState:
         with self._lock:
             undo = self._undo.setdefault(project.id, [])
@@ -259,6 +265,28 @@ class SqliteProjectHistory:
         with self._lock, self._connection:
             self._connection.execute("DELETE FROM plan_changes WHERE project_id = ?", (project_id,))
             self._connection.execute("DELETE FROM plan_history_cursors WHERE project_id = ?", (project_id,))
+
+    def rebase_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> None:
+        serialized = [zone.model_dump(mode="json") for zone in zones]
+        with self._lock, self._connection:
+            rows = self._connection.execute(
+                "SELECT ordinal, before_payload, after_payload FROM plan_changes WHERE project_id = ?",
+                (project_id,),
+            ).fetchall()
+            for row in rows:
+                before = json.loads(str(row["before_payload"]))
+                after = json.loads(str(row["after_payload"]))
+                before["planting_zones"] = serialized
+                after["planting_zones"] = serialized
+                self._connection.execute(
+                    "UPDATE plan_changes SET before_payload = ?, after_payload = ? WHERE project_id = ? AND ordinal = ?",
+                    (
+                        json.dumps(before, ensure_ascii=False, separators=(",", ":")),
+                        json.dumps(after, ensure_ascii=False, separators=(",", ":")),
+                        project_id,
+                        int(row["ordinal"]),
+                    ),
+                )
 
     def record(self, project: Project, label: str) -> PlanHistoryState:
         del project, label
