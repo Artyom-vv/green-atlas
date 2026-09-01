@@ -402,6 +402,71 @@
         }
       }
     },
+    "/api/projects/{project_id}/release-bundle": {
+      "post": {
+        "summary": "Upload Release Bundle",
+        "operationId": "upload_release_bundle_api_projects__project_id__release_bundle_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_release_bundle_api_projects__project_id__release_bundle_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/source-dxf/download": {
       "get": {
         "summary": "Download Source",
@@ -1421,6 +1486,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 40,
+              "minimum": 0,
               "default": 0,
               "title": "Horizon Year"
             }
@@ -2238,6 +2305,20 @@
         ],
         "title": "Body_upload_dxf_api_projects__project_id__source_dxf_post"
       },
+      "Body_upload_release_bundle_api_projects__project_id__release_bundle_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_release_bundle_api_projects__project_id__release_bundle_post"
+      },
       "BrushPreview": {
         "properties": {
           "brush_id": {
@@ -3020,6 +3101,54 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImportEditability": {
+        "type": "string",
+        "enum": [
+          "editable",
+          "read_only"
+        ],
+        "title": "ImportEditability"
+      },
+      "ImportMode": {
+        "type": "string",
+        "enum": [
+          "source_dxf",
+          "release_bundle",
+          "plain_dxf_fallback"
+        ],
+        "title": "ImportMode",
+        "description": "How the current project's source was opened.\n\nA plain DXF that contains Green Atlas planting layers is deliberately not\ntreated as an editable revision: without the release manifest those\ncircles are indistinguishable from existing vegetation.  A complete\nrelease bundle carries the source and plan semantics needed to continue\nediting safely."
+      },
+      "ImportStatus": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/ImportMode",
+            "default": "source_dxf"
+          },
+          "editability": {
+            "$ref": "#/components/schemas/ImportEditability",
+            "default": "editable"
+          },
+          "release_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Исходный DXF доступен для подготовки редактируемого плана."
+          }
+        },
+        "type": "object",
+        "title": "ImportStatus"
       },
       "Layer": {
         "properties": {
@@ -4141,6 +4270,9 @@
               }
             ]
           },
+          "import_status": {
+            "$ref": "#/components/schemas/ImportStatus"
+          },
           "layers": {
             "items": {
               "$ref": "#/components/schemas/Layer"
@@ -4467,6 +4599,9 @@
             "title": "Has Geometry",
             "default": false
           },
+          "import_status": {
+            "$ref": "#/components/schemas/ImportStatus"
+          },
           "state_version": {
             "type": "integer",
             "minimum": 1.0,
@@ -4693,12 +4828,8 @@
           },
           "scene_horizon": {
             "type": "integer",
-            "enum": [
-              0,
-              5,
-              10,
-              20
-            ],
+            "maximum": 40.0,
+            "minimum": 0.0,
             "title": "Scene Horizon",
             "default": 20
           }
@@ -4756,12 +4887,8 @@
           },
           "scene_horizon": {
             "type": "integer",
-            "enum": [
-              0,
-              5,
-              10,
-              20
-            ],
+            "maximum": 40.0,
+            "minimum": 0.0,
             "title": "Scene Horizon"
           },
           "warnings": {

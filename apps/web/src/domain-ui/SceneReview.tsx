@@ -3,6 +3,7 @@ import type { ScenePlantObject, SceneSnapshot } from '@green/api-client';
 import { Button, Checkbox, InlineMessage } from '@green/ui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GrowthHorizonSlider } from './GrowthHorizonControl';
 
 function crownGeometry(object: ScenePlantObject, radius: number, height: number): THREE.BufferGeometry {
   switch (object.crown_shape) {
@@ -15,11 +16,11 @@ function crownGeometry(object: ScenePlantObject, radius: number, height: number)
 
 export function SceneReview({ snapshot, horizon, selectedIds, loading, error, onHorizon, onSelect, onClose }: {
   snapshot?: SceneSnapshot;
-  horizon: 0 | 5 | 10 | 20;
+  horizon: number;
   selectedIds: string[];
   loading?: boolean;
   error?: string;
-  onHorizon: (horizon: 0 | 5 | 10 | 20) => void;
+  onHorizon: (horizon: number) => void;
   onSelect: (objectId: string) => void;
   onClose: () => void;
 }) {
@@ -160,7 +161,7 @@ export function SceneReview({ snapshot, horizon, selectedIds, loading, error, on
   return <section className="scene-review" aria-label="Параметрический 3D-предпросмотр">
     <header className="scene-review__header">
       <span><strong>3D-предпросмотр</strong><small>Упрощённая параметрическая сцена</small></span>
-      <div className="scene-review__horizons" aria-label="Горизонт роста">{([0, 5, 10, 20] as const).map((value) => <Button key={value} variant={horizon === value ? 'primary' : 'ghost'} controlSize="compact" onClick={() => onHorizon(value)}>{value === 0 ? 'Сейчас' : `${value} лет`}</Button>)}</div>
+      <div className="scene-review__horizons" aria-label="Горизонт роста"><GrowthHorizonSlider value={horizon} onChange={(next) => { if (next !== undefined) onHorizon(next); }} />{([0, 5, 10, 20] as const).map((value) => <Button key={value} variant={horizon === value ? 'primary' : 'ghost'} controlSize="compact" onClick={() => onHorizon(value)}>{value === 0 ? 'Сейчас' : `${value} лет`}</Button>)}</div>
       <Checkbox label="Корни" checked={showRoots} onChange={(event) => setShowRoots(event.target.checked)} />
       <Button variant="secondary" controlSize="compact" onClick={onClose}>Вернуться к карте</Button>
     </header>

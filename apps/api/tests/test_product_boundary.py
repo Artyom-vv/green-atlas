@@ -12,6 +12,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects",
         "/api/projects/{project_id}",
         "/api/projects/{project_id}/source-dxf",
+        "/api/projects/{project_id}/release-bundle",
         "/api/projects/{project_id}/source-dxf/download",
         "/api/projects/{project_id}/layer-mappings",
         "/api/projects/{project_id}/planting-zones",

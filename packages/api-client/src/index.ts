@@ -2,6 +2,7 @@ import type { components } from './schema';
 
 export type Project = components['schemas']['Project'];
 export type ProjectSummary = components['schemas']['ProjectSummary'];
+export type ImportStatus = components['schemas']['ImportStatus'];
 export type SourceFile = components['schemas']['SourceFile'];
 export type Layer = components['schemas']['Layer'];
 export type LayerKind = components['schemas']['LayerKind'];
@@ -119,6 +120,11 @@ export const api = {
     body.append('file', file);
     return request<Project>(`/api/projects/${projectId}/source-dxf`, { method: 'POST', body });
   },
+  uploadReleaseBundle: (projectId: string, file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return request<Project>(`/api/projects/${projectId}/release-bundle`, { method: 'POST', body });
+  },
   sourceDownloadUrl: (projectId: string) => `${API_URL}/api/projects/${projectId}/source-dxf/download`,
   saveMappings: (projectId: string, mappings: LayerMapping[]) => request<Project>(`/api/projects/${projectId}/layer-mappings`, { ...json({ mappings }), method: 'PUT' }),
   savePlantingZones: (projectId: string, zones: PlantingZoneAssignment[]) => request<Project>(`/api/projects/${projectId}/planting-zones`, { ...json({ zones }), method: 'PUT' }),
@@ -134,7 +140,7 @@ export const api = {
   previewPlanPattern: (projectId: string, pattern: PatternPreviewRequest, signal?: AbortSignal) => request<PatternPreview>(`/api/projects/${projectId}/plan/patterns/preview`, { ...json(pattern), signal }),
   previewRecommendation: (projectId: string, recommendation: RecommendationRequest, signal?: AbortSignal) => request<RecommendationPreview>(`/api/projects/${projectId}/plan/recommendations/preview`, { ...json(recommendation), signal }),
   previewBrush: (projectId: string, brush: BrushPreviewRequest, signal?: AbortSignal) => request<BrushPreview>(`/api/projects/${projectId}/plan/brush/preview`, { ...json(brush), signal }),
-  getPlanScene: (projectId: string, horizonYear: 0 | 5 | 10 | 20) => request<SceneSnapshot>(`/api/projects/${projectId}/plan/scene?horizon_year=${horizonYear}`),
+  getPlanScene: (projectId: string, horizonYear: number) => request<SceneSnapshot>(`/api/projects/${projectId}/plan/scene?horizon_year=${horizonYear}`),
   shortlistSpecies: (projectId: string, objectIds: string[]) => request<SpeciesShortlistItem[]>(`/api/projects/${projectId}/species/shortlist`, json({ object_ids: objectIds })),
   updatePlanObject: (projectId: string, objectId: string, object: { x?: number; y?: number; radius?: number }) => request<Plan>(`/api/projects/${projectId}/plan/objects/${objectId}`, { ...json(object), method: 'PATCH' }),
   deletePlanObjects: (projectId: string, ids: string[]) => request<Plan>(`/api/projects/${projectId}/plan/objects/delete`, json({ ids })),

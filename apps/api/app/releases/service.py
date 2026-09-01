@@ -1,21 +1,283 @@
 from __future__ import annotations
 
 import csv
+import base64
 from datetime import UTC, datetime
 from hashlib import sha256
 from html import escape
 from io import BytesIO, StringIO
 import json
 from pathlib import Path
+from dataclasses import dataclass
+from posixpath import normpath
 import zipfile
+from typing import Any
 
-from app.contracts import Project, ReleaseArtifact, ReleaseCreateRequest, ReleasePackage, SceneSnapshot
-from app.species.catalog import get_species
+from app.contracts import GeometrySnapshot, Plan, PlantingZoneAssignment, Project, ReleaseArtifact, ReleaseCreateRequest, ReleasePackage, SceneSnapshot
+from app.species.catalog import forecast_at, get_species
+from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, validate_dxf_filename
 
 
 RULE_SET_REVISION = "green-atlas-spatial-draft@2026-08-28.1"
 SPECIES_CATALOG_REVISION = "green-atlas-species@2026-08-28.1"
 FIXED_ZIP_TIME = (2026, 8, 28, 0, 0, 0)
+
+# A release bundle may contain the source DXF, a derived DXF and a full map
+# snapshot.  Keep the archive bounded independently of the 50 MB source DXF
+# limit so a malformed upload cannot turn ZIP extraction into an unbounded
+# memory allocation.
+MAX_RELEASE_BUNDLE_BYTES = 120 * 1024 * 1024
+MAX_RELEASE_BUNDLE_ENTRIES = 32
+MAX_RELEASE_BUNDLE_UNCOMPRESSED_BYTES = 180 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ParsedReleaseBundle:
+    """Validated bytes and editable state extracted from a release ZIP."""
+
+    manifest: dict[str, Any]
+    source_filename: str
+    source_content: bytes
+    dxf_content: bytes | None
+    plan: Plan | None
+    geometry: GeometrySnapshot | None
+    planting_zones: list[PlantingZoneAssignment]
+    editable: bool
+    read_only_reason: str | None = None
+
+
+def _safe_archive_name(name: str) -> bool:
+    """Reject traversal, absolute paths and platform-specific separators."""
+
+    if not name or "\\" in name or "\x00" in name:
+        return False
+    # A ZIP is read in memory today, but rejecting dot segments keeps the
+    # contract safe if a future adapter materialises an entry on disk. Empty
+    # segments are harmless for lookup, while ``.`` and ``..`` are ambiguous
+    # and therefore never accepted.
+    if any(part in {".", ".."} for part in name.split("/")):
+        return False
+    normalized = normpath(name)
+    return not name.startswith(("/", "\\")) and normalized not in {".", ".."} and not normalized.startswith("../") and "/../" not in f"/{normalized}/"
+
+
+def _read_release_entries(content: bytes | bytearray) -> dict[str, bytes]:
+    if len(content) > MAX_RELEASE_BUNDLE_BYTES:
+        raise ValueError(f"Пакет выпуска должен быть не больше {MAX_RELEASE_BUNDLE_BYTES // 1024 // 1024} МБ")
+    try:
+        archive = zipfile.ZipFile(BytesIO(bytes(content)))
+    except (OSError, zipfile.BadZipFile) as error:
+        raise ValueError("Пакет выпуска повреждён или не является ZIP-файлом") from error
+    infos = archive.infolist()
+    if not infos:
+        raise ValueError("Пакет выпуска пуст")
+    if len(infos) > MAX_RELEASE_BUNDLE_ENTRIES:
+        raise ValueError("Пакет выпуска содержит слишком много файлов")
+    names: set[str] = set()
+    total_size = 0
+    entries: dict[str, bytes] = {}
+    try:
+        for info in infos:
+            if not _safe_archive_name(info.filename) or info.filename in names:
+                raise ValueError("Пакет выпуска содержит небезопасное имя файла")
+            # POSIX symlinks are represented by the upper mode bits in the
+            # external attributes.  They must not be followed during import.
+            if ((info.external_attr >> 16) & 0o170000) == 0o120000:
+                raise ValueError("Пакет выпуска содержит символическую ссылку")
+            if info.is_dir():
+                raise ValueError("Пакет выпуска содержит каталог вместо файла")
+            if info.file_size > MAX_RELEASE_BUNDLE_UNCOMPRESSED_BYTES:
+                raise ValueError("Файл внутри пакета выпуска слишком велик")
+            total_size += info.file_size
+            if total_size > MAX_RELEASE_BUNDLE_UNCOMPRESSED_BYTES:
+                raise ValueError("Распакованный пакет выпуска слишком велик")
+            with archive.open(info, "r") as stream:
+                value = stream.read(MAX_RELEASE_BUNDLE_UNCOMPRESSED_BYTES + 1)
+            if len(value) != info.file_size:
+                raise ValueError("Пакет выпуска содержит повреждённый файл")
+            names.add(info.filename)
+            entries[info.filename] = value
+    except ValueError:
+        raise
+    except (OSError, EOFError, RuntimeError, zipfile.BadZipFile) as error:
+        raise ValueError("Не удалось прочитать пакет выпуска") from error
+    finally:
+        archive.close()
+    return entries
+
+
+def _manifest_entry(entries: dict[str, bytes]) -> tuple[str, dict[str, Any]]:
+    candidates = [
+        (name, data)
+        for name, data in entries.items()
+        if Path(name).name.lower() == "manifest.json" or Path(name).name.lower().endswith("-manifest.json")
+    ]
+    if len(candidates) != 1:
+        raise ValueError("В пакете выпуска должен быть один manifest.json")
+    name, content = candidates[0]
+    try:
+        value = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("Manifest выпуска повреждён") from error
+    if not isinstance(value, dict):
+        raise ValueError("Manifest выпуска имеет неверную структуру")
+    return name, value
+
+
+def _decode_inline_source(source: dict[str, Any]) -> bytes | None:
+    encoded = source.get("content_base64")
+    if encoded is None:
+        return None
+    if not isinstance(encoded, str) or not encoded:
+        raise ValueError("Исходный DXF в manifest имеет неверный формат")
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError) as error:
+        raise ValueError("Исходный DXF в manifest повреждён") from error
+    if len(decoded) > MAX_DXF_CONTENT_BYTES:
+        raise ValueError("Исходный DXF внутри пакета выпуска слишком велик")
+    return decoded
+
+
+def _plan_from_manifest(manifest: dict[str, Any]) -> Plan | None:
+    payload = manifest.get("plan")
+    if payload is None and isinstance(manifest.get("project"), dict):
+        payload = manifest["project"].get("plan")
+    if payload is None:
+        return None
+    try:
+        plan = Plan.model_validate(payload)
+    except Exception as error:
+        raise ValueError("План в manifest имеет неверную структуру") from error
+    ids = [item.id for item in plan.objects]
+    if any(not item_id for item_id in ids) or len(set(ids)) != len(ids):
+        raise ValueError("План в manifest содержит неуникальные идентификаторы посадок")
+    # A release manifest's compact object index is an audit aid.  If present,
+    # it must agree with the complete object records before we allow editing.
+    listed = manifest.get("objects")
+    if listed is not None:
+        if not isinstance(listed, list):
+            raise ValueError("Список объектов в manifest имеет неверную структуру")
+        if sorted(str(item) for item in listed) != sorted(ids):
+            raise ValueError("Список объектов в manifest не совпадает с планом")
+    return plan
+
+
+def parse_release_bundle(content: bytes | bytearray) -> ParsedReleaseBundle:
+    """Parse a release ZIP without mutating a project.
+
+    New bundles carry the exact source DXF as base64 in the manifest.  Older
+    bundles only contain a derived planting DXF; they remain importable for
+    inspection, but are explicitly read-only because their project semantics
+    cannot be reconstructed safely.
+    """
+
+    entries = _read_release_entries(content)
+    _manifest_name, manifest = _manifest_entry(entries)
+    schema = manifest.get("schema")
+    if schema not in {"green-atlas-release:1", "green-atlas-release:2"}:
+        raise ValueError("Версия manifest выпуска не поддерживается")
+    declared_editable = manifest.get("editable")
+    if declared_editable is not None and not isinstance(declared_editable, bool):
+        raise ValueError("Manifest содержит неверный признак editable")
+    listed_files = manifest.get("files")
+    if listed_files is not None:
+        if not isinstance(listed_files, dict):
+            raise ValueError("Manifest содержит неверный реестр файлов")
+        for name, expected_hash in listed_files.items():
+            if not isinstance(name, str) or not _safe_archive_name(name) or name not in entries:
+                raise ValueError("Manifest ссылается на отсутствующий файл")
+            if not isinstance(expected_hash, str) or sha256(entries[name]).hexdigest() != expected_hash:
+                raise ValueError(f"Хеш файла выпуска не совпадает с manifest: {name}")
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        source = {}
+    raw_source_filename = str(source.get("filename") or "source.dxf")
+    if not _safe_archive_name(raw_source_filename) or "/" in raw_source_filename:
+        raise ValueError("Manifest не содержит корректного имени исходного DXF")
+    source_filename = Path(raw_source_filename).name
+    try:
+        validate_dxf_filename(source_filename)
+    except ValueError as error:
+        raise ValueError("Manifest не содержит корректного имени исходного DXF") from error
+    inline_source = _decode_inline_source(source)
+    source_path = source.get("path")
+    source_content = inline_source
+    source_is_exact = inline_source is not None
+    if source_content is None and isinstance(source_path, str):
+        if not _safe_archive_name(source_path):
+            raise ValueError("Manifest ссылается на небезопасный исходный файл")
+        source_content = entries.get(source_path)
+        source_is_exact = source_content is not None
+    dxf_candidates = [
+        (name, value)
+        for name, value in entries.items()
+        if name.lower().endswith(".dxf")
+    ]
+    dxf_name: str | None = None
+    dxf_content: bytes | None = None
+    for name, value in dxf_candidates:
+        if "planting-plan" in Path(name).stem.lower() or "plan" in Path(name).stem.lower():
+            dxf_name, dxf_content = name, value
+            break
+    if dxf_content is None and dxf_candidates:
+        dxf_name, dxf_content = dxf_candidates[0]
+    if source_content is None:
+        # A v1 package has no source entry. Reusing its derived DXF would turn
+        # project trees into source context, so permit it only as a preview.
+        if dxf_content is None:
+            raise ValueError("В пакете выпуска не найден исходный DXF")
+        source_content = dxf_content
+        source_filename = Path(dxf_name or source_filename).name
+        if not source_filename.lower().endswith(".dxf"):
+            source_filename = "release-plan.dxf"
+    if len(source_content) > MAX_DXF_CONTENT_BYTES:
+        raise ValueError("Исходный DXF внутри пакета выпуска слишком велик")
+    source_size = source.get("size")
+    if source_is_exact and source_size is not None and (isinstance(source_size, bool) or not isinstance(source_size, int) or source_size != len(source_content)):
+        raise ValueError("Размер исходного DXF не совпадает с manifest")
+    expected_hash = source.get("sha256")
+    if source_is_exact and expected_hash and (not isinstance(expected_hash, str) or sha256(source_content).hexdigest() != expected_hash):
+        raise ValueError("Хеш исходного DXF не совпадает с manifest")
+    plan = _plan_from_manifest(manifest)
+    geometry_payload = manifest.get("geometry")
+    if geometry_payload is None and isinstance(manifest.get("project"), dict):
+        geometry_payload = manifest["project"].get("geometry")
+    geometry = None
+    if geometry_payload is not None:
+        try:
+            geometry = GeometrySnapshot.model_validate(geometry_payload)
+        except Exception as error:
+            raise ValueError("Геометрия в manifest имеет неверную структуру") from error
+    zone_payload: Any = manifest.get("planting_zones")
+    project_payload = manifest.get("project")
+    if zone_payload is None and isinstance(project_payload, dict):
+        zone_payload = project_payload.get("planting_zones", [])
+    if zone_payload is None:
+        zone_payload = []
+    if not isinstance(zone_payload, list):
+        raise ValueError("Участки в manifest имеют неверную структуру")
+    try:
+        planting_zones = [PlantingZoneAssignment.model_validate(item) for item in zone_payload]
+    except Exception as error:
+        raise ValueError("Участки в manifest имеют неверную структуру") from error
+    editable = inline_source is not None and plan is not None and declared_editable is not False
+    reason = None if editable else (
+        "Manifest помечает пакет как доступный только для просмотра."
+        if declared_editable is False
+        else "Пакет не содержит полной семантики проекта; открыт только для просмотра."
+    )
+    return ParsedReleaseBundle(
+        manifest=manifest,
+        source_filename=source_filename,
+        source_content=bytes(source_content),
+        dxf_content=dxf_content,
+        plan=plan,
+        geometry=geometry,
+        planting_zones=planting_zones,
+        editable=editable,
+        read_only_reason=reason,
+    )
 
 
 def release_identity(project: Project, request: ReleaseCreateRequest) -> str:
@@ -40,7 +302,7 @@ def _json_bytes(value: object) -> bytes:
 
 def _forecast(object_: object, field: str, horizon: int) -> tuple[str, str]:
     values = getattr(object_, field)
-    item = next((candidate for candidate in values if candidate.horizon_year == horizon), None)
+    item = forecast_at(values, horizon)
     return ("", "") if item is None else (str(item.radius_min_m), str(item.radius_max_m))
 
 
@@ -87,7 +349,7 @@ def dendroplan_svg(project: Project, horizon: int) -> bytes:
         '<g fill="none" stroke="#667085" stroke-width="0.12" vector-effect="non-scaling-stroke">',
     ]
     for object_ in objects:
-        forecast = next((item for item in object_.canopy_forecast if item.horizon_year == horizon), None)
+        forecast = forecast_at(object_.canopy_forecast, horizon)
         radius = forecast.radius_max_m if forecast else (object_.layout_radius_m or object_.radius)
         color = "#16794c" if object_.kind == "tree" else "#568f42"
         rows.append(
@@ -155,8 +417,17 @@ def build_release(
         warnings.append(f"Вид не назначен для {len(missing_species)} посадок.")
     if hard_errors:
         warnings.append(f"В плане осталось ошибок: {len(hard_errors)}.")
+    # The manifest is intentionally self-contained for a round-trip import.
+    # Keeping the exact source inline lets the importer rebuild the project
+    # from the original layer tree while retaining the historical five-entry
+    # ZIP shape consumed by existing release clients.
+    plan_payload = project.plan.model_dump(mode="json")
+    geometry_payload = project.geometry.model_dump(mode="json") if project.geometry is not None else None
+    planting_zone_payload = [zone.model_dump(mode="json") for zone in project.planting_zones]
+    groups = sorted({group_id for item in project.plan.objects for group_id in item.group_ids})
     manifest = {
-        "schema": "green-atlas-release:1",
+        "schema": "green-atlas-release:2",
+        "editable": True,
         "release_id": release_id,
         "mode": request.mode,
         "status": "draft" if request.mode == "draft" else "ready",
@@ -165,12 +436,17 @@ def build_release(
             "name": project.name,
             "plan_version": project.plan.version,
             "geometry_version": project.geometry_version,
+            "status": project.status.value,
             "coordinate_reference": project.coordinate_reference.model_dump(mode="json"),
+            "planting_zones": planting_zone_payload,
+            "geometry": geometry_payload,
         },
         "source": {
             "filename": project.source_file.name,
             "size": len(source_content),
             "sha256": sha256(source_content).hexdigest(),
+            "content_base64": base64.b64encode(source_content).decode("ascii"),
+            "embedded": True,
             "dxf_version": project.source_file.dxf_version,
             "units": project.source_file.units,
             "units_assumed": project.source_file.units_assumed,
@@ -181,6 +457,14 @@ def build_release(
         ],
         "objects": sorted(item.id for item in project.plan.objects),
         "object_count": len(project.plan.objects),
+        "plan": plan_payload,
+        "planting_zones": planting_zone_payload,
+        "groups": groups,
+        "geometry": geometry_payload,
+        "views": {
+            "scene_horizon": request.scene_horizon,
+            "dendroplan": "svg",
+        },
         "missing_species_object_ids": missing_species,
         "hard_error_ids": hard_errors,
         "rule_set_revision": RULE_SET_REVISION,

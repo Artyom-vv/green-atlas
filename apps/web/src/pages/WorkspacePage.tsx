@@ -12,7 +12,7 @@ import { GroupInspector } from '../domain-ui/GroupInspector';
 import type { GrowthHorizon } from '../domain-ui/GrowthHorizonControl';
 import { LayerInspector } from '../domain-ui/LayerInspector';
 import { MapToolbar, type MapTool } from '../domain-ui/MapToolbar';
-import { MapViewport, type MapAreaTarget, type MapExtent, type MapViewportHandle, type MapHoverTarget } from '../domain-ui/MapViewport';
+import { MapViewport, type MapAreaTarget, type MapExtent, type MapViewportHandle, type MapHoverItem, type MapHoverTarget } from '../domain-ui/MapViewport';
 import { paddedMapExtent } from '../domain-ui/mapExtent';
 import { ObjectInspector } from '../domain-ui/ObjectInspector';
 import { PatternToolPanel } from '../domain-ui/PatternToolPanel';
@@ -27,6 +27,7 @@ import { RecommendationReviewPanel } from '../domain-ui/RecommendationReviewPane
 import { SpeciesAssignmentPanel } from '../domain-ui/SpeciesAssignmentPanel';
 import { ValidationPanel } from '../domain-ui/ValidationPanel';
 import { useWorkspaceEditor } from '../features/workspace/useWorkspaceEditor';
+import type { SelectionMode } from '../domain-ui/selection';
 
 type WorkspacePanel = 'zones' | 'issues' | 'export' | null;
 type MapGeometryMetadata = { returned_features?: number; total_matches?: number; truncated?: boolean };
@@ -106,7 +107,7 @@ export function WorkspacePage() {
   const [speciesAssignmentOpen, setSpeciesAssignmentOpen] = useState(false);
   const [growthHorizon, setGrowthHorizon] = useState<GrowthHorizon>(0);
   const [sceneOpen, setSceneOpen] = useState(false);
-  const [sceneHorizon, setSceneHorizon] = useState<0 | 5 | 10 | 20>(0);
+  const [sceneHorizon, setSceneHorizon] = useState<number>(0);
 
   const projectQuery = useQuery({ queryKey: ['workspace-project', projectId], queryFn: () => api.getProject(projectId, false), enabled: Boolean(projectId) });
   const project = projectQuery.data;
@@ -376,7 +377,7 @@ export function WorkspacePage() {
   const deleteObjects = useMutation({ mutationFn: (ids: string[]) => api.deletePlanObjects(projectId, ids), onSuccess: async () => { editor.clearSelection(); await refresh(); } });
   const undoChange = useMutation({ mutationFn: () => api.undoPlanChange(projectId), onSuccess: async () => { editor.clearSelection(); editor.setTool('select'); await refresh(); } });
   const redoChange = useMutation({ mutationFn: () => api.redoPlanChange(projectId), onSuccess: async () => { editor.clearSelection(); editor.setTool('select'); await refresh(); } });
-  const createRelease = useMutation({ mutationFn: (mode: 'draft' | 'final') => api.createRelease(projectId, { mode, scene_horizon: 20 }), onSuccess: setRelease });
+  const createRelease = useMutation({ mutationFn: (mode: 'draft' | 'final') => api.createRelease(projectId, { mode, scene_horizon: growthHorizon ?? 0 }), onSuccess: setRelease });
   const busy = addObject.isPending || savePlacementZone.isPending || saveManagedZones.isPending || previewChanges.isPending || previewPattern.isPending || previewRecommendation.isPending || previewBrush.isPending || applyChanges.isPending || deleteObjects.isPending || undoChange.isPending || redoChange.isPending;
   // Export captures one durable version of the plan. Do not let a normal map
   // click race that snapshot and surface an avoidable version conflict.
@@ -426,6 +427,41 @@ export function WorkspacePage() {
     setPanel('zones');
     openRightPanel();
   }, [openRightPanel]);
+
+  const handleMapArea = useCallback((target: MapAreaTarget, mode: SelectionMode = 'replace') => {
+    // The picker is map-local state. Clear it as soon as a target is chosen,
+    // while leaving the task inspector mounted for an active placement tool.
+    setMapHoverTarget(undefined);
+    if (!projectHasPlan) {
+      if (target.selectable && target.geometry) addMapArea(target.geometry, target.label, target.sourceId);
+      return;
+    }
+    if (panel === 'zones') {
+      if (target.plantingZoneId) setSelectedPatternZoneIds([target.plantingZoneId]);
+      setMapAreaTarget(target);
+      return;
+    }
+    if (target.plantingZoneId) {
+      setSelectedPatternZoneIds((current) => {
+        if (mode === 'add') return [...new Set([...current, target.plantingZoneId!])];
+        if (mode === 'subtract') return current.filter((id) => id !== target.plantingZoneId);
+        return [target.plantingZoneId!];
+      });
+    }
+    setMapAreaTarget(target);
+    setActiveLayerId(undefined);
+    // Pattern/row/brush inspectors are the current task and must survive a
+    // map target choice. Selection mode still clears object selection so the
+    // inspector cannot silently describe a different task.
+    const taskInspectorActive = tool === 'pattern_fill' || tool === 'pattern_row' || tool === 'brush' || tool === 'draw_area';
+    if (!taskInspectorActive) setPanel(null);
+    editor.clearSelection();
+    openRightPanel();
+  }, [addMapArea, editor, openRightPanel, panel, projectHasPlan, tool]);
+
+  const handleMapStackSelect = useCallback((item: MapHoverItem) => {
+    handleMapArea(item.target);
+  }, [handleMapArea]);
 
   const activateTool = useCallback((nextTool: MapTool) => {
     if (editorBusy) return;
@@ -601,7 +637,7 @@ export function WorkspacePage() {
     <main className={`workspace-layout ${leftOpen ? '' : 'is-left-collapsed'} ${rightOpen ? '' : 'is-right-collapsed'}`}>
       <aside className="workspace-left"><ProjectLayers layers={layers} visibility={visibility} activeLayerId={activeLayerId} onVisibility={(id, visible) => setVisibility((current) => ({ ...current, [id]: visible }))} onSelect={(id) => { setActiveLayerId((current) => current === id ? undefined : id); editor.clearSelection(); setPanel(null); openRightPanel(); }} onZones={() => { setDraftZones(project.planting_zones ?? []); setActiveLayerId(undefined); setPanel('zones'); editor.clearSelection(); openRightPanel(); }} onClose={() => setLeftOpen(false)} /></aside>
       <aside className="workspace-left-collapsed"><IconButton icon={ChevronRight} label="Развернуть слои" variant="ghost" onClick={openLeftPanel} /><IconButton icon={Layers3} label="Слои" active onClick={openLeftPanel} /><IconButton icon={MapPinned} label="Рабочие участки" variant="ghost" onClick={() => { setDraftZones(project.planting_zones ?? []); setActiveLayerId(undefined); setPanel('zones'); editor.clearSelection(); openRightPanel(); }} /></aside>
-      <section className={`map-canvas ${rightOpen ? '' : 'has-right-dock'}`}>
+      <section className={`map-canvas ${rightOpen ? '' : 'has-right-dock'}`} onMouseLeave={() => setMapHoverTarget(undefined)}>
         <MapViewport key={projectId} ref={mapViewport} geometry={mapGeometryQuery.data?.feature_collection as Record<string, unknown> | undefined} geometryRevision={project.geometry_version} initialExtent={initialExtent} objects={planObjects} growthHorizon={growthHorizon} draftPlantingZones={!projectHasPlan || panel === 'zones' ? draftZones : undefined} hiddenLayerNames={hiddenLayerNames} selectedIds={selectedIds} highlightedPlantingZoneId={selectedPatternZoneIds.length === 1 ? selectedPatternZoneIds[0] : undefined} focusGeometry={selectedPatternZone?.geometry} placementPreview={placementPreview} changePreview={changePreview} tool={tool} onDrawArea={(geometry) => {
           if (projectHasPlan && panel === 'zones' && zoneDrawingMode && !planLocked) {
             const previous = zoneDrawingMode === 'new' ? undefined : (project.planting_zones ?? []).find((zone) => zone.id === zoneDrawingMode);
@@ -618,29 +654,7 @@ export function WorkspacePage() {
           if (projectHasPlan || planLocked) return;
           addMapArea(geometry, `Ручной участок ${draftZones.length + 1}`);
           editor.setTool('select');
-        }} onDrawAxis={(geometry) => { setRowAxis(geometry); setPatternPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onDrawBrush={(stroke, mode) => { setBrushStrokes((current) => mode === 'replace' ? [stroke] : [...current, stroke]); setBrushPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onMapArea={(target, mode) => {
-          if (!projectHasPlan) {
-            if (target.selectable && target.geometry) addMapArea(target.geometry, target.label, target.sourceId);
-            return;
-          }
-          if (panel === 'zones') {
-            if (target.plantingZoneId) setSelectedPatternZoneIds([target.plantingZoneId]);
-            setMapAreaTarget(target);
-            return;
-          }
-          if (target.plantingZoneId) {
-            setSelectedPatternZoneIds((current) => {
-              if (mode === 'add') return [...new Set([...current, target.plantingZoneId!])];
-              if (mode === 'subtract') return current.filter((id) => id !== target.plantingZoneId);
-              return [target.plantingZoneId!];
-            });
-          }
-          setMapAreaTarget(target);
-          setActiveLayerId(undefined);
-          setPanel(null);
-          editor.clearSelection();
-          openRightPanel();
-        }} onMapHover={setMapHoverTarget} onSelect={(id, mode = 'replace') => {
+        }} onDrawAxis={(geometry) => { setRowAxis(geometry); setPatternPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onDrawBrush={(stroke, mode) => { setBrushStrokes((current) => mode === 'replace' ? [stroke] : [...current, stroke]); setBrushPreview(undefined); editor.setPreview(undefined); openRightPanel(); }} onMapArea={handleMapArea} onMapHover={setMapHoverTarget} onSelect={(id, mode = 'replace') => {
           if (!projectHasPlan) return;
           if (!id) { if (mode === 'replace') editor.clearSelection(); return; }
           editor.select([id], mode);
@@ -657,7 +671,7 @@ export function WorkspacePage() {
           openRightPanel();
         }} onCoordinate={handleCoordinate} onTranslateSelectionEnd={handleCoordinate} onSelectionAnchor={setSelectionAnchor} onPointerCoordinate={handlePointerCoordinate} onExtentChange={handleMapExtent} />
         {!sceneOpen && !changePreview && selectionAnchor && selectedObjects.length ? <div className="selection-context-bar" style={{ left: selectionAnchor[0], top: Math.max(56, selectionAnchor[1] - 60) }} role="toolbar" aria-label="Действия с выделением"><strong>{selectedObjects.length}</strong><IconButton icon={Leaf} label="Изменить породу" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setSpeciesAssignmentOpen(true)} /><Select aria-label="Плотность выделения" value={selectedObjects.every((object) => object.spacing_policy === selectedObjects[0]?.spacing_policy) ? selectedObjects[0]?.spacing_policy : ''} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onChange={(event) => previewSelectionSpacing(event.target.value as 'open' | 'balanced' | 'canopy')}><option value="" disabled>Плотность</option><option value="canopy">Плотно</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select><IconButton icon={Move} label={tool === 'move' ? 'Завершить перемещение' : 'Переместить выделение'} active={tool === 'move'} disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => editor.setTool(tool === 'move' ? 'select' : 'move')} /><IconButton icon={Trash2} label="Удалить выделение" variant="ghost" disabled={editorBusy || selectedObjects.some((object) => object.locked)} onClick={() => setDeleteSelectionOpen(true)} /></div> : null}
-        {!sceneOpen && !selectedObjects.length && mapHoverTarget && (tool === 'select' || tool === 'pattern_fill') ? <div className={`map-hover-hint ${mapHoverTarget.pixel[0] > 520 ? 'is-left' : ''}`} style={{ left: mapHoverTarget.pixel[0] + 14, top: mapHoverTarget.pixel[1] + 14 }} role="status">{mapHoverTarget.items.map((item) => <div className="map-hover-hint__item" key={item.id}><strong>{item.label}</strong><span>{item.detail}</span></div>)}</div> : null}
+        {!sceneOpen && !selectedObjects.length && mapHoverTarget && (tool === 'select' || tool === 'pattern_fill') ? <div className={`map-hover-hint ${mapHoverTarget.pixel[0] > 520 ? 'is-left' : ''}`} style={{ left: mapHoverTarget.pixel[0] + 14, top: mapHoverTarget.pixel[1] + 14 }} role="status" aria-label="Выбор объекта карты" onMouseDown={(event) => event.stopPropagation()}>{mapHoverTarget.items.map((item) => <button className={`map-hover-hint__item ${item.target.selectable ? 'is-selectable' : 'is-reference'}`} key={item.id} type="button" aria-label={`Выбрать ${item.label}`} onClick={(event) => { event.stopPropagation(); handleMapStackSelect(item); }}><strong>{item.label}</strong><span>{item.detail}</span></button>)}</div> : null}
         {!sceneOpen && projectHasPlan ? <div className="map-edit-tools"><MapToolbar tool={tool} onTool={activateTool} editable={!sourcePreview && !planLocked && !editorBusy} canDelete={selectedIds.length > 0} onDelete={() => setDeleteSelectionOpen(true)} /></div> : null}
         {!sceneOpen ? <div className="map-zoom-tools"><IconButton icon={Plus} label="Увеличить" variant="ghost" onClick={() => mapViewport.current?.zoomIn()} /><IconButton icon={Minus} label="Уменьшить" variant="ghost" onClick={() => mapViewport.current?.zoomOut()} /><IconButton icon={Maximize2} label="Показать весь чертёж" variant="ghost" onClick={() => mapViewport.current?.fit()} /></div> : null}
         {!sceneOpen && project.plan ? <div className="map-plan-focus"><IconButton icon={Crosshair} label="Показать посадки" variant="ghost" onClick={() => mapViewport.current?.fitPlan()} /></div> : null}
@@ -672,7 +686,7 @@ export function WorkspacePage() {
         {panel === 'zones' && !project.plan ? <div className="workspace-zones-panel"><button className="right-close" type="button" aria-label="Свернуть панель участков" onClick={closeRightPanel}><PanelRightClose size={16} /></button><PlantingZonesPanel assignments={draftZones} drawingManual={tool === 'draw_area'} saving={createManualPlan.isPending} error={createManualPlan.error ? message(createManualPlan.error) : undefined} onRemove={(id) => setDraftZones((current) => current.filter((item) => item.id !== id))} onSave={() => createManualPlan.mutate()} onManual={() => editor.setTool('draw_area')} onCancelManual={() => editor.setTool('select')} /></div> : null}
         {panel === 'zones' && project.plan ? <div className="rail-panel"><RailPanelHeader title="Рабочие участки" subtitle={`${draftZones.length} на карте`} onBack={returnToInspector} onClose={closeRightPanel} /><PlantingZoneManager zones={draftZones} activeId={selectedPatternZoneIds[0]} drawing={Boolean(zoneDrawingMode)} saving={saveManagedZones.isPending} error={saveManagedZones.error ? message(saveManagedZones.error) : undefined} onFocus={(zone) => { if (zone.id) setSelectedPatternZoneIds([zone.id]); mapViewport.current?.fitGeometry(zone.geometry); }} onRename={(zone, label) => { if (label === zone.label) return; const zones = draftZones.map((item) => item.id === zone.id ? { ...item, label } : item); setDraftZones(zones); saveManagedZones.mutate({ zones, focusId: zone.id }); }} onRedraw={(zone) => { if (!zone.id) return; setSelectedPatternZoneIds([zone.id]); setZoneDrawingMode(zone.id); editor.setTool('draw_area'); }} onDelete={setZonePendingDelete} onDraw={() => { setZoneDrawingMode('new'); editor.setTool('draw_area'); }} onCancelDraw={() => { setZoneDrawingMode(undefined); editor.setTool('select'); }} /></div> : null}
         {panel === 'issues' ? <div className="rail-panel"><RailPanelHeader title="Проверка плана" subtitle={issueCount ? `${issueCount} замечания` : 'Нарушений нет'} onBack={returnToInspector} onClose={closeRightPanel} /><ValidationPanel issues={issues} onLocate={(id) => { if (id) editor.select([id], 'replace'); else editor.clearSelection(); editor.setTool('select'); setPanel(null); if (id) requestAnimationFrame(() => mapViewport.current?.fitSelection(id)); }} /></div> : null}
-        {panel === 'export' && project.plan ? <div className="rail-panel export-panel"><RailPanelHeader title="Выпускной пакет" subtitle="Ревизия для дальнейшей работы" onBack={returnToInspector} onClose={closeRightPanel} /><div className="rail-panel__content"><ReleasePanel plan={project.plan} release={release} loading={createRelease.isPending} error={createRelease.error ? message(createRelease.error) : undefined} onCreate={(mode) => createRelease.mutate(mode)} onDownload={(path) => { window.location.href = api.downloadUrl(path); }} /></div></div> : null}
+        {panel === 'export' && project.plan ? <div className="rail-panel export-panel"><RailPanelHeader title="Выпускной пакет" subtitle="Ревизия для дальнейшей работы" onBack={returnToInspector} onClose={closeRightPanel} /><div className="rail-panel__content"><ReleasePanel plan={project.plan} release={release} growthHorizon={growthHorizon} onGrowthHorizon={setGrowthHorizon} loading={createRelease.isPending} error={createRelease.error ? message(createRelease.error) : undefined} onCreate={(mode) => createRelease.mutate(mode)} onDownload={(path) => { window.location.href = api.downloadUrl(path); }} /></div></div> : null}
         {!panel && activeLayer ? <LayerInspector layer={activeLayer} visible={visibility[activeLayer.id] !== false} onVisibility={(visible) => setVisibility((current) => ({ ...current, [activeLayer.id]: visible }))} onFit={() => mapViewport.current?.fitLayer(activeLayer.source_name)} /> : null}
         {!panel && !activeLayer && mapAreaTarget && project.plan && tool !== 'pattern_fill' && !placementAreaDrawing ? <div className="project-inspector"><header><span><strong>{mapAreaTarget.label}</strong><small>{mapAreaTarget.plantingZoneId ? 'Участок проекта' : 'Объект исходного DXF'}</small></span></header><section className="plan-summary"><strong>{mapAreaTarget.detail}</strong><span>{mapAreaTarget.plantingZoneId ? 'Участок готов к размещению' : 'Контур доступен для проверки'}</span>{mapAreaTarget.plantingZoneId ? <Button variant="primary" onClick={() => activateTool('pattern_fill')}>Разместить здесь</Button> : null}</section></div> : null}
         {!panel && !activeLayer && sourcePreview ? <div className="project-inspector"><header><span><strong>Исходный DXF</strong><small>Только просмотр</small></span></header><div className="project-inspector__empty"><Layers3 size={20} /><strong>Проверьте слои и геометрию</strong><span>Подтвердите слои, затем выберите или обведите рабочую область на карте.</span>{sourceWarnings.map((warning) => <InlineMessage key={warning} tone="warning">{warning}</InlineMessage>)}<Button variant="secondary" onClick={openLeftPanel}>Открыть слои</Button><Button variant="primary" onClick={() => navigate(`/projects/${projectId}/setup`)}>К сопоставлению</Button></div></div> : null}

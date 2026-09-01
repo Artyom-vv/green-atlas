@@ -29,10 +29,10 @@ export function DxfUploader({ onUpload, loading, error }: { onUpload: (file: Fil
   return (
     <div className="dxf-uploader">
       <Surface className={`dxf-dropzone ${dragging ? 'is-dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
-        <input ref={inputRef} type="file" accept=".dxf,application/dxf" hidden onChange={(event) => accept(event.target.files)} />
-        <strong>Перетащите DXF сюда</strong>
-        <span>или выберите файл на компьютере, до 50 МБ</span>
-        <Button variant="primary" icon={Upload} disabled={loading} onClick={() => inputRef.current?.click()}>Выбрать DXF</Button>
+        <input ref={inputRef} type="file" accept=".dxf,.zip,application/dxf,application/zip" hidden onChange={(event) => accept(event.target.files)} />
+        <strong>Перетащите DXF или ZIP-пакет сюда</strong>
+        <span>или выберите файл на компьютере: DXF до 50 МБ, ZIP до 120 МБ</span>
+        <Button variant="primary" icon={Upload} aria-label="Выбрать DXF" disabled={loading} onClick={() => inputRef.current?.click()}>Выбрать файл</Button>
       </Surface>
       {loading ? <Progress label="Проверяем DXF" /> : null}
       {clientError || error ? <InlineMessage tone="error" title="Ошибка DXF">{clientError ?? error}</InlineMessage> : null}

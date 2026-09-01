@@ -1,6 +1,7 @@
 import type { Plan, ReleasePackage } from '@green/api-client';
 import { Download, FileArchive, FileCode2, FileSpreadsheet, Map, PackageCheck } from 'lucide-react';
 import { Button, InlineMessage, StatusIndicator } from '@green/ui';
+import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
 
 const labels = {
   bundle: 'Полный пакет',
@@ -23,6 +24,8 @@ const icons = {
 export function ReleasePanel({
   plan,
   release,
+  growthHorizon,
+  onGrowthHorizon,
   loading,
   error,
   onCreate,
@@ -30,6 +33,8 @@ export function ReleasePanel({
 }: {
   plan: Plan;
   release?: ReleasePackage;
+  growthHorizon?: GrowthHorizon;
+  onGrowthHorizon?: (value: GrowthHorizon) => void;
   loading?: boolean;
   error?: string;
   onCreate: (mode: 'draft' | 'final') => void;
@@ -41,6 +46,7 @@ export function ReleasePanel({
   const hardErrors = (plan.issues ?? []).filter((issue) => issue.severity === 'error').length;
   const finalReady = missingSpecies === 0 && hardErrors === 0 && objects.length > 0;
   const bundle = artifacts.find((artifact) => artifact.kind === 'bundle');
+  const horizonLabel = (horizon: number) => horizon === 0 ? 'Сейчас' : `${horizon} лет`;
 
   return <div className="release-package">
     <section className="release-package__summary">
@@ -50,6 +56,7 @@ export function ReleasePanel({
 
     {release ? <>
       <StatusIndicator tone="success" label={release.mode === 'draft' ? 'Черновой пакет готов' : 'Финальный пакет готов'} value={`Версия плана ${release.plan_version}`} />
+      <StatusIndicator tone="success" label="Горизонт сцены" value={horizonLabel(release.scene_horizon)} />
       {bundle ? <Button variant="primary" icon={Download} onClick={() => onDownload(bundle.download_url)}>Скачать полный пакет</Button> : null}
       <section className="release-package__files" aria-label="Файлы выпуска">
         {artifacts.filter((artifact) => artifact.kind !== 'bundle').map((artifact) => {
@@ -59,6 +66,7 @@ export function ReleasePanel({
       </section>
       {(release.warnings ?? []).map((warning) => <InlineMessage key={warning} tone="warning">{warning}</InlineMessage>)}
     </> : <>
+      {onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} forecasts={objects} onChange={onGrowthHorizon} /> : null}
       <section className="release-package__readiness">
         <StatusIndicator tone={hardErrors ? 'error' : 'success'} label="Ошибки размещения" value={hardErrors || 'Нет'} />
         <StatusIndicator tone={missingSpecies ? 'warning' : 'success'} label="Без назначенного вида" value={missingSpecies || 'Нет'} />

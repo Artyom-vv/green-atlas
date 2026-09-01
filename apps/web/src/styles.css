@@ -184,11 +184,14 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .workspace-layout.is-left-collapsed .map-edit-tools { left: 58px; max-width: calc(100% - var(--map-safe-right, 20px) - 48px); }
 .workspace-layout.is-left-collapsed .map-zoom-tools, .workspace-layout.is-left-collapsed .map-plan-focus { left: 60px; }
 .workspace-layout.is-left-collapsed .map-statusbar { padding-left: 60px; }
-.map-hover-hint { position: absolute; z-index: 7; width: max-content; max-width: 280px; display: flex; flex-direction: column; gap: 0; padding: 0; border: 1px solid var(--color-neutral-300); border-radius: 4px; color: var(--color-neutral-800); background: rgba(255,255,255,.96); pointer-events: none; overflow: hidden; }
+.map-hover-hint { position: absolute; z-index: 12; width: max-content; max-width: 280px; display: flex; flex-direction: column; gap: 0; padding: 0; border: 1px solid var(--color-neutral-300); border-radius: 4px; color: var(--color-neutral-800); background: rgba(255,255,255,.96); pointer-events: auto; overflow: hidden; }
 .map-hover-hint.is-left { transform: translateX(calc(-100% - 28px)); }
 .map-hover-hint strong { font-size: 12px; line-height: 16px; font-weight: 600; }
 .map-hover-hint span { color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
-.map-hover-hint__item { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; }
+.map-hover-hint__item { width: 100%; display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.map-hover-hint__item:hover, .map-hover-hint__item:focus-visible { outline: none; background: var(--color-blue-100); }
+.map-hover-hint__item:focus-visible { box-shadow: inset 0 0 0 2px var(--color-blue-600); }
+.map-hover-hint__item.is-reference span { color: var(--color-neutral-500); }
 .map-hover-hint__item + .map-hover-hint__item { border-top: 1px solid var(--color-neutral-200); }
 .map-statusbar { position: absolute; z-index: 7; right: 0; bottom: 0; left: 0; min-height: 36px; display: flex; align-items: center; gap: 18px; padding: 0 12px; border-top: 1px solid var(--color-neutral-200); color: var(--color-neutral-600); background: rgba(255,255,255,.96); font-size: 11px; }
 .placement-check { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

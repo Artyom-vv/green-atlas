@@ -184,6 +184,18 @@ function denseDxfBuffer(pointCount = 13_000) {
   return Buffer.from(`${source.slice(0, entitiesEnd)}\n${points.trimEnd()}${source.slice(entitiesEnd)}`);
 }
 
+function denseOverlapDxfBuffer() {
+  const source = denseDxfBuffer(4_000).toString('utf8');
+  const entitiesStart = source.indexOf('\n  2\nENTITIES');
+  const entitiesEnd = source.indexOf('\n  0\nENDSEC', entitiesStart);
+  if (entitiesStart < 0 || entitiesEnd < 0) throw new Error('Не удалось найти раздел ENTITIES в плотной DXF-фикстуре');
+  // A reference line deliberately crosses the calculated allowed area. The
+  // line is not a planting constraint, but it exercises the real overlap
+  // path where the top hit must not hide the selectable allowed contour.
+  const referenceLine = '  0\nLINE\n  5\nD00D\n330\n17\n100\nAcDbEntity\n  8\n0\n100\nAcDbLine\n 10\n20.0\n 20\n40.0\n 30\n0.0\n 11\n60.0\n 21\n40.0\n 31\n0.0\n';
+  return Buffer.from(`${source.slice(0, entitiesEnd)}\n${referenceLine.trimEnd()}${source.slice(entitiesEnd)}`);
+}
+
 function incompletePhysicalLayerDxfBuffer() {
   const source = fs.readFileSync(fixture, 'utf-8');
   const entitiesStart = source.indexOf('\n  2\nENTITIES');
@@ -247,6 +259,35 @@ test('selecting the same DXF contour twice keeps one visible draft area', async 
   const selectionSummary = page.locator('.planting-place-group > header');
   await expect(selectionSummary).toContainText('Выбрано');
   await expect(selectionSummary).toContainText('1');
+});
+
+test('an overlapping dense DXF hit-stack lets the operator choose the allowed contour', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/projects/new/import');
+  await page.setInputFiles('input[type=file]', { name: 'dense-overlap.dxf', mimeType: 'application/dxf', buffer: denseOverlapDxfBuffer() });
+  await expect(page).toHaveURL(/\/setup$/);
+  await page.getByRole('button', { name: 'Подготовить карту' }).click();
+  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page.getByRole('heading', { name: 'Выберите место' })).toBeVisible();
+  await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
+
+  const map = page.getByLabel('Карта проекта озеленения');
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const sourceExtent = [-5, -5, 125, 95] as const;
+  const padding = 28;
+  const resolution = Math.max((sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2), (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2));
+  const point = {
+    x: box!.x + box!.width / 2 + (40 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (40 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
+  };
+  await page.mouse.move(point.x, point.y);
+  const stack = page.locator('.map-hover-hint');
+  await expect(stack.getByText('Допустимая область', { exact: true })).toBeVisible();
+  await expect(stack.getByText('Контур DXF: 0', { exact: true })).toBeVisible();
+  await stack.getByRole('button', { name: 'Выбрать Допустимая область' }).click();
+  await expect(page.locator('.planting-assignment-row')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: 'Выберите место' })).toBeVisible();
 });
 
 test('drawn area is stored only as a local planting zone', async ({ page }) => {
@@ -790,6 +831,58 @@ test('species assignment adds crown and root horizons without reloading the DXF'
   const assigned = (await response.json() as { plan: { objects: Array<{ species_revision_id?: string; canopy_forecast?: unknown[]; root_forecast?: unknown[] }> } }).plan.objects.find((object) => object.species_revision_id?.startsWith('sorbus-aucuparia@'));
   expect(assigned?.canopy_forecast).toHaveLength(7);
   expect(assigned?.root_forecast).toHaveLength(7);
+});
+
+test('growth horizon is controlled at an arbitrary year and updates dimensions plus the map overlay', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const projectId = await createPreparedProjectThroughApi(page, 'Горизонт 23');
+  const zonesResponse = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, {
+    data: { zones: [{ id: 'horizon-zone', label: 'Рабочая область', geometry: selectedArea }] },
+  });
+  expect(zonesResponse.ok()).toBeTruthy();
+  const manualResponse = await page.request.post(`${apiBase}/projects/${projectId}/plan/manual`);
+  expect(manualResponse.ok(), await manualResponse.text()).toBeTruthy();
+  const objectResponse = await page.request.post(`${apiBase}/projects/${projectId}/plan/objects`, {
+    data: { kind: 'tree', x: 20, y: 20, species_revision_id: 'tilia-cordata@2026-08-28.1', size_class: 'standard' },
+  });
+  expect(objectResponse.ok(), await objectResponse.text()).toBeTruthy();
+
+  await page.goto(`/projects/${projectId}/workspace`);
+  await page.getByLabel('Показать посадки').click();
+  const map = page.getByLabel('Карта проекта озеленения');
+  await page.waitForTimeout(250);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const planExtent = [18.4, 18.4, 21.6, 21.6] as const;
+  const padding = 72;
+  const resolution = Math.max((planExtent[2] - planExtent[0]) / (box!.width - padding * 2), (planExtent[3] - planExtent[1]) / (box!.height - padding * 2));
+  await page.mouse.click(
+    box!.x + box!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
+    box!.y + box!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
+  );
+  await expect(page.getByText('Выбранная посадка')).toBeVisible();
+  await expect(page.getByText('Липа мелколистная')).toBeVisible();
+
+  const slider = page.getByRole('slider', { name: 'Горизонт прогноза' });
+  await expect(slider).toHaveValue('0');
+  const overlay = page.getByLabel('Прогнозный слой карты');
+  const initialOverlay = await map.getAttribute('data-growth-overlay');
+  expect(initialOverlay).toContain(':canopy:');
+
+  // Drive the native range through its real keyboard interaction. No value
+  // property is assigned from the test; each ArrowRight produces the same
+  // input/change sequence as an operator's key press.
+  await slider.focus();
+  for (let year = 0; year < 23; year += 1) await page.keyboard.press('ArrowRight');
+
+  await expect(slider).toHaveValue('23');
+  await expect(page.getByText('23 лет')).toBeVisible();
+  await expect(page.getByText('Диаметр кроны').locator('..').getByText('6.8–14.0 м')).toBeVisible();
+  await expect(page.getByText('Корневая зона').locator('..').getByText('5.1–16.8 м')).toBeVisible();
+  await expect(map).toHaveAttribute('data-growth-horizon', '23');
+  await expect(overlay).toContainText('Слой прогноза:');
+  await expect(map).toHaveAttribute('data-growth-overlay', /:canopy:3\.423-7\.000/);
+  expect(await map.getAttribute('data-growth-overlay')).not.toBe(initialOverlay);
 });
 
 test.skip('decorative 3D stays hidden until it is linked to the DXF context', async ({ page }) => {

@@ -19,9 +19,13 @@ from app.contracts import (
     FillPatternRequest,
     GeometrySnapshot,
     LayerMapping,
+    LayerKind,
     OperationError,
     OperationKind,
     OperationStatus,
+    ImportEditability,
+    ImportMode,
+    ImportStatus,
     Plan,
     ChangeSetCandidateResult,
     ChangeSetPreview,
@@ -66,8 +70,8 @@ from app.planning.domain import PlanVersionConflict, PlantSpacingIndex
 from app.planning.ports import CandidateGeneratorPort
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.projects.ports import ProjectRepository
-from app.releases.service import build_release, release_identity
-from app.species.catalog import get_species, growth_forecasts, list_species
+from app.releases.service import build_release, parse_release_bundle, release_identity
+from app.species.catalog import forecast_at, get_species, growth_forecasts, list_species
 from app.validation.ports import PlanValidatorPort
 
 
@@ -404,6 +408,7 @@ class ProjectApplication:
                 source_name=project.source_file.name if project.source_file else None,
                 source_size=project.source_file.size if project.source_file else None,
                 has_geometry=project.geometry is not None,
+                import_status=project.import_status.model_copy(deep=True),
                 state_version=project.state_version,
                 created_at=project.created_at,
                 updated_at=project.updated_at,
@@ -442,7 +447,28 @@ class ProjectApplication:
         if len(content) > MAX_DXF_CONTENT_BYTES:
             raise ValueError(dxf_size_error())
         imported = self.dxf_reader.read(filename, content)
+        exported_layer_names = {
+            layer.source_name.upper()
+            for layer in imported.layers
+            if layer.source_name.upper().startswith("GREEN_ATLAS_")
+        }
+        plain_fallback = bool(exported_layer_names)
+        import_status = ImportStatus(
+            mode=ImportMode.PLAIN_DXF_FALLBACK if plain_fallback else ImportMode.SOURCE_DXF,
+            editability=ImportEditability.READ_ONLY if plain_fallback else ImportEditability.EDITABLE,
+            message=(
+                "Обычный DXF с проектными слоями открыт только для просмотра: "
+                "для продолжения загрузите полный ZIP-пакет выпуска."
+                if plain_fallback
+                else "Исходный DXF доступен для подготовки редактируемого плана."
+            ),
+        )
+        warnings = list(imported.warnings)
+        if plain_fallback:
+            warnings.append(import_status.message)
         project.source_file = SourceFile(name=filename, size=len(content), imported_at=datetime.now(UTC).isoformat(), dxf_version=imported.dxf_version, units=imported.units, units_assumed=imported.units_assumed, entity_count=imported.entity_count, bounds=imported.bounds, warnings=imported.warnings)
+        project.source_file.warnings = warnings
+        project.import_status = import_status
         project.layers = imported.layers
         project.source_geometry = imported.geometry
         project.coordinate_reference = imported.coordinate_reference
@@ -456,6 +482,103 @@ class ProjectApplication:
         project.plan = None
         project.status = ProjectStatus.IMPORTED
         saved = self.repository.save(project, source=content)
+        self._discard_spatial_indexes(project.id)
+        self.history.clear(project.id)
+        return saved
+
+    def import_release_bundle(self, project_id: str, filename: str, content: bytes | bytearray) -> Project:
+        """Restore an editable project revision from a validated release ZIP.
+
+        Parsing happens before reading the target project or changing any
+        durable state.  A malformed or stale bundle therefore cannot replace
+        an existing source.  The target project ID is retained so the normal
+        If-Match and client cache contracts continue to apply; object IDs,
+        plan version, groups and species IDs come from the manifest unchanged.
+        """
+
+        del filename  # The canonical source name is part of the signed payload.
+        parsed = parse_release_bundle(content)
+        project = self.get(project_id)
+        if project.plan is not None:
+            raise ValueError("Нельзя заменить исходный DXF после открытия ручной схемы. Создайте новый проект.")
+        if not parsed.source_content:
+            raise ValueError("Пакет выпуска не содержит исходного DXF")
+        imported = self.dxf_reader.read(parsed.source_filename, parsed.source_content)
+        manifest = parsed.manifest
+        project_meta = manifest.get("project") if isinstance(manifest.get("project"), dict) else {}
+        if project_meta.get("name"):
+            project.name = str(project_meta["name"])
+
+        project.source_file = SourceFile(
+            name=parsed.source_filename,
+            size=len(parsed.source_content),
+            imported_at=datetime.now(UTC).isoformat(),
+            dxf_version=imported.dxf_version,
+            units=imported.units,
+            units_assumed=imported.units_assumed,
+            entity_count=imported.entity_count,
+            bounds=imported.bounds,
+            warnings=list(imported.warnings),
+        )
+        project.layers = imported.layers
+        mappings = manifest.get("layer_mappings")
+        if isinstance(mappings, list):
+            by_source = {
+                str(item.get("source_name")): item
+                for item in mappings
+                if isinstance(item, dict) and item.get("source_name")
+            }
+            for layer in project.layers:
+                item = by_source.get(layer.source_name)
+                if not item:
+                    continue
+                kind = item.get("kind")
+                try:
+                    if kind is not None:
+                        layer.mapped_kind = LayerKind(kind)
+                except ValueError as error:
+                    raise ValueError("Manifest содержит неизвестный тип слоя") from error
+                if "visible" in item:
+                    layer.visible = bool(item["visible"])
+        project.coordinate_reference = imported.coordinate_reference
+        coordinate_payload = project_meta.get("coordinate_reference")
+        if coordinate_payload is not None:
+            try:
+                project.coordinate_reference = type(project.coordinate_reference).model_validate(coordinate_payload)
+            except Exception as error:
+                raise ValueError("Система координат в manifest имеет неверную структуру") from error
+
+        # A package without the inline source or complete plan is an
+        # intentional read-only compatibility fallback. Do not graft a
+        # partially reconstructed plan onto a derived DXF.
+        project.import_status = ImportStatus(
+            mode=ImportMode.RELEASE_BUNDLE if parsed.editable else ImportMode.PLAIN_DXF_FALLBACK,
+            editability=ImportEditability.EDITABLE if parsed.editable else ImportEditability.READ_ONLY,
+            release_id=str(manifest.get("release_id")) if manifest.get("release_id") else None,
+            message=(
+                "Ревизия восстановлена из полного ZIP-пакета и доступна для редактирования."
+                if parsed.editable
+                else parsed.read_only_reason or "Пакет открыт только для просмотра."
+            ),
+        )
+        if not parsed.editable:
+            project.source_file.warnings.append(project.import_status.message)
+        project.geometry_version = int(project_meta.get("geometry_version", 0) or 0)
+        project.planting_zones = [zone.model_copy(deep=True) for zone in parsed.planting_zones]
+        project.plan = parsed.plan.model_copy(deep=True) if parsed.editable and parsed.plan is not None else None
+        if parsed.geometry is not None and parsed.editable:
+            project.geometry = parsed.geometry.model_copy(deep=True)
+            project.source_geometry = None
+            project.map_ready = True
+        else:
+            project.geometry = None
+            project.source_geometry = imported.geometry
+            project.map_ready = False
+        project.site_area_m2 = parsed.geometry.site_area_m2 if parsed.geometry is not None else None
+        project.planning_area_m2 = parsed.geometry.planning_area_m2 if parsed.geometry is not None else None
+        project.allowed_area_m2 = parsed.geometry.allowed_area_m2 if parsed.geometry is not None else None
+        project.status = ProjectStatus.EDITING if parsed.editable and parsed.plan is not None else ProjectStatus.IMPORTED
+        saved = self.repository.save(project, source=parsed.source_content)
         self._discard_spatial_indexes(project.id)
         self.history.clear(project.id)
         return saved
@@ -576,6 +699,8 @@ class ProjectApplication:
 
     def create_manual_plan(self, project_id: str) -> Project:
         project = self.get(project_id)
+        if project.import_status.editability == ImportEditability.READ_ONLY:
+            raise ValueError(project.import_status.message)
         if project.geometry is None:
             raise ValueError("Сначала подготовьте карту и ограничения")
         if not project.planting_zones:
@@ -1247,8 +1372,8 @@ class ProjectApplication:
         )
 
     def get_scene(self, project_id: str, horizon_year: int) -> SceneSnapshot:
-        if horizon_year not in {0, 5, 10, 20}:
-            raise ValueError("Горизонт сцены должен быть 0, 5, 10 или 20 лет")
+        if not 0 <= horizon_year <= 40:
+            raise ValueError("Горизонт сцены должен быть от 0 до 40 лет")
         # The projection contains the plan and compact map metadata but omits
         # both raw and calculated DXF feature graphs. Opening 3D therefore
         # never reparses or deserialises the source drawing.
@@ -1266,9 +1391,12 @@ class ProjectApplication:
             origin_x = origin_y = 0.0
 
         height_scale = {
-            "slow": {5: 0.25, 10: 0.45, 20: 0.72},
-            "moderate": {5: 0.32, 10: 0.58, 20: 0.84},
-            "fast": {5: 0.42, 10: 0.7, 20: 0.92},
+            # Year zero is an anchor as well. It keeps the interpolation
+            # defined for every integer in the public 0–40 range instead of
+            # crashing for years 1–4 before the first mature-growth anchor.
+            "slow": {0: 0.14, 5: 0.25, 10: 0.45, 20: 0.72, 30: 0.88, 40: 1.0},
+            "moderate": {0: 0.14, 5: 0.32, 10: 0.58, 20: 0.84, 30: 0.93, 40: 1.0},
+            "fast": {0: 0.14, 5: 0.42, 10: 0.7, 20: 0.92, 30: 0.97, 40: 1.0},
         }
         initial_heights = {
             "sapling": (1.5, 2.5),
@@ -1278,22 +1406,37 @@ class ProjectApplication:
         scene_objects: list[ScenePlantObject] = []
         for object_ in project.plan.objects:
             revision = get_species(object_.species_revision_id) if object_.species_revision_id else None
-            canopy = next((item for item in object_.canopy_forecast if item.horizon_year == horizon_year), None)
-            roots = next((item for item in object_.root_forecast if item.horizon_year == horizon_year), None)
+            canopy = forecast_at(object_.canopy_forecast, horizon_year)
+            roots = forecast_at(object_.root_forecast, horizon_year)
             layout_radius = object_.layout_radius_m or object_.radius
             if horizon_year == 0:
-                canopy_min = canopy_max = layout_radius
-                heights = initial_heights.get(object_.size_class)
-                confidence = "unknown" if revision is None else "low"
-            else:
+                # Keep the current planting footprint for an unassigned
+                # object, but use the same catalogue anchor as the 2D
+                # forecast when one is available.
                 canopy_min = canopy.radius_min_m if canopy else layout_radius
                 canopy_max = canopy.radius_max_m if canopy else layout_radius
+                heights = initial_heights.get(object_.size_class)
+                confidence = canopy.confidence if canopy else "unknown"
+            elif canopy is None:
+                canopy_min = canopy_max = layout_radius
+                heights = initial_heights.get(object_.size_class)
+                confidence = "unknown"
+            else:
+                canopy_min = canopy.radius_min_m
+                canopy_max = canopy.radius_max_m
                 if revision:
-                    scale = height_scale[revision.growth_rate][horizon_year]
+                    scale_anchors = height_scale[revision.growth_rate]
+                    lower_year = max(year for year in scale_anchors if year <= horizon_year)
+                    upper_year = min(year for year in scale_anchors if year >= horizon_year)
+                    if lower_year == upper_year:
+                        scale = scale_anchors[lower_year]
+                    else:
+                        ratio = (horizon_year - lower_year) / (upper_year - lower_year)
+                        scale = scale_anchors[lower_year] + (scale_anchors[upper_year] - scale_anchors[lower_year]) * ratio
                     heights = (round(revision.mature_height_min_m * scale, 2), round(revision.mature_height_max_m * min(1, scale + 0.12), 2))
                 else:
                     heights = None
-                confidence = canopy.confidence if canopy else "unknown"
+                confidence = canopy.confidence
             scene_objects.append(ScenePlantObject(
                 object_id=object_.id,
                 kind=object_.kind,

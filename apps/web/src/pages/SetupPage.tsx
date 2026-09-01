@@ -86,6 +86,7 @@ export function SetupPage() {
       <ProjectSteps active={2} projectName={projectQuery.data.name} />
       <FlowDocument title="Проверьте слои" description="Подтвердите слои, которые ограничивают посадку." footer={<><Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/import`)} disabled={calculating}>Заменить DXF</Button><Button variant="primary" icon={MapIcon} loading={calculating} disabled={!requiredReady || calculating || incompleteConstraintLayers.length > 0} onClick={() => saveMutation.mutate()}>Подготовить карту</Button></>}>
         <div className="mapping-content">
+          {projectQuery.data.import_status?.editability === 'read_only' ? <InlineMessage tone="warning" title="Ревизия только для просмотра">Загрузите полный ZIP-пакет выпуска, чтобы продолжить редактирование посадок и сохранить их идентификаторы.</InlineMessage> : null}
           {sourceWarnings.map((warning) => <InlineMessage key={warning} tone="warning">{warning}</InlineMessage>)}
           {incompleteConstraintLayers.length ? <InlineMessage tone="error" title="Нужен рабочий фрагмент">Часть объектов не попала на карту. Исключите эти слои из ограничений или загрузите меньший фрагмент DXF.</InlineMessage> : null}
           {!hasPlanningBoundary ? <InlineMessage tone="info" title="Границу можно задать на карте">В DXF нет замкнутой границы участка. После подготовки карты обведите рабочую область вручную; ограничения от подтверждённых слоёв всё равно останутся видны.</InlineMessage> : null}

@@ -51,6 +51,7 @@ from app.operations.adapters import SqliteOperationRepository
 from app.planning.domain import PlanVersionConflict
 from app.planning.patterns import ShapelyCandidateGenerator
 from app.projects.adapters import SqliteProjectRepository
+from app.releases.service import MAX_RELEASE_BUNDLE_BYTES
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.validation.adapters import RuleBasedPlanValidator
 
@@ -142,6 +143,17 @@ async def read_limited_dxf_upload(file: UploadFile) -> bytearray:
     return content
 
 
+async def read_limited_release_upload(file: UploadFile) -> bytearray:
+    """Read a release ZIP with a separate archive upload limit."""
+
+    content = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        if len(content) + len(chunk) > MAX_RELEASE_BUNDLE_BYTES:
+            raise ValueError(f"Пакет выпуска должен быть не больше {MAX_RELEASE_BUNDLE_BYTES // 1024 // 1024} МБ")
+        content.extend(chunk)
+    return content
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -185,8 +197,24 @@ def delete_project(project_id: str) -> Response:
 async def upload_dxf(project_id: str, file: UploadFile = File(...)) -> Project:
     try:
         filename = file.filename or "source.dxf"
+        # Keep the original upload route usable for clients that predate the
+        # dedicated release-bundle route.  The ZIP branch uses the larger
+        # archive limit and still validates the manifest before mutation.
+        if filename.lower().endswith(".zip"):
+            return lightweight(application.import_release_bundle(project_id, filename, await read_limited_release_upload(file)))
         validate_dxf_filename(filename)
         return lightweight(application.import_dxf(project_id, filename, await read_limited_dxf_upload(file)))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/release-bundle", response_model=Project)
+async def upload_release_bundle(project_id: str, file: UploadFile = File(...)) -> Project:
+    try:
+        filename = file.filename or "release.zip"
+        if not filename.lower().endswith(".zip"):
+            raise ValueError("Загрузите полный ZIP-пакет выпуска")
+        return lightweight(application.import_release_bundle(project_id, filename, await read_limited_release_upload(file)))
     except Exception as error:
         raise handle(error) from error
 
@@ -326,7 +354,7 @@ def preview_plan_brush(project_id: str, payload: BrushPreviewRequest) -> BrushPr
 
 
 @router.get("/projects/{project_id}/plan/scene", response_model=SceneSnapshot)
-def get_plan_scene(project_id: str, horizon_year: int = Query(default=0)) -> SceneSnapshot:
+def get_plan_scene(project_id: str, horizon_year: int = Query(default=0, ge=0, le=40)) -> SceneSnapshot:
     try:
         return application.get_scene(project_id, horizon_year)
     except Exception as error:

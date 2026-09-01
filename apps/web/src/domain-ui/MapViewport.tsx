@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef } from 'react';
-import type { BrushStroke, ChangeSetPreview, PlanObject, PlantingZoneAssignment } from '@green/api-client';
+import type { BrushStroke, ChangeSetPreview, GrowthEnvelopeForecast, PlanObject, PlantingZoneAssignment } from '@green/api-client';
 import Feature from 'ol/Feature';
 import Collection from 'ol/Collection';
 import GeoJSON from 'ol/format/GeoJSON';
@@ -45,9 +45,77 @@ const colors: Record<string, string> = {
 };
 
 export type MapExtent = [number, number, number, number];
-export type MapHoverItem = { id: string; kind: string; label: string; detail: string };
-export type MapHoverTarget = { items: MapHoverItem[]; pixel: [number, number] };
 export type MapAreaTarget = { sourceId: string; plantingZoneId?: string; geometry?: { type: 'Polygon'; coordinates: number[][][] }; kind: string; label: string; detail: string; selectable: boolean };
+export type MapHoverItem = { id: string; kind: string; label: string; detail: string; target: MapAreaTarget };
+export type MapHoverTarget = { items: MapHoverItem[]; pixel: [number, number] };
+
+export type GrowthOverlayForecast = {
+  object: PlanObject;
+  selected: boolean;
+  canopy?: GrowthEnvelopeForecast;
+  roots?: GrowthEnvelopeForecast;
+};
+
+/**
+ * Resolve every growth envelope from the same bounded forecast source used by
+ * the inspector. The result is also used for the map's accessible summary so
+ * a changed horizon cannot move a visual layer without changing its meaning.
+ */
+export function growthOverlayForecasts(
+  objects: readonly PlanObject[],
+  selectedIds: readonly string[],
+  year: number | undefined,
+  previewObjects: readonly PlanObject[] = [],
+): GrowthOverlayForecast[] {
+  if (year === undefined) return [];
+  const selected = new Set(selectedIds);
+  const candidates = new globalThis.Map<string, PlanObject>();
+  for (const object of objects) {
+    if (object.id && selected.has(object.id)) candidates.set(object.id, object);
+  }
+  // A preview update has the same id as its durable object. Replace it in
+  // place so the envelope is rendered once and always describes the preview.
+  for (const object of previewObjects) {
+    if (object.id) candidates.set(object.id, object);
+  }
+  return [...candidates.values()].flatMap((object) => {
+    if (!object.id) return [];
+    const canopy = forecastAt(object.canopy_forecast, year);
+    const roots = forecastAt(object.root_forecast, year);
+    return canopy || roots ? [{ object, selected: selected.has(object.id), canopy, roots }] : [];
+  });
+}
+
+const mapHitPriority: Record<string, number> = { forbidden: 0, restricted: 1, water: 2, building: 3, road: 4, utility: 5, existing_green: 6, ignore: 7, planting_area: 8, allowed: 9, site_border: 10 };
+
+/**
+ * Keep hit ordering in one place for both hover and click handling.
+ *
+ * OpenLayers can return the same feature more than once when a geometry is
+ * rendered by adjacent vector layers. De-duplicating here makes the stack
+ * stable and, importantly, keeps lower layers available to the picker.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure hit-stack helper is exported for deterministic map interaction tests.
+export function mapHitStack(features: readonly Feature[]): Feature[] {
+  const seen = new Set<Feature>();
+  const seenIds = new Set<string>();
+  return features
+    .filter((feature) => Object.prototype.hasOwnProperty.call(mapHitPriority, String(feature.get('kind') ?? '')))
+    .filter((feature) => {
+      if (seen.has(feature)) return false;
+      const id = feature.getId();
+      const idKey = id === undefined || id === null ? undefined : `${String(feature.get('kind'))}:${String(id)}`;
+      if (idKey && seenIds.has(idKey)) return false;
+      seen.add(feature);
+      if (idKey) seenIds.add(idKey);
+      return true;
+    })
+    .sort((left, right) => {
+      const priorityDifference = mapHitPriority[String(left.get('kind'))] - mapHitPriority[String(right.get('kind'))];
+      if (priorityDifference) return priorityDifference;
+      return String(left.getId() ?? '').localeCompare(String(right.getId() ?? ''));
+    });
+}
 
 function mapFeatureCopy(feature: FeatureLike) {
   const kind = String(feature.get('kind') ?? 'unknown');
@@ -67,6 +135,36 @@ function mapFeatureCopy(feature: FeatureLike) {
   const [label, detail] = labels[kind] ?? ['Область карты', 'Геометрия исходного плана'];
   const plantingZoneId = feature.get('planting_zone_id');
   return { kind, label, detail, plantingZoneId: typeof plantingZoneId === 'string' ? plantingZoneId : undefined };
+}
+
+/** Serialize the polygon under the pointer into the same target used by a map click. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure target serializer is exported for deterministic map interaction tests.
+export function mapAreaTargetFromFeature(feature: FeatureLike, coordinate?: [number, number]): MapAreaTarget {
+  const copy = mapFeatureCopy(feature);
+  const sourceId = String(feature.getId() ?? 'map');
+  const geometry = feature.getGeometry();
+  const polygons = geometry instanceof MultiPolygon ? geometry.getPolygons() : geometry instanceof Polygon ? [geometry] : [];
+  const clickedGeometry = coordinate
+    ? polygons.find((polygon) => polygon.intersectsCoordinate(coordinate))
+      ?? polygons.map((polygon) => {
+        const closest = polygon.getClosestPoint(coordinate);
+        return { polygon, distance: Math.hypot(closest[0] - coordinate[0], closest[1] - coordinate[1]) };
+      }).sort((left, right) => left.distance - right.distance)[0]?.polygon
+    : polygons[0];
+  if (clickedGeometry instanceof Polygon) {
+    const serialized = new GeoJSON().writeGeometryObject(clickedGeometry, { featureProjection: projection, dataProjection: projection });
+    return {
+      sourceId: `source-zone-${sourceId}-${clickedGeometry.getExtent().map((value) => value.toFixed(3)).join('-')}`,
+      geometry: serialized as NonNullable<MapAreaTarget['geometry']>,
+      ...copy,
+      selectable: ['allowed', 'ignore', 'site_border', 'planting_area'].includes(copy.kind),
+    };
+  }
+  return {
+    sourceId: `source-feature-${sourceId}`,
+    ...copy,
+    selectable: false,
+  };
 }
 
 const drawStyle = new Style({
@@ -439,6 +537,17 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   initialExtentRef.current = initialExtent;
   callbackRef.current = { onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd };
 
+  const growthOverlay = growthOverlayForecasts(
+    objects,
+    selectedIds ?? [],
+    growthHorizon,
+    [...(changePreview?.additions ?? []), ...(changePreview?.updates ?? [])],
+  );
+  const growthOverlaySummary = growthOverlay.flatMap(({ object, canopy, roots }) => [
+    canopy ? `${object.id}:canopy:${canopy.radius_min_m.toFixed(3)}-${canopy.radius_max_m.toFixed(3)}` : undefined,
+    roots ? `${object.id}:roots:${roots.radius_min_m.toFixed(3)}-${roots.radius_max_m.toFixed(3)}` : undefined,
+  ]).filter(Boolean).join(';');
+
   const rebuildSnapTargets = () => {
     const target = snapTargetSourceRef.current;
     target.clear();
@@ -592,13 +701,34 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       interactions: defaultInteractions({ mouseWheelZoom: false, shiftDragZoom: false }).extend([mouseWheelZoom, temporaryPan]),
       view,
     });
-    const hitPriority: Record<string, number> = { forbidden: 0, restricted: 1, water: 2, building: 3, road: 4, utility: 5, existing_green: 6, ignore: 7, planting_area: 8, allowed: 9, site_border: 10 };
-    const hitFeatures = (pixel: number[]) => (map.getFeaturesAtPixel(pixel, {
-      layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer,
-      hitTolerance: 8,
-    }) as Feature[])
-      .filter((candidate) => String(candidate.get('kind') ?? '') in hitPriority)
-      .sort((left, right) => hitPriority[String(left.get('kind'))] - hitPriority[String(right.get('kind'))]);
+    const hitFeatures = (pixel: number[]) => {
+      const directHits = map.getFeaturesAtPixel(pixel, {
+        layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer,
+        hitTolerance: 8,
+      }) as Feature[];
+      const candidates = new Set<Feature>(directHits);
+      const coordinate = map.getCoordinateFromPixel(pixel);
+      if (!coordinate || !coordinate.every(Number.isFinite)) return mapHitStack([...candidates]);
+      const resolution = map.getView().getResolution() ?? 1;
+      const tolerance = resolution * 8;
+      const searchExtent: Extent = [coordinate[0] - tolerance, coordinate[1] - tolerance, coordinate[0] + tolerance, coordinate[1] + tolerance];
+      const sources = [zoneSourceRef.current, baseSourceRef.current, constraintSourceRef.current];
+      const isWithinTolerance = (feature: Feature) => {
+        const geometry = feature.getGeometry();
+        if (!geometry) return false;
+        if (geometry instanceof Polygon || geometry instanceof MultiPolygon) {
+          if (geometry.intersectsCoordinate(coordinate)) return true;
+        }
+        const closest = geometry.getClosestPoint(coordinate);
+        return Math.hypot(closest[0] - coordinate[0], closest[1] - coordinate[1]) <= tolerance;
+      };
+      for (const source of sources) {
+        source.forEachFeatureInExtent(searchExtent, (candidate) => {
+          if (isWithinTolerance(candidate)) candidates.add(candidate);
+        });
+      }
+      return mapHitStack([...candidates]);
+    };
     const resizeMap = () => {
       map.updateSize();
     };
@@ -673,25 +803,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
           : candidates[0];
         const areaGeometry = areaTarget?.getGeometry();
         if (areaTarget && areaGeometry) {
-          const copy = mapFeatureCopy(areaTarget);
-          const clickedGeometry = areaGeometry instanceof MultiPolygon
-            ? areaGeometry.getPolygons().find((polygon) => polygon.intersectsCoordinate(event.coordinate))
-            : areaGeometry;
-          if (clickedGeometry instanceof Polygon) {
-            const serialized = new GeoJSON().writeGeometryObject(clickedGeometry, { featureProjection: projection, dataProjection: projection });
-            callbackRef.current.onMapArea?.({
-              sourceId: `source-zone-${String(areaTarget.getId() ?? 'map')}-${clickedGeometry.getExtent().map((value) => value.toFixed(3)).join('-')}`,
-              geometry: serialized as NonNullable<MapAreaTarget['geometry']>,
-              ...copy,
-              selectable: ['allowed', 'ignore', 'site_border', 'planting_area'].includes(copy.kind),
-            }, selectionMode(event.originalEvent));
-            return;
-          }
-          callbackRef.current.onMapArea?.({
-            sourceId: `source-feature-${String(areaTarget.getId() ?? copy.kind)}`,
-            ...copy,
-            selectable: false,
-          }, selectionMode(event.originalEvent));
+          callbackRef.current.onMapArea?.(mapAreaTargetFromFeature(areaTarget, [event.coordinate[0], event.coordinate[1]]), selectionMode(event.originalEvent));
           return;
         }
       }
@@ -716,11 +828,10 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         hoveredFeature = candidates[0];
         const seen = new Set<string>();
         hoverItems = candidates.flatMap((candidate) => {
-          const copy = mapFeatureCopy(candidate);
-          const key = `${copy.kind}:${copy.label}:${copy.detail}`;
-          if (seen.has(key)) return [];
-          seen.add(key);
-          return [{ id: String(candidate.getId() ?? key), kind: copy.kind, label: copy.label, detail: copy.detail }];
+          const target = mapAreaTargetFromFeature(candidate, [event.coordinate[0], event.coordinate[1]]);
+          if (seen.has(target.sourceId)) return [];
+          seen.add(target.sourceId);
+          return [{ id: target.sourceId, kind: target.kind, label: target.label, detail: target.detail, target }];
         }).slice(0, 5);
       }
       const sourceGeometry = hoveredFeature?.getGeometry();
@@ -749,13 +860,16 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     target.addEventListener('wheel', preventPageZoom, { passive: false });
     const clearPointer = () => {
       callbackRef.current.onPointerCoordinate?.(undefined);
-      callbackRef.current.onMapHover?.(undefined);
       mapHoverSourceRef.current.clear();
       hoveredMapFeatureRef.current = null;
       hoveredMapGeometryKeyRef.current = undefined;
       target.style.cursor = '';
     };
-    map.on('movestart', clearPointer);
+    const clearMapHover = () => {
+      clearPointer();
+      callbackRef.current.onMapHover?.(undefined);
+    };
+    map.on('movestart', clearMapHover);
     target.addEventListener('mouseleave', clearPointer);
     mapRef.current = map;
     return () => {
@@ -763,6 +877,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       if (planFitFrameRef.current !== undefined) cancelAnimationFrame(planFitFrameRef.current);
       observer.disconnect();
       map.un('moveend', publishExtent);
+      map.un('movestart', clearMapHover);
       window.removeEventListener('keydown', rememberSpace);
       window.removeEventListener('keyup', releaseSpace);
       target.removeEventListener('wheel', preventPageZoom);
@@ -1111,14 +1226,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   useEffect(() => {
     const source = growthEnvelopeSourceRef.current;
     source.clear();
-    if (growthHorizon === undefined) return;
-    const selectedObjects = objects.filter((object) => object.id && selectedRef.current.has(object.id));
-    const previewObjects = [...(changePreview?.additions ?? []), ...(changePreview?.updates ?? [])];
-    const visibleObjects = [...selectedObjects, ...previewObjects];
-    for (const object of visibleObjects) {
-      const canopy = forecastAt(object.canopy_forecast, growthHorizon);
-      const roots = forecastAt(object.root_forecast, growthHorizon);
-      const selected = Boolean(object.id && selectedRef.current.has(object.id));
+    for (const { object, canopy, roots, selected } of growthOverlayForecasts(objects, [...selectedRef.current], growthHorizon, [...(changePreview?.additions ?? []), ...(changePreview?.updates ?? [])])) {
       if (roots && selected) {
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_max_m), envelopeStyle: 'rootMax' }));
         source.addFeature(new Feature({ geometry: new Circle([object.x, object.y], roots.radius_min_m), envelopeStyle: 'rootMin' }));
@@ -1190,5 +1298,5 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     planLayerRef.current?.changed();
   }, [selectedIds]);
 
-  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} /><span id={helpId} className="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб</span></>;
+  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} data-growth-horizon={growthHorizon ?? ''} data-growth-overlay={growthOverlaySummary}><span className="sr-only" aria-live="polite" aria-label="Прогнозный слой карты">{growthOverlaySummary ? `Слой прогноза: ${growthOverlaySummary}` : 'Прогнозный слой недоступен'}</span></div><span id={helpId} className="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб</span></>;
 });

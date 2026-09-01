@@ -16,6 +16,33 @@ class ProjectStatus(StrEnum):
     EDITING = "editing"
 
 
+class ImportMode(StrEnum):
+    """How the current project's source was opened.
+
+    A plain DXF that contains Green Atlas planting layers is deliberately not
+    treated as an editable revision: without the release manifest those
+    circles are indistinguishable from existing vegetation.  A complete
+    release bundle carries the source and plan semantics needed to continue
+    editing safely.
+    """
+
+    SOURCE_DXF = "source_dxf"
+    RELEASE_BUNDLE = "release_bundle"
+    PLAIN_DXF_FALLBACK = "plain_dxf_fallback"
+
+
+class ImportEditability(StrEnum):
+    EDITABLE = "editable"
+    READ_ONLY = "read_only"
+
+
+class ImportStatus(BaseModel):
+    mode: ImportMode = ImportMode.SOURCE_DXF
+    editability: ImportEditability = ImportEditability.EDITABLE
+    release_id: str | None = None
+    message: str = "Исходный DXF доступен для подготовки редактируемого плана."
+
+
 class OperationKind(StrEnum):
     CALCULATE_GEOMETRY = "calculate_geometry"
 
@@ -244,6 +271,10 @@ class Project(BaseModel):
     name: str
     status: ProjectStatus = ProjectStatus.EMPTY
     source_file: SourceFile | None = None
+    # The source DXF remains the immutable CAD input.  ``import_status``
+    # tells clients whether the current payload also carries the release
+    # semantics required for another editable revision.
+    import_status: ImportStatus = Field(default_factory=ImportStatus)
     layers: list[Layer] = Field(default_factory=list)
     coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
     source_geometry: GeometrySnapshot | None = None
@@ -296,6 +327,7 @@ class ProjectSummary(BaseModel):
     source_name: str | None = None
     source_size: int | None = None
     has_geometry: bool = False
+    import_status: ImportStatus = Field(default_factory=ImportStatus)
     state_version: int = Field(default=1, ge=1)
     created_at: str
     updated_at: str
@@ -622,7 +654,7 @@ class ExportArtifact(BaseModel):
 
 class ReleaseCreateRequest(BaseModel):
     mode: Literal["draft", "final"] = "draft"
-    scene_horizon: Literal[0, 5, 10, 20] = 20
+    scene_horizon: int = Field(default=20, ge=0, le=40)
 
 
 class ReleaseArtifact(BaseModel):
@@ -645,7 +677,7 @@ class ReleasePackage(BaseModel):
     created_at: str
     rule_set_revision: str
     species_catalog_revision: str
-    scene_horizon: Literal[0, 5, 10, 20]
+    scene_horizon: int = Field(ge=0, le=40)
     warnings: list[str] = Field(default_factory=list)
     artifacts: list[ReleaseArtifact] = Field(default_factory=list)
 

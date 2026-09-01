@@ -37,6 +37,7 @@ describe('assisted planning product surface', () => {
       'undoPlanChange',
       'updatePlanObject',
       'uploadDxf',
+      'uploadReleaseBundle',
     ]);
   });
 });

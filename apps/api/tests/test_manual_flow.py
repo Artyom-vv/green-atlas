@@ -1419,16 +1419,25 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     assert applied.status_code == 200
 
     current = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
+    early = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 1})
     future = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 20})
-    assert current.status_code == future.status_code == 200
-    current_scene, future_scene = current.json(), future.json()
+    interpolated = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 23})
+    terminal = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 40})
+    assert current.status_code == early.status_code == future.status_code == interpolated.status_code == terminal.status_code == 200
+    current_scene, early_scene, future_scene, interpolated_scene = current.json(), early.json(), future.json(), interpolated.json()
     assert current_scene["coordinate_origin"] == [40.0, 30.0]
     assert current_scene["completeness"] == "partial"
     assert current_scene["terrain_status"] == "missing"
     assert {item["object_id"] for item in current_scene["objects"]} == {item["id"] for item in applied.json()["plan"]["objects"]}
     current_tree = next(item for item in current_scene["objects"] if item["object_id"] == tree_id)
+    early_tree = next(item for item in early_scene["objects"] if item["object_id"] == tree_id)
     future_tree = next(item for item in future_scene["objects"] if item["object_id"] == tree_id)
+    assert early_tree["height_max_m"] is not None
     assert future_tree["canopy_radius_max_m"] > current_tree["canopy_radius_max_m"]
     assert future_tree["height_max_m"] is not None
+    interpolated_tree = next(item for item in interpolated_scene["objects"] if item["object_id"] == tree_id)
+    assert interpolated_tree["canopy_radius_min_m"] == 3.423
+    assert interpolated_tree["canopy_radius_max_m"] == 7.0
+    assert interpolated_tree["height_max_m"] is not None
     assert max(abs(item["local_x"]) for item in future_scene["objects"]) == 20
-    assert client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 7}).status_code == 400
+    assert client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 41}).status_code == 422

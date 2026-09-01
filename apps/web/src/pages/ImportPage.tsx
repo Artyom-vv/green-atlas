@@ -12,11 +12,13 @@ export function ImportPage() {
     mutationFn: async (file: File) => {
       const project = projectId
         ? await api.getProject(projectId, false)
-        : await api.createProject(file.name.replace(/\.dxf$/i, '') || 'Новый проект');
+        : await api.createProject(file.name.replace(/\.(?:dxf|zip)$/i, '') || 'Новый проект');
       if (!project.id) throw new ApiClientError('PROJECT_ID_MISSING', 'Сервер не вернул идентификатор проекта.');
-      return api.uploadDxf(project.id, file);
+      return file.name.toLowerCase().endsWith('.zip')
+        ? api.uploadReleaseBundle(project.id, file)
+        : api.uploadDxf(project.id, file);
     },
-    onSuccess: (project) => navigate(`/projects/${project.id}/setup`),
+    onSuccess: (project) => navigate(project.import_status?.mode === 'release_bundle' && project.import_status.editability === 'editable' ? `/projects/${project.id}/workspace` : `/projects/${project.id}/setup`),
   });
   const error = mutation.error instanceof ApiClientError ? mutation.error.message : mutation.error instanceof Error ? mutation.error.message : undefined;
 
@@ -25,7 +27,7 @@ export function ImportPage() {
       <AppHeader />
       <main className="project-flow-layout import-layout">
         <ProjectSteps active={1} />
-        <FlowDocument title="Добавьте исходный чертёж" description={projectId ? "Новый DXF можно загрузить до начала ручной схемы." : "Загрузите DXF. Исходный файл останется без изменений."}>
+        <FlowDocument title="Добавьте исходный чертёж" description={projectId ? "Новый DXF или полный ZIP-пакет можно загрузить до начала ручной схемы." : "Загрузите DXF или полный ZIP-пакет, чтобы продолжить редактирование ревизии."}>
           <div className="import-content">
             <DxfUploader onUpload={(file) => mutation.mutate(file)} loading={mutation.isPending} error={error} />
             <div className="document-note"><i />Исходный файл не меняется.</div>

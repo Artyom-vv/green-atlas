@@ -91,6 +91,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/release-bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Release Bundle */
+        post: operations["upload_release_bundle_api_projects__project_id__release_bundle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/source-dxf/download": {
         parameters: {
             query?: never;
@@ -576,6 +593,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_release_bundle_api_projects__project_id__release_bundle_post */
+        Body_upload_release_bundle_api_projects__project_id__release_bundle_post: {
+            /** File */
+            file: string;
+        };
         /** BrushPreview */
         BrushPreview: {
             /** Brush Id */
@@ -915,6 +937,37 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImportEditability
+         * @enum {string}
+         */
+        ImportEditability: "editable" | "read_only";
+        /**
+         * ImportMode
+         * @description How the current project's source was opened.
+         *
+         *     A plain DXF that contains Green Atlas planting layers is deliberately not
+         *     treated as an editable revision: without the release manifest those
+         *     circles are indistinguishable from existing vegetation.  A complete
+         *     release bundle carries the source and plan semantics needed to continue
+         *     editing safely.
+         * @enum {string}
+         */
+        ImportMode: "source_dxf" | "release_bundle" | "plain_dxf_fallback";
+        /** ImportStatus */
+        ImportStatus: {
+            /** @default source_dxf */
+            mode: components["schemas"]["ImportMode"];
+            /** @default editable */
+            editability: components["schemas"]["ImportEditability"];
+            /** Release Id */
+            release_id?: string | null;
+            /**
+             * Message
+             * @default Исходный DXF доступен для подготовки редактируемого плана.
+             */
+            message: string;
         };
         /** Layer */
         Layer: {
@@ -1316,6 +1369,7 @@ export interface components {
             /** @default empty */
             status: components["schemas"]["ProjectStatus"];
             source_file?: components["schemas"]["SourceFile"] | null;
+            import_status?: components["schemas"]["ImportStatus"];
             /** Layers */
             layers?: components["schemas"]["Layer"][];
             coordinate_reference?: components["schemas"]["CoordinateReference"];
@@ -1429,6 +1483,7 @@ export interface components {
              * @default false
              */
             has_geometry: boolean;
+            import_status?: components["schemas"]["ImportStatus"];
             /**
              * State Version
              * @default 1
@@ -1517,9 +1572,8 @@ export interface components {
             /**
              * Scene Horizon
              * @default 20
-             * @enum {integer}
              */
-            scene_horizon: 0 | 5 | 10 | 20;
+            scene_horizon: number;
         };
         /** ReleasePackage */
         ReleasePackage: {
@@ -1547,11 +1601,8 @@ export interface components {
             rule_set_revision: string;
             /** Species Catalog Revision */
             species_catalog_revision: string;
-            /**
-             * Scene Horizon
-             * @enum {integer}
-             */
-            scene_horizon: 0 | 5 | 10 | 20;
+            /** Scene Horizon */
+            scene_horizon: number;
             /** Warnings */
             warnings?: string[];
             /** Artifacts */
@@ -2072,6 +2123,43 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_upload_dxf_api_projects__project_id__source_dxf_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_release_bundle_api_projects__project_id__release_bundle_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_release_bundle_api_projects__project_id__release_bundle_post"];
             };
         };
         responses: {
