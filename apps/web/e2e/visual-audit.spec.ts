@@ -172,7 +172,16 @@ async function openManualPlan(page: Page) {
     const response = await page.request.post(`${apiBase}/projects/${projectId}/plan/objects`, { data: { kind: 'tree', x, y } });
     expect(response.ok(), await response.text()).toBeTruthy();
   }
+  await expect.poll(async () => {
+    const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await response.json() as { plan?: { objects?: unknown[] } }).plan?.objects?.length;
+  }).toBe(3);
+  const loadedProject = page.waitForResponse((response) => response.request().method() === 'GET'
+    && response.url().startsWith(`${apiBase}/projects/${projectId}?`)
+    && response.ok());
   await page.reload();
+  await loadedProject;
+  await expect(page.getByRole('button', { name: 'Разместить посадки' }).first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('3 посадки')).toBeVisible();
 }
 
@@ -883,9 +892,24 @@ test('working areas remain manageable after the editor is opened', async ({ page
   }).toBe('Главная аллея');
 
   await expect(page.getByRole('button', { name: 'Удалить Главная аллея' })).toBeDisabled();
+  await expect(page.getByText('Сначала создайте другой рабочий участок')).toBeVisible();
   await page.getByRole('button', { name: 'Новый участок' }).click();
   await expect(page.getByText('Поставьте точки и замкните новый контур')).toBeVisible();
   await page.getByRole('button', { name: 'Отменить обводку' }).click();
+
+  const current = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const project = await current.json() as { planting_zones: Array<{ id?: string; label: string; geometry: unknown }> };
+  const added = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, { data: { zones: [
+    ...project.planting_zones,
+    { id: 'area-unused', label: 'Резервный участок', geometry: { type: 'Polygon', coordinates: [[[70, 12], [85, 12], [85, 30], [70, 30], [70, 12]]] } },
+  ] } });
+  expect(added.ok(), await added.text()).toBeTruthy();
+  await page.reload();
+  await page.getByRole('button', { name: 'Рабочие участки' }).click();
+
+  await expect(page.getByText('Сначала перенесите или удалите 3 посадки')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Удалить Главная аллея' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Удалить Резервный участок' })).toBeEnabled();
 });
 
 test.skip('legacy recommendation surface is removed from the primary flow', async ({ page }) => {

@@ -29,4 +29,19 @@ describe('PlantingZoneManager', () => {
     expect(onDelete).toHaveBeenCalledWith(zones[0]);
     expect(onRename).toHaveBeenCalledWith(zones[0], 'Главная аллея');
   });
+
+  it('explains why a working area cannot be deleted', () => {
+    render(<PlantingZoneManager zones={zones} zoneUsage={{ a: 3 }} onFocus={vi.fn()} onRename={vi.fn()} onRedraw={vi.fn()} onDelete={vi.fn()} onDraw={vi.fn()} onCancelDraw={vi.fn()} />);
+
+    expect(screen.getByText('Сначала перенесите или удалите 3 посадки')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Удалить Северный участок' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Удалить Южный участок' })).toBeEnabled();
+  });
+
+  it('requires a replacement before deleting the only area', () => {
+    render(<PlantingZoneManager zones={[zones[0]]} onFocus={vi.fn()} onRename={vi.fn()} onRedraw={vi.fn()} onDelete={vi.fn()} onDraw={vi.fn()} onCancelDraw={vi.fn()} />);
+
+    expect(screen.getByText('Сначала создайте другой рабочий участок')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Удалить Северный участок' })).toBeDisabled();
+  });
 });

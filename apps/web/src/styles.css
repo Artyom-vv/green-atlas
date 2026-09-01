@@ -289,6 +289,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .planting-zone-manager__list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 6px; border-left: 2px solid transparent; background: var(--color-neutral-100); }
 .planting-zone-manager__list article.is-active { border-left-color: var(--color-blue-600); background: var(--color-blue-100); }
 .planting-zone-manager__list article > div { display: flex; align-items: center; }
+.planting-zone-manager__reason { grid-column: 1 / -1; max-width: 32ch; padding: 0 6px 4px; color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .planting-zone-manager__list .ui-input { min-width: 0; border-color: transparent; background: transparent; }
 .planting-zone-manager__list .ui-input:focus { border-color: var(--color-blue-600); background: var(--color-white); }
 .planting-zone-manager > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
