@@ -81,6 +81,9 @@ describe('PatternToolPanel', () => {
 
     expect(screen.getByText('Почему позиции исключены')).toBeVisible();
     expect(screen.getByText('3 — Контур пересекает существующее озеленение')).toBeVisible();
+    const result = screen.getByLabelText('Результат расчёта');
+    const controls = screen.getByRole('spinbutton', { name: 'Количество посадок' });
+    expect(result.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows derived group spacing without a second fill control', () => {

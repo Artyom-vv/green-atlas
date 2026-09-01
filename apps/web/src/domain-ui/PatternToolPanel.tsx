@@ -106,6 +106,13 @@ export function PatternToolPanel({ mode, zones, species, axis, axisSource, selec
     <header><span><strong>{mode === 'row' ? 'Ряд посадок' : 'Разместить посадки'}</strong><small>{mode === 'row' ? 'По выбранной линии' : 'По выбранным участкам'}</small></span></header>
     <div className="pattern-tool-panel__content">
       <StepProgress current={preview ? 2 : !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
+      {preview ? <section className="pattern-result-review" aria-label="Результат расчёта">
+        <section className="pattern-live-summary" aria-live="polite"><strong>Черновик на карте</strong><span>{preview.accepted_count} из {preview.requested_count} допустимы</span>{mode === 'fill' && preview.effective_spacing_m ? <small>Расчётный шаг {preview.effective_spacing_m} м</small> : null}</section>
+        {resultNote ? <InlineMessage tone="warning">{resultNote}</InlineMessage> : null}
+        {preview.data_confidence && preview.data_confidence !== 'verified' ? <InlineMessage tone={preview.data_confidence === 'blocked' ? 'error' : 'warning'} title="Достоверность проверки ограничена">{preview.data_confidence_reasons?.join('; ') || 'Часть исходных ограничений не подтверждена'}</InlineMessage> : null}
+        {preview.reason_summary?.length ? <InlineMessage tone="info" title="Почему позиции исключены"><ul>{preview.reason_summary.map((item) => <li key={`${item.status}:${item.code}`}>{item.count} — {item.message}</li>)}</ul></InlineMessage> : null}
+        {preview.change_set && onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} forecasts={selectedSpecies ? [selectedSpecies] : []} onChange={onGrowthHorizon} /> : null}
+      </section> : null}
       <fieldset className="pattern-tool-panel__zones">
         <legend>Участки</legend>
         {!selectedZoneIds.length ? <InlineMessage tone="info">Выберите рабочий участок</InlineMessage> : null}
@@ -130,10 +137,6 @@ export function PatternToolPanel({ mode, zones, species, axis, axisSource, selec
       {mode === 'row' && side !== 'center' ? <div className="pattern-tool-panel__setting"><span>От оси, м</span><NumberStepper label="Поперечный отступ" value={lateralOffset} onChange={setLateralOffset} min={0.5} max={30} step={0.5} /></div> : null}
       {mode === 'row' ? <><div className="pattern-tool-panel__setting"><span>От начала, м</span><NumberStepper label="Отступ от начала" value={startOffset} onChange={setStartOffset} min={0} max={100} step={0.5} /></div><div className="pattern-tool-panel__setting"><span>От конца, м</span><NumberStepper label="Отступ от конца" value={endOffset} onChange={setEndOffset} min={0} max={100} step={0.5} /></div></> : null}
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
-      {resultNote ? <InlineMessage tone="warning">{resultNote}</InlineMessage> : null}
-      {preview?.data_confidence && preview.data_confidence !== 'verified' ? <InlineMessage tone={preview.data_confidence === 'blocked' ? 'error' : 'warning'} title="Достоверность проверки ограничена">{preview.data_confidence_reasons?.join('; ') || 'Часть исходных ограничений не подтверждена'}</InlineMessage> : null}
-      {preview?.reason_summary?.length ? <InlineMessage tone="info" title="Почему позиции исключены"><ul>{preview.reason_summary.map((item) => <li key={`${item.status}:${item.code}`}>{item.count} — {item.message}</li>)}</ul></InlineMessage> : null}
-      {preview?.change_set ? <><section className="pattern-live-summary" aria-live="polite"><strong>Черновик на карте</strong><span>{preview.accepted_count} из {preview.requested_count} допустимы</span>{mode === 'fill' && preview.effective_spacing_m ? <small>Расчётный шаг {preview.effective_spacing_m} м</small> : null}</section>{onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} forecasts={selectedSpecies ? [selectedSpecies] : []} onChange={onGrowthHorizon} /> : null}</> : null}
       </> : null}
     </div>
     <div className="inspector-spacer" />
