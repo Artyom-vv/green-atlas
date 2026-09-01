@@ -192,17 +192,20 @@ function plantGlyph(kind: string, color: string, outline: string): string {
 const changePreviewStyles = new globalThis.Map<string, Style[]>();
 function changePreviewStyle(feature: FeatureLike): Style[] {
   const kind = String(feature.get('kind') ?? 'tree');
-  const cached = changePreviewStyles.get(kind);
+  const status = String(feature.get('candidateStatus') ?? 'allowed');
+  const key = `${kind}:${status}`;
+  const cached = changePreviewStyles.get(key);
   if (cached) return cached;
+  const semanticColor = status === 'blocked' ? '#D92D20' : status === 'unknown' || status === 'soft_conflict' ? '#B76400' : '#198754';
   const geometry = (candidate: FeatureLike) => {
     const candidateGeometry = candidate.getGeometry();
     return candidateGeometry instanceof Circle ? new Point(candidateGeometry.getCenter()) : candidate.get('markerGeometry');
   };
-  const styles = [new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 9 : 7, fill: new Fill({ color: 'rgba(255,255,255,.92)' }), stroke: new Stroke({ color: '#225CFF', width: 1.5 }) }) }), new Style({
+  const styles = [new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 9 : 7, fill: new Fill({ color: 'rgba(255,255,255,.92)' }), stroke: new Stroke({ color: semanticColor, width: 1.5 }) }) }), new Style({
     geometry,
-    image: new Icon({ src: plantGlyph(kind, '#225CFF', '#FFFFFF'), width: kind === 'tree' ? 20 : 17, height: kind === 'tree' ? 20 : 17 }),
+    image: new Icon({ src: plantGlyph(kind, semanticColor, '#FFFFFF'), width: kind === 'tree' ? 20 : 17, height: kind === 'tree' ? 20 : 17 }),
   })];
-  changePreviewStyles.set(kind, styles);
+  changePreviewStyles.set(key, styles);
   return styles;
 }
 
@@ -1208,6 +1211,9 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const source = changePreviewSourceRef.current;
     source.clear();
     if (!changePreview) return;
+    const statusByObjectId = new globalThis.Map(
+      (changePreview.candidate_results ?? []).flatMap((result) => result.object_id ? [[result.object_id, result.status] as const] : []),
+    );
     const objects = [...(changePreview.additions ?? []), ...(changePreview.updates ?? [])];
     source.addFeatures(objects.flatMap((object) => {
       if (!object.id) return [];
@@ -1217,6 +1223,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         markerGeometry: new Point([object.x, object.y]),
         objectId: object.id,
         kind: object.kind,
+        candidateStatus: statusByObjectId.get(object.id) ?? 'allowed',
       });
       feature.setId(`change-preview-${object.id}`);
       return [feature];

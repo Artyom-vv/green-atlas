@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import axe from 'axe-core';
 import fs from 'node:fs';
+import GeoJSON from 'ol/format/GeoJSON.js';
 import path from 'node:path';
 
 const fixture = path.resolve('../../fixtures/site.dxf');
@@ -271,6 +272,21 @@ test('an overlapping dense DXF hit-stack lets the operator choose the allowed co
   await expect(page.getByRole('heading', { name: 'Выберите место' })).toBeVisible();
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
 
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const snapshot = await page.request.get(`${apiBase}/projects/${projectId}/map-features?min_x=-5&min_y=-5&max_x=125&max_y=95&resolution=0.1`);
+  expect(snapshot.ok(), await snapshot.text()).toBeTruthy();
+  const features = (await snapshot.json() as { feature_collection: { features: Array<{ properties?: { kind?: string } }> } }).feature_collection.features;
+  const allowed = features.find((feature) => feature.properties?.kind === 'allowed');
+  expect(allowed).toBeDefined();
+  const allowedGeometry = new GeoJSON().readFeature(allowed).getGeometry();
+  expect(allowedGeometry).not.toBeNull();
+  // The synthetic reference line spans x=20..60 at y=40. Pick a coordinate
+  // that the current geometry engine actually marks as allowed instead of
+  // hard-coding a point that can become occupied when constraints improve.
+  const overlapCoordinate = Array.from({ length: 161 }, (_, index) => [20 + index * .25, 40] as [number, number])
+    .find((coordinate) => allowedGeometry!.intersectsCoordinate(coordinate));
+  expect(overlapCoordinate).toBeDefined();
+
   const map = page.getByLabel('Карта проекта озеленения');
   const box = await map.boundingBox();
   expect(box).not.toBeNull();
@@ -278,12 +294,18 @@ test('an overlapping dense DXF hit-stack lets the operator choose the allowed co
   const padding = 28;
   const resolution = Math.max((sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2), (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2));
   const point = {
-    x: box!.x + box!.width / 2 + (40 - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (40 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
+    x: box!.x + box!.width / 2 + (overlapCoordinate![0] - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (overlapCoordinate![1] - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
   };
-  await page.mouse.move(point.x, point.y);
   const stack = page.locator('.map-hover-hint');
-  await expect(stack.getByText('Допустимая область', { exact: true })).toBeVisible();
+  // Dense geometry is appended over several animation frames. Re-trigger the
+  // pointer hit-test until the selectable contour itself is present instead
+  // of assuming that the first painted CAD line means every layer is ready.
+  await expect.poll(async () => {
+    await page.mouse.move(point.x - 4, point.y - 4);
+    await page.mouse.move(point.x, point.y);
+    return stack.getByText('Допустимая область', { exact: true }).count();
+  }, { timeout: 10_000 }).toBe(1);
   await expect(stack.getByText('Контур DXF: 0', { exact: true })).toBeVisible();
   await stack.getByRole('button', { name: 'Выбрать Допустимая область' }).click();
   await expect(page.locator('.planting-assignment-row')).toHaveCount(1);
@@ -628,6 +650,59 @@ test('box selection moves a group through one confirmed change set', async ({ pa
     .map((object) => [Number(object.x.toFixed(3)), Number(object.y.toFixed(3))])
     .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
   expect(positions).toEqual([[20, 25], [20, 30], [40, 25]]);
+});
+
+test('a group cannot be moved outside the assigned area and the original layout stays intact', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const narrowedArea = {
+    id: 'area-e2e',
+    label: 'Контур DXF: тестовая область',
+    geometry: { type: 'Polygon', coordinates: [[[18, 18], [42, 18], [42, 32], [18, 32], [18, 18]]] },
+  };
+  const assigned = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, { data: { zones: [narrowedArea] } });
+  expect(assigned.ok(), await assigned.text()).toBeTruthy();
+  await page.reload();
+  await expect(page.getByText('3 посадки')).toBeVisible();
+  const map = page.getByLabel('Карта проекта озеленения');
+  await page.getByLabel('Показать посадки').click();
+  await page.waitForTimeout(250);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
+  const padding = 72;
+  const resolution = Math.max(
+    (planExtent[2] - planExtent[0]) / (box!.width - padding * 2),
+    (planExtent[3] - planExtent[1]) / (box!.height - padding * 2),
+  );
+  const point = (x: number, y: number) => ({
+    x: box!.x + box!.width / 2 + (x - (planExtent[0] + planExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (y - (planExtent[1] + planExtent[3]) / 2) / resolution,
+  });
+  const first = point(20, 20);
+  const second = point(40, 20);
+  await page.getByRole('button', { name: 'Выбрать рамкой' }).click();
+  await page.mouse.move(first.x - 18, first.y + 18);
+  await page.mouse.down();
+  await page.mouse.move(second.x + 18, second.y - 18, { steps: 8 });
+  await page.mouse.up();
+
+  await page.getByRole('button', { name: 'Переместить', exact: true }).click();
+  // The selection centre moves from x=30 to x=35. The right-hand tree would
+  // end at x=45, outside the assigned contour ending at x=42.
+  const outsideAssignedArea = point(35, 25);
+  await page.mouse.click(outsideAssignedArea.x, outsideAssignedArea.y);
+  await expect(page.getByText('Перемещение недоступно')).toBeVisible();
+  await expect(page.getByText(/пересекает объект|внутри одного из участков задания/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Применить' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Отмена' }).click();
+
+  const project = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const positions = (await project.json() as { plan: { objects: Array<{ x: number; y: number }> } }).plan.objects
+    .map((object) => [Number(object.x.toFixed(3)), Number(object.y.toFixed(3))])
+    .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+  expect(positions).toEqual([[20, 20], [20, 30], [40, 20]]);
 });
 
 test('placement flow creates a typed group across the selected area as one revision', async ({ page }) => {

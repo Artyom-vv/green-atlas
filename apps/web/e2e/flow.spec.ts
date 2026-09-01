@@ -94,18 +94,18 @@ test('release bundle reopens as an editable revision and exports the edited ID',
   // object, change its species via the inspector and apply the atomic
   // change-set before opening the release panel.
   await page.getByRole('button', { name: 'Показать посадки', exact: true }).last().click();
-  await page.waitForTimeout(1000);
   const map = page.getByLabel('Карта проекта озеленения');
+  await expect.poll(async () => map.locator('canvas').evaluateAll((canvases) => canvases.some((canvas) => canvas.width > 0 && canvas.height > 0))).toBe(true);
   const box = await map.boundingBox();
   expect(box).not.toBeNull();
-  // The imported source keeps the CAD extent, so an object can initially be
-  // outside the viewport centre. The focus action centers it; try a small
-  // tolerance around that point to keep the assertion independent of the
-  // right-rail width.
-  for (const [xRatio, yRatio] of [[0.47, 0.5], [0.5, 0.5], [0.45, 0.5], [0.49, 0.48], [0.49, 0.52]]) {
-    if (await page.getByText('Выбранная посадка', { exact: true }).count()) break;
-    await page.mouse.click(box!.x + box!.width * xRatio, box!.y + box!.height * yRatio);
-  }
+  // Select the focused revision object with the editor's native marquee.
+  // This verifies the group-selection path and avoids guessing an icon pixel
+  // whose position depends on the right inspector width.
+  await page.getByRole('button', { name: 'Выбрать рамкой' }).click();
+  await page.mouse.move(box!.x + box!.width * .2, box!.y + box!.height * .2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width * .8, box!.y + box!.height * .8, { steps: 8 });
+  await page.mouse.up();
   await expect(page.getByText('Выбранная посадка', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Изменить породу', exact: true }).last().click();
   const speciesInput = page.getByRole('combobox', { name: /Порода/ });

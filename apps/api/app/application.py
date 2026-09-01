@@ -1010,7 +1010,14 @@ class ProjectApplication:
             issue = _CandidateIssue(**{**issue.__dict__, "zone_id": zone.id})
         return object_, issue
 
-    def _preview_update(self, project: Project, plan: Plan, object_id: str, payload: PlanObjectUpdate) -> tuple[PlanObject, str | None]:
+    def _preview_update(
+        self,
+        project: Project,
+        plan: Plan,
+        object_id: str,
+        payload: PlanObjectUpdate,
+        spacing_index: PlantSpacingIndex | None = None,
+    ) -> tuple[PlanObject, str | None]:
         current = next((item for item in plan.objects if item.id == object_id), None)
         if current is None:
             raise KeyError("Объект плана не найден")
@@ -1059,7 +1066,9 @@ class ProjectApplication:
             updates["canopy_forecast"] = []
             updates["root_forecast"] = []
         candidate = PlanObject.model_validate({**current.model_dump(), **updates})
-        if not PlantSpacingIndex(plan.objects).respects(candidate, ignore_id=current.id):
+        index = spacing_index or PlantSpacingIndex(plan.objects)
+        ignore_id = None if spacing_index is not None else current.id
+        if not index.respects(candidate, ignore_id=ignore_id):
             raise ValueError("Объект расположен слишком близко к существующим посадкам")
         return candidate, advisory
 
@@ -1086,6 +1095,13 @@ class ProjectApplication:
         results: list[ChangeSetCandidateResult] = []
         spacing_index: PlantSpacingIndex | None = PlantSpacingIndex(working.objects)
         manual_single_review = draft.source == "manual" and len(draft.operations) == 1
+        group_update_ids = {
+            operation.object_id for operation in draft.operations
+            if draft.source == "group" and operation.type == "update"
+        }
+        group_update_spacing = PlantSpacingIndex([
+            object_ for object_ in working.objects if object_.id not in group_update_ids
+        ]) if group_update_ids else None
         for index, operation in enumerate(draft.operations):
             try:
                 if operation.type == "add":
@@ -1101,12 +1117,20 @@ class ProjectApplication:
                         working.objects.append(candidate)
                         spacing_index.add(candidate)
                 elif operation.type == "update":
-                    candidate, advisory = self._preview_update(project, working, operation.object_id, operation.changes)
+                    candidate, advisory = self._preview_update(
+                        project,
+                        working,
+                        operation.object_id,
+                        operation.changes,
+                        group_update_spacing,
+                    )
                     updates.append(candidate.model_copy(deep=True))
                     issue = _CandidateIssue(status="unknown", code="REVIEW_REQUIRED", category="data", message=advisory) if advisory else None
                     results.append(_candidate_result(index, "update", issue, candidate.id, "Изменение проходит текущую проверку"))
                     if issue is None or manual_single_review:
                         working.objects = [candidate if item.id == candidate.id else item for item in working.objects]
+                        if group_update_spacing is not None:
+                            group_update_spacing.add(candidate)
                         spacing_index = None
                 else:
                     current = next((item for item in working.objects if item.id == operation.object_id), None)

@@ -1090,6 +1090,29 @@ def test_change_set_previews_and_applies_several_objects_as_one_revision() -> No
     assert undone.json()["plan"]["objects"] == []
 
 
+def test_group_translation_checks_final_positions_without_colliding_with_its_old_footprint() -> None:
+    project_id = prepare_project("Перемещение группы")
+    select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [72, 12], [72, 40], [12, 40]])])
+    client.post(f"/api/projects/{project_id}/plan/manual")
+    first = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).json()
+    second = client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 30, "y": 20}).json()
+    objects = second["objects"]
+
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": second["version"],
+        "source": "group",
+        "label": "Сдвиг группы",
+        "operations": [
+            {"type": "update", "object_id": objects[0]["id"], "changes": {"x": 26, "y": 20}},
+            {"type": "update", "object_id": objects[1]["id"], "changes": {"x": 36, "y": 20}},
+        ],
+    })
+
+    assert preview.status_code == 200, preview.json()
+    assert preview.json()["can_apply"] is True
+    assert [item["status"] for item in preview.json()["candidate_results"]] == ["allowed", "allowed"]
+
+
 def test_blocked_change_set_reports_each_candidate_without_partial_save() -> None:
     project_id = prepare_project("Заблокированный набор")
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
