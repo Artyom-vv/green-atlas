@@ -284,10 +284,15 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .inspector-empty { padding-top: 48px; }
 .project-inspector__actions { flex-direction: row !important; flex-wrap: wrap; }
 .planting-flow { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--color-white); }
-.planting-flow__header { flex: none; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--color-neutral-200); }
+.planting-flow__header { flex: none; display: flex; flex-direction: column; padding: 14px 16px; border-bottom: 1px solid var(--color-neutral-200); }
 .planting-flow__header h2 { max-width: 16ch; margin: 0 0 3px; font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -.02em; }
 .planting-flow__header p { max-width: 31ch; margin: 0; color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .planting-flow__content { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior-y: contain; }
+.planting-flow__body--empty { align-items: center; justify-content: center; padding: 24px 16px; }
+.planting-flow__body--empty .ui-empty { min-height: 0; padding: 0; }
+.panel-empty-state { inline-size: min(100%, 30ch); text-align: center; }
+.panel-empty-state .ui-empty { min-height: 0; padding: 0; }
+.panel-empty-state .ui-empty p { max-inline-size: 24ch; margin-inline: auto; }
 .planting-flow__empty { padding: 12px 16px 0; }
 .planting-place-group { display: flex; flex-direction: column; }
 .planting-place-group > header { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--color-neutral-200); color: var(--color-neutral-600); }
@@ -296,10 +301,10 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .planting-assignment-row { min-height: 62px; display: grid; grid-template-columns: minmax(0, 1fr) 40px; align-items: stretch; border-bottom: 1px solid var(--color-neutral-200); }
 .planting-assignment-row > span { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 9px 8px 9px 16px; border-left: 2px solid var(--color-blue-600); background: var(--color-blue-100); }
 .planting-assignment-row strong { overflow: hidden; font-size: 12px; line-height: 17px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.planting-assignment-row small { overflow: hidden; color: var(--color-neutral-600); font-size: 10px; line-height: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .planting-assignment-row code { flex: none; color: var(--color-blue-700); font-size: 9px; line-height: 14px; white-space: nowrap; }
 .planting-assignment-row > .ui-icon-button { align-self: center; justify-self: center; }
 .planting-flow__manual { align-self: flex-start; margin: 8px; }
+.planting-flow__footer { min-height: 64px; flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
 .planting-zone-manager { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .planting-zone-manager__content { min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px; overflow: auto; }
 .planting-zone-manager__list { display: grid; gap: 8px; }
