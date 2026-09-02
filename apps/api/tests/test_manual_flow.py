@@ -1227,6 +1227,56 @@ def test_change_set_rejects_a_preview_after_the_plan_version_changes() -> None:
     assert len(client.get(f"/api/projects/{project_id}").json()["plan"]["objects"]) == 1
 
 
+def test_change_set_rejects_a_preview_after_the_working_area_changes() -> None:
+    project_id = prepare_project("Предпросмотр старого участка")
+    select_areas(project_id, [area("work", "Большой участок", [[12, 12], [60, 12], [60, 35], [12, 35]])])
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": base_version,
+        "source": "manual",
+        "label": "Посадка на старом участке",
+        "operations": [{"type": "add", "object": {"kind": "tree", "x": 30, "y": 20}}],
+    }).json()
+    select_areas(project_id, [area("work", "Уменьшенный участок", [[12, 12], [25, 12], [25, 35], [12, 35]])])
+
+    stale = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
+        "preview_id": preview["id"],
+        "digest": preview["digest"],
+        "base_plan_version": base_version,
+    })
+
+    assert stale.status_code == 400
+    assert "Рассчитайте изменения ещё раз" in stale.json()["message"]
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
+
+
+def test_change_set_preview_cannot_be_applied_to_another_project() -> None:
+    source_id = prepare_project("Источник предпросмотра")
+    target_id = prepare_project("Чужой проект")
+    source_zone = area("work", "Участок", [[12, 12], [60, 12], [60, 35], [12, 35]])
+    select_areas(source_id, [source_zone])
+    select_areas(target_id, [source_zone])
+    source_version = client.post(f"/api/projects/{source_id}/plan/manual").json()["plan"]["version"]
+    target_version = client.post(f"/api/projects/{target_id}/plan/manual").json()["plan"]["version"]
+    assert source_version == target_version
+    preview = client.post(f"/api/projects/{source_id}/plan/change-sets/preview", json={
+        "base_plan_version": source_version,
+        "source": "manual",
+        "label": "Посадка только в исходном проекте",
+        "operations": [{"type": "add", "object": {"kind": "tree", "x": 30, "y": 20}}],
+    }).json()
+
+    foreign = client.post(f"/api/projects/{target_id}/plan/change-sets/apply", json={
+        "preview_id": preview["id"],
+        "digest": preview["digest"],
+        "base_plan_version": target_version,
+    })
+
+    assert foreign.status_code == 400
+    assert "другому проекту" in foreign.json()["message"]
+    assert client.get(f"/api/projects/{target_id}").json()["plan"]["objects"] == []
+
+
 def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
     project_id = prepare_project("Ряд посадок")
     select_areas(project_id, [area("row-zone", "Линейный участок", [[12, 12], [65, 12], [65, 30], [12, 30]])])

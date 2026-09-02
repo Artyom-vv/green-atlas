@@ -88,6 +88,9 @@ _OPERATION_VALUE_UNSET = object()
 
 @dataclass
 class _CachedChangeSet:
+    project_id: str
+    state_version: int
+    geometry_version: int
     preview: ChangeSetPreview
     plan: Plan
 
@@ -234,7 +237,7 @@ class ProjectApplication:
         self._spacing_indexes: OrderedDict[str, tuple[int, PlantSpacingIndex]] = OrderedDict()
         self._spacing_index_lock = RLock()
         self._change_set_previews: OrderedDict[str, _CachedChangeSet] = OrderedDict()
-        self._applied_change_sets: OrderedDict[str, PlanMutationResult] = OrderedDict()
+        self._applied_change_sets: OrderedDict[tuple[str, str], PlanMutationResult] = OrderedDict()
         self._change_set_preview_lock = RLock()
 
     def _update_operation(
@@ -1266,7 +1269,13 @@ class ProjectApplication:
             expired = [key for key, cached in self._change_set_previews.items() if datetime.fromisoformat(cached.preview.expires_at) <= now]
             for key in expired:
                 self._change_set_previews.pop(key, None)
-            self._change_set_previews[preview.id] = _CachedChangeSet(preview=preview.model_copy(deep=True), plan=working.model_copy(deep=True))
+            self._change_set_previews[preview.id] = _CachedChangeSet(
+                project_id=project.id,
+                state_version=project.state_version,
+                geometry_version=project.geometry_version,
+                preview=preview.model_copy(deep=True),
+                plan=working.model_copy(deep=True),
+            )
             while len(self._change_set_previews) > 128:
                 self._change_set_previews.popitem(last=False)
         return preview
@@ -1967,25 +1976,30 @@ class ProjectApplication:
 
     def apply_change_set(self, project_id: str, payload: PlanChangeSetApplyRequest) -> PlanMutationResult:
         with self._manual_edit_lock:
+            applied_key = (project_id, payload.preview_id)
             with self._change_set_preview_lock:
-                applied = self._applied_change_sets.get(payload.preview_id)
+                applied = self._applied_change_sets.get(applied_key)
                 if applied is not None:
                     return applied.model_copy(deep=True)
                 cached = self._change_set_previews.get(payload.preview_id)
             if cached is None or datetime.fromisoformat(cached.preview.expires_at) <= datetime.now(UTC):
                 raise ValueError("Предпросмотр устарел. Рассчитайте изменения ещё раз")
+            if cached.project_id != project_id:
+                raise ValueError("Предпросмотр относится к другому проекту")
             preview = cached.preview
             if payload.digest != preview.digest:
                 raise ValueError("Предпросмотр изменений повреждён или был изменён")
             if payload.base_plan_version != preview.base_plan_version:
                 raise PlanVersionConflict(payload.base_plan_version, preview.base_plan_version)
-            if not preview.can_apply:
-                raise ValueError("Набор содержит заблокированные изменения")
             project = self.get(project_id)
             if project.plan is None:
                 raise ValueError("План ещё не создан")
             if project.plan.version != preview.base_plan_version:
                 raise PlanVersionConflict(preview.base_plan_version, project.plan.version)
+            if project.state_version != cached.state_version or project.geometry_version != cached.geometry_version:
+                raise ValueError("Участки или исходные данные изменились. Рассчитайте изменения ещё раз")
+            if not preview.can_apply:
+                raise ValueError("Набор содержит заблокированные изменения")
             before = self._history_basis(project)
             before_plan = project.plan.model_copy(deep=True)
             project.plan = cached.plan.model_copy(deep=True)
@@ -2003,7 +2017,7 @@ class ProjectApplication:
                 plan=saved.plan.model_copy(deep=True),
             )
             with self._change_set_preview_lock:
-                self._applied_change_sets[payload.preview_id] = result.model_copy(deep=True)
+                self._applied_change_sets[applied_key] = result.model_copy(deep=True)
                 while len(self._applied_change_sets) > 128:
                     self._applied_change_sets.popitem(last=False)
             return result
