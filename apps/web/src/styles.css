@@ -159,7 +159,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .workspace-left { border-right: 1px solid var(--color-neutral-200); }
 .workspace-right { position: relative; border-left: 1px solid var(--color-neutral-200); display: flex; flex-direction: column; }
 .workspace-right__body { min-height: 0; flex: 1; position: relative; overflow: hidden; }
-.workspace-right__body > .rail-panel, .workspace-right__body > .workspace-zones-panel, .workspace-right__body > .project-inspector, .workspace-right__body > .object-inspector, .workspace-right__body > .layer-inspector { height: 100%; }
+.workspace-right__body > .rail-panel, .workspace-right__body > .workspace-zones-panel, .workspace-right__body > .project-inspector, .workspace-right__body > .object-inspector, .workspace-right__body > .layer-inspector, .workspace-right__body > .plantings-overview { height: 100%; }
 .workspace-nav { flex: none; display: flex; gap: 4px; align-items: center; min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--color-neutral-200); background: var(--color-white); }
 .workspace-nav__item { min-width: 0; flex: 1; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; color: var(--color-neutral-600); background: transparent; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .workspace-nav__item:hover:not(:disabled) { color: var(--color-neutral-900); background: var(--color-neutral-100); }
@@ -294,6 +294,20 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .object-inspector > footer > button:first-child { padding: 0; border: 0; color: var(--color-error); background: transparent; cursor: pointer; font-size: 13px; }
 .inspector-empty { padding-top: 48px; }
 .project-inspector__actions { flex-direction: row !important; flex-wrap: wrap; }
+.plantings-overview { min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--color-white); }
+.plantings-overview > header { min-height: 48px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--color-neutral-200); }
+.plantings-overview > header > span { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.plantings-overview > header strong { font-size: 14px; line-height: 18px; font-weight: 600; }
+.plantings-overview > header small { color: var(--color-neutral-500); font: 10px/12px var(--font-mono); }
+.plantings-overview__body { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; }
+.plantings-overview__body > section { display: flex; flex-direction: column; gap: 14px; padding: 16px; border-bottom: 1px solid var(--color-neutral-200); }
+.plantings-overview__primary > strong { max-width: 24ch; color: var(--color-neutral-800); font-size: 13px; line-height: 18px; font-weight: 600; }
+.plantings-overview__primary > span { max-width: 28ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.plantings-overview__primary > .ui-button { width: 100%; }
+.plantings-overview__secondary { align-items: flex-start; }
+.plantings-overview__empty { min-height: 0; flex: 1; display: grid; place-items: center; padding: 24px; }
+.plantings-overview__empty .ui-empty { min-height: 0; max-width: 28ch; padding: 0; }
+.plantings-overview__empty .ui-empty p { max-width: 24ch; }
 .planting-flow { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--color-white); }
 .planting-flow__header { flex: none; display: flex; flex-direction: column; padding: 14px 16px; border-bottom: 1px solid var(--color-neutral-200); }
 .planting-flow__header h2 { max-width: 16ch; margin: 0 0 3px; font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -.02em; }
