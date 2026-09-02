@@ -839,15 +839,32 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       let hoveredFeature: Feature | undefined;
       let hoverItems: MapHoverItem[] = [];
       if (toolRef.current === 'select' || toolRef.current === 'pattern_fill') {
-        const candidates = hitFeatures(event.pixel);
-        hoveredFeature = candidates[0];
-        const seen = new Set<string>();
-        hoverItems = candidates.flatMap((candidate) => {
-          const target = mapAreaTargetFromFeature(candidate, [event.coordinate[0], event.coordinate[1]]);
-          if (seen.has(target.sourceId)) return [];
-          seen.add(target.sourceId);
-          return [{ id: target.sourceId, kind: target.kind, label: target.label, detail: target.detail, target }];
-        }).slice(0, 5);
+        // Plantings live in a separate, higher vector layer. Include them in
+        // the visual hover state before asking the source picker for DXF
+        // polygons; otherwise a tree is invisible to interaction and the
+        // large allowed-area polygon wins underneath it.
+        if (toolRef.current === 'select') {
+          hoveredFeature = map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate as Feature, {
+            layerFilter: (layer) => layer === planLayer,
+            hitTolerance: 10,
+          }) as Feature | undefined;
+        }
+        if (hoveredFeature) {
+          // A planting is actionable through the normal map click. Do not
+          // offer the polygon/zone picker popup for it: that popup would
+          // serialize a point as a non-selectable map area and is misleading.
+          hoverItems = [];
+        } else {
+          const candidates = hitFeatures(event.pixel);
+          hoveredFeature = candidates[0];
+          const seen = new Set<string>();
+          hoverItems = candidates.flatMap((candidate) => {
+            const target = mapAreaTargetFromFeature(candidate, [event.coordinate[0], event.coordinate[1]]);
+            if (seen.has(target.sourceId)) return [];
+            seen.add(target.sourceId);
+            return [{ id: target.sourceId, kind: target.kind, label: target.label, detail: target.detail, target }];
+          }).slice(0, 5);
+        }
       }
       const sourceGeometry = hoveredFeature?.getGeometry();
       const hoverGeometry = sourceGeometry instanceof MultiPolygon
@@ -864,7 +881,11 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         return;
       }
       if (changedFeature && hoverGeometry) mapHoverSourceRef.current.addFeature(new Feature({ geometry: hoverGeometry.clone() }));
-      callbackRef.current.onMapHover?.({ items: hoverItems, pixel: [event.pixel[0], event.pixel[1]] });
+      if (hoveredFeature?.get('objectId')) {
+        callbackRef.current.onMapHover?.(undefined);
+      } else {
+        callbackRef.current.onMapHover?.({ items: hoverItems, pixel: [event.pixel[0], event.pixel[1]] });
+      }
     });
     map.on('moveend', publishExtent);
     const rememberSpace = (event: KeyboardEvent) => { if (event.code === 'Space' && !event.repeat) spacePanRef.current = true; };
