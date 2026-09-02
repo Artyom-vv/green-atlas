@@ -58,8 +58,9 @@ function bufferedMapRequest(extent: MapExtent, resolution: number) {
   };
 }
 
-function RailPanelHeader({ title, subtitle, onBack, onClose }: { title: string; subtitle: string; onBack: () => void; onClose: () => void }) {
-  return <header className="rail-panel__header"><IconButton icon={ChevronLeft} label="Назад к посадкам" variant="ghost" onClick={onBack} /><span><small className="rail-panel__crumb">Рабочее пространство / {title}</small><h2>{title}</h2><small>{subtitle}</small></span><IconButton icon={X} label="Свернуть боковую панель" variant="ghost" onClick={onClose} /></header>;
+function RailPanelHeader({ title, subtitle, onClose, onBack }: { title: string; subtitle: string; onClose: () => void; onBack?: () => void }) {
+  void onBack;
+  return <header className="rail-panel__header"><span><h2>{title}</h2><small>{subtitle}</small></span><IconButton icon={X} label="Свернуть боковую панель" variant="ghost" onClick={onClose} /></header>;
 }
 
 export function WorkspacePage() {
@@ -274,6 +275,7 @@ export function WorkspacePage() {
   const openLeftPanel = useCallback(() => { setRightOpen(false); setLeftOpen(true); }, []);
   const openRightPanel = useCallback(() => { setLeftOpen(false); setRightOpen(true); }, []);
   const closeRightPanel = useCallback(() => setRightOpen(false), []);
+  // Kept for nested panel callers; primary sections now switch through the tabs
   const returnToInspector = useCallback(() => setPanel(projectHasPlan ? null : 'zones'), [projectHasPlan]);
   const activeWorkspaceDestination: WorkspaceDestination = panel === 'zones' ? 'zones' : panel === 'issues' ? 'issues' : 'plantings';
   const navigateWorkspace = useCallback((destination: WorkspaceDestination) => {
