@@ -1461,15 +1461,14 @@ class ProjectApplication:
             label=label,
             operations=operations,
         ))
-        accepted_indices: list[int] = []
+        allowed_indices: list[int] = []
         for item in initial.candidate_results:
             # Automatic placement is conservative: unresolved evidence is a
             # reason to skip a candidate, not permission to silently include
             # it in a bulk operation. Manual correction can still accept an
             # explicitly reviewed warning later.
             if item.status == "allowed":
-                if requested_target is None or len(accepted_indices) < requested_target:
-                    accepted_indices.append(item.operation_index)
+                allowed_indices.append(item.operation_index)
                 continue
             candidate = candidates[item.operation_index]
             skipped.append(PatternSkippedCandidate(
@@ -1487,6 +1486,20 @@ class ProjectApplication:
                 suggested_action=item.suggested_action,
                 zone_id=item.zone_id,
             ))
+        if requested_target is not None and len(allowed_indices) > requested_target:
+            # The validator sees an oversampled field so blocked candidates do
+            # not turn the requested amount into an arbitrary attempt limit.
+            # Select the final amount evenly across all safe results instead
+            # of taking the first map strip produced by an ordered grid.
+            if requested_target == 1:
+                accepted_indices = [allowed_indices[len(allowed_indices) // 2]]
+            else:
+                accepted_indices = [
+                    allowed_indices[round(index * (len(allowed_indices) - 1) / (requested_target - 1))]
+                    for index in range(requested_target)
+                ]
+        else:
+            accepted_indices = allowed_indices
         accepted_operations = [operations[index] for index in accepted_indices]
         change_set = None
         if accepted_operations:

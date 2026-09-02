@@ -1528,6 +1528,7 @@ def test_placement_masks_are_discoverable_and_keep_every_preview_candidate_safe(
         },
     ]
     observed_reasons: set[str] = set()
+    regular_grid_coordinates: list[tuple[float, float]] = []
     for mask in requests:
         response = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
             "type": "mask",
@@ -1553,6 +1554,8 @@ def test_placement_masks_are_discoverable_and_keep_every_preview_candidate_safe(
             assert checker.check(item["x"], item["y"], item["radius"], item["kind"]) is None
             assert item["planting_zone_id"] == "work"
         additions = [PlanObject.model_validate(item) for item in payload["change_set"]["additions"]]
+        if mask["mask_id"] == "regular_grid":
+            regular_grid_coordinates = [(item.x, item.y) for item in additions]
         assert all(
             hypot(first.x - second.x, first.y - second.y) + 1e-6 >= required_spacing(first, second)
             for index, first in enumerate(additions)
@@ -1563,6 +1566,7 @@ def test_placement_masks_are_discoverable_and_keep_every_preview_candidate_safe(
     # and skip those candidates instead of treating missing network evidence
     # as permission to place.
     assert "UNTYPED_UTILITY_REVIEW" in observed_reasons
+    assert max(y for _, y in regular_grid_coordinates) - min(y for _, y in regular_grid_coordinates) > 40
 
     # Preview remains non-persistent until the operator explicitly applies it.
     restored = client.get(f"/api/projects/{project_id}").json()
