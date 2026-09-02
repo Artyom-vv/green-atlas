@@ -35,6 +35,7 @@ import { ValidationPanel } from '../domain-ui/ValidationPanel';
 import { WorkspaceNavigation, type WorkspaceDestination } from '../domain-ui/WorkspaceNavigation';
 import { useWorkspaceEditor } from '../features/workspace/useWorkspaceEditor';
 import type { SelectionMode } from '../domain-ui/selection';
+import { plantingCount } from '../domain-ui/countLabel';
 
 type WorkspacePanel = 'zones' | 'plantings' | 'issues' | 'history' | 'export' | null;
 type MapGeometryMetadata = { returned_features?: number; total_matches?: number; truncated?: boolean };
@@ -44,15 +45,6 @@ const EMPTY_PLAN_OBJECTS: PlanObject[] = [];
 const EMPTY_LAYERS: Layer[] = [];
 const SceneReview = lazy(async () => ({ default: (await import('../domain-ui/SceneReview')).SceneReview }));
 const message = (error: unknown) => error instanceof ApiClientError ? error.message : error instanceof Error ? error.message : 'Неизвестная ошибка';
-const plantingCount = (count: number) => {
-  const modulo100 = count % 100;
-  const modulo10 = count % 10;
-  if (modulo100 >= 11 && modulo100 <= 14) return `${count} посадок`;
-  if (modulo10 === 1) return `${count} посадка`;
-  if (modulo10 >= 2 && modulo10 <= 4) return `${count} посадки`;
-  return `${count} посадок`;
-};
-
 function bufferedMapRequest(extent: MapExtent, resolution: number) {
   const width = Math.max(1, extent[2] - extent[0]);
   const height = Math.max(1, extent[3] - extent[1]);
@@ -271,7 +263,7 @@ export function WorkspacePage() {
     return { coordinate: cursor, radius: kind === 'tree' ? 1.6 : 0.65, status: check?.status ?? 'unknown' } as const;
   }, [cursor, placementCheck, tool]);
 
-  const openLeftPanel = useCallback(() => { setRightOpen(false); setLeftOpen(true); }, []);
+  const openLeftPanel = useCallback(() => setLeftOpen(true), []);
   const openRightPanel = useCallback(() => { setLeftOpen(false); setRightOpen(true); }, []);
   const closeRightPanel = useCallback(() => setRightOpen(false), []);
   const activeWorkspaceDestination: WorkspaceDestination = panel === 'zones' ? 'zones' : panel === 'issues' ? 'issues' : 'plantings';

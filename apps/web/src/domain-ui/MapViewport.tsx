@@ -724,7 +724,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     });
     const hitFeatures = (pixel: number[]) => {
       const directHits = map.getFeaturesAtPixel(pixel, {
-        layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer,
+        layerFilter: (layer) => layer === zoneLayer || layer === baseLayer || layer === constraintLayer || layer === draftPlantingZoneLayer,
         hitTolerance: 8,
       }) as Feature[];
       const candidates = new Set<Feature>(directHits);
@@ -733,7 +733,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const resolution = map.getView().getResolution() ?? 1;
       const tolerance = resolution * 8;
       const searchExtent: Extent = [coordinate[0] - tolerance, coordinate[1] - tolerance, coordinate[0] + tolerance, coordinate[1] + tolerance];
-      const sources = [zoneSourceRef.current, baseSourceRef.current, constraintSourceRef.current];
+      const sources = [zoneSourceRef.current, baseSourceRef.current, constraintSourceRef.current, draftPlantingZoneSourceRef.current];
       const isWithinTolerance = (feature: Feature) => {
         const geometry = feature.getGeometry();
         if (!geometry) return false;
@@ -1384,7 +1384,12 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const features: Feature[] = [];
     for (const zone of draftPlantingZones) {
       try {
-        const feature = formatter.readFeature({ type: 'Feature', id: `draft-planting-zone-${zone.id}`, geometry: zone.geometry, properties: { label: zone.label } }, { dataProjection: projection, featureProjection: projection }) as Feature;
+        const feature = formatter.readFeature({
+          type: 'Feature',
+          id: `draft-planting-zone-${zone.id}`,
+          geometry: zone.geometry,
+          properties: { kind: 'planting_area', label: zone.label, planting_zone_id: zone.id },
+        }, { dataProjection: projection, featureProjection: projection }) as Feature;
         feature.setId(`draft-planting-zone-${zone.id}`);
         features.push(feature);
       } catch {

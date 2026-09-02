@@ -11,7 +11,7 @@ import type {
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Check, ChevronDown, ExternalLink, Link2, LoaderCircle, Minus, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, CircleHelp, ExternalLink, Link2, LoaderCircle, Minus, Plus, X } from 'lucide-react';
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
 
@@ -183,6 +183,18 @@ export function Disclosure({ title, children, open = false, className }: { title
   return <section className={cx('ui-disclosure', className)} data-expanded={expanded || undefined}>
     <button type="button" className="ui-disclosure__trigger" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((current) => !current)}><span>{title}</span><ChevronDown aria-hidden="true" /></button>
     <div id={contentId} className="ui-disclosure__reveal" aria-hidden={!expanded}><div className="ui-disclosure__content">{children}</div></div>
+  </section>;
+}
+
+export function HelpDisclosure({ title, children, open = false, className }: { title: ReactNode; children: ReactNode; open?: boolean; className?: string }) {
+  const [expanded, setExpanded] = useState(open);
+  const contentId = useId();
+  return <section className={cx('ui-help-disclosure', className)} data-expanded={expanded || undefined}>
+    <button type="button" className="ui-help-disclosure__trigger" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((current) => !current)}>
+      <CircleHelp aria-hidden="true" />
+      <span>{title}</span>
+    </button>
+    <div id={contentId} className="ui-help-disclosure__reveal" aria-hidden={!expanded}><div className="ui-help-disclosure__content">{children}</div></div>
   </section>;
 }
 

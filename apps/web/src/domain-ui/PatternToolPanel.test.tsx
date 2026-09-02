@@ -19,7 +19,6 @@ describe('PatternToolPanel', () => {
 
     expect(screen.getByRole('checkbox', { name: 'Западный участок' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Восточный участок' })).toBeChecked();
-    fireEvent.click(screen.getByRole('button', { name: 'Задать количество' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Количество посадок' }), { target: { value: '5000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
 
@@ -72,11 +71,11 @@ describe('PatternToolPanel', () => {
   it('requires an explicit area and can start drawing one', () => {
     const onDrawZone = vi.fn();
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={[]} onDrawZone={onDrawZone} onPreview={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.getByText('Выберите рабочий участок')).toBeVisible();
+    expect(screen.getByText('0 / 2')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Выберите участок' })).toBeDisabled();
     expect(screen.queryByLabelText('Состав группы')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Количество посадок')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Обвести новый участок' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Новый участок' }));
     expect(onDrawZone).toHaveBeenCalledOnce();
   });
 
@@ -220,6 +219,7 @@ describe('PatternToolPanel', () => {
     cleanup();
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} onPreview={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Дополнительные настройки' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Задать количество' })).toBeVisible();
+    expect(screen.getByLabelText('Плотность группы')).toBeVisible();
+    expect(screen.getByRole('spinbutton', { name: 'Количество посадок' })).toHaveValue(40);
   });
 });

@@ -245,6 +245,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-disclosure__content { min-height: 0; display: flex; flex-direction: column; gap: 16px; overflow: hidden; padding: 0 16px; border-top: 0 solid var(--color-neutral-200); transition: padding 180ms ease, border-top-width 180ms ease; }
 .ui-disclosure[data-expanded] .ui-disclosure__content { padding: 14px 16px 16px; border-top-width: 1px; }
 
+.ui-help-disclosure { display: grid; justify-items: start; }
+.ui-help-disclosure__trigger { min-height: 32px; display: inline-flex; align-items: center; gap: 7px; padding: 0 2px; border: 0; color: var(--color-neutral-600); background: transparent; font: inherit; font-size: 12px; line-height: 18px; font-weight: 600; cursor: pointer; user-select: none; }
+.ui-help-disclosure__trigger:hover { color: var(--color-neutral-900); }
+.ui-help-disclosure__trigger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.ui-help-disclosure__trigger > svg { width: 16px; height: 16px; flex: none; color: var(--primary); }
+.ui-help-disclosure__reveal { width: 100%; display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 180ms ease, visibility 0s linear 180ms; }
+.ui-help-disclosure[data-expanded] .ui-help-disclosure__reveal { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 180ms ease; }
+.ui-help-disclosure__content { min-height: 0; overflow: hidden; color: var(--color-neutral-600); font-size: 11px; line-height: 17px; }
+.ui-help-disclosure__content > :first-child { margin-top: 8px; }
+
 .ui-step-progress { display: flex; flex-direction: column; gap: 8px; }
 .ui-step-progress__track { display: flex; gap: 6px; width: 100%; }
 .ui-step-progress__track span { height: 3px; flex: 1; background: var(--color-neutral-200); }

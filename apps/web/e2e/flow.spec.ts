@@ -25,7 +25,6 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.getByRole('checkbox', { name: 'Ручной участок 1' })).toBeChecked();
   await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
-  await page.getByLabel('Объём посадок').selectOption('exact');
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('3');
   await page.getByRole('button', { name: 'Проверить места' }).click();
   await expect(page.getByText(/Найдено [1-3]/)).toBeVisible();
@@ -39,8 +38,9 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
 
   // Validation is derived on every edit; this action only opens the current
   // findings instead of creating a competing "check" stage or request.
-  await expect(page.getByRole('button', { name: 'Проверка', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Проверка', exact: true }).click();
+  const workspaceNav = page.getByRole('navigation', { name: 'Разделы рабочего пространства' });
+  await expect(workspaceNav.getByRole('button', { name: 'Проверка', exact: true })).toBeEnabled();
+  await workspaceNav.getByRole('button', { name: 'Проверка', exact: true }).click();
   await expect(page.getByText('Проверка плана', { exact: true })).toBeVisible();
   const groupedFindings = page.getByRole('region', { name: 'Основание PP-743-3.6.3-note-1' });
   await expect(groupedFindings).toBeVisible();

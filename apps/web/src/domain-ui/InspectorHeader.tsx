@@ -10,7 +10,7 @@ export function InspectorHeader({ title, meta, action, onClose }: {
 }) {
   return <header className="inspector-header">
     <span className="inspector-header__copy">
-      <strong>{title}</strong>
+      <h2>{title}</h2>
       {meta ? <small>{meta}</small> : null}
     </span>
     {action}

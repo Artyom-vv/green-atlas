@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { Button, Checkbox, Dialog, Disclosure, EmptyState, FormField, IconButton, InlineMessage, NumberStepper, Progress, Select, StepProgress, TextInput } from './index';
+import { Button, Checkbox, Dialog, Disclosure, EmptyState, FormField, HelpDisclosure, IconButton, InlineMessage, NumberStepper, Progress, Select, StepProgress, TextInput } from './index';
 import { Plus } from 'lucide-react';
 
 describe('Button', () => {
@@ -49,11 +49,14 @@ describe('Button', () => {
   });
 
   it('exposes disclosure and custom checkbox semantics', () => {
-    render(<><Disclosure title="Дополнительно"><span>Настройка</span></Disclosure><Checkbox label="Рабочий участок" /></>);
+    render(<><Disclosure title="Дополнительно"><span>Настройка</span></Disclosure><HelpDisclosure title="Почему меньше"><span>Объяснение</span></HelpDisclosure><Checkbox label="Рабочий участок" /></>);
     const trigger = screen.getByRole('button', { name: 'Дополнительно' });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const help = screen.getByRole('button', { name: 'Почему меньше' });
+    fireEvent.click(help);
+    expect(help).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('checkbox', { name: 'Рабочий участок' })).toBeInTheDocument();
   });
 

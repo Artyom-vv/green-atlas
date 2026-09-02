@@ -17,7 +17,8 @@ describe('PlantingsOverviewPanel', () => {
 
   it('keeps the established overview hierarchy for an existing plan', () => {
     const onFit = vi.fn();
-    render(<PlantingsOverviewPanel objects={[tree]} onPlace={vi.fn()} onFit={onFit} onClose={vi.fn()} />);
+    render(<PlantingsOverviewPanel objects={[tree, { ...tree, id: 'tree-2' }, { ...tree, id: 'tree-3' }]} onPlace={vi.fn()} onFit={onFit} onClose={vi.fn()} />);
+    expect(screen.getByText('3 посадки')).toBeInTheDocument();
     expect(screen.getByText('Выберите группу или участок')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Показать посадки' }));
     expect(onFit).toHaveBeenCalledOnce();

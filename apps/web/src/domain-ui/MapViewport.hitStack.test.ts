@@ -65,6 +65,22 @@ describe('map hit stack', () => {
     });
   });
 
+  it('keeps a saved working area actionable above its calculated source area', () => {
+    const calculated = new Feature({ geometry: square(20), kind: 'allowed' });
+    calculated.setId('allowed-area');
+    const workingArea = new Feature({ geometry: square(20), kind: 'planting_area', label: 'Северный участок', planting_zone_id: 'north' });
+    workingArea.setId('draft-planting-zone-north');
+
+    const first = mapHitStack([calculated, workingArea])[0];
+    expect(first).toBe(workingArea);
+    expect(mapAreaTargetFromFeature(first, [5, 5])).toMatchObject({
+      kind: 'planting_area',
+      label: 'Северный участок',
+      plantingZoneId: 'north',
+      selectable: true,
+    });
+  });
+
   it('keeps the nearest multipolygon component selectable at its boundary', () => {
     const feature = new Feature({ geometry: new MultiPolygon([square(10), new Polygon([[[30, 30], [40, 30], [40, 40], [30, 40], [30, 30]]])]), kind: 'allowed' });
     feature.setId('allowed-islands');

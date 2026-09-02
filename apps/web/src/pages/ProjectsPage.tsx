@@ -4,18 +4,10 @@ import { api, ApiClientError, type ProjectSummary } from '@green/api-client';
 import { ArrowRight, FilePlus2, FolderOpen, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Dialog, IconButton, InlineMessage } from '@green/ui';
+import { countLabel } from '../domain-ui/countLabel';
 
 const date = (value: string) => new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 const fileSize = (value?: number | null) => value ? `${(value / 1024 / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МБ` : '—';
-const countLabel = (value: number, one: string, few: string, many: string) => {
-  const modulo100 = value % 100;
-  const modulo10 = value % 10;
-  if (modulo100 >= 11 && modulo100 <= 14) return `${value} ${many}`;
-  if (modulo10 === 1) return `${value} ${one}`;
-  if (modulo10 >= 2 && modulo10 <= 4) return `${value} ${few}`;
-  return `${value} ${many}`;
-};
-
 function projectState(project: ProjectSummary) {
   if (!project.source_name) return { title: 'Нужен DXF', detail: 'Исходник не загружен' };
   if (!project.has_geometry) return { title: 'Подготовьте карту', detail: 'Проверьте слои DXF' };

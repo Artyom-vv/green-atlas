@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BrushPreview, BrushPreviewRequest, BrushStroke, PlantingZoneAssignment } from '@green/api-client';
-import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select } from '@green/ui';
+import { Button, FormField, InlineMessage, NumberStepper, Select } from '@green/ui';
+import { PlantingZonePicker } from './PlantingZonePicker';
 
 type BrushDraft = Omit<BrushPreviewRequest, 'base_plan_version'>;
 
@@ -26,7 +27,6 @@ export function BrushToolPanel({ strokes, zones, zoneIds, width, operation, prev
   const [treeShare, setTreeShare] = useState(70);
   const addCount = strokes.filter((stroke) => stroke.mode === 'add').length;
   const subtractCount = strokes.length - addCount;
-  const selectedZoneIds = new Set(zoneIds);
   const spacing = composition === 'shrubs' ? 2 : composition === 'mixed' ? 4 : 6;
   const previewRef = useRef(onPreview);
   previewRef.current = onPreview;
@@ -45,11 +45,7 @@ export function BrushToolPanel({ strokes, zones, zoneIds, width, operation, prev
         <span>Посадки появятся после мазка</span>
         {strokes.length ? <small>добавить {addCount}, убрать {subtractCount}</small> : null}
       </section>
-      <fieldset className="pattern-tool-panel__zones">
-        <legend>Участки</legend>
-        {!zoneIds.length ? <InlineMessage tone="info">Выберите рабочий участок</InlineMessage> : null}
-        {zones.flatMap((zone, index) => zone.id ? [<Checkbox key={zone.id} label={zone.label || `Участок ${index + 1}`} checked={selectedZoneIds.has(zone.id)} onChange={(event) => onZoneIdsChange(event.target.checked ? [...new Set([...zoneIds, zone.id!])] : zoneIds.filter((id) => id !== zone.id))} />] : [])}
-      </fieldset>
+      <PlantingZonePicker zones={zones} selectedIds={zoneIds} disabled={loading} onChange={onZoneIdsChange} />
       <FormField label="Режим"><Select aria-label="Режим кисти" value={operation} onChange={(event) => onOperation(event.target.value as typeof operation)}><option value="add">Добавлять посадки</option><option value="subtract">Убирать посадки</option></Select></FormField>
       <FormField label="Состав"><Select aria-label="Состав кисти" value={composition} onChange={(event) => setComposition(event.target.value as typeof composition)}><option value="trees">Деревья</option><option value="shrubs">Кустарники</option><option value="mixed">Смешанный</option></Select></FormField>
       <div className="brush-tool-panel__setting"><span>Диаметр, м</span><NumberStepper label="Диаметр кисти" value={width} onChange={onWidth} min={2} max={100} step={2} /></div>

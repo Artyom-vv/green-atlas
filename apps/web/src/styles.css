@@ -270,7 +270,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .rail-panel > header { padding-right: 8px; }
 .inspector-header { min-height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--color-neutral-200); }
 .inspector-header__copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
-.inspector-header__copy > strong { overflow: hidden; font-size: 14px; line-height: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.inspector-header__copy > h2 { overflow: hidden; margin: 0; font-size: 14px; line-height: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-header__copy > small { overflow: hidden; color: var(--color-neutral-500); font: 10px/12px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .inspector-header > .ui-icon-button { --control-height: 32px; flex: none; }
 .object-inspector > header > span, .project-inspector > header > span, .layer-inspector > header > span, .rail-panel > header > span { display: flex; flex-direction: column; gap: 1px; }
@@ -305,7 +305,8 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .plantings-overview__secondary { align-items: flex-start; }
 .plantings-overview__empty { min-height: 0; flex: 1; display: grid; place-items: center; padding: 24px; }
 .plantings-overview__empty .ui-empty { min-height: 0; max-width: 28ch; padding: 0; }
-.plantings-overview__empty .ui-empty p { max-width: 24ch; }
+.plantings-overview__empty .ui-empty strong { font-size: 16px; line-height: 22px; font-weight: 600; }
+.plantings-overview__empty .ui-empty p { max-width: 24ch; margin: 6px 0 18px; font-size: 12px; line-height: 18px; }
 .planting-flow { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--color-white); }
 .planting-flow__header { flex: none; display: flex; flex-direction: column; padding: 14px 16px; border-bottom: 1px solid var(--color-neutral-200); }
 .planting-flow__header h2 { max-width: 16ch; margin: 0 0 3px; font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -.02em; }
@@ -354,7 +355,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .group-selection-summary dt, .group-selection-summary dd, .change-set-review__summary dt, .change-set-review__summary dd { margin: 0; }
 .group-selection-summary dd, .change-set-review__summary dd { color: var(--color-neutral-800); font-family: var(--font-mono); }
 .group-selection-actions { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px !important; }
-.group-selection-actions .ui-button { min-width: 0; justify-content: flex-start; }
+.group-selection-actions .ui-button { min-width: 0; }
 .change-set-review__summary p { max-width: 30ch; margin: 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
 .change-set-review__checks { display: grid; gap: 4px; max-width: 34ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
 .change-set-review__checks strong { color: var(--color-neutral-800); font-size: 12px; }
@@ -368,19 +369,24 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .pattern-tool-panel__axis dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; margin: 4px 0 0; font-size: 12px; line-height: 18px; }
 .pattern-tool-panel__axis dt { color: var(--color-neutral-600); }
 .pattern-tool-panel__axis dd { margin: 0; color: var(--color-neutral-800); font-family: var(--font-mono); text-align: right; }
-.pattern-tool-panel__zones { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.pattern-tool-panel__zones legend { margin-bottom: 8px; color: var(--color-neutral-700); font-size: 12px; font-weight: 600; }
+.planting-zone-picker { flex: none; overflow: hidden; border: 1px solid var(--color-neutral-300); border-radius: var(--radius-control); background: var(--color-white); }
+.planting-zone-picker > header { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--color-neutral-200); }
+.planting-zone-picker > header strong { color: var(--color-neutral-700); font-size: 12px; line-height: 16px; }
+.planting-zone-picker > header span { color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 11px; }
+.planting-zone-picker__list { display: flex; flex-direction: column; }
+.planting-zone-picker__row { width: 100%; min-height: 44px; padding: 0 12px; }
+.planting-zone-picker__row + .planting-zone-picker__row { border-top: 1px solid var(--color-neutral-200); }
+.planting-zone-picker__row:hover { background: var(--color-neutral-100); }
+.planting-zone-picker__row:has(input:checked) { background: var(--color-blue-100); }
+.planting-zone-picker__action { width: 100%; min-height: 36px; border-top: 1px solid var(--color-neutral-200); border-radius: 0; justify-content: flex-start; padding-inline: 12px; }
 .pattern-tool-panel__setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; color: var(--color-neutral-700); font-size: 12px; }
-.pattern-tool-panel__quantity { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.pattern-tool-panel__quantity > .ui-button { padding-inline: 0; }
+.pattern-tool-panel__quantity { min-height: 36px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; color: var(--color-neutral-700); font-size: 12px; }
 .pattern-live-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-left: 2px solid var(--color-blue-600); background: var(--color-blue-100); }
 .pattern-live-summary > span { display: grid; gap: 2px; }
 .pattern-live-summary strong { color: var(--color-neutral-900); font-size: 14px; line-height: 18px; }
 .pattern-live-summary small { color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .pattern-live-summary b { color: var(--color-blue-700); font: 500 11px/16px var(--font-mono); white-space: nowrap; }
-.pattern-review-details { padding: 10px 12px; background: var(--color-neutral-100); color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
-.pattern-review-details summary { color: var(--color-neutral-800); cursor: pointer; font-weight: 600; }
-.pattern-review-details ul { display: grid; gap: 4px; margin: 8px 0 0; padding-left: 18px; }
+.pattern-result-review .ui-help-disclosure__content > ul { display: grid; gap: 5px; margin: 8px 0 0; padding: 10px 12px 10px 28px; border-left: 2px solid var(--color-blue-200); background: var(--color-neutral-100); }
 .pattern-next-action { display: grid; gap: 10px; padding-top: 12px; }
 .pattern-next-action > span { display: grid; gap: 2px; }
 .pattern-next-action strong { color: var(--color-neutral-900); font-size: 13px; line-height: 18px; }

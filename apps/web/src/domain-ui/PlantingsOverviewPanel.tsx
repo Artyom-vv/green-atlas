@@ -2,6 +2,7 @@ import type { PlanObject } from '@green/api-client';
 import { Crosshair } from 'lucide-react';
 import { Button, EmptyState } from '@green/ui';
 import { InspectorHeader } from './InspectorHeader';
+import { plantingCount } from './countLabel';
 
 export function PlantingsOverviewPanel({ objects, onPlace, onFit, onClose }: {
   objects: PlanObject[];
@@ -10,7 +11,7 @@ export function PlantingsOverviewPanel({ objects, onPlace, onFit, onClose }: {
   onClose: () => void;
 }) {
   return <div className="plantings-overview">
-    <InspectorHeader title="План озеленения" meta={`${objects.length} посадок`} onClose={onClose} />
+    <InspectorHeader title="План озеленения" meta={plantingCount(objects.length)} onClose={onClose} />
     {objects.length ? <div className="plantings-overview__body">
       <section className="plantings-overview__primary">
         <span className="plantings-overview__copy">
@@ -23,7 +24,7 @@ export function PlantingsOverviewPanel({ objects, onPlace, onFit, onClose }: {
         <Button variant="secondary" icon={Crosshair} onClick={onFit}>Показать посадки</Button>
       </section>
     </div> : <div className="plantings-overview__empty">
-      <EmptyState title="Создайте первую схему" description="Сервис найдёт допустимые места" action={<Button variant="primary" onClick={onPlace}>Разместить посадки</Button>} />
+      <EmptyState title="Создайте первую схему" description={<>Сервис найдёт<br />допустимые места</>} action={<Button variant="primary" onClick={onPlace}>Разместить посадки</Button>} />
     </div>}
   </div>;
 }
