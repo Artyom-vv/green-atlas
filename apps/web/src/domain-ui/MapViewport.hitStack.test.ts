@@ -1,8 +1,9 @@
 import Feature from 'ol/Feature';
 import Polygon from 'ol/geom/Polygon';
+import Circle from 'ol/geom/Circle';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import { describe, expect, it } from 'vitest';
-import { mapAreaTargetFromFeature, mapHitStack } from './MapViewport';
+import { mapAreaTargetFromFeature, mapHitStack, resolveHoverFeature } from './MapViewport';
 
 const square = (size = 10) => new Polygon([[[0, 0], [size, 0], [size, size], [0, size], [0, 0]]]);
 
@@ -28,6 +29,27 @@ describe('map hit stack', () => {
     sourceObject.setId('small-object-42');
 
     expect(mapHitStack([aggregate, sourceObject])[0]).toBe(sourceObject);
+  });
+
+  it('keeps a planted tree above the area picker and exposes it as the hover target', () => {
+    const zone = new Feature({ geometry: square(), kind: 'allowed' });
+    const tree = new Feature({ geometry: new Circle([5, 5], 1), kind: 'tree', objectId: 'tree-1' });
+
+    const result = resolveHoverFeature(tree, [zone]);
+
+    expect(result.feature).toBe(tree);
+    expect(result.showAreaPicker).toBe(false);
+    expect(result.feature?.getGeometry()).toBeInstanceOf(Circle);
+  });
+
+  it('falls back to the semantic DXF stack when no planting is under the pointer', () => {
+    const zone = new Feature({ geometry: square(), kind: 'allowed' });
+    const restriction = new Feature({ geometry: square(), kind: 'forbidden' });
+
+    const result = resolveHoverFeature(undefined, [zone, restriction]);
+
+    expect(result.feature).toBe(restriction);
+    expect(result.showAreaPicker).toBe(true);
   });
 
   it('turns the selected polygon component into a deduplicated draft-zone target', () => {

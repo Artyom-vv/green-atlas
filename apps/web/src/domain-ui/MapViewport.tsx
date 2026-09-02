@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef } from 'react';
 import type { BrushStroke, ChangeSetPreview, PlanObject, PlantingZoneAssignment } from '@green/api-client';
+import Collection from 'ol/Collection';
 import Feature from 'ol/Feature';
 import GeoJSON from 'ol/format/GeoJSON';
 import Map from 'ol/Map';
@@ -487,6 +488,18 @@ export function nearestLineFeature(
   return nearest?.feature;
 }
 
+/**
+ * Resolve the visual hover target before presenting the area picker.
+ * Plantings are actionable objects, so they must win over the large DXF
+ * polygons underneath them and must never open the area picker.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure interaction policy is covered by deterministic unit tests.
+export function resolveHoverFeature(planFeature: Feature | undefined, areaFeatures: readonly Feature[]): { feature?: Feature; showAreaPicker: boolean } {
+  if (planFeature) return { feature: planFeature, showAreaPicker: false };
+  const feature = mapHitStack(areaFeatures)[0];
+  return { feature, showAreaPicker: Boolean(feature) };
+}
+
 const selectionMode = (event?: Event): SelectionMode => {
   const input = event as MouseEvent | KeyboardEvent | undefined;
   if (input?.altKey || input?.ctrlKey || input?.metaKey) return 'subtract';
@@ -824,7 +837,10 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     });
     map.on('pointermove', (event) => {
       if (event.dragging) {
-        if (toolRef.current === 'move' || translatingSelectionRef.current) callbackRef.current.onMoveCoordinate?.([event.coordinate[0], event.coordinate[1]]);
+        // Translate owns selected-feature geometry while a direct drag is in
+        // progress. Sending intermediate coordinates to the API both races
+        // the gesture and used to validate a partially moved group.
+        if (toolRef.current === 'move' && !translatingSelectionRef.current) callbackRef.current.onMoveCoordinate?.([event.coordinate[0], event.coordinate[1]]);
         callbackRef.current.onPointerCoordinate?.(undefined);
         callbackRef.current.onMapHover?.(undefined);
         mapHoverSourceRef.current.clear();
@@ -844,10 +860,11 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         // polygons; otherwise a tree is invisible to interaction and the
         // large allowed-area polygon wins underneath it.
         if (toolRef.current === 'select') {
-          hoveredFeature = map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate as Feature, {
+          const planFeature = map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate as Feature, {
             layerFilter: (layer) => layer === planLayer,
             hitTolerance: 10,
           }) as Feature | undefined;
+          hoveredFeature = resolveHoverFeature(planFeature, []).feature;
         }
         if (hoveredFeature) {
           // A planting is actionable through the normal map click. Do not
@@ -856,7 +873,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
           hoverItems = [];
         } else {
           const candidates = hitFeatures(event.pixel);
-          hoveredFeature = candidates[0];
+          hoveredFeature = resolveHoverFeature(undefined, candidates).feature;
           const seen = new Set<string>();
           hoverItems = candidates.flatMap((candidate) => {
             const target = mapAreaTargetFromFeature(candidate, [event.coordinate[0], event.coordinate[1]]);
@@ -1214,49 +1231,73 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
 
   useEffect(() => {
     const map = mapRef.current;
+    const target = targetRef.current;
     if (!map) return;
     if (translateInteractionRef.current) map.removeInteraction(translateInteractionRef.current);
     translateInteractionRef.current = null;
     if ((tool !== 'move' && tool !== 'select') || !selectedIds?.length) return;
     const features = planSourceRef.current.getFeatures().filter((feature) => selectedRef.current.has(String(feature.get('objectId'))));
     if (!features.length) return;
+    const selectedFeatures = new Collection(features);
     const translate = new Translate({
-      layers: planLayerRef.current ? [planLayerRef.current] : undefined,
-      filter: (feature) => selectedRef.current.has(String(feature.get('objectId'))),
+      // Passing a filter only identifies the feature under the pointer;
+      // OpenLayers then translates that one feature. A Collection is the
+      // explicit multi-feature contract and keeps the group rigid in-map.
+      features: selectedFeatures,
       hitTolerance: 12,
     });
-    translate.on('translatestart', () => { translatingSelectionRef.current = true; });
+    const selectedCenters = () => features.flatMap((feature) => {
+      const geometry = feature.getGeometry();
+      return geometry instanceof Circle ? [{ id: String(feature.get('objectId')), coordinate: geometry.getCenter() }] : [];
+    });
+    const publishLiveSelection = () => {
+      if (target) target.dataset.selectionDrag = JSON.stringify(selectedCenters());
+    };
+    const resetSelectionGeometry = () => {
+      syncPlanFeatures(planSourceRef.current, objects);
+      planLayerRef.current?.changed();
+      if (target) delete target.dataset.selectionDrag;
+    };
+    translate.on('translatestart', () => {
+      translatingSelectionRef.current = true;
+      publishLiveSelection();
+    });
     translate.on('translating', () => {
-      const centers = features.flatMap((feature) => {
-        const geometry = feature.getGeometry();
-        return geometry instanceof Circle ? [geometry.getCenter()] : [];
-      });
+      const centers = selectedCenters().map((item) => item.coordinate);
       if (!centers.length) return;
       const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
-      callbackRef.current.onMoveCoordinate?.(center);
+      publishLiveSelection();
       const pixel = map.getPixelFromCoordinate(center);
       callbackRef.current.onSelectionAnchor?.([pixel[0], pixel[1]]);
     });
     translate.on('translateend', () => {
       translatingSelectionRef.current = false;
-      const centers = features.flatMap((feature) => {
-        const geometry = feature.getGeometry();
-        return geometry instanceof Circle ? [geometry.getCenter()] : [];
-      });
+      const centers = selectedCenters().map((item) => item.coordinate);
       if (centers.length) {
         const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
         callbackRef.current.onTranslateSelectionEnd?.(center);
       }
       callbackRef.current.onMoveCoordinate?.(undefined);
-      syncPlanFeatures(planSourceRef.current, objects);
-      planLayerRef.current?.changed();
+      resetSelectionGeometry();
     });
-    map.addInteraction(translate);
-    translateInteractionRef.current = translate;
-    return () => {
+    const cancelDirectDrag = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !translatingSelectionRef.current) return;
       translatingSelectionRef.current = false;
       map.removeInteraction(translate);
       if (translateInteractionRef.current === translate) translateInteractionRef.current = null;
+      callbackRef.current.onMoveCoordinate?.(undefined);
+      resetSelectionGeometry();
+    };
+    window.addEventListener('keydown', cancelDirectDrag);
+    map.addInteraction(translate);
+    translateInteractionRef.current = translate;
+    return () => {
+      window.removeEventListener('keydown', cancelDirectDrag);
+      if (translatingSelectionRef.current) resetSelectionGeometry();
+      translatingSelectionRef.current = false;
+      map.removeInteraction(translate);
+      if (translateInteractionRef.current === translate) translateInteractionRef.current = null;
+      if (target) delete target.dataset.selectionDrag;
     };
   }, [objects, selectedIds, tool]);
 
