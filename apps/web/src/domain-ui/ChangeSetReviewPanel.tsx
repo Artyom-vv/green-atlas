@@ -1,5 +1,6 @@
 import type { ChangeSetPreview } from '@green/api-client';
 import { Button, InlineMessage, StepProgress } from '@green/ui';
+import { InspectorHeader } from './InspectorHeader';
 
 export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons = [], unverifiedData = [], onApply, onCancel }: { preview: ChangeSetPreview; applying?: boolean; note?: string; rejectedReasons?: string[]; unverifiedData?: string[]; onApply: () => void; onCancel: () => void }) {
   const additions = preview.additions?.length ?? 0;
@@ -11,7 +12,7 @@ export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons 
     .sort((left, right) => right[1] - left[1])
     .slice(0, 3);
   return <div className="project-inspector change-set-review">
-    <header><span><strong>{preview.label}</strong><small>Предпросмотр изменений</small></span></header>
+    <InspectorHeader title={preview.label} meta="Предпросмотр изменений" />
     <section className="change-set-review__summary">
       <StepProgress current={2} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
       <h3>Проверьте схему</h3>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { PlantingZoneAssignment, RecommendationRequest } from '@green/api-client';
 import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select } from '@green/ui';
+import { InspectorHeader } from './InspectorHeader';
 
 type Draft = Omit<RecommendationRequest, 'base_plan_version'>;
 
@@ -26,7 +27,7 @@ export function RecommendationPanel({ zones, loading, error, onPreview, onCancel
 
   const selected = useMemo(() => new Set(zoneIds), [zoneIds]);
   return <div className="project-inspector recommendation-panel">
-    <header><span><strong>Предложить посадки</strong><small>Один проверяемый вариант</small></span></header>
+    <InspectorHeader title="Предложить посадки" meta="Один проверяемый вариант" />
     <div className="recommendation-panel__content">
       <p className="recommendation-panel__intro">Сервис найдёт допустимые позиции. Решение останется за вами.</p>
       <fieldset className="recommendation-panel__zones">

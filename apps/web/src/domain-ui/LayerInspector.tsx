@@ -1,6 +1,7 @@
 import type { Layer } from '@green/api-client';
 import { Eye, EyeOff, LocateFixed } from 'lucide-react';
 import { Button } from '@green/ui';
+import { InspectorHeader } from './InspectorHeader';
 
 const kindLabels: Record<string, string> = {
   site_border: 'Граница участка',
@@ -17,7 +18,7 @@ export function LayerInspector({ layer, visible, onVisibility, onFit }: { layer:
   const role = kindLabels[layer.mapped_kind ?? ''] ?? 'Справочная геометрия';
   return (
     <div className="layer-inspector">
-      <header><span><strong>{kindLabels[layer.mapped_kind ?? ''] ?? layer.source_name}</strong><small>{layer.source_name}</small></span></header>
+      <InspectorHeader title={kindLabels[layer.mapped_kind ?? ''] ?? layer.source_name} meta={layer.source_name} />
       <section>
         <h3>{role}</h3>
         <p className="layer-inspector__description" aria-live="polite">{visible ? `${layer.object_count} объектов на исходном чертеже.` : 'Слой скрыт'}</p>

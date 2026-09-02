@@ -4,6 +4,7 @@ import { Button, Disclosure, FormField, HelpDisclosure, InlineMessage, NumberSte
 import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
 import { forecastAt } from './growthForecast';
 import { sourceLayerLabel } from './sourceLabels';
+import { InspectorHeader } from './InspectorHeader';
 import { PlantingZonePicker } from './PlantingZonePicker';
 
 type Axis = RowPatternRequest['axis'];
@@ -118,7 +119,7 @@ export function PatternToolPanel({ mode, zones, species, shortlist, shortlistLoa
   };
 
   return <div className="project-inspector pattern-tool-panel">
-    <header><span><strong>{mode === 'row' ? 'Ряд посадок' : 'Разместить посадки'}</strong><small>{mode === 'row' ? 'По выбранной линии' : 'По выбранным участкам'}</small></span></header>
+    <InspectorHeader title={mode === 'row' ? 'Ряд посадок' : 'Разместить посадки'} meta={mode === 'row' ? 'По выбранной линии' : 'По выбранным участкам'} />
     <div className="pattern-tool-panel__content">
       <StepProgress current={preview ? 2 : !selectedZoneIds.length ? 0 : 1} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
       {preview ? <section className="pattern-result-review" aria-label="Результат расчёта">

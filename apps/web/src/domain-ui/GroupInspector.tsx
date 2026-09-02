@@ -2,6 +2,7 @@ import type { PlanObject, ValidationIssue } from '@green/api-client';
 import { Copy, Leaf, Lock, Trash2, Unlock } from 'lucide-react';
 import { Button, HelpDisclosure } from '@green/ui';
 import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
+import { InspectorHeader } from './InspectorHeader';
 
 type GroupInspectorProps = {
   objects: PlanObject[];
@@ -54,7 +55,7 @@ export function GroupInspector({ objects, issues, disabled, growthHorizon, onGro
   const errorCount = problems.filter((problem) => problem.severity === 'error').length;
   const warningCount = problems.length - errorCount;
   return <div className="project-inspector multi-selection-inspector">
-    <header><span><strong>Выбрано посадок</strong><small>{objects.length} объектов</small></span></header>
+    <InspectorHeader title="Выбрано посадок" meta={`${objects.length} объектов`} />
     <section className="group-selection-summary">
       <h3>Состав группы</h3>
       <dl><dt>Деревья</dt><dd>{trees}</dd><dt>Кустарники</dt><dd>{shrubs}</dd>{locked ? <><dt>Закреплено</dt><dd>{locked}</dd></> : null}</dl>

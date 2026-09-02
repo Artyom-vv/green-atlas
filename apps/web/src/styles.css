@@ -266,16 +266,12 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .right-close:hover { background: var(--color-neutral-100); }
 .object-inspector, .project-inspector, .layer-inspector, .rail-panel { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .rail-panel > :not(header):not(.rail-panel__content) { min-height: 0; flex: 1; overflow: auto; overscroll-behavior-y: contain; }
-.object-inspector > header, .project-inspector > header, .layer-inspector > header, .rail-panel > header { min-height: 48px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 48px 0 16px; border-bottom: 1px solid var(--color-neutral-200); }
-.rail-panel > header { padding-right: 8px; }
-.inspector-header { min-height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--color-neutral-200); }
+.inspector-header { min-height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--color-neutral-200); }
+.inspector-header--closable { padding-right: 8px; }
 .inspector-header__copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .inspector-header__copy > h2 { overflow: hidden; margin: 0; font-size: 14px; line-height: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-header__copy > small { overflow: hidden; color: var(--color-neutral-500); font: 10px/12px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .inspector-header > .ui-icon-button { --control-height: 32px; flex: none; }
-.object-inspector > header > span, .project-inspector > header > span, .layer-inspector > header > span, .rail-panel > header > span { display: flex; flex-direction: column; gap: 1px; }
-.object-inspector > header strong, .project-inspector > header strong, .layer-inspector > header strong, .rail-panel > header strong { font-size: 14px; line-height: 18px; font-weight: 600; }
-.object-inspector > header small, .project-inspector > header small, .layer-inspector > header small, .rail-panel > header small { color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 10px; line-height: 12px; }
 .object-inspector > section, .project-inspector > section, .layer-inspector > section { display: flex; flex-direction: column; gap: 14px; padding: 16px; border-bottom: 1px solid var(--color-neutral-200); }
 .object-inspector > section h3, .project-inspector > section h3, .layer-inspector > section h3, .rail-panel h3 { margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; }
 .layer-inspector__description { margin: -6px 0 0; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
@@ -479,7 +475,6 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .brush-preview-summary strong { font-size: 13px; line-height: 18px; }
 .brush-preview-summary span { color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .brush-tool-panel > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
-.inspector-drag-hint { max-width: 30ch; margin: 0 16px; padding: 10px 12px; color: var(--color-neutral-600); background: var(--color-neutral-100); font-size: 12px; line-height: 18px; }
 .scene-review { position: absolute; z-index: 30; inset: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) 36px; color: var(--color-neutral-800); background: var(--color-neutral-100); }
 .scene-review--loading { place-items: center; display: grid; }
 .scene-review__header { min-height: 56px; display: flex; align-items: center; gap: 16px; padding: 8px 128px 8px 16px; border-bottom: 1px solid var(--color-neutral-300); background: var(--color-white); }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { PlanObject, SpeciesShortlistItem } from '@green/api-client';
 import { Button, Combobox, FormField, InlineMessage, Select } from '@green/ui';
+import { InspectorHeader } from './InspectorHeader';
 
 export function SpeciesAssignmentPanel({ objects, shortlist, loading, previewing, error, onAssign, onCancel }: {
   objects: PlanObject[];
@@ -22,7 +23,7 @@ export function SpeciesAssignmentPanel({ objects, shortlist, loading, previewing
   const mixedKinds = new Set(objects.map((object) => object.kind)).size > 1;
 
   return <div className="project-inspector species-assignment-panel">
-    <header><span><strong>Назначить породу</strong><small>{objects.length === 1 ? 'Одна посадка' : `${objects.length} посадок`}</small></span></header>
+    <InspectorHeader title="Назначить породу" meta={objects.length === 1 ? 'Одна посадка' : `${objects.length} посадок`} />
     <div className="species-assignment-panel__content">
       {mixedKinds ? <InlineMessage tone="warning">Выберите только деревья или только кустарники.</InlineMessage> : null}
       {!mixedKinds ? <FormField label="Порода" hint="Поиск по русскому или латинскому названию"><Combobox value={revisionId} options={options} disabled={loading} placeholder={loading ? 'Загружаем каталог' : 'Начните вводить название'} onChange={setRevisionId} /></FormField> : null}

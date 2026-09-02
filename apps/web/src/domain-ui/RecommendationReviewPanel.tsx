@@ -1,5 +1,6 @@
 import type { RecommendationPreview } from '@green/api-client';
 import { Button, InlineMessage } from '@green/ui';
+import { InspectorHeader } from './InspectorHeader';
 
 const evidenceLabel = (status: 'verified' | 'partial' | 'missing') => status === 'verified' ? 'проверены' : status === 'partial' ? 'частично' : 'нет данных';
 
@@ -12,7 +13,7 @@ export function RecommendationReviewPanel({ proposal, applying, onApply, onCance
   const count = proposal.change_set?.additions?.length ?? 0;
   const first = proposal.explanations[0];
   return <div className="project-inspector recommendation-review">
-    <header><span><strong>Предложение готово</strong><small>{count} допустимых позиций</small></span></header>
+    <InspectorHeader title="Предложение готово" meta={`${count} допустимых позиций`} />
     <div className="recommendation-review__content">
       <section>
         <h3>На чём основано</h3>

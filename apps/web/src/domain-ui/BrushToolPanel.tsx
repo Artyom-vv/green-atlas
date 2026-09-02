@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BrushPreview, BrushPreviewRequest, BrushStroke, PlantingZoneAssignment } from '@green/api-client';
 import { Button, FormField, InlineMessage, NumberStepper, Select } from '@green/ui';
+import { InspectorHeader } from './InspectorHeader';
 import { PlantingZonePicker } from './PlantingZonePicker';
 
 type BrushDraft = Omit<BrushPreviewRequest, 'base_plan_version'>;
@@ -38,7 +39,7 @@ export function BrushToolPanel({ strokes, zones, zoneIds, width, operation, prev
   }, [composition, density, spacing, strokes, treeShare, width, zoneIds]);
 
   return <div className="project-inspector brush-tool-panel">
-    <header><span><strong>Кисть посадок</strong><small>Массовая ручная раскладка</small></span></header>
+    <InspectorHeader title="Кисть посадок" meta="Массовая ручная раскладка" />
     <div className="brush-tool-panel__content">
       <section className="brush-tool-panel__guide">
         <strong>{strokes.length ? (loading ? 'Проверяем места' : `Мазков ${strokes.length}`) : 'Рисуйте по участку'}</strong>

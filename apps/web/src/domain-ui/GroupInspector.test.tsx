@@ -31,6 +31,8 @@ describe('GroupInspector', () => {
   it('keeps delete as a full bordered grid action and removes the drag artifact', () => {
     renderInspector();
 
+    expect(screen.getByRole('heading', { name: 'Выбрано посадок', level: 2 })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Свернуть боковую панель' })).not.toBeInTheDocument();
     const deleteButton = screen.getByRole('button', { name: 'Удалить выбранные' });
     expect(deleteButton).toHaveClass('ui-button--danger', 'group-selection-actions__delete');
     expect(deleteButton).not.toHaveClass('ui-button--ghost');

@@ -2,6 +2,7 @@ import type { PlanObject } from '@green/api-client';
 import { Leaf } from 'lucide-react';
 import { Button, EmptyState } from '@green/ui';
 import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
+import { InspectorHeader } from './InspectorHeader';
 
 export function ObjectInspector({ object, speciesName, growthHorizon, onGrowthHorizon, onSpecies, onDelete, editable = true }: { object?: PlanObject; speciesName?: string; growthHorizon?: GrowthHorizon; onGrowthHorizon: (value: GrowthHorizon) => void; onSpecies: () => void; onDelete: () => void; editable?: boolean }) {
   if (!object) return <div className="inspector-empty"><EmptyState title="Ничего не выбрано" description="Выберите объект на карте, чтобы увидеть параметры" /></div>;
@@ -14,11 +15,10 @@ export function ObjectInspector({ object, speciesName, growthHorizon, onGrowthHo
       : { className: 'is-valid', label: 'Размещение допустимо', description: 'Нарушений обязательных расстояний не обнаружено' };
   return (
     <div className="object-inspector">
-      <header><span><strong>{object.kind === 'tree' ? 'Дерево' : 'Кустарник'}</strong><small>Выбранная посадка</small></span></header>
+      <InspectorHeader title={object.kind === 'tree' ? 'Дерево' : 'Кустарник'} meta="Выбранная посадка" />
       <section className="inspector-status"><span>Проверка</span><strong className={status.className}><i />{status.label}</strong><p>{status.description}</p></section>
       <section className="object-species"><h3>Порода</h3><strong>{speciesName ?? 'Не назначена'}</strong><span>{speciesName ? 'Прогноз роста доступен' : 'Назначьте для расчёта кроны и корней'}</span>{editable ? <Button variant="secondary" icon={Leaf} onClick={onSpecies}>{speciesName ? 'Изменить породу' : 'Назначить породу'}</Button> : null}</section>
       {object.canopy_forecast?.length ? <GrowthHorizonControl value={growthHorizon} forecasts={[object]} onChange={onGrowthHorizon} /> : null}
-      {editable ? <p className="inspector-drag-hint">Перетащите посадку прямо на карте</p> : null}
       <div className="inspector-spacer" />
       <footer>{editable ? <button type="button" onClick={onDelete}>Удалить</button> : <Button variant="secondary" disabled>Зафиксировано в реализации</Button>}</footer>
     </div>
