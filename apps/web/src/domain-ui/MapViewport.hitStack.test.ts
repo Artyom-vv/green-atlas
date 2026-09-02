@@ -69,6 +69,17 @@ describe('map hit stack', () => {
     expect(contextualConstraintHits([buildingSetback, roadSetback])).toEqual([]);
   });
 
+  it('reveals occupied water and restricted areas only with their visible source objects', () => {
+    const water = new Feature({ geometry: square(), kind: 'water', source_layer: 'WATER' });
+    const restricted = new Feature({ geometry: square(), kind: 'restricted', source_layer: 'RESTRICTED' });
+    const occupiedWater = new Feature({ geometry: square(), kind: 'forbidden', rule_id: 'occupied-water' });
+    const occupiedRestricted = new Feature({ geometry: square(), kind: 'forbidden', rule_id: 'occupied-restricted' });
+
+    expect(contextualConstraintHits([occupiedWater, occupiedRestricted, water])).toEqual([occupiedWater, water]);
+    expect(contextualConstraintHits([occupiedWater, occupiedRestricted, restricted])).toEqual([occupiedRestricted, restricted]);
+    expect(contextualConstraintHits([occupiedWater, occupiedRestricted])).toEqual([]);
+  });
+
   it('turns the selected polygon component into a deduplicated draft-zone target', () => {
     const feature = new Feature({ geometry: square(20), kind: 'allowed' });
     feature.setId('allowed-area');

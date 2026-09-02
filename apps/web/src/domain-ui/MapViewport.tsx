@@ -24,7 +24,7 @@ import MouseWheelZoom from 'ol/interaction/MouseWheelZoom';
 import Snap from 'ol/interaction/Snap';
 import Translate from 'ol/interaction/Translate';
 import { defaults as defaultInteractions } from 'ol/interaction/defaults';
-import { never } from 'ol/events/condition';
+import { never, noModifierKeys, primaryAction } from 'ol/events/condition';
 import { Fill, Stroke, Style, Circle as CircleStyle, Icon, Text as TextStyle } from 'ol/style';
 import type { FeatureLike } from 'ol/Feature';
 import type { Extent } from 'ol/extent';
@@ -42,6 +42,8 @@ const MAX_CACHED_GEOMETRY_FEATURES = 25_000;
 const MAX_SNAP_TARGET_FEATURES = 3_500;
 const MAX_CACHED_GEOMETRY_STYLES = 512;
 const MAX_CACHED_BLOCK_LABEL_STYLES = 320;
+const EMPTY_DRAFT_PLANTING_ZONES: PlantingZoneAssignment[] = [];
+const EMPTY_BRUSH_STROKES: readonly BrushStroke[] = [];
 
 const colors: Record<string, string> = {
   site_border: '#163A5F', building: '#A7B0BC', road: '#7A8795', utility: '#4E78B8', existing_green: '#2E9C67', water: '#4E91B8', restricted: '#9A6700', allowed: '#91CFAE', forbidden: '#C76B00',
@@ -98,6 +100,8 @@ const constraintSourceKind = (ruleId: string) => {
   if (ruleId.includes('building')) return 'building';
   if (ruleId.includes('road')) return 'road';
   if (ruleId.includes('existing_green')) return 'existing_green';
+  if (ruleId.includes('water')) return 'water';
+  if (ruleId.includes('restricted')) return 'restricted';
   return undefined;
 };
 
@@ -791,7 +795,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; liveMoveValidation?: MoveLiveValidation; tool: MapTool; brushStrokes?: readonly BrushStroke[]; brushEnabled?: boolean; brushWidthM?: number; brushOperation?: 'add' | 'subtract'; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMoveCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onMapInspect?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, liveMoveValidation, tool, brushStrokes = [], brushEnabled = true, brushWidthM = 12, brushOperation = 'add', onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onMapInspect, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; liveMoveValidation?: MoveLiveValidation; tool: MapTool; brushStrokes?: readonly BrushStroke[]; brushEnabled?: boolean; brushWidthM?: number; brushOperation?: 'add' | 'subtract'; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMoveCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onMapInspect?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = EMPTY_DRAFT_PLANTING_ZONES, hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, liveMoveValidation, tool, brushStrokes = EMPTY_BRUSH_STROKES, brushEnabled = true, brushWidthM = 12, brushOperation = 'add', onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onMapInspect, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -1644,6 +1648,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       // explicit multi-feature contract and keeps the group rigid in-map.
       features: selectedFeatures,
       hitTolerance: 12,
+      condition: (event) => primaryAction(event) && noModifierKeys(event),
     });
     const selectedCenters = () => features.flatMap((feature) => {
       const geometry = feature.getGeometry();
@@ -1700,7 +1705,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const centers = selectedCenters().map((item) => item.coordinate);
       if (centers.length) {
         const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
-        callbackRef.current.onTranslateSelectionEnd?.(center);
+        const moved = moveOrigin && Math.hypot(center[0] - moveOrigin[0], center[1] - moveOrigin[1]) > 1e-6;
+        if (moved) callbackRef.current.onTranslateSelectionEnd?.(center);
       }
       callbackRef.current.onMoveCoordinate?.(undefined);
       draftSource.clear();

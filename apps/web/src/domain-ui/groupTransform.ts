@@ -4,6 +4,7 @@ export function groupTransformDraft(planVersion: number, objects: PlanObject[], 
   if (!objects.length) return undefined;
   const center = objects.reduce(([x, y], object) => [x + object.x, y + object.y] as [number, number], [0, 0] as [number, number]);
   const delta: [number, number] = [coordinate[0] - center[0] / objects.length, coordinate[1] - center[1] / objects.length];
+  if (mode === 'move' && Math.hypot(delta[0], delta[1]) <= 1e-6) return undefined;
   const operations: PlanChangeSetDraft['operations'] = mode === 'move'
     ? objects.flatMap((object) => object.id ? [{ type: 'update' as const, object_id: object.id, changes: { x: object.x + delta[0], y: object.y + delta[1] } }] : [])
     : objects.map((object) => ({

@@ -18,6 +18,10 @@ describe('groupTransformDraft', () => {
     ]);
   });
 
+  it('does not create a revision when a selected group was clicked without moving', () => {
+    expect(groupTransformDraft(4, objects, 'move', [15, 10])).toBeUndefined();
+  });
+
   it('copies objects into a distinct group while preserving planting metadata', () => {
     const draft = groupTransformDraft(4, objects, 'copy', [30, 25], 'copy-group');
 
