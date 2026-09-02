@@ -26,6 +26,7 @@ from app.contracts import (
     PlanObjectsDeleteRequest,
     PatternPreview,
     PatternPreviewRequest,
+    PlacementMaskPreset,
     PlacementCheck,
     PlacementCheckRequest,
     PlantingZonesRequest,
@@ -342,6 +343,14 @@ def apply_plan_change_set(project_id: str, payload: PlanChangeSetApplyRequest) -
 def preview_plan_pattern(project_id: str, payload: PatternPreviewRequest) -> PatternPreview:
     try:
         return application.preview_pattern(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/plan/placement-masks", response_model=list[PlacementMaskPreset])
+def get_plan_placement_masks(project_id: str) -> list[PlacementMaskPreset]:
+    try:
+        return application.placement_masks(project_id)
     except Exception as error:
         raise handle(error) from error
 

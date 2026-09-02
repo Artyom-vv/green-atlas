@@ -22,4 +22,25 @@ describe('BrushToolPanel', () => {
     expect(screen.queryByText('Дополнительные настройки')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Плотность кисти')).toBeVisible();
   });
+
+  it('guides the user to select a zone before enabling brush controls', () => {
+    render(<BrushToolPanel strokes={[]} zones={[]} zoneIds={[]} width={12} operation="add" onZoneIdsChange={vi.fn()} onWidth={vi.fn()} onOperation={vi.fn()} onPreview={vi.fn()} onApply={vi.fn()} onClear={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByText('Выберите участок', { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.getByText('Кисть станет доступна после выбора рабочего участка')).toBeInTheDocument();
+    expect(screen.queryByText('Рисуйте по участку')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Режим кисти')).toBeDisabled();
+    expect(screen.getByLabelText('Состав кисти')).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: 'Диаметр кисти' })).toBeDisabled();
+    expect(screen.getByLabelText('Плотность кисти')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Выберите участок' })).toBeDisabled();
+  });
+
+  it('switches the guide to drawing after a zone is selected', () => {
+    render(<BrushToolPanel strokes={[]} zones={[{ id: 'work', label: 'Рабочий участок', geometry: { type: 'Polygon', coordinates: [] } }]} zoneIds={['work']} width={12} operation="add" onZoneIdsChange={vi.fn()} onWidth={vi.fn()} onOperation={vi.fn()} onPreview={vi.fn()} onApply={vi.fn()} onClear={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByText('Рисуйте по участку')).toBeInTheDocument();
+    expect(screen.getByLabelText('Режим кисти')).toBeEnabled();
+    expect(screen.getByRole('spinbutton', { name: 'Диаметр кисти' })).toBeEnabled();
+  });
 });

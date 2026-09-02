@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from math import floor, hypot, sqrt
+from math import ceil, cos, floor, hypot, pi, sin, sqrt
 from random import Random
 
 from shapely.affinity import rotate
 from shapely.geometry import LineString, Point, shape
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
-from app.contracts import BrushPreviewRequest, FillPatternRequest, PlantingZoneAssignment, RowPatternRequest
+from app.contracts import BrushPreviewRequest, FillPatternRequest, PlacementMaskRequest, PlantingZoneAssignment, RowPatternRequest
 from app.planning.ports import PatternCandidate
 
 
@@ -201,6 +202,160 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
     return _bounded(candidates)
 
 
+def _mask_geometry(request: PlacementMaskRequest, zones: list[PlantingZoneAssignment]) -> BaseGeometry:
+    requested_ids = set(request.zone_ids)
+    selected = [zone for zone in zones if zone.id in requested_ids]
+    missing = requested_ids - {zone.id for zone in selected}
+    if missing:
+        raise ValueError("Один из выбранных участков больше не существует")
+    parts: list[BaseGeometry] = []
+    for zone in selected:
+        polygon = shape(zone.geometry)
+        if polygon.is_empty:
+            continue
+        if polygon.geom_type not in {"Polygon", "MultiPolygon"}:
+            raise ValueError(f"Участок «{zone.label}» не является замкнутой областью")
+        usable = polygon.buffer(-request.edge_offset_m) if request.edge_offset_m else polygon
+        if not usable.is_empty:
+            parts.append(usable)
+    return unary_union(parts) if parts else Point().buffer(0)
+
+
+def _cluster_offsets(spacing: float, count: int, angle: float) -> list[tuple[float, float]]:
+    """Return a compact hexagonal grove with a stable per-grove rotation."""
+    offsets = [(0.0, 0.0)]
+    ring = 1
+    while len(offsets) < count:
+        radius = ring * spacing
+        slots = 6 * ring
+        for index in range(slots):
+            theta = angle + (2 * pi * index / slots)
+            offsets.append((radius * cos(theta), radius * sin(theta)))
+            if len(offsets) >= count:
+                break
+        ring += 1
+    return offsets
+
+
+def _generate_cluster_mask(request: PlacementMaskRequest, geometry: BaseGeometry) -> list[PatternCandidate]:
+    target = request.target_count if request.placement_mode == "count" else MAX_PATTERN_CANDIDATES
+    if target <= 0 or geometry.is_empty:
+        return []
+    grove_count = max(1, ceil(target / request.cluster_size))
+    outer_ring = max(1, ceil((request.cluster_size - 1) / 6))
+    centre_spacing = max(request.cluster_gap_m, request.spacing_m * (2 * outer_ring + 1))
+    centres = _poisson_candidates(geometry, centre_spacing, grove_count, request.seed)
+    candidates: list[PatternCandidate] = []
+    seen: set[tuple[float, float]] = set()
+    for grove_index, centre in enumerate(centres):
+        random = Random(f"grove:{request.seed}:{grove_index}:{centre.x}:{centre.y}")
+        for offset_x, offset_y in _cluster_offsets(request.spacing_m, request.cluster_size, random.random() * 2 * pi):
+            key = (round(centre.x + offset_x, 6), round(centre.y + offset_y, 6))
+            if key in seen or not geometry.covers(Point(*key)):
+                continue
+            seen.add(key)
+            candidates.append(PatternCandidate(*key))
+            if len(candidates) >= target:
+                return candidates
+    return _bounded(candidates)
+
+
+def _line_parts(geometry: BaseGeometry) -> list[LineString]:
+    if isinstance(geometry, LineString):
+        return [geometry]
+    if geometry.geom_type in {"Polygon", "MultiPolygon"}:
+        return _line_parts(geometry.boundary)
+    parts: list[LineString] = []
+    for part in getattr(geometry, "geoms", []):
+        parts.extend(_line_parts(part))
+    return parts
+
+
+def _generate_road_edge_mask(
+    request: PlacementMaskRequest,
+    geometry: BaseGeometry,
+    guides: list[dict],
+) -> list[PatternCandidate]:
+    if geometry.is_empty or not guides:
+        return []
+    # Sampling the boundary of a buffered road produces two parallel avenues
+    # for linework and follows the actual outer edge for polygonal carriageways.
+    lines: list[LineString] = []
+    for value in guides:
+        guide = shape(value)
+        if guide.is_empty:
+            continue
+        lines.extend(_line_parts(guide.buffer(request.road_offset_m).boundary))
+    sampled: list[list[tuple[float, float]]] = []
+    for line in lines:
+        if line.length <= 1e-9:
+            continue
+        positions = []
+        distance = request.spacing_m / 2
+        while distance <= line.length + 1e-9:
+            point = line.interpolate(distance)
+            if geometry.covers(point):
+                positions.append((point.x, point.y))
+            distance += request.spacing_m
+        if positions:
+            sampled.append(positions)
+
+    # Round-robin prevents the first DXF road from consuming a count-limited
+    # result before the remaining recognised roads have been represented.
+    target = request.target_count if request.placement_mode == "count" else MAX_PATTERN_CANDIDATES
+    candidates: list[PatternCandidate] = []
+    buckets: dict[tuple[int, int], list[tuple[float, float]]] = {}
+    cell = max(request.spacing_m, 1e-6)
+    longest = max((len(points) for points in sampled), default=0)
+    for position_index in range(longest):
+        for points in sampled:
+            if position_index >= len(points):
+                continue
+            x, y = points[position_index]
+            bucket = (floor(x / cell), floor(y / cell))
+            if any(
+                hypot(x - other_x, y - other_y) + 1e-9 < request.spacing_m
+                for offset_x in (-1, 0, 1)
+                for offset_y in (-1, 0, 1)
+                for other_x, other_y in buckets.get((bucket[0] + offset_x, bucket[1] + offset_y), [])
+            ):
+                continue
+            buckets.setdefault(bucket, []).append((x, y))
+            candidates.append(PatternCandidate(round(x, 6), round(y, 6)))
+            if len(candidates) >= target:
+                return candidates
+    return _bounded(candidates)
+
+
+def generate_mask(
+    request: PlacementMaskRequest,
+    zones: list[PlantingZoneAssignment],
+    guide_geometries: list[dict] | None = None,
+) -> list[PatternCandidate]:
+    """Generate candidates for a named spatial intent, never final placements."""
+    geometry = _mask_geometry(request, zones)
+    if request.mask_id == "regular_grid":
+        return generate_fill(FillPatternRequest(
+            base_plan_version=request.base_plan_version,
+            plant_kind=request.plant_kind,
+            zone_ids=request.zone_ids,
+            placement_mode=request.placement_mode,
+            target_count=request.target_count,
+            layout="regular",
+            spacing_m=request.spacing_m,
+            edge_offset_m=request.edge_offset_m,
+            angle_deg=request.angle_deg,
+            seed=request.seed,
+            layout_radius_m=request.layout_radius_m,
+            size_class=request.size_class,
+            species_revision_id=request.species_revision_id,
+            spacing_policy=request.spacing_policy,
+        ), zones)
+    if request.mask_id == "cluster_groves":
+        return _generate_cluster_mask(request, geometry)
+    return _generate_road_edge_mask(request, geometry, guide_geometries or [])
+
+
 def generate_brush(request: BrushPreviewRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]:
     requested_ids = set(request.zone_ids)
     selected = [zone for zone in zones if zone.id in requested_ids]
@@ -242,7 +397,14 @@ def generate_brush(request: BrushPreviewRequest, zones: list[PlantingZoneAssignm
 
 
 class ShapelyCandidateGenerator:
-    def generate(self, request: RowPatternRequest | FillPatternRequest | BrushPreviewRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]:
+    def generate(
+        self,
+        request: RowPatternRequest | FillPatternRequest | PlacementMaskRequest | BrushPreviewRequest,
+        zones: list[PlantingZoneAssignment],
+        guide_geometries: list[dict] | None = None,
+    ) -> list[PatternCandidate]:
         if isinstance(request, BrushPreviewRequest):
             return generate_brush(request, zones)
+        if isinstance(request, PlacementMaskRequest):
+            return generate_mask(request, zones, guide_geometries)
         return generate_row(request) if request.type == "row" else generate_fill(request, zones)

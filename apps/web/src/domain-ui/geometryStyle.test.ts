@@ -1,5 +1,6 @@
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
+import Polygon from 'ol/geom/Polygon';
 import { describe, expect, it } from 'vitest';
 import { geometryStyle } from './MapViewport';
 
@@ -28,5 +29,22 @@ describe('geometryStyle', () => {
     });
 
     expect(geometryStyle(point(0), 1)).toBe(geometryStyle(point(1), 1));
+  });
+
+  it('keeps aggregate regulation buffers contextual instead of permanently painting the map', () => {
+    const buffer = new Feature({
+      geometry: new Polygon([[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]]),
+      kind: 'forbidden',
+      rule_id: 'pp743-building',
+    });
+    const mappedRestriction = new Feature({
+      geometry: buffer.getGeometry(),
+      kind: 'forbidden',
+      rule_id: 'source-layer-rule',
+      source_layer: 'RESTRICTED',
+    });
+
+    expect(geometryStyle(buffer, 0.5)).toBeUndefined();
+    expect(geometryStyle(mappedRestriction, 0.5)).toBeDefined();
   });
 });

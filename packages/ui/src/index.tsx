@@ -198,7 +198,7 @@ export function HelpDisclosure({ title, children, open = false, className }: { t
   </section>;
 }
 
-export function StepProgress({ steps, current, label = 'Этапы настройки', className }: { steps: Array<{ id: string; label: string }>; current: number; label?: string; className?: string }) {
+export function StepProgress({ steps, current, label = 'Этапы настройки', className }: { steps: ReadonlyArray<{ id: string; label: string }>; current: number; label?: string; className?: string }) {
   const active = Math.max(0, Math.min(current, Math.max(0, steps.length - 1)));
   const currentLabel = steps[active]?.label ?? '';
   return <div className={cx('ui-step-progress', className)} role="status" aria-label={`${label}: ${active + 1} из ${steps.length}, ${currentLabel}`}>

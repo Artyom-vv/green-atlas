@@ -14,4 +14,9 @@ class PatternCandidate:
 
 
 class CandidateGeneratorPort(Protocol):
-    def generate(self, request: PatternPreviewRequest | BrushPreviewRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]: ...
+    def generate(
+        self,
+        request: PatternPreviewRequest | BrushPreviewRequest,
+        zones: list[PlantingZoneAssignment],
+        guide_geometries: list[dict] | None = None,
+    ) -> list[PatternCandidate]: ...

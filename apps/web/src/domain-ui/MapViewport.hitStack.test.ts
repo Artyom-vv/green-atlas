@@ -3,7 +3,7 @@ import Polygon from 'ol/geom/Polygon';
 import Circle from 'ol/geom/Circle';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import { describe, expect, it } from 'vitest';
-import { mapAreaTargetFromFeature, mapHitStack, resolveHoverFeature } from './MapViewport';
+import { contextualConstraintHits, mapAreaTargetFromFeature, mapHitStack, plantingZoneIsShadowedByDraft, previewHoverTargetFromFeature, resolveHoverFeature } from './MapViewport';
 
 const square = (size = 10) => new Polygon([[[0, 0], [size, 0], [size, size], [0, size], [0, 0]]]);
 
@@ -52,6 +52,15 @@ describe('map hit stack', () => {
     expect(result.showAreaPicker).toBe(true);
   });
 
+  it('shows an aggregate setback only while its visible source object is under the pointer', () => {
+    const building = new Feature({ geometry: square(), kind: 'building', source_layer: 'BUILDING' });
+    const buildingSetback = new Feature({ geometry: square(15), kind: 'forbidden', rule_id: 'pp743-3.6.3-building' });
+    const roadSetback = new Feature({ geometry: square(15), kind: 'forbidden', rule_id: 'pp743-3.6.3-road-edge' });
+
+    expect(contextualConstraintHits([buildingSetback, roadSetback, building])).toEqual([buildingSetback, building]);
+    expect(contextualConstraintHits([buildingSetback, roadSetback])).toEqual([]);
+  });
+
   it('turns the selected polygon component into a deduplicated draft-zone target', () => {
     const feature = new Feature({ geometry: square(20), kind: 'allowed' });
     feature.setId('allowed-area');
@@ -78,6 +87,38 @@ describe('map hit stack', () => {
       label: 'Северный участок',
       plantingZoneId: 'north',
       selectable: true,
+    });
+  });
+
+  it('deduplicates the server and draft copy of one planting zone', () => {
+    const server = new Feature({ geometry: square(20), kind: 'planting_area', label: 'Северный участок', planting_zone_id: 'north' });
+    server.setId('planting-area-north');
+    const draft = new Feature({ geometry: square(20), kind: 'planting_area', label: 'Северный участок', planting_zone_id: 'north' });
+    draft.setId('draft-planting-zone-north');
+
+    expect(mapHitStack([draft, server])).toEqual([draft]);
+    expect(plantingZoneIsShadowedByDraft(server, new Set(['north']))).toBe(true);
+  });
+
+  it('serializes a destination preview as an object check, not an area target', () => {
+    const candidate = new Feature({
+      geometry: new Circle([5, 5], 1),
+      previewRole: 'candidate',
+      objectId: 'tree-1',
+      candidateStatus: 'blocked',
+      candidateCode: 'PP743_CLEARANCE',
+      candidateReason: 'Недостаточный отступ от дороги',
+      candidateSuggestedAction: 'Сместите дерево вправо',
+    });
+
+    expect(previewHoverTargetFromFeature(candidate, [120, 80])).toEqual({
+      kind: 'preview',
+      pixel: [120, 80],
+      items: [expect.objectContaining({
+        kind: 'change-preview',
+        detail: 'Недостаточный отступ от дороги · PP743_CLEARANCE',
+        preview: expect.objectContaining({ objectId: 'tree-1', status: 'blocked' }),
+      })],
     });
   });
 

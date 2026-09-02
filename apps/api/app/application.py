@@ -45,6 +45,8 @@ from app.contracts import (
     PatternPreview,
     PatternPreviewRequest,
     PatternSkippedCandidate,
+    PlacementMaskPreset,
+    PlacementMaskRequest,
     PlantingZoneAssignment,
     Project,
     ProjectOperation,
@@ -973,8 +975,44 @@ class ProjectApplication:
             result.append(zone.model_copy(update={"geometry": geometry}))
         return result
 
+    @staticmethod
+    def _mask_guide_geometries(project: Project, request: PlacementMaskRequest) -> list[dict]:
+        if request.mask_id != "road_edges" or project.geometry is None:
+            return []
+        return [
+            feature["geometry"]
+            for feature in project.geometry.feature_collection.get("features", [])
+            if feature.get("properties", {}).get("kind") == "road" and feature.get("geometry")
+        ]
+
+    def placement_masks(self, project_id: str) -> list[PlacementMaskPreset]:
+        project = self.get(project_id)
+        has_roads = bool(project.geometry and any(
+            feature.get("properties", {}).get("kind") == "road"
+            for feature in project.geometry.feature_collection.get("features", [])
+        ))
+        return [
+            PlacementMaskPreset(
+                id="road_edges",
+                title="Аллеи вдоль проездов",
+                description="Равномерные ряды вдоль всех распознанных границ дорог внутри выбранных участков",
+                available=has_roads,
+                unavailable_reason=None if has_roads else "В DXF нет слоёв, распознанных как дороги",
+            ),
+            PlacementMaskPreset(
+                id="regular_grid",
+                title="Регулярная сетка",
+                description="Чёткие ряды с единым шагом и заданным направлением",
+            ),
+            PlacementMaskPreset(
+                id="cluster_groves",
+                title="Куртины",
+                description="Компактные группы из нескольких растений с безопасными разрывами между группами",
+            ),
+        ]
+
     def _effective_pattern_spacing(self, request: PatternPreviewRequest) -> float:
-        if request.type != "fill":
+        if request.type not in {"fill", "mask"}:
             return request.spacing_m
         revision_id = request.tree_species_revision_id if request.composition == "mixed" else request.species_revision_id
         if not revision_id:
@@ -1321,7 +1359,7 @@ class ProjectApplication:
         requested_target = request.target_count if request.placement_mode == "count" else None
         effective_spacing = self._effective_pattern_spacing(request)
         generation_request = request.model_copy(update={"spacing_m": effective_spacing})
-        if requested_target is not None and request.type == "fill":
+        if requested_target is not None and request.type in {"fill", "mask"}:
             # Generate alternatives as well as the requested positions. Hard
             # constraints are project-specific and are applied below; a
             # requested count must not mean merely "number of attempts".
@@ -1334,7 +1372,10 @@ class ProjectApplication:
             request.layout_radius_m,
             requested_zone_ids,
         )
-        generated_candidates = self.candidate_generator.generate(generation_request, generation_zones)
+        guide_geometries = self._mask_guide_geometries(project, request) if isinstance(request, PlacementMaskRequest) else None
+        if isinstance(request, PlacementMaskRequest) and request.mask_id == "road_edges" and not guide_geometries:
+            raise ValueError("В DXF нет слоёв, распознанных как дороги")
+        generated_candidates = self.candidate_generator.generate(generation_request, generation_zones, guide_geometries) if isinstance(request, PlacementMaskRequest) else self.candidate_generator.generate(generation_request, generation_zones)
         layout_radius = request.layout_radius_m or self._default_layout_radius(request.plant_kind)
         compiled_zones = self._compiled_planting_zones(project)
         candidates = []
@@ -1357,12 +1398,19 @@ class ProjectApplication:
             ))
         pattern_digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         pattern_id = f"pattern-{pattern_digest[:16]}"
-        label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
+        if isinstance(request, PlacementMaskRequest):
+            label = {
+                "road_edges": "Аллеи вдоль проездов",
+                "regular_grid": "Регулярная сетка",
+                "cluster_groves": "Куртины",
+            }[request.mask_id]
+        else:
+            label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
         operations = []
         for index, candidate in enumerate(candidates):
             candidate_kind = request.plant_kind
             species_revision_id = getattr(request, "species_revision_id", None)
-            if isinstance(request, FillPatternRequest) and request.composition == "mixed":
+            if isinstance(request, (FillPatternRequest, PlacementMaskRequest)) and request.composition == "mixed":
                 sample = int(sha256(f"{request.seed}:{index}:{candidate.x}:{candidate.y}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
                 candidate_kind = "tree" if sample < request.tree_share else "shrub"
                 species_revision_id = request.tree_species_revision_id if candidate_kind == "tree" else request.shrub_species_revision_id
@@ -1384,6 +1432,7 @@ class ProjectApplication:
             return PatternPreview(
                 pattern_id=pattern_id,
                 type=request.type,
+                mask_id=request.mask_id if isinstance(request, PlacementMaskRequest) else None,
                 requested_count=requested_target or 0,
                 generated_count=len(generated_candidates),
                 accepted_count=0,
@@ -1453,6 +1502,7 @@ class ProjectApplication:
         return PatternPreview(
             pattern_id=pattern_id,
             type=request.type,
+            mask_id=request.mask_id if isinstance(request, PlacementMaskRequest) else None,
             requested_count=requested_total,
             generated_count=len(generated_candidates),
             accepted_count=len(accepted_operations),

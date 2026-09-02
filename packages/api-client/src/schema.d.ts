@@ -346,6 +346,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/plan/placement-masks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Plan Placement Masks */
+        get: operations["get_plan_placement_masks_api_projects__project_id__plan_placement_masks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/plan/recommendations/preview": {
         parameters: {
             query?: never;
@@ -1229,7 +1246,9 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "row" | "fill";
+            type: "row" | "fill" | "mask";
+            /** Mask Id */
+            mask_id?: ("road_edges" | "regular_grid" | "cluster_groves") | null;
             /** Requested Count */
             requested_count: number;
             /**
@@ -1347,6 +1366,128 @@ export interface components {
             y: number;
             /** Radius */
             radius?: number | null;
+        };
+        /** PlacementMaskPreset */
+        PlacementMaskPreset: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "road_edges" | "regular_grid" | "cluster_groves";
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /**
+             * Available
+             * @default true
+             */
+            available: boolean;
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+        };
+        /**
+         * PlacementMaskRequest
+         * @description A repeatable, project-aware planting arrangement preset.
+         *
+         *     Masks describe an operator's spatial intent.  They only propose candidate
+         *     positions; the ordinary change-set preview remains the authority for every
+         *     statutory setback, occupied contour and plant-to-plant distance.
+         */
+        PlacementMaskRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mask";
+            /**
+             * Mask Id
+             * @enum {string}
+             */
+            mask_id: "road_edges" | "regular_grid" | "cluster_groves";
+            /** Base Plan Version */
+            base_plan_version: number;
+            /**
+             * Plant Kind
+             * @default tree
+             * @enum {string}
+             */
+            plant_kind: "tree" | "shrub";
+            /** Composition */
+            composition?: ("trees" | "shrubs" | "mixed") | null;
+            /**
+             * Tree Share
+             * @default 0.65
+             */
+            tree_share: number;
+            /** Zone Ids */
+            zone_ids: string[];
+            /**
+             * Placement Mode
+             * @default count
+             * @enum {string}
+             */
+            placement_mode: "count" | "spacing";
+            /**
+             * Target Count
+             * @default 40
+             */
+            target_count: number;
+            /**
+             * Spacing M
+             * @default 6
+             */
+            spacing_m: number;
+            /**
+             * Edge Offset M
+             * @default 1
+             */
+            edge_offset_m: number;
+            /**
+             * Angle Deg
+             * @default 0
+             */
+            angle_deg: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /**
+             * Road Offset M
+             * @default 3
+             */
+            road_offset_m: number;
+            /**
+             * Cluster Gap M
+             * @default 18
+             */
+            cluster_gap_m: number;
+            /**
+             * Cluster Size
+             * @default 7
+             */
+            cluster_size: number;
+            /** Layout Radius M */
+            layout_radius_m?: number | null;
+            /**
+             * Size Class
+             * @default unspecified
+             * @enum {string}
+             */
+            size_class: "unspecified" | "sapling" | "standard" | "large";
+            /** Species Revision Id */
+            species_revision_id?: string | null;
+            /** Tree Species Revision Id */
+            tree_species_revision_id?: string | null;
+            /** Shrub Species Revision Id */
+            shrub_species_revision_id?: string | null;
+            /**
+             * Spacing Policy
+             * @default balanced
+             * @enum {string}
+             */
+            spacing_policy: "open" | "balanced" | "canopy";
         };
         /** Plan */
         Plan: {
@@ -2995,7 +3136,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RowPatternRequest"] | components["schemas"]["FillPatternRequest"];
+                "application/json": components["schemas"]["RowPatternRequest"] | components["schemas"]["FillPatternRequest"] | components["schemas"]["PlacementMaskRequest"];
             };
         };
         responses: {
@@ -3006,6 +3147,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PatternPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_plan_placement_masks_api_projects__project_id__plan_placement_masks_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementMaskPreset"][];
                 };
             };
             /** @description Validation Error */

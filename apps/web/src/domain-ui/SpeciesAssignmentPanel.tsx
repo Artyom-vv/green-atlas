@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { PlanObject, SpeciesShortlistItem } from '@green/api-client';
 import { Button, Combobox, FormField, InlineMessage, Select } from '@green/ui';
 import { InspectorHeader } from './InspectorHeader';
+import { InspectorFooter } from './InspectorLayout';
 
 export function SpeciesAssignmentPanel({ objects, shortlist, loading, previewing, error, onAssign, onCancel }: {
   objects: PlanObject[];
@@ -38,6 +39,6 @@ export function SpeciesAssignmentPanel({ objects, shortlist, loading, previewing
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
     </div>
     <div className="inspector-spacer" />
-    <footer><Button variant="secondary" disabled={previewing} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={previewing} disabled={!revisionId || mixedKinds} onClick={() => onAssign(revisionId, sizeClass)}>Показать</Button></footer>
+    <InspectorFooter><Button variant="secondary" disabled={previewing} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={previewing} disabled={!revisionId || mixedKinds} onClick={() => onAssign(revisionId, sizeClass)}>Показать</Button></InspectorFooter>
   </div>;
 }

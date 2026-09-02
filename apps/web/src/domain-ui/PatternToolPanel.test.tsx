@@ -68,6 +68,29 @@ describe('PatternToolPanel', () => {
     }));
   });
 
+  it('submits a placement mask without losing planting settings', () => {
+    const onPreview = vi.fn();
+    render(<PatternToolPanel mode="fill" zones={zones} species={[...species, shrub]} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Состав группы'), { target: { value: 'mixed' } });
+    fireEvent.change(screen.getByLabelText('Плотность группы'), { target: { value: 'open' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Количество посадок' }), { target: { value: '70' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Куртины' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
+
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'mask',
+      mask_id: 'cluster_groves',
+      composition: 'mixed',
+      target_count: 70,
+      spacing_policy: 'open',
+      tree_species_revision_id: 'tree@1',
+      shrub_species_revision_id: 'shrub@1',
+      cluster_gap_m: 18,
+      cluster_size: 7,
+    }));
+  });
+
   it('requires an explicit area and can start drawing one', () => {
     const onDrawZone = vi.fn();
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={[]} onDrawZone={onDrawZone} onPreview={vi.fn()} onCancel={vi.fn()} />);
@@ -171,10 +194,11 @@ describe('PatternToolPanel', () => {
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
 
     expect(onPreview).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText('Схема размещения'), { target: { value: 'staggered' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Регулярная сетка' }));
     expect(onPreview).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
     expect(onPreview).toHaveBeenCalledOnce();
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ type: 'mask', mask_id: 'regular_grid' }));
   });
 
   it('shows derived group spacing without a second fill control', () => {

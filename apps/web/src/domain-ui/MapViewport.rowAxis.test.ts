@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import Feature from 'ol/Feature';
 import LineString from 'ol/geom/LineString';
 import Point from 'ol/geom/Point';
+import Polygon from 'ol/geom/Polygon';
 import VectorSource from 'ol/source/Vector';
-import { nearestLineFeature } from './MapViewport';
+import { axisCoordinatesFromFeature, nearestLineFeature } from './MapViewport';
 
 describe('nearestLineFeature', () => {
   it('queries only the local spatial-index extent on a dense source', () => {
@@ -23,5 +24,14 @@ describe('nearestLineFeature', () => {
   it('does not return a line outside the pointer tolerance', () => {
     const source = new VectorSource({ features: [new Feature({ geometry: new LineString([[20, 20], [30, 20]]) })] });
     expect(nearestLineFeature([source], [0, 0], 4)).toBeUndefined();
+  });
+
+  it('treats a visible polygon edge as a selectable DXF axis', () => {
+    const polygon = new Feature({ geometry: new Polygon([[[0, 0], [20, 0], [20, 10], [0, 10], [0, 0]]]) });
+    polygon.setId('building-edge');
+    const source = new VectorSource({ features: [polygon] });
+
+    expect(nearestLineFeature([source], [10, 1], 2)?.getId()).toBe('building-edge');
+    expect(axisCoordinatesFromFeature(polygon, [10, 1])).toEqual([[0, 0], [20, 0], [20, 10], [0, 10], [0, 0]]);
   });
 });

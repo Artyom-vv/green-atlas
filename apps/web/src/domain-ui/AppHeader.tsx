@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, Download, History, Redo2, Undo2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ChevronRight, Download, History, Redo2, Undo2 } from 'lucide-react';
 import { Button, IconButton } from '@green/ui';
 import { Link } from 'react-router-dom';
 
@@ -34,10 +34,17 @@ export function AppHeader({ projectName, workspace = false, onReview, onHistory,
 
   return (
     <header className="app-header app-header--workspace">
-      <div className="workspace-titlebar">
-        <Link className="header-back" to={backTo} aria-label="Назад"><ArrowLeft size={16} /></Link>
-        <div className="workspace-titlebar__name"><strong>{projectName ?? 'Новый проект'}</strong><span>{subtitle}</span></div>
-      </div>
+      <nav className="workspace-titlebar" aria-label="Хлебные крошки">
+        <Link className="header-back" to={backTo} aria-label="К проектам"><ArrowLeft size={16} /></Link>
+        <div className="workspace-titlebar__name">
+          <ol className="workspace-breadcrumbs">
+            <li><Link to="/projects">Проекты</Link></li>
+            <li aria-hidden="true"><ChevronRight size={12} /></li>
+            <li aria-current="page">{projectName ?? 'Новый проект'}</li>
+          </ol>
+          <span>{subtitle}</span>
+        </div>
+      </nav>
       <div className="app-header__actions">
         {endActions ?? <>
           <IconButton icon={Undo2} label={undoLabel ? `Отменить: ${undoLabel}` : 'Отменить'} variant="ghost" disabled={!onUndo || historyBusy || actionsDisabled} onClick={onUndo} />

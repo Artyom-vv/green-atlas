@@ -34,8 +34,10 @@ describe('GroupInspector', () => {
     expect(screen.getByRole('heading', { name: 'Выбрано посадок', level: 2 })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Свернуть боковую панель' })).not.toBeInTheDocument();
     const deleteButton = screen.getByRole('button', { name: 'Удалить выбранные' });
-    expect(deleteButton).toHaveClass('ui-button--danger', 'group-selection-actions__delete');
+    expect(deleteButton).toHaveClass('ui-button--danger');
     expect(deleteButton).not.toHaveClass('ui-button--ghost');
+    expect(deleteButton.closest('.group-selection-actions')).toBeInTheDocument();
+    expect(deleteButton.closest('.inspector-body')).toBeInTheDocument();
     expect(screen.queryByText('Перетащите группу прямо на карте')).not.toBeInTheDocument();
   });
 

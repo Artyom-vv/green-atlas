@@ -167,8 +167,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-icon-button.is-active { @apply border-blue-600 bg-blue-600 text-white; }
 .ui-button--ghost, .ui-icon-button--ghost { border-color: transparent; }
 .ui-button--ghost:hover:not(:disabled), .ui-icon-button--ghost:hover:not(:disabled) { @apply bg-neutral-100; }
-.ui-button--danger, .ui-icon-button--danger { color: var(--error); background: transparent; border-color: transparent; }
-.ui-button--danger:hover:not(:disabled), .ui-icon-button--danger:hover:not(:disabled) { background: var(--error-soft); }
+.ui-button--danger { color: var(--error); border-color: #efb9b5; background: var(--surface); }
+.ui-button--danger:hover:not(:disabled) { border-color: var(--error); background: var(--error-soft); }
+.ui-icon-button--danger { color: var(--error); background: transparent; border-color: transparent; }
+.ui-icon-button--danger:hover:not(:disabled) { background: var(--error-soft); }
 .ui-button:disabled, .ui-icon-button:disabled { @apply cursor-not-allowed opacity-40; }
 .ui-control--compact { --control-height: var(--control-height-sm); }
 .ui-control--default { --control-height: var(--control-height-default); }
@@ -257,8 +259,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .ui-step-progress { display: flex; flex-direction: column; gap: 8px; }
 .ui-step-progress__track { display: flex; gap: 6px; width: 100%; }
-.ui-step-progress__track span { height: 3px; flex: 1; background: var(--color-neutral-200); }
-.ui-step-progress__track span.is-complete, .ui-step-progress__track span.is-current { background: var(--primary); }
+.ui-step-progress__track span { height: 3px; flex: 1; border-radius: 999px; background: var(--color-neutral-200); }
+.ui-step-progress__track span.is-complete { background: var(--color-blue-300); }
+.ui-step-progress__track span.is-current { height: 5px; margin-block: -1px; background: var(--primary); }
 .ui-step-progress__label { overflow: hidden; color: var(--color-neutral-700); font-size: 12px; line-height: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 
 .ui-number-stepper { --control-height: var(--control-height-default); height: var(--control-height); display: inline-flex; flex: none; overflow: hidden; border: 1px solid var(--color-neutral-300); border-radius: var(--radius-control); background: var(--surface); }
@@ -268,6 +271,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-number-stepper button:disabled { color: var(--color-neutral-400); cursor: not-allowed; }
 .ui-number-stepper input { width: calc(var(--control-height) + 24px); min-width: 0; padding: 0 6px; border: 0; border-inline: 1px solid var(--color-neutral-200); border-radius: 0; color: var(--color-neutral-800); background: transparent; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; }
 .ui-number-stepper input:focus { position: relative; z-index: 1; outline: 2px solid var(--focus); outline-offset: -2px; }
+.ui-number-stepper:has(input:disabled) { background: var(--color-neutral-100); }
+.ui-number-stepper input:disabled { color: var(--color-neutral-500); cursor: not-allowed; }
 .ui-number-stepper input::-webkit-inner-spin-button, .ui-number-stepper input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 .ui-number-stepper input[type='number'] { appearance: textfield; }
 
@@ -276,6 +281,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-combobox.ui-control--large { --control-height: 40px; }
 .ui-combobox > input { width: 100%; height: var(--control-height); padding: 0 34px 0 10px; border: 1px solid var(--color-neutral-300); border-radius: var(--radius-control); color: inherit; background: var(--surface); font: inherit; }
 .ui-combobox > input:focus { outline: 2px solid var(--focus); outline-offset: 1px; border-color: transparent; }
+.ui-combobox:has(> input:disabled) { color: var(--color-neutral-500); }
+.ui-combobox > input:disabled { background: var(--color-neutral-100); cursor: not-allowed; }
 .ui-combobox > svg { position: absolute; top: calc((var(--control-height) - 16px) / 2); right: 10px; width: 16px; height: 16px; color: currentColor; pointer-events: none; }
 .ui-combobox__list { position: absolute; z-index: 40; top: calc(var(--control-height) + 4px); right: 0; left: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--color-neutral-300); background: var(--surface); }
 .ui-combobox__list button { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--color-neutral-200); color: inherit; background: transparent; text-align: left; cursor: pointer; }

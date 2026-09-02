@@ -5,7 +5,7 @@ import Circle from 'ol/geom/Circle';
 import LineString from 'ol/geom/LineString';
 import Point from 'ol/geom/Point';
 import { Circle as CircleStyle, Icon, type Style } from 'ol/style';
-import { changePreviewFeatures, changePreviewStyle, planStyle, selectionDraftStyle } from './MapViewport';
+import { brushCursorStyle, brushStrokeStyle, changePreviewFeatures, changePreviewStyle, planStyle, selectionDraftStyle } from './MapViewport';
 
 const object = (status: PlanObject['status'] = 'valid'): PlanObject => ({
   id: 'tree-1',
@@ -72,6 +72,19 @@ describe('plan marker visual semantics', () => {
     expect(markerImages.some((image) => image.getRadius() === 6 && image.getFill()?.getColor() === '#D92D20')).toBe(true);
     expect(styles.some((style) => style.getImage() instanceof Icon)).toBe(false);
   });
+
+  it('temporarily uses live move validation without replacing persisted status', () => {
+    const feature = planFeature('valid');
+    feature.set('_liveCandidateStatus', 'blocked');
+    const styles = planStyle(feature, new Set(['tree-1']), 2) as Style[];
+    const statusMarker = styles.find((style) => {
+      const image = style.getImage();
+      return image instanceof CircleStyle && image.getFill()?.getColor() === '#D92D20';
+    });
+
+    expect(statusMarker).toBeDefined();
+    expect(feature.get('status')).toBe('valid');
+  });
 });
 
 describe('move preview visual semantics', () => {
@@ -83,6 +96,10 @@ describe('move preview visual semantics', () => {
     expect((features[0].getGeometry() as LineString).getCoordinates()).toEqual([[10, 20], [35, 42]]);
     expect((features[1].getGeometry() as Point).getCoordinates()).toEqual([10, 20]);
     expect((features[2].getGeometry() as Circle).getCenter()).toEqual([35, 42]);
+    expect(features[2].getProperties()).toMatchObject({
+      candidateCode: 'CONSTRAINT',
+      candidateReason: 'Конфликт с ограничением',
+    });
 
     const candidateStyles = changePreviewStyle(features[2], 2);
     const statusMarker = candidateStyles.find((style) => {
@@ -133,5 +150,17 @@ describe('move preview visual semantics', () => {
     expect(styles).toHaveLength(2);
     expect(styles[0].getStroke()?.getColor()).toBe('rgba(255,255,255,.94)');
     expect(styles[1].getStroke()?.getColor()).toBe('#225CFF');
+  });
+});
+
+describe('brush visual feedback', () => {
+  it('shows the real diameter before drawing and keeps completed strokes legible', () => {
+    const cursor = new Feature({ geometry: new Circle([10, 20], 6), brushMode: 'add' });
+    const stroke = new Feature({ geometry: new LineString([[0, 0], [20, 0]]), brushMode: 'subtract', brushWidthM: 12 });
+
+    expect((cursor.getGeometry() as Circle).getRadius()).toBe(6);
+    expect(brushCursorStyle(cursor)[1].getStroke()?.getColor()).toBe('#225CFF');
+    expect(brushStrokeStyle(stroke, 1)[0].getStroke()?.getWidth()).toBe(12);
+    expect(brushStrokeStyle(stroke, 1)[1].getStroke()?.getColor()).toBe('#D92D20');
   });
 });

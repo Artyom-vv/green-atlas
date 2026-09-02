@@ -4,6 +4,7 @@ import asyncio
 import csv
 from io import BytesIO, StringIO
 import json
+from math import hypot
 from pathlib import Path
 import zipfile
 
@@ -17,7 +18,7 @@ from starlette.datastructures import UploadFile
 from app import api as api_module
 from app import application as application_module
 from app.application import ProjectApplication
-from app.contracts import FillPatternRequest, GrowthEnvelopeForecast, LayerMapping, PlanObjectCreate, PlantingZoneAssignment
+from app.contracts import FillPatternRequest, GrowthEnvelopeForecast, LayerMapping, PlanObject, PlanObjectCreate, PlantingZoneAssignment
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
@@ -27,6 +28,7 @@ from app.history.adapters import InMemoryProjectHistory
 from app.main import app
 from app.operations.adapters import SqliteOperationRepository
 from app.planning.patterns import ShapelyCandidateGenerator, generate_fill
+from app.planning.domain import required_spacing
 from app.projects.adapters import SqliteProjectRepository
 from app.species.forecast import forecast_at
 from app.validation.adapters import RuleBasedPlanValidator
@@ -1436,6 +1438,86 @@ def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips()
     assert first.json()["change_set"]["can_apply"] is True
     assert all(any(shape(zone["geometry"]).covers(Point(x, y)) for zone in zones) for x, y in first_coordinates)
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["version"] == current_version
+
+
+def test_placement_masks_are_discoverable_and_keep_every_preview_candidate_safe() -> None:
+    project_id = prepare_project("Маски озеленения")
+    select_areas(project_id, [area("work", "Рабочая область", [[2, 2], [95, 2], [95, 82], [2, 82]])])
+    version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+
+    catalog = client.get(f"/api/projects/{project_id}/plan/placement-masks")
+
+    assert catalog.status_code == 200
+    assert {item["id"] for item in catalog.json()} == {"road_edges", "regular_grid", "cluster_groves"}
+    assert next(item for item in catalog.json() if item["id"] == "road_edges")["available"] is True
+
+    project = api_module.application.get(project_id)
+    checker = PositionChecker(project)
+    requests = [
+        {
+            "mask_id": "road_edges",
+            "road_offset_m": 5,
+            "spacing_m": 6,
+            "edge_offset_m": 0,
+            "target_count": 12,
+        },
+        {
+            "mask_id": "regular_grid",
+            "spacing_m": 6,
+            "edge_offset_m": 2,
+            "target_count": 12,
+        },
+        {
+            "mask_id": "cluster_groves",
+            "spacing_m": 6,
+            "edge_offset_m": 2,
+            "cluster_gap_m": 22,
+            "cluster_size": 7,
+            "target_count": 12,
+            "seed": 17,
+        },
+    ]
+    observed_reasons: set[str] = set()
+    for mask in requests:
+        response = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+            "type": "mask",
+            "base_plan_version": version,
+            "plant_kind": "tree",
+            "zone_ids": ["work"],
+            "placement_mode": "count",
+            "spacing_policy": "balanced",
+            **mask,
+        })
+
+        assert response.status_code == 200, response.json()
+        payload = response.json()
+        assert payload["type"] == "mask"
+        assert payload["mask_id"] == mask["mask_id"]
+        assert payload["change_set"] is not None
+        assert payload["change_set"]["can_apply"] is True
+        assert payload["accepted_count"] == len(payload["change_set"]["additions"]) > 0
+        observed_reasons.update(item["code"] for item in payload["reason_summary"])
+        # This is the same hard checker used by manual editing. A mask cannot
+        # bypass site/zone, road, building or occupied-contour restrictions.
+        for item in payload["change_set"]["additions"]:
+            assert checker.check(item["x"], item["y"], item["radius"], item["kind"]) is None
+            assert item["planting_zone_id"] == "work"
+        additions = [PlanObject.model_validate(item) for item in payload["change_set"]["additions"]]
+        assert all(
+            hypot(first.x - second.x, first.y - second.y) + 1e-6 >= required_spacing(first, second)
+            for index, first in enumerate(additions)
+            for second in additions[:index]
+        )
+
+    # The source contains an untyped utility layer. Automatic masks surface
+    # and skip those candidates instead of treating missing network evidence
+    # as permission to place.
+    assert "UNTYPED_UTILITY_REVIEW" in observed_reasons
+
+    # Preview remains non-persistent until the operator explicitly applies it.
+    restored = client.get(f"/api/projects/{project_id}").json()
+    assert restored["plan"]["version"] == version
+    assert restored["plan"]["objects"] == []
 
 
 def test_count_fill_is_bounded_and_spans_a_large_area() -> None:

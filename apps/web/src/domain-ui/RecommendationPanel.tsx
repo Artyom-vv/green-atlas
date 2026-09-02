@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { PlantingZoneAssignment, RecommendationRequest } from '@green/api-client';
 import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select } from '@green/ui';
 import { InspectorHeader } from './InspectorHeader';
+import { InspectorFooter, InspectorSettingRow } from './InspectorLayout';
 
 type Draft = Omit<RecommendationRequest, 'base_plan_version'>;
 
@@ -42,11 +43,11 @@ export function RecommendationPanel({ zones, loading, error, onPreview, onCancel
           <option value="low_future_conflict">Меньше будущих конфликтов</option>
         </Select>
       </FormField>
-      <div className="recommendation-panel__setting"><span>Не больше</span><NumberStepper label="Максимум посадок" value={maxSites} onChange={setMaxSites} min={1} max={500} step={5} /></div>
+      <InspectorSettingRow label="Не больше"><NumberStepper label="Максимум посадок" value={maxSites} onChange={setMaxSites} min={1} max={500} step={5} /></InspectorSettingRow>
       <InlineMessage tone="info">Инсоляция, почва и вода не оцениваются без исходных данных.</InlineMessage>
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
     </div>
     <div className="inspector-spacer" />
-    <footer><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!zoneIds.length} onClick={() => onPreview({ zone_ids: zoneIds, profile, max_sites: maxSites })}>Показать</Button></footer>
+    <InspectorFooter><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!zoneIds.length} onClick={() => onPreview({ zone_ids: zoneIds, profile, max_sites: maxSites })}>Показать</Button></InspectorFooter>
   </div>;
 }

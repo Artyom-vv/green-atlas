@@ -2,6 +2,7 @@ import type { PlantingZoneAssignment } from '@green/api-client';
 import { Crosshair, Edit3, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, IconButton, InlineMessage, TextInput, Tooltip } from '@green/ui';
+import { InspectorFooter } from './InspectorLayout';
 
 function ZoneRow({ zone, ordinal, active, saving, deleteReason, onFocus, onRename, onRedraw, onDelete }: { zone: PlantingZoneAssignment; ordinal: number; active: boolean; saving: boolean; deleteReason?: string; onFocus: () => void; onRename: (label: string) => void; onRedraw: () => void; onDelete: () => void }) {
   const [label, setLabel] = useState(zone.label);
@@ -45,6 +46,6 @@ export function PlantingZoneManager({ zones, activeId, zoneUsage = {}, drawing =
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
     </div>
     <div className="inspector-spacer" />
-    <footer><Button variant="secondary" disabled={saving} onClick={drawing ? onCancelDraw : onDraw} icon={drawing ? undefined : Plus}>{drawing ? 'Отменить обводку' : 'Новый участок'}</Button></footer>
+    <InspectorFooter><Button variant="secondary" disabled={saving} onClick={drawing ? onCancelDraw : onDraw} icon={drawing ? undefined : Plus}>{drawing ? 'Отменить обводку' : 'Новый участок'}</Button></InspectorFooter>
   </div>;
 }

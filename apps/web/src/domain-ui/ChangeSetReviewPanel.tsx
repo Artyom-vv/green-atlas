@@ -1,6 +1,8 @@
 import type { ChangeSetPreview } from '@green/api-client';
 import { Button, InlineMessage, StepProgress } from '@green/ui';
 import { InspectorHeader } from './InspectorHeader';
+import { InspectorFooter } from './InspectorLayout';
+import { PLANTING_WORKFLOW_STEPS } from './plantingWorkflow';
 
 export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons = [], unverifiedData = [], onApply, onCancel }: { preview: ChangeSetPreview; applying?: boolean; note?: string; rejectedReasons?: string[]; unverifiedData?: string[]; onApply: () => void; onCancel: () => void }) {
   const additions = preview.additions?.length ?? 0;
@@ -14,7 +16,7 @@ export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons 
   return <div className="project-inspector change-set-review">
     <InspectorHeader title={preview.label} meta="Предпросмотр изменений" />
     <section className="change-set-review__summary">
-      <StepProgress current={2} steps={[{ id: 'areas', label: 'Участки' }, { id: 'placement', label: 'Посадки' }, { id: 'review', label: 'Проверка' }]} />
+      <StepProgress current={2} steps={PLANTING_WORKFLOW_STEPS} />
       <h3>Проверьте схему</h3>
       <dl>
         {additions ? <><dt>Новых посадок</dt><dd>{additions}</dd></> : null}
@@ -30,6 +32,6 @@ export function ChangeSetReviewPanel({ preview, applying, note, rejectedReasons 
       {rejectionSummary.length ? <div className="change-set-review__checks"><strong>Исключено при поиске</strong><ul>{rejectionSummary.map(([reason, count]) => <li key={reason}>{count}: {reason}</li>)}</ul></div> : null}
     </section>
     <div className="inspector-spacer" />
-    <footer><Button variant="secondary" disabled={applying} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={applying} disabled={!preview.can_apply} onClick={onApply}>{additions ? `Добавить ${additions}` : 'Применить'}</Button></footer>
+    <InspectorFooter><Button variant="secondary" disabled={applying} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={applying} disabled={!preview.can_apply} onClick={onApply}>{additions ? `Добавить ${additions}` : 'Применить'}</Button></InspectorFooter>
   </div>;
 }

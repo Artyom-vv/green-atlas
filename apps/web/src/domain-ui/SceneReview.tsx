@@ -39,8 +39,6 @@ function addContextFeature(scene: THREE.Scene, feature: SceneContextFeature) {
   else if (geometry.type === 'MultiPolygon') (Array.isArray(coordinates) ? coordinates : []).forEach((polygon) => drawPolygon(ringPoints(Array.isArray(polygon) ? polygon[0] : [])));
 }
 
-type SceneReviewProps = { snapshot?: SceneSnapshot };
-
 function crownGeometry(object: ScenePlantObject, radius: number, height: number): THREE.BufferGeometry {
   switch (object.crown_shape) {
     case 'conical': return new THREE.ConeGeometry(radius, height, 12);

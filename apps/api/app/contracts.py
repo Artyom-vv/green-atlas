@@ -554,7 +554,61 @@ class FillPatternRequest(BaseModel):
         return self
 
 
-PatternPreviewRequest = Annotated[RowPatternRequest | FillPatternRequest, Field(discriminator="type")]
+class PlacementMaskRequest(BaseModel):
+    """A repeatable, project-aware planting arrangement preset.
+
+    Masks describe an operator's spatial intent.  They only propose candidate
+    positions; the ordinary change-set preview remains the authority for every
+    statutory setback, occupied contour and plant-to-plant distance.
+    """
+
+    type: Literal["mask"] = "mask"
+    mask_id: Literal["road_edges", "regular_grid", "cluster_groves"]
+    base_plan_version: int = Field(ge=1)
+    plant_kind: Literal["tree", "shrub"] = "tree"
+    composition: Literal["trees", "shrubs", "mixed"] | None = None
+    tree_share: float = Field(default=0.65, ge=0, le=1, allow_inf_nan=False)
+    zone_ids: list[str] = Field(min_length=1, max_length=40)
+    placement_mode: Literal["count", "spacing"] = "count"
+    target_count: int = Field(default=40, ge=1, le=5000)
+    spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
+    edge_offset_m: float = Field(default=1, ge=0, le=100, allow_inf_nan=False)
+    angle_deg: float = Field(default=0, ge=-180, le=180, allow_inf_nan=False)
+    seed: int = Field(default=1, ge=0, le=2_147_483_647)
+    # Road-edge masks follow the recognised road footprint at this offset.
+    # The statutory check is still performed independently for every point.
+    road_offset_m: float = Field(default=3, ge=0.5, le=30, allow_inf_nan=False)
+    # Cluster centres stay separated while plants inside a grove use the
+    # ordinary spacing policy and mature-crown calculation.
+    cluster_gap_m: float = Field(default=18, ge=3, le=100, allow_inf_nan=False)
+    cluster_size: int = Field(default=7, ge=3, le=19)
+    layout_radius_m: float | None = Field(default=None, gt=0, le=25, allow_inf_nan=False)
+    size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+    species_revision_id: str | None = None
+    tree_species_revision_id: str | None = None
+    shrub_species_revision_id: str | None = None
+    spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
+
+    @model_validator(mode="after")
+    def normalize_composition(self) -> "PlacementMaskRequest":
+        if self.composition is None:
+            self.composition = "shrubs" if self.plant_kind == "shrub" else "trees"
+        if self.composition == "shrubs":
+            self.plant_kind = "shrub"
+        else:
+            self.plant_kind = "tree"
+        return self
+
+
+PatternPreviewRequest = Annotated[RowPatternRequest | FillPatternRequest | PlacementMaskRequest, Field(discriminator="type")]
+
+
+class PlacementMaskPreset(BaseModel):
+    id: Literal["road_edges", "regular_grid", "cluster_groves"]
+    title: str
+    description: str
+    available: bool = True
+    unavailable_reason: str | None = None
 
 
 class PatternSkippedCandidate(BaseModel):
@@ -583,7 +637,8 @@ class CandidateReasonSummary(BaseModel):
 
 class PatternPreview(BaseModel):
     pattern_id: str
-    type: Literal["row", "fill"]
+    type: Literal["row", "fill", "mask"]
+    mask_id: Literal["road_edges", "regular_grid", "cluster_groves"] | None = None
     requested_count: int = Field(ge=0)
     generated_count: int = Field(default=0, ge=0)
     accepted_count: int = Field(ge=0)

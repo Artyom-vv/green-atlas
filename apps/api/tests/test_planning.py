@@ -2,10 +2,10 @@ from math import hypot
 
 from shapely.geometry import Point, shape
 
-from app.contracts import BrushPreviewRequest, FillPatternRequest, GeometrySnapshot, GrowthEnvelopeForecast, PlanObject, PlantingZoneAssignment, Project
+from app.contracts import BrushPreviewRequest, FillPatternRequest, GeometrySnapshot, GrowthEnvelopeForecast, PlacementMaskRequest, PlanObject, PlantingZoneAssignment, Project
 from app.geometry.domain import PositionChecker
 from app.planning.domain import PlantSpacingIndex
-from app.planning.patterns import generate_brush, generate_fill
+from app.planning.patterns import generate_brush, generate_fill, generate_mask
 
 
 def test_spacing_index_never_misses_large_crowns_across_several_grid_cells() -> None:
@@ -154,3 +154,94 @@ def test_brush_uses_stable_blue_noise_and_density_changes_capacity() -> None:
         for index in range(len(dense))
         for other in range(index)
     )
+
+
+def test_regular_grid_mask_is_deterministic_and_keeps_a_strict_lattice() -> None:
+    zone = PlantingZoneAssignment(
+        id="work",
+        label="Участок",
+        geometry={"type": "Polygon", "coordinates": [[[0, 0], [100, 0], [100, 80], [0, 80], [0, 0]]]},
+    )
+    request = PlacementMaskRequest(
+        mask_id="regular_grid",
+        base_plan_version=1,
+        zone_ids=["work"],
+        placement_mode="spacing",
+        spacing_m=8,
+        edge_offset_m=4,
+        angle_deg=0,
+    )
+
+    first = generate_mask(request, [zone])
+    second = generate_mask(request, [zone])
+
+    assert first == second
+    assert len(first) > 20
+    assert {round(item.x % 8, 6) for item in first} == {0}
+    assert {round(item.y % 8, 6) for item in first} == {0}
+
+
+def test_cluster_groves_mask_creates_separated_compact_groups() -> None:
+    zone = PlantingZoneAssignment(
+        id="work",
+        label="Участок",
+        geometry={"type": "Polygon", "coordinates": [[[0, 0], [140, 0], [140, 100], [0, 100], [0, 0]]]},
+    )
+    request = PlacementMaskRequest(
+        mask_id="cluster_groves",
+        base_plan_version=1,
+        zone_ids=["work"],
+        placement_mode="count",
+        target_count=28,
+        spacing_m=5,
+        edge_offset_m=8,
+        cluster_gap_m=28,
+        cluster_size=7,
+        seed=29,
+    )
+
+    first = generate_mask(request, [zone])
+    second = generate_mask(request, [zone])
+
+    assert first == second
+    assert len(first) >= 21
+    assert all(
+        hypot(first[index].x - first[other].x, first[index].y - first[other].y) >= 5 - 1e-6
+        for index in range(len(first))
+        for other in range(index)
+    )
+    assert sum(
+        any(4.9 <= hypot(item.x - other.x, item.y - other.y) <= 5.1 for other in first if other != item)
+        for item in first
+    ) >= len(first) // 2
+
+
+def test_road_edge_mask_follows_all_guides_instead_of_filling_the_zone() -> None:
+    zone = PlantingZoneAssignment(
+        id="work",
+        label="Участок",
+        geometry={"type": "Polygon", "coordinates": [[[0, 0], [120, 0], [120, 120], [0, 120], [0, 0]]]},
+    )
+    guides = [
+        {"type": "LineString", "coordinates": [[10, 25], [110, 25]]},
+        {"type": "LineString", "coordinates": [[10, 90], [110, 90]]},
+    ]
+    request = PlacementMaskRequest(
+        mask_id="road_edges",
+        base_plan_version=1,
+        zone_ids=["work"],
+        placement_mode="count",
+        target_count=30,
+        spacing_m=7,
+        edge_offset_m=2,
+        road_offset_m=4,
+    )
+
+    candidates = generate_mask(request, [zone], guides)
+    guide_lines = [shape(value) for value in guides]
+
+    assert len(candidates) == 30
+    # GEOS approximates round buffer caps, hence the centimetre tolerance.
+    assert all(abs(min(Point(item.x, item.y).distance(line) for line in guide_lines) - 4) < 0.01 for item in candidates)
+    assert any(abs(item.y - 25) < 6 for item in candidates)
+    assert any(abs(item.y - 90) < 6 for item in candidates)

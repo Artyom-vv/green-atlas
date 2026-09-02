@@ -3,6 +3,7 @@ import { Copy, Leaf, Lock, Trash2, Unlock } from 'lucide-react';
 import { Button, HelpDisclosure } from '@green/ui';
 import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
 import { InspectorHeader } from './InspectorHeader';
+import { InspectorBody } from './InspectorLayout';
 
 type GroupInspectorProps = {
   objects: PlanObject[];
@@ -56,32 +57,34 @@ export function GroupInspector({ objects, issues, disabled, growthHorizon, onGro
   const warningCount = problems.length - errorCount;
   return <div className="project-inspector multi-selection-inspector">
     <InspectorHeader title="Выбрано посадок" meta={`${objects.length} объектов`} />
-    <section className="group-selection-summary">
-      <h3>Состав группы</h3>
-      <dl><dt>Деревья</dt><dd>{trees}</dd><dt>Кустарники</dt><dd>{shrubs}</dd>{locked ? <><dt>Закреплено</dt><dd>{locked}</dd></> : null}</dl>
-    </section>
-    {problems.length ? <section className="group-selection-validation" aria-label="Проблемы выбранных объектов">
-      <div className="group-selection-validation__counts" role="status" aria-label={`Ошибки: ${errorCount}. Замечания: ${warningCount}.`}>
-        {errorCount ? <span className="is-error"><i />Ошибки <b>{errorCount}</b></span> : null}
-        {warningCount ? <span className="is-warning"><i />Замечания <b>{warningCount}</b></span> : null}
-      </div>
-      <HelpDisclosure title={`Что требует внимания (${problems.length})`}>
-        <ul className="group-selection-validation__list">
-          {problems.map((problem) => <li key={problem.key} className={`is-${problem.severity}`}>
-            <i aria-hidden="true" />
-            <span><strong>{problem.title}</strong><small>{problem.description}</small></span>
-            {problem.meta ? <code title={problem.meta}>{problem.meta}</code> : null}
-          </li>)}
-        </ul>
-        <p>Полные причины и поиск объектов на карте — во вкладке «Проверка».</p>
-      </HelpDisclosure>
-    </section> : null}
-    <section className="group-selection-actions">
-      <Button variant="secondary" icon={Leaf} disabled={disabled || locked > 0} onClick={onSpecies}>Назначить породу</Button>
-      <Button variant="secondary" icon={Copy} disabled={disabled} onClick={onCopy}>Копировать</Button>
-      <Button variant="secondary" icon={locked === objects.length ? Unlock : Lock} disabled={disabled} onClick={() => onLock(locked !== objects.length)}>{locked === objects.length ? 'Открепить' : 'Закрепить'}</Button>
-      <Button className="group-selection-actions__delete" variant="danger" icon={Trash2} disabled={disabled || locked > 0} onClick={onDelete}>Удалить выбранные</Button>
-    </section>
-    {objects.some((object) => object.canopy_forecast?.length) ? <GrowthHorizonControl value={growthHorizon} forecasts={objects} onChange={onGrowthHorizon} /> : null}
+    <InspectorBody>
+      <section className="group-selection-summary">
+        <h3>Состав группы</h3>
+        <dl><dt>Деревья</dt><dd>{trees}</dd><dt>Кустарники</dt><dd>{shrubs}</dd>{locked ? <><dt>Закреплено</dt><dd>{locked}</dd></> : null}</dl>
+      </section>
+      {problems.length ? <section className="group-selection-validation" aria-label="Проблемы выбранных объектов">
+        <div className="group-selection-validation__counts" role="status" aria-label={`Ошибки: ${errorCount}. Замечания: ${warningCount}.`}>
+          {errorCount ? <span className="is-error"><i />Ошибки <b>{errorCount}</b></span> : null}
+          {warningCount ? <span className="is-warning"><i />Замечания <b>{warningCount}</b></span> : null}
+        </div>
+        <HelpDisclosure title={`Что требует внимания (${problems.length})`}>
+          <ul className="group-selection-validation__list">
+            {problems.map((problem) => <li key={problem.key} className={`is-${problem.severity}`}>
+              <i aria-hidden="true" />
+              <span><strong>{problem.title}</strong><small>{problem.description}</small></span>
+              {problem.meta ? <code title={problem.meta}>{problem.meta}</code> : null}
+            </li>)}
+          </ul>
+          <p>Полные причины и поиск объектов на карте — во вкладке «Проверка».</p>
+        </HelpDisclosure>
+      </section> : null}
+      <section className="group-selection-actions">
+        <Button variant="secondary" icon={Leaf} disabled={disabled || locked > 0} onClick={onSpecies}>Назначить породу</Button>
+        <Button variant="secondary" icon={Copy} disabled={disabled} onClick={onCopy}>Копировать</Button>
+        <Button variant="secondary" icon={locked === objects.length ? Unlock : Lock} disabled={disabled} onClick={() => onLock(locked !== objects.length)}>{locked === objects.length ? 'Открепить' : 'Закрепить'}</Button>
+        <Button variant="danger" icon={Trash2} disabled={disabled || locked > 0} onClick={onDelete}>Удалить выбранные</Button>
+      </section>
+      {objects.some((object) => object.canopy_forecast?.length) ? <GrowthHorizonControl value={growthHorizon} forecasts={objects} onChange={onGrowthHorizon} /> : null}
+    </InspectorBody>
   </div>;
 }

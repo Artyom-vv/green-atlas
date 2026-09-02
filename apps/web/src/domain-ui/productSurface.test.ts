@@ -23,6 +23,7 @@ describe('assisted planning product surface', () => {
       'getPlanScene',
       'getProject',
       'getRelease',
+      'listPlacementMasks',
       'listProjects',
       'listSpecies',
       'previewBrush',

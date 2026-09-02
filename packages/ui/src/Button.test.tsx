@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { Button, Checkbox, Dialog, Disclosure, EmptyState, FormField, HelpDisclosure, IconButton, InlineMessage, NumberStepper, Progress, Select, StepProgress, TextInput } from './index';
+import { Button, Checkbox, Combobox, Dialog, Disclosure, EmptyState, FormField, HelpDisclosure, IconButton, InlineMessage, NumberStepper, Progress, Select, StepProgress, TextInput } from './index';
 import { Plus } from 'lucide-react';
 
 describe('Button', () => {
@@ -40,12 +40,25 @@ describe('Button', () => {
 
   it('keeps step progress and numeric changes accessible', () => {
     const onChange = vi.fn();
-    render(<><StepProgress current={1} steps={[{ id: 'goal', label: 'Цель' }, { id: 'zones', label: 'Участки' }]} /><NumberStepper label="Деревья" value={12} onChange={onChange} /></>);
+    const { container } = render(<><StepProgress current={1} steps={[{ id: 'goal', label: 'Цель' }, { id: 'zones', label: 'Участки' }]} /><NumberStepper label="Деревья" value={12} onChange={onChange} /></>);
     expect(screen.getByText('Участки')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveAccessibleName('Этапы настройки: 2 из 2, Участки');
     expect(screen.queryByText(/Шаг/)).not.toBeInTheDocument();
+    const progressSteps = container.querySelectorAll('.ui-step-progress__track > span');
+    expect(progressSteps[0]).toHaveClass('is-complete');
+    expect(progressSteps[0]).not.toHaveClass('is-current');
+    expect(progressSteps[1]).toHaveClass('is-current');
     fireEvent.click(screen.getByRole('button', { name: 'Увеличить: Деревья' }));
     expect(onChange).toHaveBeenCalledWith(13);
+  });
+
+  it('disables every interaction in disabled compound controls', () => {
+    const { container } = render(<><Combobox value="tree" options={[{ value: 'tree', label: 'Дуб' }]} disabled onChange={vi.fn()} /><NumberStepper label="Диаметр" value={12} disabled onChange={vi.fn()} /></>);
+
+    expect(container.querySelector('.ui-combobox > input')).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: 'Диаметр' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Уменьшить: Диаметр' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Увеличить: Диаметр' })).toBeDisabled();
   });
 
   it('exposes disclosure and custom checkbox semantics', () => {

@@ -1,6 +1,7 @@
 import type { RecommendationPreview } from '@green/api-client';
 import { Button, InlineMessage } from '@green/ui';
 import { InspectorHeader } from './InspectorHeader';
+import { InspectorFooter } from './InspectorLayout';
 
 const evidenceLabel = (status: 'verified' | 'partial' | 'missing') => status === 'verified' ? 'проверены' : status === 'partial' ? 'частично' : 'нет данных';
 
@@ -33,6 +34,6 @@ export function RecommendationReviewPanel({ proposal, applying, onApply, onCance
       {!proposal.change_set ? <InlineMessage tone="warning">Допустимых позиций не найдено. Измените участки или приоритет.</InlineMessage> : null}
     </div>
     <div className="inspector-spacer" />
-    <footer><Button variant="secondary" disabled={applying} onClick={onCancel}>Назад</Button><Button variant="primary" loading={applying} disabled={!proposal.change_set?.can_apply} onClick={onApply}>Применить</Button></footer>
+    <InspectorFooter><Button variant="secondary" disabled={applying} onClick={onCancel}>Назад</Button><Button variant="primary" loading={applying} disabled={!proposal.change_set?.can_apply} onClick={onApply}>Применить</Button></InspectorFooter>
   </div>;
 }

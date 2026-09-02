@@ -1005,6 +1005,37 @@ test('placement flow creates a typed group across the selected area as one revis
   }).toBe(beforeProject.plan.objects.length);
 });
 
+test('operator can preview a realistic placement mask without mutating the plan', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const before = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const beforeObjects = (await before.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+
+  const catalogResponse = page.waitForResponse((response) => response.url().endsWith('/plan/placement-masks') && response.request().method() === 'GET');
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  expect((await catalogResponse).ok()).toBe(true);
+  await expect(page.getByRole('group', { name: /Сценарий размещения/ })).toBeVisible();
+  await expect(page.getByRole('radio')).toHaveCount(4);
+  await page.getByText('Куртины', { exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Куртины' })).toBeChecked();
+  await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
+  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('12');
+
+  const previewResponse = page.waitForResponse((response) => {
+    if (!response.url().endsWith('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
+    const body = response.request().postDataJSON() as { type?: string; mask_id?: string; target_count?: number };
+    return body.type === 'mask' && body.mask_id === 'cluster_groves' && body.target_count === 12;
+  });
+  await page.getByRole('button', { name: 'Проверить места' }).click();
+  const response = await previewResponse;
+  expect(response.ok(), await response.text()).toBe(true);
+  await expect(page.getByRole('region', { name: 'Результат расчёта' })).toBeVisible();
+
+  const afterPreview = await page.request.get(`${apiBase}/projects/${projectId}`);
+  expect((await afterPreview.json() as { plan: { objects: unknown[] } }).plan.objects).toHaveLength(beforeObjects);
+});
+
 test('primary workspace previews only after explicit confirmation and accepts a typed amount', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
@@ -1177,9 +1208,12 @@ test('a visible brush stroke creates checked planting sites and applies one revi
   const start = point(20, 20);
   const end = point(40, 20);
   await page.mouse.move(start.x, start.y);
+  await expect(map).toHaveAttribute('data-brush-cursor-visible', 'true');
+  await expect(map).toHaveAttribute('data-brush-cursor-diameter', '8');
   await page.mouse.down();
   await page.mouse.move(end.x, end.y, { steps: 12 });
   await page.mouse.up();
+  await expect(map).toHaveAttribute('data-brush-stroke-count', '1');
 
   const response = await previewResponse;
   const request = response.request().postDataJSON() as { zone_ids: string[]; strokes: Array<{ mode: string; geometry: { coordinates: number[][] } }>; width_m: number };
@@ -1478,6 +1512,32 @@ test('tree hover then click selects the planting instead of the underlying DXF z
   await expect(page.getByText('Липа мелколистная')).toBeVisible();
   await expect(map).toHaveAttribute('data-view-extent', extentBefore!);
   await expect(map).toHaveAttribute('data-view-resolution', resolutionBefore!);
+});
+
+test('clicking a working area selects it without tracing the contour again', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const projectId = await createPreparedProjectThroughApi(page, 'Прямой выбор рабочего участка');
+  const zonesResponse = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, {
+    data: { zones: [{ id: 'click-zone', label: 'Газон у павильона', geometry: selectedArea }] },
+  });
+  expect(zonesResponse.ok(), await zonesResponse.text()).toBeTruthy();
+  const manualResponse = await page.request.post(`${apiBase}/projects/${projectId}/plan/manual`);
+  expect(manualResponse.ok(), await manualResponse.text()).toBeTruthy();
+
+  await page.goto(`/projects/${projectId}/workspace`);
+  const map = page.getByLabel('Карта проекта озеленения');
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const coordinate = [50, 30];
+  await page.mouse.click(
+    box!.x + (coordinate[0] - extent[0]) / (extent[2] - extent[0]) * box!.width,
+    box!.y + (extent[3] - coordinate[1]) / (extent[3] - extent[1]) * box!.height,
+  );
+
+  await expect(page.getByRole('heading', { name: 'Газон у павильона' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Разместить здесь' })).toBeVisible();
 });
 
 test('opening another workspace directly drops the prior map selection', async ({ page }) => {
