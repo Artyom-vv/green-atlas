@@ -132,7 +132,10 @@ export function TextArea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 }
 
 export function Select({ className, children, controlSize, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { controlSize?: ControlSize }) {
-  return <select className={cx('ui-select', controlSizeClass(controlSize), className)} data-size={controlSize ?? 'default'} {...props}>{children}</select>;
+  return <span className={cx('ui-select-shell', controlSizeClass(controlSize))} data-size={controlSize ?? 'default'}>
+    <select className={cx('ui-select', controlSizeClass(controlSize), className)} data-size={controlSize ?? 'default'} {...props}>{children}</select>
+    <ChevronDown aria-hidden="true" />
+  </span>;
 }
 
 export function Combobox({ value, options, placeholder = 'Выберите', emptyLabel = 'Ничего не найдено', disabled = false, controlSize, onChange, className }: {

@@ -210,7 +210,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-size: 14px;
 }
 .ui-input, .ui-select { @apply px-3; height: var(--control-height); }
-.ui-select { appearance: auto; }
+.ui-select-shell { position: relative; display: block; min-width: 0; color: var(--color-neutral-700); }
+.ui-select { appearance: none; padding-right: 36px; }
+.ui-select-shell > svg { position: absolute; top: 50%; right: 12px; width: 16px; height: 16px; transform: translateY(-50%); color: currentColor; stroke: currentColor; pointer-events: none; }
+.ui-select-shell:has(.ui-select:disabled) { color: var(--color-neutral-400); }
 .ui-textarea { min-height: 76px; padding: 10px 12px; line-height: 20px; resize: vertical; }
 .ui-input:hover, .ui-select:hover, .ui-textarea:hover { border-color: var(--color-neutral-500); }
 .ui-input:disabled, .ui-select:disabled, .ui-textarea:disabled { color: var(--color-neutral-500); background: var(--color-neutral-100); }
