@@ -3,6 +3,7 @@ import type { FillPatternRequest, PatternPreview, PlantingZoneAssignment, RowPat
 import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select, StepProgress } from '@green/ui';
 import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
 import { forecastAt } from './growthForecast';
+import { sourceLayerLabel } from './sourceLabels';
 
 type Axis = RowPatternRequest['axis'];
 type PatternDraft = Omit<RowPatternRequest, 'base_plan_version'> | Omit<FillPatternRequest, 'base_plan_version'>;
@@ -141,7 +142,7 @@ export function PatternToolPanel({ mode, zones, species, shortlist, shortlistLoa
       </fieldset>
       {mode === 'row' ? <section className="pattern-tool-panel__axis">
         <strong>{axis ? 'Линия выбрана' : 'Выберите линию на карте'}</strong>
-        {axis ? <dl><dt>Источник</dt><dd>{axisSource?.label ?? 'Линия DXF'}</dd><dt>Длина</dt><dd>{axisLength?.toFixed(1)} м</dd></dl> : <span>Кликните по линии DXF. Shift — нарисовать свою ось</span>}
+        {axis ? <dl><dt>Источник</dt><dd>{sourceLayerLabel(axisSource?.label)}</dd><dt>Длина</dt><dd>{axisLength?.toFixed(1)} м</dd></dl> : <span>Кликните по линии DXF. Shift — нарисовать свою ось</span>}
       </section> : null}
       {mode === 'fill' && canPreview && !drawingZone ? <FormField label="Схема"><Select aria-label="Схема размещения" value={layout} onChange={(event) => setLayout(event.target.value as typeof layout)}><option value="natural">Свободная без рядов</option><option value="staggered">Регулярными рядами</option></Select></FormField> : null}
       {drawingZone ? <InlineMessage tone="info">Поставьте точки по границе участка и замкните контур</InlineMessage> : null}
@@ -166,6 +167,6 @@ export function PatternToolPanel({ mode, zones, species, shortlist, shortlistLoa
       </>}
     </div>
     <div className="inspector-spacer" />
-    {!drawingZone ? <footer>{preview?.change_set ? <><Button variant="secondary" disabled={loading} onClick={onResetPreview}>Изменить</Button><Button variant="primary" loading={loading} onClick={onApply}>{`Добавить ${preview.accepted_count}`}</Button></> : preview ? <Button variant="primary" disabled={loading} onClick={onResetPreview ?? onCancel}>Изменить условия</Button> : <><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!canPreview || !speciesId || (composition === 'mixed' && !shrubSpeciesId)} onClick={submit}>{!canPreview ? (mode === 'row' ? 'Выберите линию' : 'Выберите участок') : 'Проверить места'}</Button></>}</footer> : null}
+    {!drawingZone ? <footer>{preview?.change_set ? <><Button variant="secondary" disabled={loading} onClick={onResetPreview}>Изменить</Button><Button variant="primary" loading={loading} onClick={onApply}>{`Добавить ${preview.accepted_count}`}</Button></> : preview ? <Button variant="primary" disabled={loading} onClick={onResetPreview ?? onCancel}>Изменить условия</Button> : <><Button variant="secondary" disabled={loading} onClick={onCancel}>Отмена</Button><Button variant="primary" loading={loading} disabled={!canPreview || !speciesId || (composition === 'mixed' && !shrubSpeciesId)} onClick={submit}>{!selectedZoneIds.length ? 'Выберите участок' : mode === 'row' && !axis ? 'Выберите линию' : 'Проверить места'}</Button></>}</footer> : null}
   </div>;
 }

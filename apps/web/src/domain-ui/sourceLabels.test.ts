@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPrimarySingleBlockComponent, sourceBlockCaption } from './sourceLabels';
+import { isPrimarySingleBlockComponent, sourceBlockCaption, sourceLayerLabel } from './sourceLabels';
 
 describe('sourceBlockCaption', () => {
   it('keeps a block name when it has no attributes', () => {
@@ -15,5 +15,10 @@ describe('sourceBlockCaption', () => {
     expect(isPrimarySingleBlockComponent(1, 1)).toBe(true);
     expect(isPrimarySingleBlockComponent(2, 1)).toBe(false);
     expect(isPrimarySingleBlockComponent(1, 36)).toBe(false);
+  });
+
+  it('translates known source layers without hiding unknown CAD names', () => {
+    expect(sourceLayerLabel('OSM_ROAD_LOCAL')).toBe('Местная дорога');
+    expect(sourceLayerLabel('CUSTOM_AXIS')).toBe('CUSTOM_AXIS');
   });
 });

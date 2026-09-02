@@ -101,6 +101,14 @@ describe('PatternToolPanel', () => {
     expect(screen.getByText('8.0 м')).toBeVisible();
   });
 
+  it('asks for the actual missing prerequisite and hides source layer codes', () => {
+    render(<PatternToolPanel mode="row" zones={zones} species={species} selectedZoneIds={[]} axis={{ type: 'LineString', coordinates: [[0, 0], [10, 0]] }} axisSource={{ type: 'dxf', label: 'OSM_ROAD_LOCAL' }} onPreview={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Выберите участок' })).toBeDisabled();
+    expect(screen.getByText('Местная дорога')).toBeVisible();
+    expect(screen.queryByText('OSM_ROAD_LOCAL')).not.toBeInTheDocument();
+  });
+
   it('groups rejected positions by a stable machine-readable reason', () => {
     const preview: PatternPreview = {
       pattern_id: 'pattern-1',

@@ -12,3 +12,18 @@ export function sourceBlockCaption(blockName: unknown, attributes: unknown): str
 export function isPrimarySingleBlockComponent(component: unknown, instances: unknown): boolean {
   return Number(component) === 1 && Number(instances ?? 1) === 1;
 }
+
+const SOURCE_LAYER_LABELS: Record<string, string> = {
+  OSM_ROAD_LOCAL: 'Местная дорога',
+  OSM_ROAD_MAJOR: 'Магистраль',
+  OSM_PATH: 'Пешеходная дорожка',
+  OSM_GREEN_EXISTING: 'Существующее озеленение',
+  OSM_BUILDING: 'Здание',
+  SITE_BORDER: 'Граница территории',
+};
+
+export function sourceLayerLabel(value: unknown): string {
+  const source = String(value ?? '').trim();
+  if (!source) return 'Линия DXF';
+  return SOURCE_LAYER_LABELS[source.toUpperCase()] ?? source;
+}
