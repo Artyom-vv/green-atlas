@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ScenePlantObject, SceneSnapshot } from '@green/api-client';
-import { Button, Checkbox, InlineMessage } from '@green/ui';
+import { Checkbox, InlineMessage } from '@green/ui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GrowthHorizonSlider } from './GrowthHorizonControl';
@@ -50,7 +50,7 @@ function crownGeometry(object: ScenePlantObject, radius: number, height: number)
   }
 }
 
-export function SceneReview({ snapshot, horizon, selectedIds, loading, error, onHorizon, onSelect, onClose }: {
+export function SceneReview({ snapshot, horizon, selectedIds, loading, error, onHorizon, onSelect }: {
   snapshot?: SceneSnapshot;
   horizon: number;
   selectedIds: string[];
@@ -58,7 +58,6 @@ export function SceneReview({ snapshot, horizon, selectedIds, loading, error, on
   error?: string;
   onHorizon: (horizon: number) => void;
   onSelect: (objectId: string) => void;
-  onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const onSelectRef = useRef(onSelect);
@@ -201,12 +200,11 @@ export function SceneReview({ snapshot, horizon, selectedIds, loading, error, on
 
   return <section className="scene-review" aria-label="Параметрический 3D-предпросмотр">
     <header className="scene-review__header">
-      <span><strong>3D-предпросмотр</strong><small>Упрощённая параметрическая сцена</small><small>DXF-контекст</small></span>
-      <div className="scene-review__horizons" aria-label="Горизонт роста"><GrowthHorizonSlider value={horizon} onChange={(next) => { if (next !== undefined) onHorizon(next); }} />{([0, 5, 10, 20] as const).map((value) => <Button key={value} variant={horizon === value ? 'primary' : 'ghost'} controlSize="compact" onClick={() => onHorizon(value)}>{value === 0 ? 'Сейчас' : `${value} лет`}</Button>)}</div>
+      <span><strong>Объёмная модель</strong><small>DXF и посадки</small></span>
+      <div className="scene-review__horizons" aria-label="Горизонт роста"><small>{horizon === 0 ? 'Сейчас' : `${horizon} лет`}</small><GrowthHorizonSlider value={horizon} onChange={(next) => { if (next !== undefined) onHorizon(next); }} /></div>
       <Checkbox label="Корни" checked={showRoots} onChange={(event) => setShowRoots(event.target.checked)} />
-      <Button variant="secondary" controlSize="compact" onClick={onClose}>Вернуться к карте</Button>
     </header>
     <div className="scene-review__viewport"><canvas ref={canvasRef} aria-label="3D-сцена посадок" />{loading ? <div className="scene-review__status">Готовим сцену</div> : null}{error || renderError ? <div className="scene-review__message"><InlineMessage tone="error">{error ?? renderError}</InlineMessage></div> : null}</div>
-    <footer><span>{snapshot?.objects.length ?? 0} посадок</span><span>Выбрано: {selectedIds.length}</span><span className="scene-review__legend"><i className="is-road" /> дороги <i className="is-building" /> здания <i className="is-water" /> вода</span><span>Рельеф и высоты зданий не заданы</span></footer>
+    <footer><span>{snapshot?.objects.length ?? 0} посадок</span><span>Выбрано: {selectedIds.length}</span><span className="scene-review__legend"><i className="is-road" /> дороги <i className="is-building" /> здания <i className="is-water" /> вода</span><span>Условные высоты</span></footer>
   </section>;
 }

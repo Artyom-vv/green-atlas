@@ -1,6 +1,7 @@
 import type { PlanObject } from '@green/api-client';
-import { Crosshair, PanelRightClose } from 'lucide-react';
-import { Button, EmptyState, IconButton } from '@green/ui';
+import { Crosshair } from 'lucide-react';
+import { Button, EmptyState } from '@green/ui';
+import { InspectorHeader } from './InspectorHeader';
 
 export function PlantingsOverviewPanel({ objects, onPlace, onFit, onClose }: {
   objects: PlanObject[];
@@ -9,14 +10,13 @@ export function PlantingsOverviewPanel({ objects, onPlace, onFit, onClose }: {
   onClose: () => void;
 }) {
   return <div className="plantings-overview">
-    <header>
-      <span><strong>План озеленения</strong><small>{objects.length} посадок</small></span>
-      <IconButton icon={PanelRightClose} label="Свернуть боковую панель" variant="ghost" controlSize="compact" onClick={onClose} />
-    </header>
+    <InspectorHeader title="План озеленения" meta={`${objects.length} посадок`} onClose={onClose} />
     {objects.length ? <div className="plantings-overview__body">
       <section className="plantings-overview__primary">
-        <strong>Выберите группу или участок</strong>
-        <span>Проверьте или измените посадки</span>
+        <span className="plantings-overview__copy">
+          <strong>Выберите группу или участок</strong>
+          <span>Проверьте или измените посадки</span>
+        </span>
         <Button variant="primary" onClick={onPlace}>Разместить посадки</Button>
       </section>
       <section className="plantings-overview__secondary">

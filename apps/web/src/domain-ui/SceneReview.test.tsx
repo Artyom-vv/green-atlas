@@ -29,7 +29,6 @@ afterEach(cleanup);
 describe('SceneReview', () => {
   it('labels the model as partial and changes horizons without changing object identity', () => {
     const onHorizon = vi.fn();
-    const onClose = vi.fn();
     render(<SceneReview snapshot={{
       plan_version: 4,
       horizon_year: 0,
@@ -40,14 +39,12 @@ describe('SceneReview', () => {
       note: 'Упрощённая сцена.',
       data_gaps: ['Рельеф'],
       objects: [{ object_id: 'tree-1', kind: 'tree', local_x: 0, local_y: 0, crown_shape: 'round', canopy_radius_min_m: 1.6, canopy_radius_max_m: 1.6, confidence: 'unknown' }],
-    }} horizon={0} selectedIds={['tree-1']} onHorizon={onHorizon} onSelect={vi.fn()} onClose={onClose} />);
+    }} horizon={0} selectedIds={['tree-1']} onHorizon={onHorizon} onSelect={vi.fn()} />);
 
-    expect(screen.getByText('Упрощённая параметрическая сцена')).toBeVisible();
-    expect(screen.getByText('Рельеф и высоты зданий не заданы')).toBeVisible();
+    expect(screen.getByText('DXF и посадки')).toBeVisible();
+    expect(screen.getByText('Условные высоты')).toBeVisible();
     expect(screen.getByText('Выбрано: 1')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: '20 лет' }));
+    fireEvent.input(screen.getByRole('slider', { name: 'Горизонт прогноза' }), { target: { value: '20' } });
     expect(onHorizon).toHaveBeenCalledWith(20);
-    fireEvent.click(screen.getByRole('button', { name: 'Вернуться к карте' }));
-    expect(onClose).toHaveBeenCalledOnce();
   });
 });
