@@ -48,11 +48,17 @@ export function BrushToolPanel({ strokes, zones, zoneIds, width, operation, prev
         {zoneIds.length && strokes.length ? <small>добавить {addCount}, убрать {subtractCount}</small> : null}
       </section>
       <PlantingZonePicker zones={zones} selectedIds={zoneIds} disabled={loading} onChange={onZoneIdsChange} />
-      <FormField label="Режим"><Select aria-label="Режим кисти" value={operation} disabled={loading || !zoneIds.length} onChange={(event) => onOperation(event.target.value as typeof operation)}><option value="add">Добавлять посадки</option><option value="subtract">Убирать посадки</option></Select></FormField>
-      <FormField label="Состав"><Select aria-label="Состав кисти" value={composition} disabled={loading || !zoneIds.length} onChange={(event) => setComposition(event.target.value as typeof composition)}><option value="trees">Деревья</option><option value="shrubs">Кустарники</option><option value="mixed">Смешанный</option></Select></FormField>
-      <InspectorSettingRow label="Диаметр, м"><NumberStepper label="Диаметр кисти" value={width} onChange={onWidth} min={2} max={100} step={2} disabled={loading || !zoneIds.length} /></InspectorSettingRow>
-      <FormField label="Плотность"><Select aria-label="Плотность кисти" value={density} disabled={loading || !zoneIds.length} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="sparse">Редкая</option><option value="balanced">Средняя</option><option value="dense">Плотная</option></Select></FormField>
-      {composition === 'mixed' ? <InspectorSettingRow label="Доля деревьев, %"><NumberStepper label="Доля деревьев" value={treeShare} onChange={setTreeShare} min={0} max={100} step={10} disabled={loading || !zoneIds.length} /></InspectorSettingRow> : null}
+      <fieldset className="inspector-form-group">
+        <legend>Кисть</legend>
+        <FormField label="Режим"><Select aria-label="Режим кисти" value={operation} disabled={loading || !zoneIds.length} onChange={(event) => onOperation(event.target.value as typeof operation)}><option value="add">Добавлять посадки</option><option value="subtract">Убирать посадки</option></Select></FormField>
+        <InspectorSettingRow label="Диаметр, м"><NumberStepper label="Диаметр кисти" value={width} onChange={onWidth} min={2} max={100} step={2} disabled={loading || !zoneIds.length} /></InspectorSettingRow>
+      </fieldset>
+      <fieldset className="inspector-form-group">
+        <legend>Посадки</legend>
+        <FormField label="Состав"><Select aria-label="Состав кисти" value={composition} disabled={loading || !zoneIds.length} onChange={(event) => setComposition(event.target.value as typeof composition)}><option value="trees">Деревья</option><option value="shrubs">Кустарники</option><option value="mixed">Смешанный</option></Select></FormField>
+        <FormField label="Плотность"><Select aria-label="Плотность кисти" value={density} disabled={loading || !zoneIds.length} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="sparse">Редкая</option><option value="balanced">Средняя</option><option value="dense">Плотная</option></Select></FormField>
+        {composition === 'mixed' ? <InspectorSettingRow label="Доля деревьев, %"><NumberStepper label="Доля деревьев" value={treeShare} onChange={setTreeShare} min={0} max={100} step={10} disabled={loading || !zoneIds.length} /></InspectorSettingRow> : null}
+      </fieldset>
       {preview ? <section className="brush-preview-summary" aria-live="polite"><strong>{operation === 'subtract' ? `Будет убрано ${preview.removed_count}` : `Найдено ${preview.added_count}`}</strong>{preview.skipped.length ? <span>Часть мест исключена</span> : <span>Все места проходят проверку</span>}</section> : null}
       {strokes.length ? <Button variant="ghost" onClick={onClear}>Очистить мазки</Button> : null}
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}

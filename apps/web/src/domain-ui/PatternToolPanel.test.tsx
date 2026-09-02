@@ -160,6 +160,20 @@ describe('PatternToolPanel', () => {
     expect(screen.queryByRole('button', { name: 'Проверить места' })).not.toBeInTheDocument();
   });
 
+  it('keeps every rejection reason available inside the disclosure', () => {
+    const preview: PatternPreview = {
+      pattern_id: 'pattern-many-reasons', type: 'fill', requested_count: 10, generated_count: 10,
+      accepted_count: 1, rejected_count: 9, capacity_shortfall: 0, skipped: [],
+      unverified_data: [], data_confidence: 'verified', data_confidence_reasons: [],
+      reason_summary: Array.from({ length: 5 }, (_, index) => ({ status: 'blocked' as const, code: `RULE_${index + 1}`, category: 'constraint', count: index + 1, message: `Причина ${index + 1}` })),
+    };
+
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} preview={preview} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Почему меньше' }));
+
+    expect(screen.getByText('5 — Причина 5')).toBeVisible();
+  });
+
   it('offers a smaller species after an empty result without starting another calculation', () => {
     const onPreview = vi.fn();
     const onResetPreview = vi.fn();
@@ -243,6 +257,8 @@ describe('PatternToolPanel', () => {
     cleanup();
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} onPreview={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Дополнительные настройки' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Посадочный материал' })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Количество и плотность' })).toBeVisible();
     expect(screen.getByLabelText('Плотность группы')).toBeVisible();
     expect(screen.getByRole('spinbutton', { name: 'Количество посадок' })).toHaveValue(40);
   });

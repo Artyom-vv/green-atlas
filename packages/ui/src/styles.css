@@ -213,17 +213,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .ui-input, .ui-select { @apply px-3; height: var(--control-height); }
 .ui-select-shell { position: relative; display: block; min-width: 0; color: var(--color-neutral-700); }
-.ui-select { appearance: none; padding-right: 36px; }
+.ui-select { appearance: none; padding-right: 36px; cursor: pointer; }
 .ui-select-shell > svg { position: absolute; top: 50%; right: 12px; width: 16px; height: 16px; transform: translateY(-50%); color: currentColor; stroke: currentColor; pointer-events: none; }
 .ui-select-shell:has(.ui-select:disabled) { color: var(--color-neutral-400); }
 .ui-textarea { min-height: 76px; padding: 10px 12px; line-height: 20px; resize: vertical; }
 .ui-input:hover, .ui-select:hover, .ui-textarea:hover { border-color: var(--color-neutral-500); }
 .ui-input:disabled, .ui-select:disabled, .ui-textarea:disabled { color: var(--color-neutral-500); background: var(--color-neutral-100); }
+.ui-select:disabled { cursor: not-allowed; }
 .has-error .ui-input, .has-error .ui-select, .has-error .ui-textarea { border-color: var(--error); }
 .ui-unit-input { position: relative; display: block; }
 .ui-unit-input .ui-input { padding-right: 38px; font-family: var(--font-mono); }
 .ui-unit-input__unit { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 12px; pointer-events: none; }
-.ui-checkbox { position: relative; min-height: 40px; display: inline-flex; align-items: center; gap: 10px; color: var(--color-neutral-700); font-size: 14px; line-height: 20px; cursor: pointer; }
+.ui-checkbox { --control-height: var(--control-height-default); position: relative; min-height: var(--control-height); display: inline-flex; align-items: center; gap: 10px; color: var(--color-neutral-700); font-size: 14px; line-height: 20px; cursor: pointer; }
 .ui-checkbox input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 .ui-checkbox__control { width: 18px; height: 18px; display: inline-flex; flex: none; align-items: center; justify-content: center; border: 1px solid var(--color-neutral-400); border-radius: 3px; color: transparent; background: var(--surface); transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease; }
 .ui-checkbox__control svg { width: 14px; height: 14px; stroke-width: 2; }
@@ -262,7 +263,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-step-progress__track span { height: 3px; flex: 1; border-radius: 999px; background: var(--color-neutral-200); }
 .ui-step-progress__track span.is-complete { background: var(--color-blue-300); }
 .ui-step-progress__track span.is-current { height: 5px; margin-block: -1px; background: var(--primary); }
-.ui-step-progress__label { overflow: hidden; color: var(--color-neutral-700); font-size: 12px; line-height: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.ui-step-progress__label { color: var(--color-neutral-700); font-size: 12px; line-height: 16px; font-weight: 600; overflow-wrap: anywhere; }
 
 .ui-number-stepper { --control-height: var(--control-height-default); height: var(--control-height); display: inline-flex; flex: none; overflow: hidden; border: 1px solid var(--color-neutral-300); border-radius: var(--radius-control); background: var(--surface); }
 .ui-number-stepper button, .ui-number-stepper input { height: 100%; display: flex; align-items: center; justify-content: center; }
@@ -312,6 +313,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (prefers-reduced-motion: reduce) {
   .ui-spin { animation: none; }
   .ui-progress.is-indeterminate span { width: 100%; animation: none; transform: none; }
+  .ui-disclosure__trigger > svg, .ui-disclosure__reveal, .ui-disclosure__content,
+  .ui-help-disclosure__reveal { transition: none; }
 }
 
 .ui-panel { @apply min-w-0 bg-white; }

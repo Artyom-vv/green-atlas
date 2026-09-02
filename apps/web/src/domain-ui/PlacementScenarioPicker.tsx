@@ -37,6 +37,7 @@ export function PlacementScenarioPicker({ value, presets, disabled = false, onCh
   onChange: (value: PlacementScenarioId) => void;
 }) {
   const descriptionPrefix = useId();
+  const groupName = `${descriptionPrefix}-placement-scenario`;
   const presetsById = new Map(presets?.map((preset) => [preset.id, preset]));
 
   return <fieldset className="placement-scenario-picker">
@@ -55,7 +56,7 @@ export function PlacementScenarioPicker({ value, presets, disabled = false, onCh
         return <label key={scenario.id} className="placement-scenario-card" data-selected={value === scenario.id || undefined} data-unavailable={unavailable || undefined}>
           <input
             type="radio"
-            name="placement-scenario"
+            name={groupName}
             value={scenario.id}
             checked={value === scenario.id}
             disabled={disabled || unavailable}

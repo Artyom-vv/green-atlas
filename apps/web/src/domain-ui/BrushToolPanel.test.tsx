@@ -20,6 +20,8 @@ describe('BrushToolPanel', () => {
   it('keeps one density control in the primary brush flow', () => {
     render(<BrushToolPanel strokes={[]} zones={[]} zoneIds={[]} width={12} operation="add" onZoneIdsChange={vi.fn()} onWidth={vi.fn()} onOperation={vi.fn()} onPreview={vi.fn()} onApply={vi.fn()} onClear={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.queryByText('Дополнительные настройки')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Кисть' })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Посадки' })).toBeVisible();
     expect(screen.getByLabelText('Плотность кисти')).toBeVisible();
   });
 

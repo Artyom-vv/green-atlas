@@ -169,16 +169,16 @@ export function Combobox({ value, options, placeholder = 'Выберите', emp
   </div>;
 }
 
-export function Checkbox({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode }) {
-  return <label className={cx('ui-checkbox', className)}>
+export function Checkbox({ label, className, controlSize = 'default', ...props }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode; controlSize?: ControlSize }) {
+  return <label className={cx('ui-checkbox', controlSizeClass(controlSize), className)} data-size={controlSize}>
     <input type="checkbox" {...props} />
     <span className="ui-checkbox__control" aria-hidden="true"><Check /></span>
     <span className="ui-checkbox__label">{label}</span>
   </label>;
 }
 
-export function Disclosure({ title, children, open = false, className }: { title: ReactNode; children: ReactNode; open?: boolean; className?: string }) {
-  const [expanded, setExpanded] = useState(open);
+export function Disclosure({ title, children, defaultOpen = false, className }: { title: ReactNode; children: ReactNode; defaultOpen?: boolean; className?: string }) {
+  const [expanded, setExpanded] = useState(defaultOpen);
   const contentId = useId();
   return <section className={cx('ui-disclosure', className)} data-expanded={expanded || undefined}>
     <button type="button" className="ui-disclosure__trigger" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((current) => !current)}><span>{title}</span><ChevronDown aria-hidden="true" /></button>
@@ -186,8 +186,8 @@ export function Disclosure({ title, children, open = false, className }: { title
   </section>;
 }
 
-export function HelpDisclosure({ title, children, open = false, className }: { title: ReactNode; children: ReactNode; open?: boolean; className?: string }) {
-  const [expanded, setExpanded] = useState(open);
+export function HelpDisclosure({ title, children, defaultOpen = false, className }: { title: ReactNode; children: ReactNode; defaultOpen?: boolean; className?: string }) {
+  const [expanded, setExpanded] = useState(defaultOpen);
   const contentId = useId();
   return <section className={cx('ui-help-disclosure', className)} data-expanded={expanded || undefined}>
     <button type="button" className="ui-help-disclosure__trigger" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((current) => !current)}>

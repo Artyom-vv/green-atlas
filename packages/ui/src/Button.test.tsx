@@ -21,12 +21,14 @@ describe('Button', () => {
       <IconButton icon={Plus} label="Крупная иконка" controlSize="large" />
       <TextInput aria-label="Компактное поле" controlSize="compact" />
       <Select aria-label="Крупный выбор" controlSize="large"><option>Значение</option></Select>
+      <Checkbox label="Компактный флаг" controlSize="compact" />
     </>);
     expect(screen.getByRole('button', { name: 'Обычная' })).toHaveAttribute('data-size', 'default');
     expect(screen.getByRole('button', { name: 'Компактная' })).toHaveClass('ui-control--compact');
     expect(screen.getByRole('button', { name: 'Крупная иконка' })).toHaveClass('ui-control--large');
     expect(screen.getByRole('textbox', { name: 'Компактное поле' })).toHaveClass('ui-control--compact');
     expect(screen.getByRole('combobox', { name: 'Крупный выбор' })).toHaveClass('ui-control--large');
+    expect(screen.getByRole('checkbox', { name: 'Компактный флаг' }).closest('label')).toHaveClass('ui-control--compact');
   });
 
   it('exposes disabled, empty and error states accessibly', () => {

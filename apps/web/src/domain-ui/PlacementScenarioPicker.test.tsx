@@ -33,4 +33,16 @@ describe('PlacementScenarioPicker', () => {
 
     expect(screen.getByText('Рабочее описание из API')).toBeVisible();
   });
+
+  it('keeps separate picker instances in separate browser radio groups', () => {
+    render(<><PlacementScenarioPicker value="natural" onChange={vi.fn()} /><PlacementScenarioPicker value="natural" onChange={vi.fn()} /></>);
+    const natural = screen.getAllByRole('radio', { name: 'Свободно' });
+    const clusters = screen.getAllByRole('radio', { name: 'Куртины' });
+
+    expect(natural).toHaveLength(2);
+    expect(natural[0]).toBeChecked();
+    expect(natural[1]).toBeChecked();
+    fireEvent.click(clusters[0]);
+    expect(natural[1]).toBeChecked();
+  });
 });
