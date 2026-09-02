@@ -817,7 +817,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         callbackRef.current.onCoordinate([event.coordinate[0], event.coordinate[1]]);
         return;
       }
-      const feature = activeTool === 'select' ? map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate, { layerFilter: (layer) => layer === planLayer }) : undefined;
+      const feature = activeTool === 'select' ? map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate, { layerFilter: (layer) => layer === planLayer, hitTolerance: 10 }) : undefined;
       if (feature) {
         callbackRef.current.onSelect(String(feature.get('objectId')), selectionMode(event.originalEvent));
         return;

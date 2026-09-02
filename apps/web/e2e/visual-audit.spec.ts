@@ -1409,6 +1409,43 @@ test('growth horizon is controlled at an arbitrary year and updates dimensions p
   expect(Number((scene.objects[0].canopy_radius_max_m * 2).toFixed(1))).toBe(diameterMax);
 });
 
+test('tree hover then click selects the planting instead of the underlying DXF zone', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const projectId = await createPreparedProjectThroughApi(page, 'Выбор посадки поверх зоны');
+  const zonesResponse = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, {
+    data: { zones: [{ id: 'tree-hover-zone', label: 'Рабочая зона', geometry: selectedArea }] },
+  });
+  expect(zonesResponse.ok(), await zonesResponse.text()).toBeTruthy();
+  const manualResponse = await page.request.post(`${apiBase}/projects/${projectId}/plan/manual`);
+  expect(manualResponse.ok(), await manualResponse.text()).toBeTruthy();
+  const objectResponse = await page.request.post(`${apiBase}/projects/${projectId}/plan/objects`, {
+    data: { kind: 'tree', x: 20, y: 20, species_revision_id: 'tilia-cordata@2026-08-28.1', size_class: 'standard' },
+  });
+  expect(objectResponse.ok(), await objectResponse.text()).toBeTruthy();
+
+  await page.goto(`/projects/${projectId}/workspace`);
+  await page.getByLabel('Показать посадки').click();
+  const map = page.getByLabel('Карта проекта озеленения');
+  await page.waitForTimeout(250);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const planExtent = [18.4, 18.4, 21.6, 21.6] as const;
+  const padding = 72;
+  const resolution = Math.max((planExtent[2] - planExtent[0]) / (box!.width - padding * 2), (planExtent[3] - planExtent[1]) / (box!.height - padding * 2));
+  const treePixel = {
+    x: box!.x + box!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
+    y: box!.y + box!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
+  };
+  const extentBefore = await map.getAttribute('data-view-extent');
+  const resolutionBefore = await map.getAttribute('data-view-resolution');
+  await page.mouse.move(treePixel.x + 7, treePixel.y + 3);
+  await page.mouse.click(treePixel.x + 7, treePixel.y + 3);
+  await expect(page.getByText('Выбранная посадка')).toBeVisible();
+  await expect(page.getByText('Липа мелколистная')).toBeVisible();
+  await expect(map).toHaveAttribute('data-view-extent', extentBefore!);
+  await expect(map).toHaveAttribute('data-view-resolution', resolutionBefore!);
+});
+
 test('opening another workspace directly drops the prior map selection', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
