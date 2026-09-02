@@ -30,10 +30,10 @@ describe('PlantingZoneManager', () => {
     expect(onRename).toHaveBeenCalledWith(zones[0], 'Главная аллея');
   });
 
-  it('explains why a working area cannot be deleted', () => {
+  it('keeps deletion reason out of the row until the disabled action is focused', () => {
     render(<PlantingZoneManager zones={zones} zoneUsage={{ a: 3 }} onFocus={vi.fn()} onRename={vi.fn()} onRedraw={vi.fn()} onDelete={vi.fn()} onDraw={vi.fn()} onCancelDraw={vi.fn()} />);
 
-    expect(screen.getByText('Сначала перенесите или удалите 3 посадки')).toBeVisible();
+    expect(screen.queryByText('Сначала перенесите или удалите 3 посадки')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Удалить участок 1: Северный участок' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Удалить участок 2: Южный участок' })).toBeEnabled();
   });
@@ -41,7 +41,7 @@ describe('PlantingZoneManager', () => {
   it('requires a replacement before deleting the only area', () => {
     render(<PlantingZoneManager zones={[zones[0]]} onFocus={vi.fn()} onRename={vi.fn()} onRedraw={vi.fn()} onDelete={vi.fn()} onDraw={vi.fn()} onCancelDraw={vi.fn()} />);
 
-    expect(screen.getByText('Сначала создайте другой рабочий участок')).toBeVisible();
+    expect(screen.queryByText('Сначала создайте другой рабочий участок')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Удалить участок 1: Северный участок' })).toBeDisabled();
   });
 });

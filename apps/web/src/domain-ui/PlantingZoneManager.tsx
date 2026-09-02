@@ -1,15 +1,18 @@
 import type { PlantingZoneAssignment } from '@green/api-client';
 import { Crosshair, Edit3, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Button, IconButton, InlineMessage, TextInput } from '@green/ui';
+import { Button, IconButton, InlineMessage, TextInput, Tooltip } from '@green/ui';
 
 function ZoneRow({ zone, ordinal, active, saving, deleteReason, onFocus, onRename, onRedraw, onDelete }: { zone: PlantingZoneAssignment; ordinal: number; active: boolean; saving: boolean; deleteReason?: string; onFocus: () => void; onRename: (label: string) => void; onRedraw: () => void; onDelete: () => void }) {
   const [label, setLabel] = useState(zone.label);
   useEffect(() => setLabel(zone.label), [zone.label]);
   return <article className={active ? 'is-active' : ''}>
-    <div className="planting-zone-manager__identity"><small>Участок {ordinal}</small><TextInput aria-label={`Название участка ${ordinal}: ${zone.label}`} value={label} controlSize="compact" disabled={saving} onChange={(event) => setLabel(event.target.value)} onBlur={() => onRename(label.trim() || zone.label)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></div>
-    <div className="planting-zone-manager__actions"><IconButton icon={Crosshair} label={`Показать участок ${ordinal}: ${zone.label}`} variant="ghost" controlSize="compact" onClick={onFocus} /><IconButton icon={Edit3} label={`Перерисовать участок ${ordinal}: ${zone.label}`} variant="ghost" controlSize="compact" disabled={saving} onClick={onRedraw} /><IconButton icon={Trash2} label={`Удалить участок ${ordinal}: ${zone.label}`} variant="ghost" controlSize="compact" disabled={saving || Boolean(deleteReason)} onClick={onDelete} /></div>
-    {deleteReason ? <small className="planting-zone-manager__reason">{deleteReason}</small> : null}
+    <div className="planting-zone-manager__identity"><TextInput aria-label={`Название участка ${ordinal}: ${zone.label}`} value={label} controlSize="compact" disabled={saving} onChange={(event) => setLabel(event.target.value)} onBlur={() => onRename(label.trim() || zone.label)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></div>
+    <div className="planting-zone-manager__actions">
+      <IconButton icon={Crosshair} label={`Показать участок ${ordinal}: ${zone.label}`} variant={active ? 'primary' : 'ghost'} controlSize="compact" onClick={onFocus} />
+      <IconButton icon={Edit3} label={`Перерисовать участок ${ordinal}: ${zone.label}`} variant="ghost" controlSize="compact" disabled={saving} onClick={onRedraw} />
+      {deleteReason ? <Tooltip content={deleteReason}><span><IconButton icon={Trash2} label={`Удалить участок ${ordinal}: ${zone.label}`} variant="danger" controlSize="compact" disabled onClick={onDelete} /></span></Tooltip> : <IconButton icon={Trash2} label={`Удалить участок ${ordinal}: ${zone.label}`} variant="danger" controlSize="compact" disabled={saving} onClick={onDelete} />}
+    </div>
   </article>;
 }
 
@@ -29,7 +32,6 @@ export function PlantingZoneManager({ zones, activeId, zoneUsage = {}, drawing =
 }) {
   return <div className="planting-zone-manager">
     <div className="planting-zone-manager__content">
-      <p>Рабочие участки ограничивают массовое размещение</p>
       {zones.length ? <div className="planting-zone-manager__list">{zones.map((zone, index) => {
         const used = zone.id ? zoneUsage[zone.id] ?? 0 : 0;
         const deleteReason = zones.length === 1

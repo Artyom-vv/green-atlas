@@ -1028,7 +1028,8 @@ test('working areas remain manageable after the editor is opened', async ({ page
   await expect(page.getByRole('button', { name: /Отменить: Добавление дерева/ })).toBeEnabled();
 
   await expect(page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' })).toBeDisabled();
-  await expect(page.getByText('Сначала создайте другой рабочий участок')).toBeVisible();
+  await page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' }).hover();
+  await expect(page.getByRole('tooltip')).toContainText('Сначала создайте другой рабочий участок');
   await page.getByRole('button', { name: 'Новый участок' }).click();
   await expect(page.getByText('Поставьте точки и замкните новый контур')).toBeVisible();
   await page.getByRole('button', { name: 'Отменить обводку' }).click();
@@ -1043,8 +1044,9 @@ test('working areas remain manageable after the editor is opened', async ({ page
   await page.reload();
   await page.getByRole('button', { name: 'Рабочие участки' }).click();
 
-  await expect(page.getByText('Сначала перенесите или удалите 3 посадки')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' }).hover();
+  await expect(page.getByRole('tooltip')).toContainText('Сначала перенесите или удалите 3 посадки');
   await expect(page.getByRole('button', { name: 'Удалить участок 2: Резервный участок' })).toBeEnabled();
 });
 
