@@ -658,6 +658,11 @@ export function WorkspacePage() {
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
       if (event.key === 'Escape') {
         event.preventDefault();
+        if (mapInspectTarget) {
+          setMapInspectTarget(undefined);
+          setMapHoverTarget(undefined);
+          return;
+        }
         if (sceneOpen) {
           setSceneOpen(false);
           return;
@@ -711,7 +716,7 @@ export function WorkspacePage() {
     };
     window.addEventListener('keydown', handleHistoryShortcut);
     return () => window.removeEventListener('keydown', handleHistoryShortcut);
-  }, [applyChanges, brushStrokes.length, changePreview, editor, editorBusy, historyQuery.data?.can_redo, historyQuery.data?.can_undo, patternPreview, planLocked, recommendationOpen, recommendationPreview, redoChange, sceneOpen, selectedIds.length, speciesAssignmentOpen, tool, undoChange]);
+  }, [applyChanges, brushStrokes.length, changePreview, editor, editorBusy, historyQuery.data?.can_redo, historyQuery.data?.can_undo, mapInspectTarget, patternPreview, planLocked, recommendationOpen, recommendationPreview, redoChange, sceneOpen, selectedIds.length, speciesAssignmentOpen, tool, undoChange]);
 
   if (projectQuery.isLoading) return <div className="app-shell"><AppHeader /><main className="center-status"><Progress label="Загрузка рабочей области" /></main></div>;
   if (!project) return <div className="app-shell"><AppHeader /><main className="center-status"><InlineMessage tone="error">{message(projectQuery.error)}</InlineMessage></main></div>;

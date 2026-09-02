@@ -604,7 +604,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 @media (max-width: 960px) {
   .workspace-layout { grid-template-columns: minmax(0, 1fr); }
   .workspace-right { position: absolute; z-index: 11; inset: 0 0 0 auto; width: min(424px, 100%); box-shadow: -4px 0 16px rgba(24,33,43,.08); }
-  .workspace-layout:not(.is-right-collapsed) .map-canvas { --map-view-safe: 540px; --map-view-right: 434px; }
+  .workspace-layout:not(.is-right-collapsed) .map-canvas { --map-view-safe: 444px; --map-view-right: 434px; }
 }
 
 @media (max-width: 760px) {
@@ -620,7 +620,9 @@ code { font-family: var(--font-mono); font-weight: 400; }
   .flow-document__header { padding: 20px; }
   .flow-document__content { padding: 20px; }
   .workspace-titlebar__name { max-width: 150px; }
-  .workspace-layout:not(.is-right-collapsed) .map-canvas { --map-view-safe: calc(100% - 8px); }
+  .workspace-layout:not(.is-right-collapsed) .map-edit-tools,
+  .workspace-layout:not(.is-right-collapsed) .map-navigation-tools,
+  .workspace-layout:not(.is-right-collapsed) .map-view-switch { display: none; }
   .map-statusbar { gap: 10px; }
   .map-statusbar > span { white-space: nowrap; }
 }

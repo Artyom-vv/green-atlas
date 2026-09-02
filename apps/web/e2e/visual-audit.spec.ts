@@ -560,6 +560,16 @@ test('workspace panels do not remount or blank the map canvas', async ({ page })
   await expect.poll(async () => map.locator('canvas').evaluateAll((canvases) => canvases.every((canvas) => canvas.width > 0 && canvas.height > 0))).toBe(true);
 });
 
+test('a full-width narrow inspector does not leave map controls underneath it', async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 800 });
+  await openManualPlan(page);
+
+  await expect(page.locator('.workspace-right')).toBeVisible();
+  await expect(page.locator('.map-edit-tools')).toBeHidden();
+  await expect(page.locator('.map-navigation-tools')).toBeHidden();
+  await expect(page.locator('.map-view-switch')).toBeHidden();
+});
+
 test('a saved working area can be selected directly on the map', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openManualPlan(page);
