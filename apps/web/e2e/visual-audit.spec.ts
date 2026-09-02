@@ -765,10 +765,11 @@ test('box selection moves a group live and commits one undoable change set', asy
   await page.mouse.move(dragStart.x, dragStart.y);
   await page.mouse.down();
   await page.mouse.move(dragDestination.x, dragDestination.y, { steps: 8 });
-  // The map owns the live gesture. The server validates the completed drop,
-  // never an intermediate pointer position.
-  await page.waitForTimeout(280);
-  expect(movePreviewRequests).toHaveLength(0);
+  // The map owns the live gesture while the server validates the current
+  // destination in the background, so a blocked position is visible before
+  // the operator releases the group.
+  await expect.poll(() => movePreviewRequests.length).toBeGreaterThan(0);
+  const livePreviewRequestCount = movePreviewRequests.length;
   const liveCoordinates = JSON.parse((await map.getAttribute('data-selection-drag')) ?? '[]') as Array<{ coordinate: number[] }>;
   expect(liveCoordinates.map(({ coordinate }) => coordinate.map((value) => Number(value.toFixed(3)))).sort((left, right) => left[0] - right[0]))
     .toEqual([[20, 25], [40, 25]]);
@@ -776,7 +777,8 @@ test('box selection moves a group live and commits one undoable change set', asy
   await page.mouse.up();
   await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
   await expect(page.getByText('Пунктиром показан результат до сохранения')).toBeVisible();
-  await expect.poll(() => movePreviewRequests.length).toBe(1);
+  await expect.poll(() => movePreviewRequests.length).toBeGreaterThan(livePreviewRequestCount);
+  const firstDropRequestCount = movePreviewRequests.length;
   await expect(map).not.toHaveAttribute('data-selection-drag');
 
   // Escape rejects the checked drop without changing the durable plan.
@@ -800,7 +802,7 @@ test('box selection moves a group live and commits one undoable change set', asy
   await page.mouse.move(secondDestination.x, secondDestination.y, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
-  await expect.poll(() => movePreviewRequests.length).toBe(2);
+  await expect.poll(() => movePreviewRequests.length).toBeGreaterThan(firstDropRequestCount);
 
   let viewportRequests = 0;
   page.on('request', (request) => {
@@ -1386,6 +1388,7 @@ test('growth horizon is controlled at an arbitrary year and updates dimensions p
   await page.goto(`/projects/${projectId}/workspace`);
   await page.getByLabel('Показать посадки').click();
   const map = page.getByLabel('Карта проекта озеленения');
+  await expect.poll(async () => Number(await map.getAttribute('data-view-resolution'))).toBeLessThan(0.05);
   await page.waitForTimeout(250);
   const box = await map.boundingBox();
   expect(box).not.toBeNull();
@@ -1456,6 +1459,7 @@ test('tree hover then click selects the planting instead of the underlying DXF z
   await page.goto(`/projects/${projectId}/workspace`);
   await page.getByLabel('Показать посадки').click();
   const map = page.getByLabel('Карта проекта озеленения');
+  await expect.poll(async () => Number(await map.getAttribute('data-view-resolution'))).toBeLessThan(0.05);
   await page.waitForTimeout(250);
   const box = await map.boundingBox();
   expect(box).not.toBeNull();

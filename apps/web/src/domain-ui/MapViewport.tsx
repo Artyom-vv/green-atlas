@@ -146,10 +146,32 @@ const snapGuideStyle = new Style({
   image: new CircleStyle({ radius: 6, fill: new Fill({ color: 'rgba(255,255,255,.94)' }), stroke: new Stroke({ color: '#225CFF', width: 2 }) }),
 });
 
-const selectionDraftStyle = new Style({
+const selectionAreaDraftStyle = new Style({
   fill: new Fill({ color: 'rgba(34,92,255,.06)' }),
   stroke: new Stroke({ color: '#225CFF', width: 1.5, lineDash: [6, 4] }),
 });
+
+const moveDraftStyles = {
+  path: [
+    new Style({ stroke: new Stroke({ color: 'rgba(255,255,255,.94)', width: 5 }) }),
+    new Style({ stroke: new Stroke({ color: '#225CFF', width: 1.5, lineDash: [5, 5] }) }),
+  ],
+  origin: new Style({
+    image: new CircleStyle({
+      radius: 7,
+      fill: new Fill({ color: 'rgba(255,255,255,.82)' }),
+      stroke: new Stroke({ color: '#66788A', width: 1.5, lineDash: [3, 3] }),
+    }),
+  }),
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- pure style selector is exported for deterministic map-state tests.
+export function selectionDraftStyle(feature: FeatureLike): Style | Style[] {
+  const role = feature.get('draftRole');
+  if (role === 'move-path') return moveDraftStyles.path;
+  if (role === 'move-origin') return moveDraftStyles.origin;
+  return selectionAreaDraftStyle;
+}
 
 function plantGlyph(kind: string, color: string, outline: string): string {
   const body = kind === 'shrub'
@@ -159,21 +181,48 @@ function plantGlyph(kind: string, color: string, outline: string): string {
 }
 
 const changePreviewStyles = new globalThis.Map<string, Style[]>();
-function changePreviewStyle(feature: FeatureLike): Style[] {
+// eslint-disable-next-line react-refresh/only-export-components -- exported so preview semantics remain covered without a canvas renderer.
+export function changePreviewStyle(feature: FeatureLike, resolution = 1): Style[] {
   const kind = String(feature.get('kind') ?? 'tree');
   const status = String(feature.get('candidateStatus') ?? 'allowed');
-  const key = `${kind}:${status}`;
+  const role = String(feature.get('previewRole') ?? 'candidate');
+  const semanticColor = status === 'blocked' ? '#D92D20' : status === 'unknown' || status === 'soft_conflict' ? '#B76400' : '#168A5B';
+  const overview = resolution > 0.9;
+  const key = `${kind}:${status}:${role}:${overview}`;
   const cached = changePreviewStyles.get(key);
   if (cached) return cached;
-  const semanticColor = status === 'blocked' ? '#D92D20' : status === 'unknown' || status === 'soft_conflict' ? '#B76400' : '#198754';
+  if (role === 'move-path') {
+    const styles = [
+      new Style({ stroke: new Stroke({ color: 'rgba(255,255,255,.94)', width: 5 }) }),
+      new Style({ stroke: new Stroke({ color: semanticColor, width: 1.75, lineDash: [6, 5] }) }),
+    ];
+    changePreviewStyles.set(key, styles);
+    return styles;
+  }
+  if (role === 'move-origin') {
+    const styles = [new Style({
+      image: new CircleStyle({
+        radius: overview ? 6 : 7,
+        fill: new Fill({ color: 'rgba(255,255,255,.82)' }),
+        stroke: new Stroke({ color: '#66788A', width: 1.5, lineDash: [3, 3] }),
+      }),
+    })];
+    changePreviewStyles.set(key, styles);
+    return styles;
+  }
   const geometry = (candidate: FeatureLike) => {
     const candidateGeometry = candidate.getGeometry();
     return candidateGeometry instanceof Circle ? new Point(candidateGeometry.getCenter()) : candidate.get('markerGeometry');
   };
-  const styles = [new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 9 : 7, fill: new Fill({ color: 'rgba(255,255,255,.92)' }), stroke: new Stroke({ color: semanticColor, width: 1.5 }) }) }), new Style({
-    geometry,
-    image: new Icon({ src: plantGlyph(kind, semanticColor, '#FFFFFF'), width: kind === 'tree' ? 20 : 17, height: kind === 'tree' ? 20 : 17 }),
-  })];
+  const styles = overview
+    ? [
+      new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 8 : 7, fill: new Fill({ color: '#FFFFFF' }), stroke: new Stroke({ color: '#FFFFFF', width: 3 }) }) }),
+      new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 6 : 5, fill: new Fill({ color: semanticColor }), stroke: new Stroke({ color: semanticColor, width: 1 }) }) }),
+    ]
+    : [
+      new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 11 : 9, fill: new Fill({ color: '#FFFFFF' }), stroke: new Stroke({ color: semanticColor, width: 2 }) }) }),
+      new Style({ geometry, image: new Icon({ src: plantGlyph(kind, semanticColor, '#FFFFFF'), width: kind === 'tree' ? 20 : 18, height: kind === 'tree' ? 20 : 18 }) }),
+    ];
   changePreviewStyles.set(key, styles);
   return styles;
 }
@@ -209,9 +258,14 @@ const mapHoverStyle = new Style({
   stroke: new Stroke({ color: '#225CFF', width: 2 }),
 });
 
+const plantingZoneDraftStyle = new Style({
+  fill: new Fill({ color: 'rgba(34,92,255,.01)' }),
+  stroke: new Stroke({ color: 'rgba(34,92,255,.48)', width: 1.25, lineDash: [7, 5] }),
+});
+
 const plantingZoneFocusStyle = new Style({
-  fill: new Fill({ color: 'rgba(34,92,255,.07)' }),
-  stroke: new Stroke({ color: '#225CFF', width: 2.25 }),
+  fill: new Fill({ color: 'rgba(34,92,255,.025)' }),
+  stroke: new Stroke({ color: '#225CFF', width: 2 }),
 });
 
 // These caches live at module scope so style instances are reused while the
@@ -373,43 +427,72 @@ export function geometryStyle(feature: FeatureLike, resolution: number) {
 }
 
 const planStyles = new globalThis.Map<string, Style | Style[]>();
-function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string> | undefined, resolution: number) {
-  const kind = feature.get('kind');
-  const status = feature.get('status');
+// eslint-disable-next-line react-refresh/only-export-components -- exported for deterministic visual-semantic tests.
+export function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string> | undefined, resolution: number) {
+  const kind = String(feature.get('kind') ?? 'tree');
+  const status = String(feature.get('status') ?? 'valid');
   const selected = selectedIds?.has(String(feature.get('objectId'))) ?? false;
-  const zoneMuted = Boolean(feature.get('_zoneMuted'));
+  // A selected object remains actionable even when a zone filter is active.
+  // Muting it used to erase both selection and validation status.
+  const zoneMuted = Boolean(feature.get('_zoneMuted')) && !selected;
   const overview = resolution > 0.9;
   const key = `${kind}:${status}:${selected}:${overview}:${zoneMuted}`;
   const cached = planStyles.get(key);
   if (cached) return cached;
-  const fill = zoneMuted ? 'rgba(122,135,149,.10)' : kind === 'tree' ? 'rgba(46,156,103,.50)' : 'rgba(145,207,174,.52)';
-  const stroke = zoneMuted ? 'rgba(122,135,149,.28)' : selected ? '#225CFF' : status === 'warning' ? '#C83B32' : '#12683F';
+  const semanticColor = status === 'error' ? '#D92D20' : status === 'warning' ? '#B76400' : '#168A5B';
+  const markerColor = zoneMuted ? '#91A0AE' : semanticColor;
+  const fill = zoneMuted
+    ? 'rgba(122,135,149,.08)'
+    : status === 'error'
+      ? 'rgba(217,45,32,.10)'
+      : status === 'warning'
+        ? 'rgba(183,100,0,.10)'
+        : kind === 'tree' ? 'rgba(22,138,91,.18)' : 'rgba(114,184,146,.20)';
   const crownStyle = new Style({
     fill: new Fill({ color: fill }),
-    stroke: new Stroke({ color: stroke, width: selected ? 2.5 : 1.25 }),
+    stroke: new Stroke({ color: markerColor, width: selected ? 2 : 1.25, lineDash: selected ? [7, 4] : undefined }),
   });
   const hitStyle = new Style({
     fill: new Fill({ color: 'rgba(0,0,0,0.001)' }),
   });
+  const markerGeometry = (candidate: FeatureLike) => {
+    const geometry = candidate.getGeometry();
+    return geometry instanceof Circle ? new Point(geometry.getCenter()) : candidate.get('markerGeometry');
+  };
   const markerStyle = new Style({
-    geometry: (candidate) => {
-      const geometry = candidate.getGeometry();
-      return geometry instanceof Circle ? new Point(geometry.getCenter()) : candidate.get('markerGeometry');
-    },
+    geometry: markerGeometry,
     image: new Icon({
-      src: plantGlyph(kind, zoneMuted ? '#A7B0BC' : status === 'error' ? '#C83B32' : kind === 'tree' ? '#26885A' : '#72B892', selected ? '#225CFF' : '#FFFFFF'),
+      src: plantGlyph(kind, markerColor, '#FFFFFF'),
       width: kind === 'tree' ? 20 : 17,
       height: kind === 'tree' ? 20 : 17,
     }),
   });
   const markerHaloStyle = new Style({
-    geometry: (candidate) => {
-      const geometry = candidate.getGeometry();
-      return geometry instanceof Circle ? new Point(geometry.getCenter()) : candidate.get('markerGeometry');
-    },
-    image: new CircleStyle({ radius: kind === 'tree' ? 9 : 7, fill: new Fill({ color: 'rgba(255,255,255,.9)' }), stroke: new Stroke({ color: selected ? '#225CFF' : 'rgba(18,104,63,.45)', width: 1 }) }),
+    geometry: markerGeometry,
+    image: new CircleStyle({ radius: kind === 'tree' ? 10 : 8.5, fill: new Fill({ color: 'rgba(255,255,255,.96)' }), stroke: new Stroke({ color: zoneMuted ? '#91A0AE' : semanticColor, width: 1.25 }) }),
   });
-  const styles = selected ? [crownStyle, markerHaloStyle, markerStyle] : [hitStyle, markerHaloStyle, markerStyle];
+  const compactMarkerStyle = new Style({
+    geometry: markerGeometry,
+    image: new CircleStyle({
+      radius: kind === 'tree' ? 6 : 5,
+      fill: new Fill({ color: markerColor }),
+      stroke: new Stroke({ color: '#FFFFFF', width: 2 }),
+    }),
+  });
+  const selectionMarkerStyle = new Style({
+    geometry: markerGeometry,
+    image: new CircleStyle({
+      radius: overview ? (kind === 'tree' ? 10 : 9) : (kind === 'tree' ? 13 : 11.5),
+      fill: new Fill({ color: 'rgba(255,255,255,.96)' }),
+      stroke: new Stroke({ color: '#225CFF', width: overview ? 2.5 : 3 }),
+    }),
+  });
+  const selectedCrownBackdrop = new Style({
+    stroke: new Stroke({ color: 'rgba(255,255,255,.9)', width: 5 }),
+  });
+  const styles = overview
+    ? selected ? [hitStyle, selectionMarkerStyle, compactMarkerStyle] : [hitStyle, compactMarkerStyle]
+    : selected ? [selectedCrownBackdrop, crownStyle, selectionMarkerStyle, markerHaloStyle, markerStyle] : [hitStyle, markerHaloStyle, markerStyle];
   planStyles.set(key, styles);
   return styles;
 }
@@ -441,6 +524,53 @@ export function syncPlanFeatures(source: VectorSource, objects: PlanObject[]): v
     feature.setProperties({ kind: object.kind, status: object.status, objectId: object.id, plantingZoneId: object.planting_zone_id }, true);
     feature.changed();
   }
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- exported for deterministic move-preview tests.
+export function changePreviewFeatures(objects: readonly PlanObject[], preview: ChangeSetPreview): Feature[] {
+  const currentById = new globalThis.Map(objects.flatMap((object) => object.id ? [[object.id, object] as const] : []));
+  const statusByObjectId = new globalThis.Map(
+    (preview.candidate_results ?? []).flatMap((result) => result.object_id ? [[result.object_id, result.status] as const] : []),
+  );
+  const moves: Array<{ from: [number, number]; to: [number, number]; kind: string; status: string }> = [];
+  const candidates = [...(preview.additions ?? []), ...(preview.updates ?? [])].flatMap((object) => {
+    if (!object.id) return [] as Feature[];
+    const radius = object.layout_radius_m ?? object.radius;
+    const status = statusByObjectId.get(object.id) ?? 'allowed';
+    const current = currentById.get(object.id);
+    const moved = current && (current.x !== object.x || current.y !== object.y);
+    if (moved) moves.push({ from: [current.x, current.y], to: [object.x, object.y], kind: object.kind, status });
+    const candidate = new Feature({
+      geometry: new Circle([object.x, object.y], radius),
+      markerGeometry: new Point([object.x, object.y]),
+      objectId: object.id,
+      kind: object.kind,
+      candidateStatus: status,
+      previewRole: 'candidate',
+    });
+    candidate.setId(`change-preview-${object.id}`);
+    return [candidate];
+  });
+  if (!moves.length) return candidates;
+
+  // A group is translated rigidly. One centroid trail communicates the
+  // before/after relationship without turning a 70-object selection into a
+  // thicket of overlapping guide lines. Per-object candidates still retain
+  // their own validation colour at the destination.
+  const centroid = (coordinates: Array<[number, number]>): [number, number] => [
+    coordinates.reduce((sum, point) => sum + point[0], 0) / coordinates.length,
+    coordinates.reduce((sum, point) => sum + point[1], 0) / coordinates.length,
+  ];
+  const from = centroid(moves.map((move) => move.from));
+  const to = centroid(moves.map((move) => move.to));
+  const groupStatus = moves.some((move) => move.status === 'blocked')
+    ? 'blocked'
+    : moves.some((move) => move.status === 'soft_conflict' || move.status === 'unknown') ? 'soft_conflict' : 'allowed';
+  const path = new Feature({ geometry: new LineString([from, to]), kind: moves[0].kind, candidateStatus: groupStatus, previewRole: 'move-path' });
+  const origin = new Feature({ geometry: new Point(from), kind: moves[0].kind, candidateStatus: groupStatus, previewRole: 'move-origin' });
+  path.setId('change-preview-group-path');
+  origin.setId('change-preview-group-origin');
+  return [path, origin, ...candidates];
 }
 
 export type MapViewportHandle = {
@@ -700,7 +830,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const constraintLayer = new VectorImageLayer({ source: constraintSourceRef.current, style: geometryStyle, zIndex: 2, renderBuffer: 160, imageRatio: 1.5 });
     const growthEnvelopeLayer = new VectorLayer({ source: growthEnvelopeSourceRef.current, style: growthEnvelopeStyle, zIndex: 2.5, renderBuffer: 80 });
     const planLayer = new VectorLayer({ source: planSourceRef.current, style: (feature, resolution) => planStyle(feature, selectedRef.current, resolution), zIndex: 3, renderBuffer: 80 });
-    const draftPlantingZoneLayer = new VectorLayer({ source: draftPlantingZoneSourceRef.current, style: plantingZoneFocusStyle, zIndex: 4 });
+    const draftPlantingZoneLayer = new VectorLayer({ source: draftPlantingZoneSourceRef.current, style: plantingZoneDraftStyle, zIndex: 4 });
     const plantingZoneFocusLayer = new VectorLayer({ source: plantingZoneFocusSourceRef.current, style: plantingZoneFocusStyle, zIndex: 5 });
     const mapHoverLayer = new VectorLayer({ source: mapHoverSourceRef.current, style: mapHoverStyle, zIndex: 6 });
     const areaDrawingLayer = new VectorLayer({ source: areaDrawingSourceRef.current, style: drawStyle, zIndex: 7 });
@@ -1239,6 +1369,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const features = planSourceRef.current.getFeatures().filter((feature) => selectedRef.current.has(String(feature.get('objectId'))));
     if (!features.length) return;
     const selectedFeatures = new Collection(features);
+    const draftSource = selectionDraftSourceRef.current;
     const translate = new Translate({
       // Passing a filter only identifies the feature under the pointer;
       // OpenLayers then translates that one feature. A Collection is the
@@ -1250,6 +1381,29 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const geometry = feature.getGeometry();
       return geometry instanceof Circle ? [{ id: String(feature.get('objectId')), coordinate: geometry.getCenter() }] : [];
     });
+    const selectionCenter = (): [number, number] | undefined => {
+      const centers = selectedCenters().map((item) => item.coordinate);
+      return centers.length ? [
+        centers.reduce((sum, point) => sum + point[0], 0) / centers.length,
+        centers.reduce((sum, point) => sum + point[1], 0) / centers.length,
+      ] : undefined;
+    };
+    let moveOrigin: [number, number] | undefined;
+    const startMoveTrail = () => {
+      draftSource.clear();
+      moveOrigin = selectionCenter();
+      if (!moveOrigin) return;
+      const originFeature = new Feature({ geometry: new Point(moveOrigin), draftRole: 'move-origin' });
+      originFeature.setId('move-draft-group-origin');
+      const pathFeature = new Feature({ geometry: new LineString([moveOrigin, moveOrigin]), draftRole: 'move-path' });
+      pathFeature.setId('move-draft-group-path');
+      draftSource.addFeatures([pathFeature, originFeature]);
+    };
+    const updateMoveTrail = () => {
+      const center = selectionCenter();
+      const path = draftSource.getFeatureById('move-draft-group-path')?.getGeometry();
+      if (moveOrigin && center && path instanceof LineString) path.setCoordinates([moveOrigin, center]);
+    };
     const publishLiveSelection = () => {
       if (target) target.dataset.selectionDrag = JSON.stringify(selectedCenters());
     };
@@ -1260,15 +1414,18 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     };
     translate.on('translatestart', () => {
       translatingSelectionRef.current = true;
+      startMoveTrail();
       publishLiveSelection();
     });
     translate.on('translating', () => {
       const centers = selectedCenters().map((item) => item.coordinate);
       if (!centers.length) return;
+      updateMoveTrail();
       const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
       publishLiveSelection();
       const pixel = map.getPixelFromCoordinate(center);
       callbackRef.current.onSelectionAnchor?.([pixel[0], pixel[1]]);
+      callbackRef.current.onMoveCoordinate?.(center);
     });
     translate.on('translateend', () => {
       translatingSelectionRef.current = false;
@@ -1278,6 +1435,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         callbackRef.current.onTranslateSelectionEnd?.(center);
       }
       callbackRef.current.onMoveCoordinate?.(undefined);
+      draftSource.clear();
       resetSelectionGeometry();
     });
     const cancelDirectDrag = (event: KeyboardEvent) => {
@@ -1286,6 +1444,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       map.removeInteraction(translate);
       if (translateInteractionRef.current === translate) translateInteractionRef.current = null;
       callbackRef.current.onMoveCoordinate?.(undefined);
+      draftSource.clear();
       resetSelectionGeometry();
     };
     window.addEventListener('keydown', cancelDirectDrag);
@@ -1297,6 +1456,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       translatingSelectionRef.current = false;
       map.removeInteraction(translate);
       if (translateInteractionRef.current === translate) translateInteractionRef.current = null;
+      draftSource.clear();
       if (target) delete target.dataset.selectionDrag;
     };
   }, [objects, selectedIds, tool]);
@@ -1305,24 +1465,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const source = changePreviewSourceRef.current;
     source.clear();
     if (!changePreview) return;
-    const statusByObjectId = new globalThis.Map(
-      (changePreview.candidate_results ?? []).flatMap((result) => result.object_id ? [[result.object_id, result.status] as const] : []),
-    );
-    const objects = [...(changePreview.additions ?? []), ...(changePreview.updates ?? [])];
-    source.addFeatures(objects.flatMap((object) => {
-      if (!object.id) return [];
-      const radius = object.layout_radius_m ?? object.radius;
-      const feature = new Feature({
-        geometry: new Circle([object.x, object.y], radius),
-        markerGeometry: new Point([object.x, object.y]),
-        objectId: object.id,
-        kind: object.kind,
-        candidateStatus: statusByObjectId.get(object.id) ?? 'allowed',
-      });
-      feature.setId(`change-preview-${object.id}`);
-      return [feature];
-    }));
-  }, [changePreview]);
+    source.addFeatures(changePreviewFeatures(objects, changePreview));
+  }, [changePreview, objects]);
 
   useEffect(() => {
     const source = growthEnvelopeSourceRef.current;
