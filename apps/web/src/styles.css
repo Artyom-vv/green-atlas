@@ -449,6 +449,10 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .scene-review__status { padding: 8px 12px; border: 1px solid var(--color-neutral-300); background: var(--color-white); color: var(--color-neutral-600); font-size: 12px; }
 .scene-review__message { width: min(360px, calc(100% - 32px)); }
 .scene-review > footer { display: flex; align-items: center; gap: 20px; padding: 0 16px; border-top: 1px solid var(--color-neutral-300); background: var(--color-white); color: var(--color-neutral-600); font-family: var(--font-mono); font-size: 10px; line-height: 14px; }
+.scene-review__legend { display: inline-flex; align-items: center; gap: 5px; }
+.scene-review__legend i { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #8996a3; }
+.scene-review__legend i.is-building { background: #9aa8bb; }
+.scene-review__legend i.is-water { background: #4e9fc4; }
 .export-panel .rail-panel__content { padding: 0; }
 .release-package { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; }
 .release-package__summary { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; }

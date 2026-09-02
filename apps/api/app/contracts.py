@@ -731,6 +731,15 @@ class ScenePlantObject(BaseModel):
     confidence: Literal["unknown", "low", "medium", "high"] = "unknown"
 
 
+class SceneContextFeature(BaseModel):
+    """A lightweight, honest DXF footprint used as the 3D ground reference."""
+
+    feature_id: str
+    kind: str
+    geometry: dict[str, Any]
+    label: str | None = None
+
+
 class SceneSnapshot(BaseModel):
     plan_version: int = Field(ge=1)
     horizon_year: int = Field(ge=0, le=40)
@@ -741,6 +750,7 @@ class SceneSnapshot(BaseModel):
     note: str
     data_gaps: list[str] = Field(default_factory=list)
     objects: list[ScenePlantObject] = Field(default_factory=list)
+    context_features: list[SceneContextFeature] = Field(default_factory=list)
 
 
 class PlanMutationResult(BaseModel):

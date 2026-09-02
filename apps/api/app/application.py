@@ -7,7 +7,7 @@ import json
 from math import isfinite
 from threading import RLock
 
-from shapely.geometry import Point, shape
+from shapely.geometry import Point, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.prepared import prep
@@ -57,6 +57,7 @@ from app.contracts import (
     ReleaseCreateRequest,
     ReleasePackage,
     ScenePlantObject,
+    SceneContextFeature,
     SceneSnapshot,
     SourceFile,
     SpeciesRevision,
@@ -173,6 +174,17 @@ def _candidate_result(
         suggested_action=issue.suggested_action,
         zone_id=issue.zone_id or zone_id,
     )
+
+
+def _translate_geojson(geometry: dict, origin_x: float, origin_y: float) -> dict:
+    """Translate GeoJSON coordinates into the same local frame as plantings."""
+    def translate(value):
+        if isinstance(value, (list, tuple)):
+            if len(value) >= 2 and all(isinstance(item, (int, float)) for item in value[:2]):
+                return [value[0] - origin_x, value[1] - origin_y, *value[2:]]
+            return [translate(item) for item in value]
+        return value
+    return {**geometry, "coordinates": translate(geometry.get("coordinates", []))}
 
 
 def _reason_summary(skipped: list[PatternSkippedCandidate]) -> list[dict[str, object]]:
@@ -1768,10 +1780,10 @@ class ProjectApplication:
     def get_scene(self, project_id: str, horizon_year: int) -> SceneSnapshot:
         if not 0 <= horizon_year <= 40:
             raise ValueError("Горизонт сцены должен быть от 0 до 40 лет")
-        # The projection contains the plan and compact map metadata but omits
-        # both raw and calculated DXF feature graphs. Opening 3D therefore
-        # never reparses or deserialises the source drawing.
-        project = self.get(project_id, lightweight=True)
+        # Scene context is deliberately loaded from the authoritative geometry
+        # snapshot. The lightweight projection omits it and made 3D a floating
+        # toy detached from the imported drawing.
+        project = self.get(project_id)
         if project.plan is None:
             raise ValueError("План ещё не создан")
         if project.plan.objects:
@@ -1846,6 +1858,40 @@ class ProjectApplication:
                 root_radius_max_m=roots.radius_max_m if roots else None,
                 confidence=confidence,
             ))
+        context_features: list[SceneContextFeature] = []
+        context_snapshot = project.geometry or project.source_geometry
+        if context_snapshot is not None:
+            # Keep the scene responsive and focused on the plan. This is a
+            # visual reference only: no missing terrain, utility depth or
+            # building height is inferred here.
+            context_kinds = {"site_border", "building", "road", "water", "existing_green", "utility", "restricted", "allowed"}
+            if scene_objects:
+                context_extent = unary_union([Point(item.local_x, item.local_y).buffer(90) for item in scene_objects]).envelope
+            else:
+                context_extent = None
+            for index, feature in enumerate(context_snapshot.feature_collection.get("features", [])):
+                properties = feature.get("properties", {})
+                kind = str(properties.get("kind", ""))
+                if kind not in context_kinds:
+                    continue
+                try:
+                    geometry = shape(feature["geometry"])
+                    if context_extent is not None:
+                        geometry = geometry.intersection(context_extent)
+                    if geometry.is_empty:
+                        continue
+                    geometry = geometry.simplify(0.15, preserve_topology=True)
+                    translated = mapping(geometry)
+                except Exception:
+                    continue
+                context_features.append(SceneContextFeature(
+                    feature_id=str(feature.get("id") or properties.get("source_handle") or f"context-{index}"),
+                    kind=kind,
+                    geometry=_translate_geojson(translated, origin_x, origin_y),
+                    label=str(properties.get("label")) if properties.get("label") else None,
+                ))
+                if len(context_features) >= 2500:
+                    break
         return SceneSnapshot(
             plan_version=project.plan.version,
             horizon_year=horizon_year,
@@ -1853,6 +1899,7 @@ class ProjectApplication:
             note="Упрощённая параметрическая сцена посадок. Это не геодезическая 3D-модель и не расчёт инсоляции.",
             data_gaps=["Рельеф", "Высоты зданий", "Точные модели пород", "Инсоляция"],
             objects=scene_objects,
+            context_features=context_features,
         )
 
     @staticmethod

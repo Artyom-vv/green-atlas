@@ -1989,6 +1989,22 @@ export interface components {
              */
             spacing_policy: "open" | "balanced" | "canopy";
         };
+        /**
+         * SceneContextFeature
+         * @description A lightweight, honest DXF footprint used as the 3D ground reference.
+         */
+        SceneContextFeature: {
+            /** Feature Id */
+            feature_id: string;
+            /** Kind */
+            kind: string;
+            /** Geometry */
+            geometry: {
+                [key: string]: unknown;
+            };
+            /** Label */
+            label?: string | null;
+        };
         /** ScenePlantObject */
         ScenePlantObject: {
             /** Object Id */
@@ -2060,6 +2076,8 @@ export interface components {
             data_gaps?: string[];
             /** Objects */
             objects?: components["schemas"]["ScenePlantObject"][];
+            /** Context Features */
+            context_features?: components["schemas"]["SceneContextFeature"][];
         };
         /** SourceFile */
         SourceFile: {

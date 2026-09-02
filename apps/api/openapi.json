@@ -5854,6 +5854,42 @@
         ],
         "title": "RowPatternRequest"
       },
+      "SceneContextFeature": {
+        "properties": {
+          "feature_id": {
+            "type": "string",
+            "title": "Feature Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geometry"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature_id",
+          "kind",
+          "geometry"
+        ],
+        "title": "SceneContextFeature",
+        "description": "A lightweight, honest DXF footprint used as the 3D ground reference."
+      },
       "ScenePlantObject": {
         "properties": {
           "object_id": {
@@ -6039,6 +6075,13 @@
             },
             "type": "array",
             "title": "Objects"
+          },
+          "context_features": {
+            "items": {
+              "$ref": "#/components/schemas/SceneContextFeature"
+            },
+            "type": "array",
+            "title": "Context Features"
           }
         },
         "type": "object",

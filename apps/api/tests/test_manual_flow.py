@@ -1801,6 +1801,8 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     assert current_scene["coordinate_origin"] == [40.0, 30.0]
     assert current_scene["completeness"] == "partial"
     assert current_scene["terrain_status"] == "missing"
+    assert isinstance(current_scene["context_features"], list)
+    assert {item["kind"] for item in current_scene["context_features"]}.intersection({"building", "road", "site_border"})
     assert {item["object_id"] for item in current_scene["objects"]} == {item["id"] for item in applied.json()["plan"]["objects"]}
     current_tree = next(item for item in current_scene["objects"] if item["object_id"] == tree_id)
     early_tree = next(item for item in early_scene["objects"] if item["object_id"] == tree_id)

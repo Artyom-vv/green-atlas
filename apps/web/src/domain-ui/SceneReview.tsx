@@ -5,6 +5,42 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GrowthHorizonSlider } from './GrowthHorizonControl';
 
+type LocalPoint = [number, number];
+type SceneContextFeature = { feature_id: string; kind: string; geometry: { [key: string]: unknown }; label?: string | null };
+function ringPoints(value: unknown): LocalPoint[] {
+  return Array.isArray(value) ? value.filter((point): point is number[] => Array.isArray(point) && typeof point[0] === 'number' && typeof point[1] === 'number').map((point) => [point[0], point[1]]) : [];
+}
+
+function addContextFeature(scene: THREE.Scene, feature: SceneContextFeature) {
+  const geometry = feature.geometry as { type?: string; coordinates?: unknown };
+  const coordinates = geometry.coordinates;
+  const color = feature.kind === 'road' ? 0x8996a3 : feature.kind === 'building' ? 0x9aa8bb : feature.kind === 'water' ? 0x4e9fc4 : feature.kind === 'existing_green' ? 0x5eaa7b : feature.kind === 'utility' ? 0xc58b40 : 0x5c8be8;
+  const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: feature.kind === 'building' ? .72 : .58 });
+  const drawLine = (points: LocalPoint[]) => {
+    if (points.length < 2) return;
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(([x, y]) => new THREE.Vector3(x, .03, -y))), material);
+    scene.add(line);
+  };
+  const drawPolygon = (points: LocalPoint[]) => {
+    if (points.length < 3) return;
+    const shape = new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(x, -y)));
+    const meshGeometry = feature.kind === 'building'
+      ? new THREE.ExtrudeGeometry(shape, { depth: 1.2, bevelEnabled: false })
+      : new THREE.ShapeGeometry(shape);
+    const mesh = new THREE.Mesh(meshGeometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: feature.kind === 'building' ? .3 : .12, side: THREE.DoubleSide }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = feature.kind === 'building' ? .08 : .01;
+    scene.add(mesh);
+    drawLine([...points, points[0]]);
+  };
+  if (geometry.type === 'LineString') drawLine(ringPoints(coordinates));
+  else if (geometry.type === 'MultiLineString') (Array.isArray(coordinates) ? coordinates : []).forEach((line) => drawLine(ringPoints(line)));
+  else if (geometry.type === 'Polygon') drawPolygon(ringPoints(Array.isArray(coordinates) ? coordinates[0] : []));
+  else if (geometry.type === 'MultiPolygon') (Array.isArray(coordinates) ? coordinates : []).forEach((polygon) => drawPolygon(ringPoints(Array.isArray(polygon) ? polygon[0] : [])));
+}
+
+type SceneReviewProps = { snapshot?: SceneSnapshot };
+
 function crownGeometry(object: ScenePlantObject, radius: number, height: number): THREE.BufferGeometry {
   switch (object.crown_shape) {
     case 'conical': return new THREE.ConeGeometry(radius, height, 12);
@@ -71,6 +107,11 @@ export function SceneReview({ snapshot, horizon, selectedIds, loading, error, on
     scene.add(ground);
     const grid = new THREE.GridHelper(maxDistance * 4, Math.min(80, Math.max(20, Math.round(maxDistance * 2))), 0xc7d0da, 0xdfe5eb);
     scene.add(grid);
+
+    // The DXF is the ground truth context. Draw its relevant footprints in
+    // the same local coordinate frame as plantings; never invent terrain or
+    // underground geometry here.
+    for (const feature of snapshot.context_features ?? []) addContextFeature(scene, feature);
 
     for (const object of snapshot.objects) {
       const group = new THREE.Group();
@@ -160,12 +201,12 @@ export function SceneReview({ snapshot, horizon, selectedIds, loading, error, on
 
   return <section className="scene-review" aria-label="Параметрический 3D-предпросмотр">
     <header className="scene-review__header">
-      <span><strong>3D-предпросмотр</strong><small>Упрощённая параметрическая сцена</small></span>
+      <span><strong>3D-предпросмотр</strong><small>Упрощённая параметрическая сцена</small><small>DXF-контекст</small></span>
       <div className="scene-review__horizons" aria-label="Горизонт роста"><GrowthHorizonSlider value={horizon} onChange={(next) => { if (next !== undefined) onHorizon(next); }} />{([0, 5, 10, 20] as const).map((value) => <Button key={value} variant={horizon === value ? 'primary' : 'ghost'} controlSize="compact" onClick={() => onHorizon(value)}>{value === 0 ? 'Сейчас' : `${value} лет`}</Button>)}</div>
       <Checkbox label="Корни" checked={showRoots} onChange={(event) => setShowRoots(event.target.checked)} />
       <Button variant="secondary" controlSize="compact" onClick={onClose}>Вернуться к карте</Button>
     </header>
     <div className="scene-review__viewport"><canvas ref={canvasRef} aria-label="3D-сцена посадок" />{loading ? <div className="scene-review__status">Готовим сцену</div> : null}{error || renderError ? <div className="scene-review__message"><InlineMessage tone="error">{error ?? renderError}</InlineMessage></div> : null}</div>
-    <footer><span>{snapshot?.objects.length ?? 0} объектов</span><span>Выбрано: {selectedIds.length}</span><span>Рельеф и высоты зданий не заданы</span></footer>
+    <footer><span>{snapshot?.objects.length ?? 0} посадок</span><span>Выбрано: {selectedIds.length}</span><span className="scene-review__legend"><i className="is-road" /> дороги <i className="is-building" /> здания <i className="is-water" /> вода</span><span>Рельеф и высоты зданий не заданы</span></footer>
   </section>;
 }
