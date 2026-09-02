@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { Button, Dialog, EmptyState, FormField, IconButton, InlineMessage, NumberStepper, Progress, Select, StepProgress, TextInput } from './index';
+import { Button, Checkbox, Dialog, Disclosure, EmptyState, FormField, IconButton, InlineMessage, NumberStepper, Progress, Select, StepProgress, TextInput } from './index';
 import { Plus } from 'lucide-react';
 
 describe('Button', () => {
@@ -41,9 +41,20 @@ describe('Button', () => {
   it('keeps step progress and numeric changes accessible', () => {
     const onChange = vi.fn();
     render(<><StepProgress current={1} steps={[{ id: 'goal', label: 'Цель' }, { id: 'zones', label: 'Участки' }]} /><NumberStepper label="Деревья" value={12} onChange={onChange} /></>);
-    expect(screen.getByText('Шаг 2 из 2')).toBeInTheDocument();
+    expect(screen.getByText('Участки')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveAccessibleName('Этапы настройки: 2 из 2, Участки');
+    expect(screen.queryByText(/Шаг/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Увеличить: Деревья' }));
     expect(onChange).toHaveBeenCalledWith(13);
+  });
+
+  it('exposes disclosure and custom checkbox semantics', () => {
+    render(<><Disclosure title="Дополнительно"><span>Настройка</span></Disclosure><Checkbox label="Рабочий участок" /></>);
+    const trigger = screen.getByRole('button', { name: 'Дополнительно' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Рабочий участок' })).toBeInTheDocument();
   });
 
   it('accepts large numeric values from the keyboard', () => {

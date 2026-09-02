@@ -221,17 +221,35 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-unit-input { position: relative; display: block; }
 .ui-unit-input .ui-input { padding-right: 38px; font-family: var(--font-mono); }
 .ui-unit-input__unit { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 12px; pointer-events: none; }
-.ui-checkbox { @apply inline-flex cursor-pointer items-center gap-2 text-neutral-700; font-size: 14px; }
-.ui-checkbox input { width: 16px; height: 16px; accent-color: var(--primary); }
+.ui-checkbox { position: relative; min-height: 40px; display: inline-flex; align-items: center; gap: 10px; color: var(--color-neutral-700); font-size: 14px; line-height: 20px; cursor: pointer; }
+.ui-checkbox input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.ui-checkbox__control { width: 18px; height: 18px; display: inline-flex; flex: none; align-items: center; justify-content: center; border: 1px solid var(--color-neutral-400); border-radius: 3px; color: transparent; background: var(--surface); transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease; }
+.ui-checkbox__control svg { width: 14px; height: 14px; stroke-width: 2; }
+.ui-checkbox:hover .ui-checkbox__control { border-color: var(--color-neutral-700); }
+.ui-checkbox input:checked + .ui-checkbox__control { border-color: var(--primary); color: var(--color-white); background: var(--primary); }
+.ui-checkbox input:focus-visible + .ui-checkbox__control { outline: 2px solid var(--focus); outline-offset: 2px; }
+.ui-checkbox:has(input:disabled) { color: var(--color-neutral-400); cursor: not-allowed; }
+.ui-checkbox:has(input:disabled) .ui-checkbox__control { border-color: var(--color-neutral-300); background: var(--color-neutral-100); }
+.ui-checkbox__label { min-width: 0; }
 .ui-tooltip { display: inline-flex; }
 
-.ui-step-progress { display: flex; flex-direction: column; gap: 10px; }
+.ui-disclosure { overflow: hidden; border: 1px solid var(--color-neutral-300); border-radius: var(--radius-control); background: var(--surface); }
+.ui-disclosure__trigger { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px; border: 0; color: var(--color-neutral-700); background: transparent; font: inherit; font-size: 12px; line-height: 18px; font-weight: 600; text-align: left; cursor: pointer; user-select: none; }
+.ui-disclosure__trigger:hover { background: var(--color-neutral-100); }
+.ui-disclosure__trigger:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--focus); outline-offset: -2px; }
+.ui-disclosure__trigger > svg { width: 16px; height: 16px; flex: none; color: var(--color-neutral-500); transition: transform 180ms ease; }
+.ui-disclosure[data-expanded] .ui-disclosure__trigger { background: var(--color-neutral-100); }
+.ui-disclosure[data-expanded] .ui-disclosure__trigger > svg { transform: rotate(180deg); }
+.ui-disclosure__reveal { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 180ms ease, visibility 0s linear 180ms; }
+.ui-disclosure[data-expanded] .ui-disclosure__reveal { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 180ms ease; }
+.ui-disclosure__content { min-height: 0; display: flex; flex-direction: column; gap: 16px; overflow: hidden; padding: 0 16px; border-top: 0 solid var(--color-neutral-200); transition: padding 180ms ease, border-top-width 180ms ease; }
+.ui-disclosure[data-expanded] .ui-disclosure__content { padding: 14px 16px 16px; border-top-width: 1px; }
+
+.ui-step-progress { display: flex; flex-direction: column; gap: 8px; }
 .ui-step-progress__track { display: flex; gap: 6px; width: 100%; }
 .ui-step-progress__track span { height: 3px; flex: 1; background: var(--color-neutral-200); }
-.ui-step-progress__track span.is-complete { background: var(--primary); }
-.ui-step-progress__label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.ui-step-progress__label b { color: var(--color-blue-700); font-family: var(--font-mono); font-size: 11px; line-height: 16px; font-weight: 400; }
-.ui-step-progress__label em { overflow: hidden; color: var(--color-neutral-500); font-size: 12px; line-height: 16px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.ui-step-progress__track span.is-complete, .ui-step-progress__track span.is-current { background: var(--primary); }
+.ui-step-progress__label { overflow: hidden; color: var(--color-neutral-700); font-size: 12px; line-height: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 
 .ui-number-stepper { --control-height: var(--control-height-default); height: var(--control-height); display: inline-flex; flex: none; overflow: hidden; border: 1px solid var(--color-neutral-300); border-radius: var(--radius-control); background: var(--surface); }
 .ui-number-stepper button, .ui-number-stepper input { height: 100%; display: flex; align-items: center; justify-content: center; }

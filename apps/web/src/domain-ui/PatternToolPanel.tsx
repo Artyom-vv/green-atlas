@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FillPatternRequest, PatternPreview, PlantingZoneAssignment, RowPatternRequest, SpeciesRevision, SpeciesShortlistItem } from '@green/api-client';
-import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select, StepProgress } from '@green/ui';
+import { Button, Checkbox, Disclosure, FormField, InlineMessage, NumberStepper, Select, StepProgress } from '@green/ui';
 import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
 import { forecastAt } from './growthForecast';
 import { sourceLayerLabel } from './sourceLabels';
-import { Accordion } from './Accordion';
 
 type Axis = RowPatternRequest['axis'];
 type PatternDraft = Omit<RowPatternRequest, 'base_plan_version'> | Omit<FillPatternRequest, 'base_plan_version'>;
@@ -153,18 +152,15 @@ export function PatternToolPanel({ mode, zones, species, shortlist, shortlistLoa
       {selectedSpecies ? (() => { const forecast = forecastAt(selectedSpecies.canopy_forecast, growthHorizon ?? 20); const rootLabel = selectedSpecies.root_architecture === 'shallow' ? 'поверхностные' : selectedSpecies.root_architecture === 'deep' ? 'глубокие' : selectedSpecies.root_architecture === 'mixed' ? 'смешанные' : 'не подтверждены'; const crownClass = selectedSpecies.mature_crown_diameter_max_m <= 5 ? 'компактная крона' : selectedSpecies.mature_crown_diameter_max_m <= 8 ? 'средняя крона' : 'широкая крона'; return <section className="species-preview-card"><span><strong>{selectedSpecies.common_name}</strong><small>{rootLabel} корни</small></span><span><b>{forecast ? `${(forecast.radius_min_m * 2).toFixed(1)}–${(forecast.radius_max_m * 2).toFixed(1)} м` : 'нет прогноза'}</b><small>{crownClass}</small></span></section>; })() : null}
       {selectedSpecies && onGrowthHorizon ? <GrowthHorizonControl value={growthHorizon} forecasts={[selectedSpecies]} onChange={onGrowthHorizon} /> : null}
       {composition === 'mixed' ? <FormField label="Порода кустарника"><Select aria-label="Порода кустарника" value={shrubSpeciesId} onChange={(event) => setShrubSpeciesId(event.target.value)}>{availableShrubs.map((item) => <option key={item.id} value={item.id}>{item.common_name}</option>)}</Select></FormField> : null}
-      <Accordion title="Дополнительные настройки">
+      {mode === 'row' ? <Disclosure title="Дополнительные настройки">
         <FormField label="Плотность группы"><Select value={spacingPolicy} onChange={(event) => setSpacingPolicy(event.target.value as typeof spacingPolicy)}><option value="canopy">Плотно, кроны сомкнутся</option><option value="balanced">Естественно</option><option value="open">Свободно</option></Select></FormField>
         {mode === 'row' ? <FormField label="Сторона оси"><Select value={side} onChange={(event) => setSide(event.target.value as typeof side)}><option value="center">По оси</option><option value="left">Слева</option><option value="right">Справа</option><option value="both">С двух сторон</option></Select></FormField> : null}
         {mode === 'row' ? <FormField label="Задать ряд"><Select value={rowPlacementMode} onChange={(event) => setRowPlacementMode(event.target.value as typeof rowPlacementMode)}><option value="count">По количеству</option><option value="spacing">По шагу</option></Select></FormField> : null}
         {mode === 'row' && rowPlacementMode === 'count' ? <div className="pattern-tool-panel__setting"><span>Количество</span><NumberStepper label="Количество посадок" value={targetCount} onChange={setTargetCount} min={2} max={5000} step={10} /></div> : null}
-        {mode === 'fill' ? <FormField label="Объём"><Select aria-label="Объём посадок" value={fillVolume} onChange={(event) => setFillVolume(event.target.value as typeof fillVolume)}><option value="recommended">Подобрать количество</option><option value="exact">Задать количество</option></Select></FormField> : null}
-        {mode === 'fill' && fillVolume === 'exact' ? <div className="pattern-tool-panel__setting"><span>Количество</span><NumberStepper label="Количество посадок" value={targetCount} onChange={setTargetCount} min={1} max={5000} step={10} /></div> : null}
         {mode === 'row' && rowPlacementMode === 'spacing' ? <div className="pattern-tool-panel__setting"><span>Шаг, м</span><NumberStepper label="Шаг между посадками" value={spacing} onChange={setSpacing} min={plantKind === 'tree' ? 5 : 1.6} max={30} step={plantKind === 'tree' ? 0.5 : 0.2} /></div> : null}
         {mode === 'row' && side !== 'center' ? <div className="pattern-tool-panel__setting"><span>От оси, м</span><NumberStepper label="Поперечный отступ" value={lateralOffset} onChange={setLateralOffset} min={0.5} max={30} step={0.5} /></div> : null}
         {mode === 'row' ? <><div className="pattern-tool-panel__setting"><span>От начала, м</span><NumberStepper label="Отступ от начала" value={startOffset} onChange={setStartOffset} min={0} max={100} step={0.5} /></div><div className="pattern-tool-panel__setting"><span>От конца, м</span><NumberStepper label="Отступ от конца" value={endOffset} onChange={setEndOffset} min={0} max={100} step={0.5} /></div></> : null}
-      </Accordion>
-      {mode === 'fill' && fillVolume === 'recommended' ? <p className="pattern-capacity-note">Проверим до {recommendedCount} мест и покажем результат</p> : null}
+      </Disclosure> : <div className="pattern-tool-panel__quantity"><Button variant="ghost" onClick={() => setFillVolume((current) => current === 'recommended' ? 'exact' : 'recommended')}>{fillVolume === 'recommended' ? 'Задать количество' : 'Подбирать автоматически'}</Button>{fillVolume === 'exact' ? <NumberStepper label="Количество посадок" value={targetCount} onChange={setTargetCount} min={1} max={5000} step={10} /> : null}</div>}
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}
       </> : null}
       </>}

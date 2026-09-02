@@ -170,14 +170,28 @@ export function Combobox({ value, options, placeholder = 'Выберите', emp
 }
 
 export function Checkbox({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode }) {
-  return <label className={cx('ui-checkbox', className)}><input type="checkbox" {...props} /><span>{label}</span></label>;
+  return <label className={cx('ui-checkbox', className)}>
+    <input type="checkbox" {...props} />
+    <span className="ui-checkbox__control" aria-hidden="true"><Check /></span>
+    <span className="ui-checkbox__label">{label}</span>
+  </label>;
+}
+
+export function Disclosure({ title, children, open = false, className }: { title: ReactNode; children: ReactNode; open?: boolean; className?: string }) {
+  const [expanded, setExpanded] = useState(open);
+  const contentId = useId();
+  return <section className={cx('ui-disclosure', className)} data-expanded={expanded || undefined}>
+    <button type="button" className="ui-disclosure__trigger" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((current) => !current)}><span>{title}</span><ChevronDown aria-hidden="true" /></button>
+    <div id={contentId} className="ui-disclosure__reveal" aria-hidden={!expanded}><div className="ui-disclosure__content">{children}</div></div>
+  </section>;
 }
 
 export function StepProgress({ steps, current, label = 'Этапы настройки', className }: { steps: Array<{ id: string; label: string }>; current: number; label?: string; className?: string }) {
   const active = Math.max(0, Math.min(current, Math.max(0, steps.length - 1)));
-  return <div className={cx('ui-step-progress', className)} aria-label={label}>
-    <div className="ui-step-progress__track" aria-hidden="true">{steps.map((step, index) => <span key={step.id} className={index <= active ? 'is-complete' : undefined} />)}</div>
-    <span className="ui-step-progress__label"><b>Шаг {active + 1} из {steps.length}</b><em>{steps[active]?.label}</em></span>
+  const currentLabel = steps[active]?.label ?? '';
+  return <div className={cx('ui-step-progress', className)} role="status" aria-label={`${label}: ${active + 1} из ${steps.length}, ${currentLabel}`}>
+    <div className="ui-step-progress__track" aria-hidden="true">{steps.map((step, index) => <span key={step.id} className={cx(index < active && 'is-complete', index === active && 'is-current')} />)}</div>
+    <strong className="ui-step-progress__label">{currentLabel}</strong>
   </div>;
 }
 

@@ -538,10 +538,21 @@ test('workspace panels do not remount or blank the map canvas', async ({ page })
   await viewport.evaluate((element) => element.setAttribute('data-e2e-map-instance', 'persistent'));
   const initialCanvases = await map.locator('canvas').count();
   expect(initialCanvases).toBeGreaterThan(0);
+  const initialMapBox = await map.boundingBox();
+  const initialToolbarBox = await page.locator('.map-edit-tools').boundingBox();
   await page.getByRole('button', { name: 'Развернуть слои' }).click();
+  const openMapBox = await map.boundingBox();
+  const openToolbarBox = await page.locator('.map-edit-tools').boundingBox();
+  expect(Math.abs(openMapBox!.width - initialMapBox!.width)).toBeLessThan(1);
+  expect(Math.abs(openToolbarBox!.x - initialToolbarBox!.x)).toBeLessThan(1);
   await page.getByRole('button', { name: 'Свернуть слои' }).click();
   await page.getByRole('button', { name: 'Развернуть панель' }).click();
   await page.getByRole('button', { name: 'Свернуть инспектор' }).click();
+  const dockBox = await page.locator('.right-dock').boundingBox();
+  const viewSwitchBox = await page.locator('.map-view-switch').boundingBox();
+  const collapsedMapBox = await map.boundingBox();
+  expect(Math.abs(dockBox!.y - collapsedMapBox!.y)).toBeLessThan(1);
+  expect(viewSwitchBox!.x + viewSwitchBox!.width).toBeLessThanOrEqual(dockBox!.x - 8);
   await page.getByRole('button', { name: 'Развернуть панель' }).click();
   await page.getByRole('button', { name: 'Проверка' }).click();
   await expect(page.getByText('Проверка плана', { exact: true })).toBeVisible();
@@ -937,7 +948,7 @@ test('placement flow creates a typed group across the selected area as one revis
   await expect(horizon).toHaveValue('0');
   await horizon.fill('23');
   await expect(page.getByText('23 года')).toBeVisible();
-  await page.getByLabel('Объём посадок').selectOption('exact');
+  await page.getByRole('button', { name: 'Задать количество' }).click();
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
   const placementPreview = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
     && response.request().method() === 'POST'
@@ -993,7 +1004,7 @@ test('primary workspace previews only after explicit confirmation and accepts a 
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
   await page.getByLabel('Состав группы').selectOption('mixed');
   await page.getByLabel('Плотность группы').selectOption('canopy');
-  await page.getByLabel('Объём посадок').selectOption('exact');
+  await page.getByRole('button', { name: 'Задать количество' }).click();
   const count = page.getByRole('spinbutton', { name: 'Количество посадок' });
   const previewResponse = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
     && response.request().method() === 'POST'
@@ -1008,7 +1019,7 @@ test('primary workspace previews only after explicit confirmation and accepts a 
   expect(preview.accepted_count + preview.rejected_count + preview.capacity_shortfall).toBe(5000);
   expect(previewRequests).toBe(1);
   await expect(page.getByText(preview.accepted_count ? `Найдено ${preview.accepted_count}` : 'Мест не найдено')).toBeVisible();
-  await expect(page.getByText('Шаг 3 из 3')).toBeVisible();
+  await expect(page.getByText('Проверка', { exact: true })).toBeVisible();
 });
 
 test('working areas remain manageable after the editor is opened', async ({ page }) => {
@@ -1016,7 +1027,7 @@ test('working areas remain manageable after the editor is opened', async ({ page
   await openManualPlan(page);
   const projectId = new URL(page.url()).pathname.split('/')[2];
 
-  await page.getByRole('button', { name: 'Рабочие участки' }).click();
+  await page.getByRole('button', { name: 'Участки', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Рабочие участки' })).toBeVisible();
   const name = page.getByRole('textbox', { name: 'Название участка 1: Контур DXF: тестовая область' });
   await name.fill('Главная аллея');
@@ -1042,7 +1053,7 @@ test('working areas remain manageable after the editor is opened', async ({ page
   ] } });
   expect(added.ok(), await added.text()).toBeTruthy();
   await page.reload();
-  await page.getByRole('button', { name: 'Рабочие участки' }).click();
+  await page.getByRole('button', { name: 'Участки', exact: true }).click();
 
   await expect(page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' })).toBeDisabled();
   await page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' }).hover();
@@ -1522,7 +1533,7 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.locator('.pattern-tool-panel input[type="checkbox"]:checked')).toHaveCount(1);
   await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
-  await page.getByLabel('Объём посадок').selectOption('exact');
+  await page.getByRole('button', { name: 'Задать количество' }).click();
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('60');
 
   await page.getByLabel('Состав группы').selectOption('mixed');
@@ -1691,7 +1702,7 @@ test('dense Kitay-gorod DXF preserves local obstacles and stays visible after na
   await expect(page.locator('.pattern-tool-panel input[type="checkbox"]:checked')).toHaveCount(1);
   await page.getByLabel('Состав группы').selectOption('mixed');
   await page.getByLabel('Плотность группы').selectOption('canopy');
-  await page.getByLabel('Объём посадок').selectOption('exact');
+  await page.getByRole('button', { name: 'Задать количество' }).click();
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('30');
 
   const previewResponse = page.waitForResponse((response) => {

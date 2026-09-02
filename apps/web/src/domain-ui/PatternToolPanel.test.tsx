@@ -19,7 +19,7 @@ describe('PatternToolPanel', () => {
 
     expect(screen.getByRole('checkbox', { name: 'Западный участок' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Восточный участок' })).toBeChecked();
-    fireEvent.change(screen.getByLabelText('Объём посадок'), { target: { value: 'exact' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Задать количество' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Количество посадок' }), { target: { value: '5000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
 
@@ -162,7 +162,7 @@ describe('PatternToolPanel', () => {
       estimated_capacity: 1200, estimated_mature_diameter_m: 8, reasons: [],
     }]} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
 
-    expect(screen.getByText('Проверим до 40 мест и покажем результат')).toBeVisible();
+    expect(screen.queryByText('Проверим до 40 мест и покажем результат')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ target_count: 40 }));
   });
@@ -214,10 +214,12 @@ describe('PatternToolPanel', () => {
     expect(screen.getByText('шаг 7.4 м')).toBeVisible();
   });
 
-  it('keeps secondary placement settings behind one native accordion', () => {
+  it('uses a disclosure only when several row settings are available', () => {
+    render(<PatternToolPanel mode="row" zones={zones} species={species} axis={{ type: 'LineString', coordinates: [[0, 0], [10, 0]] }} selectedZoneIds={['west']} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Дополнительные настройки' })).toHaveAttribute('aria-expanded', 'false');
+    cleanup();
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} onPreview={vi.fn()} onCancel={vi.fn()} />);
-    const accordion = screen.getByText('Дополнительные настройки').closest('details');
-    expect(accordion).not.toHaveAttribute('open');
-    expect(screen.getByText('Дополнительные настройки')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Дополнительные настройки' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Задать количество' })).toBeVisible();
   });
 });

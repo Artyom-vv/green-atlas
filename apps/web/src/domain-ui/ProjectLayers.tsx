@@ -1,11 +1,11 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import type { Layer } from '@green/api-client';
-import { Eye, EyeOff, MapPinned, PanelLeftClose, Search } from 'lucide-react';
+import { Eye, EyeOff, PanelLeftClose, Search } from 'lucide-react';
 import { IconButton } from '@green/ui';
 
 const kindLabels: Record<string, string> = { site_border: 'Границы участка', building: 'Здания', road: 'Дороги и проезды', utility: 'Инженерные сети', existing_green: 'Существующее озеленение', water: 'Водные объекты', restricted: 'Технические зоны', ignore: 'Не используется' };
 
-export function ProjectLayers({ layers, visibility, activeLayerId, onVisibility, onSelect, onZones, onClose }: { layers: Layer[]; visibility: Record<string, boolean>; activeLayerId?: string; onVisibility: (layerId: string, visible: boolean) => void; onSelect: (layerId: string) => void; onZones?: () => void; onClose?: () => void }) {
+export function ProjectLayers({ layers, visibility, activeLayerId, onVisibility, onSelect, onClose }: { layers: Layer[]; visibility: Record<string, boolean>; activeLayerId?: string; onVisibility: (layerId: string, visible: boolean) => void; onSelect: (layerId: string) => void; onClose?: () => void }) {
   const [query, setQuery] = useState('');
   const visibleLayers = useMemo(() => {
     const value = query.trim().toLocaleLowerCase('ru');
@@ -14,7 +14,7 @@ export function ProjectLayers({ layers, visibility, activeLayerId, onVisibility,
   }, [layers, query]);
   return (
     <div className="layers-rail">
-      <header><strong>Слои</strong><span>{onZones ? <IconButton icon={MapPinned} label="Рабочие участки" variant="ghost" onClick={onZones} /> : null}{onClose ? <IconButton icon={PanelLeftClose} label="Свернуть слои" variant="ghost" onClick={onClose} /> : null}</span></header>
+      <header><strong>Слои</strong><span>{onClose ? <IconButton icon={PanelLeftClose} label="Свернуть слои" variant="ghost" onClick={onClose} /> : null}</span></header>
       <label className="layer-search"><Search size={16} /><input aria-label="Найти слой" placeholder="Найти слой" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
       <div className="layer-list">
         {visibleLayers.map((layer) => {
