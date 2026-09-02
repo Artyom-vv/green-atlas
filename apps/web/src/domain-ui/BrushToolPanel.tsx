@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BrushPreview, BrushPreviewRequest, BrushStroke, PlantingZoneAssignment } from '@green/api-client';
 import { Button, Checkbox, FormField, InlineMessage, NumberStepper, Select } from '@green/ui';
+import { Accordion } from './Accordion';
 
 type BrushDraft = Omit<BrushPreviewRequest, 'base_plan_version'>;
 
@@ -52,9 +53,11 @@ export function BrushToolPanel({ strokes, zones, zoneIds, width, operation, prev
       </fieldset>
       <FormField label="Режим"><Select aria-label="Режим кисти" value={operation} onChange={(event) => onOperation(event.target.value as typeof operation)}><option value="add">Добавлять посадки</option><option value="subtract">Убирать посадки</option></Select></FormField>
       <FormField label="Состав"><Select aria-label="Состав кисти" value={composition} onChange={(event) => setComposition(event.target.value as typeof composition)}><option value="trees">Деревья</option><option value="shrubs">Кустарники</option><option value="mixed">Смешанный</option></Select></FormField>
-      {composition === 'mixed' ? <div className="brush-tool-panel__setting"><span>Доля деревьев, %</span><NumberStepper label="Доля деревьев" value={treeShare} onChange={setTreeShare} min={0} max={100} step={10} /></div> : null}
-      <FormField label="Плотность"><Select aria-label="Плотность кисти" value={density} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="sparse">Редкая</option><option value="balanced">Средняя</option><option value="dense">Плотная</option></Select></FormField>
       <div className="brush-tool-panel__setting"><span>Диаметр, м</span><NumberStepper label="Диаметр кисти" value={width} onChange={onWidth} min={2} max={100} step={2} /></div>
+      <Accordion title="Дополнительные настройки">
+        {composition === 'mixed' ? <div className="brush-tool-panel__setting"><span>Доля деревьев, %</span><NumberStepper label="Доля деревьев" value={treeShare} onChange={setTreeShare} min={0} max={100} step={10} /></div> : null}
+        <FormField label="Плотность"><Select aria-label="Плотность кисти" value={density} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="sparse">Редкая</option><option value="balanced">Средняя</option><option value="dense">Плотная</option></Select></FormField>
+      </Accordion>
       {preview ? <section className="brush-preview-summary" aria-live="polite"><strong>{operation === 'subtract' ? `Будет убрано ${preview.removed_count}` : `Найдено ${preview.added_count}`}</strong>{preview.skipped.length ? <span>Часть мест исключена</span> : <span>Все места проходят проверку</span>}</section> : null}
       {strokes.length ? <Button variant="ghost" onClick={onClear}>Очистить мазки</Button> : null}
       {error ? <InlineMessage tone="error">{error}</InlineMessage> : null}

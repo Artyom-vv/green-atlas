@@ -213,4 +213,11 @@ describe('PatternToolPanel', () => {
     expect(screen.queryByRole('spinbutton', { name: 'Шаг между посадками' })).not.toBeInTheDocument();
     expect(screen.getByText('шаг 7.4 м')).toBeVisible();
   });
+
+  it('keeps secondary placement settings behind one native accordion', () => {
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    const accordion = screen.getByText('Дополнительные настройки').closest('details');
+    expect(accordion).not.toHaveAttribute('open');
+    expect(screen.getByText('Дополнительные настройки')).toBeVisible();
+  });
 });

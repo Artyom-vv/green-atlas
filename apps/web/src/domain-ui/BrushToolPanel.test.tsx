@@ -16,4 +16,10 @@ describe('BrushToolPanel', () => {
     fireEvent.change(screen.getByLabelText('Состав кисти'), { target: { value: 'mixed' } });
     await waitFor(() => expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ zone_ids: ['work'], strokes, composition: 'mixed', spacing_m: 4, max_sites: 500 })));
   });
+
+  it('keeps the mixed composition split out of the primary brush flow', () => {
+    render(<BrushToolPanel strokes={[]} zones={[]} zoneIds={[]} width={12} operation="add" onZoneIdsChange={vi.fn()} onWidth={vi.fn()} onOperation={vi.fn()} onPreview={vi.fn()} onApply={vi.fn()} onClear={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByText('Дополнительные настройки')).toBeVisible();
+    expect(screen.getByLabelText('Плотность кисти')).not.toBeVisible();
+  });
 });
