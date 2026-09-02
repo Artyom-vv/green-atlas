@@ -1183,6 +1183,94 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   await expect(page.getByRole('button', { name: /Отменить: Ряд посадок/ })).toBeEnabled();
 });
 
+test('row placement stays interactive on VDNKH and supports DXF or manual axes', async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/projects/new/import');
+  await page.setInputFiles('input[type=file]', largeFixture);
+  await expect(page).toHaveURL(/\/setup$/, { timeout: 15_000 });
+  await page.getByRole('button', { name: 'Подготовить карту' }).click();
+  await expect(page).toHaveURL(/\/workspace$/, { timeout: 25_000 });
+  await expect(page.getByRole('heading', { name: 'Выберите место' })).toBeVisible();
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  await saveFirstCalculatedArea(page, projectId, 'Рабочий фрагмент ВДНХ');
+  await page.getByRole('button', { name: 'Открыть редактор' }).click();
+
+  const map = page.getByLabel('Карта проекта озеленения');
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  await expect(page.locator('.map-stream-status')).toHaveCount(0, { timeout: 15_000 });
+  const rowTool = page.getByRole('button', { name: 'Посадки вдоль линии' });
+  const activationStarted = performance.now();
+  await rowTool.click({ timeout: 3_000 });
+  await expect(page.getByText('Выберите линию на карте')).toBeVisible({ timeout: 3_000 });
+  expect(performance.now() - activationStarted).toBeLessThan(3_000);
+  await expect(rowTool).toHaveAttribute('aria-pressed', 'true');
+
+  // Shift keeps the intentionally separate contract for a hand-drawn axis.
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  await page.keyboard.down('Shift');
+  // The inspector overlays the right side of the map; keep the complete
+  // gesture on the exposed canvas instead of ending it below the panel.
+  await page.mouse.click(box!.x + box!.width * .22, box!.y + box!.height * .42, { delay: 60 });
+  await page.mouse.click(box!.x + box!.width * .32, box!.y + box!.height * .48, { delay: 60 });
+  await page.mouse.dblclick(box!.x + box!.width * .42, box!.y + box!.height * .54, { delay: 60 });
+  await page.keyboard.up('Shift');
+  await expect(page.getByText('Линия выбрана')).toBeVisible();
+  await expect(page.getByText('Нарисована вручную')).toBeVisible();
+
+  // Pick a rendered DXF segment slightly away from its centreline. This
+  // exercises the bounded nearest-line fallback rather than a full-map scan.
+  const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number) as [number, number, number, number];
+  const resolution = Number(await map.getAttribute('data-view-resolution'));
+  const query = new URLSearchParams({
+    min_x: String(extent[0]), min_y: String(extent[1]), max_x: String(extent[2]), max_y: String(extent[3]), resolution: String(resolution),
+  });
+  const mapFeaturesResponse = await page.request.get(`${apiBase}/projects/${projectId}/map-features?${query}`);
+  expect(mapFeaturesResponse.ok(), await mapFeaturesResponse.text()).toBeTruthy();
+  type LinearGeometry = { type: 'LineString'; coordinates: number[][] } | { type: 'MultiLineString'; coordinates: number[][][] };
+  const mapFeatures = (await mapFeaturesResponse.json() as {
+    feature_collection: { features: Array<{ geometry?: LinearGeometry | { type: string }; properties?: { kind?: string } }> };
+  }).feature_collection.features;
+  const pixelFor = (coordinate: number[]) => ({
+    x: box!.x + (coordinate[0] - extent[0]) / (extent[2] - extent[0]) * box!.width,
+    y: box!.y + (extent[3] - coordinate[1]) / (extent[3] - extent[1]) * box!.height,
+  });
+  const sourceSegments = mapFeatures.flatMap((feature) => {
+    if (feature.properties?.kind === 'allowed' || feature.properties?.kind === 'planting_area') return [];
+    const lines = feature.geometry?.type === 'LineString'
+      ? [(feature.geometry as LinearGeometry & { type: 'LineString' }).coordinates]
+      : feature.geometry?.type === 'MultiLineString'
+        ? (feature.geometry as LinearGeometry & { type: 'MultiLineString' }).coordinates
+        : [];
+    return lines.flatMap((coordinates) => coordinates.slice(1).map((end, index) => ({ start: coordinates[index], end })));
+  });
+  const segment = sourceSegments.find(({ start, end }) => {
+    const midpoint = pixelFor([(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]);
+    return midpoint.x > box!.x + 80 && midpoint.x < box!.x + box!.width - 520
+      && midpoint.y > box!.y + 80 && midpoint.y < box!.y + box!.height - 80;
+  });
+  expect(segment, 'VDNKH map snapshot must expose a visible selectable source segment').toBeDefined();
+  const startPixel = pixelFor(segment!.start);
+  const endPixel = pixelFor(segment!.end);
+  const midpoint = { x: (startPixel.x + endPixel.x) / 2, y: (startPixel.y + endPixel.y) / 2 };
+  const segmentLength = Math.hypot(endPixel.x - startPixel.x, endPixel.y - startPixel.y) || 1;
+  const linePixel = {
+    x: midpoint.x - (endPixel.y - startPixel.y) / segmentLength * 12,
+    y: midpoint.y + (endPixel.x - startPixel.x) / segmentLength * 12,
+  };
+  const selectionStarted = performance.now();
+  await page.mouse.click(linePixel.x, linePixel.y);
+  await expect(page.getByText('Нарисована вручную')).toHaveCount(0, { timeout: 3_000 });
+  await expect(page.locator('.pattern-tool-panel__axis dd').last()).toContainText(/\d+\.\d м/);
+  expect(performance.now() - selectionStarted).toBeLessThan(3_000);
+
+  await page.screenshot({ path: testInfo.outputPath('vdnkh-row-axis-responsive.png'), fullPage: true });
+  await page.keyboard.press('Escape');
+  await expect(rowTool).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByText('Ряд посадок', { exact: true })).toHaveCount(0);
+});
+
 test('species assignment adds crown and root horizons without reloading the DXF', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);

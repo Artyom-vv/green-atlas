@@ -22,6 +22,7 @@ import MouseWheelZoom from 'ol/interaction/MouseWheelZoom';
 import Snap from 'ol/interaction/Snap';
 import Translate from 'ol/interaction/Translate';
 import { defaults as defaultInteractions } from 'ol/interaction/defaults';
+import { never } from 'ol/events/condition';
 import { Fill, Stroke, Style, Circle as CircleStyle, Icon, Text as TextStyle } from 'ol/style';
 import type { FeatureLike } from 'ol/Feature';
 import type { Extent } from 'ol/extent';
@@ -454,6 +455,38 @@ export type MapViewportHandle = {
 export type PlacementPreview = { coordinate: [number, number]; radius: number; status: 'allowed' | 'blocked' | 'unknown' };
 export type BrushDrawMode = 'replace' | 'append' | 'subtract';
 
+/**
+ * Find a row axis only inside the pointer tolerance.
+ *
+ * VectorSource keeps an R-tree for its features. Querying the small pointer
+ * extent is important on city-scale DXFs: materialising every feature and
+ * calling getClosestPoint() on all of them blocks the browser event loop.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- exported for a deterministic performance regression test.
+export function nearestLineFeature(
+  sources: readonly VectorSource[],
+  coordinate: [number, number],
+  maxDistance: number,
+): Feature | undefined {
+  const searchExtent: Extent = [
+    coordinate[0] - maxDistance,
+    coordinate[1] - maxDistance,
+    coordinate[0] + maxDistance,
+    coordinate[1] + maxDistance,
+  ];
+  let nearest: { feature: Feature; distance: number } | undefined;
+  for (const source of sources) {
+    source.forEachFeatureInExtent(searchExtent, (candidate) => {
+      const geometry = candidate.getGeometry();
+      if (!(geometry instanceof LineString) && !(geometry instanceof MultiLineString)) return;
+      const point = geometry.getClosestPoint(coordinate);
+      const distance = Math.hypot(point[0] - coordinate[0], point[1] - coordinate[1]);
+      if (distance <= maxDistance && (!nearest || distance < nearest.distance)) nearest = { feature: candidate, distance };
+    });
+  }
+  return nearest?.feature;
+}
+
 const selectionMode = (event?: Event): SelectionMode => {
   const input = event as MouseEvent | KeyboardEvent | undefined;
   if (input?.altKey || input?.ctrlKey || input?.metaKey) return 'subtract';
@@ -522,7 +555,11 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const rebuildSnapTargets = () => {
     const target = snapTargetSourceRef.current;
     target.clear();
-    if (toolRef.current !== 'draw_area' && toolRef.current !== 'pattern_row') return;
+    // Existing row axes are selected with a local spatial-index query, while
+    // Shift draws a free manual axis. Feeding the whole CAD snapshot to Snap
+    // here makes OpenLayers synchronously derive segment intersections and
+    // freezes dense drawings before the operator has even touched the map.
+    if (toolRef.current !== 'draw_area') return;
     const candidates = [baseSourceRef.current, constraintSourceRef.current, planSourceRef.current]
       .flatMap((source) => source.getFeatures())
       .sort((a, b) => {
@@ -734,20 +771,19 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     map.on('singleclick', (event) => {
       const activeTool = toolRef.current;
       if (activeTool === 'pattern_row' && !(event.originalEvent as PointerEvent).shiftKey) {
-        const directHit = (map.getFeaturesAtPixel(event.pixel, {
+        const directHit = map.forEachFeatureAtPixel(event.pixel, (candidate) => {
+          const geometry = candidate.getGeometry();
+          return geometry instanceof LineString || geometry instanceof MultiLineString ? candidate as Feature : undefined;
+        }, {
           layerFilter: (layer) => layer === baseLayer || layer === constraintLayer,
           hitTolerance: 10,
-        }) as Feature[]).find((candidate) => candidate.getGeometry() instanceof LineString || candidate.getGeometry() instanceof MultiLineString);
+        }) as Feature | undefined;
         const maxDistance = (map.getView().getResolution() ?? 1) * 24;
-        const nearest = directHit ? undefined : [...baseSourceRef.current.getFeatures(), ...constraintSourceRef.current.getFeatures()]
-          .flatMap((candidate) => {
-            const geometry = candidate.getGeometry();
-            if (!(geometry instanceof LineString) && !(geometry instanceof MultiLineString)) return [];
-            const point = geometry.getClosestPoint(event.coordinate);
-            return [{ candidate, distance: Math.hypot(point[0] - event.coordinate[0], point[1] - event.coordinate[1]) }];
-          })
-          .filter(({ distance }) => distance <= maxDistance)
-          .sort((left, right) => left.distance - right.distance)[0]?.candidate;
+        const nearest = directHit ? undefined : nearestLineFeature(
+          [baseSourceRef.current, constraintSourceRef.current],
+          [event.coordinate[0], event.coordinate[1]],
+          maxDistance,
+        );
         const lineFeature = directHit ?? nearest;
         const lineGeometry = lineFeature?.getGeometry();
         const lineSource = {
@@ -916,7 +952,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const activeDrawStyle = tool === 'brush' ? (_feature: FeatureLike, resolution: number) => new Style({
       stroke: new Stroke({ color: brushOperation === 'subtract' ? 'rgba(217,45,32,.28)' : 'rgba(34,92,255,.24)', width: Math.max(8, brushWidthM / Math.max(resolution, 0.0001)), lineCap: 'round', lineJoin: 'round' }),
     }) : drawStyle;
-    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', trace: tool === 'pattern_row', traceSource: tool === 'pattern_row' ? snapTargetSourceRef.current : undefined, style: activeDrawStyle, stopClick: true, condition: (event) => {
+    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', freehandCondition: never, style: activeDrawStyle, stopClick: true, condition: (event) => {
       const original = event.originalEvent as PointerEvent;
       return !spacePanRef.current && original.button === 0 && (tool !== 'pattern_row' || original.shiftKey);
     } });
@@ -930,7 +966,9 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         // The React state below owns the lasting visual selection. Keeping
         // Draw's transient feature would render the just-selected contour
         // twice and leave a stale polygon after it is removed in the panel.
-        areaDrawingSourceRef.current.clear();
+        // OpenLayers adds the completed feature to `source` after drawend is
+        // dispatched, so clearing synchronously here is too early.
+        requestAnimationFrame(() => areaDrawingSourceRef.current.removeFeature(event.feature));
       } else if (featureGeometry instanceof LineString) {
         const resolution = map.getView().getResolution() ?? 1;
         let coordinates = featureGeometry.getCoordinates();
@@ -943,7 +981,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         const geometry = { type: 'LineString' as const, coordinates };
         if (tool === 'brush') callbackRef.current.onDrawBrush?.({ mode: brushModeRef.current === 'subtract' ? 'subtract' : 'add', geometry }, brushModeRef.current);
         else callbackRef.current.onDrawAxis?.(geometry, { type: 'manual', label: 'Нарисована вручную' });
-        areaDrawingSourceRef.current.clear();
+        requestAnimationFrame(() => areaDrawingSourceRef.current.removeFeature(event.feature));
       }
     });
     map.addInteraction(draw);
@@ -1030,7 +1068,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     if (snapInteractionRef.current) map.removeInteraction(snapInteractionRef.current);
     snapInteractionRef.current = null;
     guideSource.clear();
-    if (tool !== 'draw_area' && tool !== 'pattern_row') return;
+    if (tool !== 'draw_area') return;
     rebuildSnapTargets();
     const snap = new Snap({ source: snapTargetSourceRef.current, edge: true, vertex: true, intersection: true, pixelTolerance: 12 });
     snap.on('snap', (event) => {
