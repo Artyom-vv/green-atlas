@@ -17,7 +17,7 @@ from starlette.datastructures import UploadFile
 from app import api as api_module
 from app import application as application_module
 from app.application import ProjectApplication
-from app.contracts import FillPatternRequest, LayerMapping, PlanObjectCreate, PlantingZoneAssignment
+from app.contracts import FillPatternRequest, GrowthEnvelopeForecast, LayerMapping, PlanObjectCreate, PlantingZoneAssignment
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
@@ -28,6 +28,7 @@ from app.main import app
 from app.operations.adapters import SqliteOperationRepository
 from app.planning.patterns import ShapelyCandidateGenerator, generate_fill
 from app.projects.adapters import SqliteProjectRepository
+from app.species.forecast import forecast_at
 from app.validation.adapters import RuleBasedPlanValidator
 
 
@@ -1313,6 +1314,90 @@ def test_row_pattern_is_limited_to_the_selected_working_areas() -> None:
     assert outside
     assert all(item["x"] < 60 for item in outside)
     assert any(item["code"] == "OUTSIDE_SELECTED_ZONE" for item in payload["reason_summary"])
+
+
+def test_fill_and_row_previews_are_non_persistent_growth_ready_map_ghosts() -> None:
+    """One preview response is enough for a pre-apply map and year slider.
+
+    The client deliberately does not send the display year to the spatial
+    engine: hard constraints and candidate positions stay identical while it
+    interpolates the returned versioned forecast anchors locally.
+    """
+    project_id = prepare_project("Предпросмотр до сохранения")
+    select_areas(project_id, [
+        area("work", "Рабочая область", [[12, 12], [65, 12], [65, 42], [12, 42]]),
+    ])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
+    before = client.get(f"/api/projects/{project_id}").json()
+    species_id = next(
+        item["id"] for item in client.get("/api/species", params={"kind": "tree"}).json()
+        if item["species_id"] == "sorbus-aucuparia"
+    )
+    common = {
+        "base_plan_version": opened["plan"]["version"],
+        "plant_kind": "tree",
+        "zone_ids": ["work"],
+        "placement_mode": "count",
+        "target_count": 8,
+        "size_class": "standard",
+        "species_revision_id": species_id,
+        "spacing_policy": "balanced",
+    }
+    requests = [
+        {
+            **common,
+            "type": "fill",
+            "layout": "natural",
+            "spacing_m": 6,
+            "edge_offset_m": 1,
+            "seed": 47,
+        },
+        {
+            **common,
+            "type": "row",
+            "axis": {"type": "LineString", "coordinates": [[18, 20], [60, 20]]},
+        },
+    ]
+    observed_skips = []
+
+    for request in requests:
+        response = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json=request)
+
+        assert response.status_code == 200, response.json()
+        preview = response.json()
+        additions = preview["change_set"]["additions"]
+        assert preview["type"] == request["type"]
+        assert preview["accepted_count"] == len(additions) > 0
+        assert all(item["planting_zone_id"] == "work" for item in additions)
+        assert all(item["species_revision_id"] == species_id for item in additions)
+        assert all(
+            [forecast["horizon_year"] for forecast in item["canopy_forecast"]]
+            == [0, 5, 10, 15, 20, 30, 40]
+            for item in additions
+        )
+        assert all(
+            [forecast["horizon_year"] for forecast in item["root_forecast"]]
+            == [0, 5, 10, 15, 20, 30, 40]
+            for item in additions
+        )
+        arbitrary_year = forecast_at(
+            [GrowthEnvelopeForecast.model_validate(item) for item in additions[0]["canopy_forecast"]],
+            23,
+        )
+        assert arbitrary_year is not None
+        assert arbitrary_year.horizon_year == 23
+        assert all(
+            item["status"] in {"blocked", "soft_conflict", "unknown"} and item["reason"]
+            for item in preview["skipped"]
+        )
+        observed_skips.extend(preview["skipped"])
+
+    assert any(item["status"] == "blocked" and item["category"] == "constraint" for item in observed_skips)
+
+    after = client.get(f"/api/projects/{project_id}").json()
+    assert after["state_version"] == before["state_version"]
+    assert after["plan"]["version"] == before["plan"]["version"]
+    assert after["plan"]["objects"] == before["plan"]["objects"] == []
 
 
 def test_fill_pattern_is_deterministic_across_multiple_zones_and_reports_skips() -> None:
