@@ -18,7 +18,16 @@ describe('map hit stack', () => {
     occupied.setId('occupied-existing-green');
     const unrelated = new Feature({ geometry: square(), kind: 'annotation' });
 
-    expect(mapHitStack([allowed, reference, duplicateReference, occupied, unrelated, allowed])).toEqual([occupied, reference, allowed]);
+    expect(mapHitStack([allowed, reference, duplicateReference, occupied, unrelated, allowed])).toEqual([occupied, reference, unrelated, allowed]);
+  });
+
+  it('prefers an uncommon source object over the aggregate project area', () => {
+    const aggregate = new Feature({ geometry: square(), kind: 'planting_area', label: 'all', planting_zone_id: 'all' });
+    aggregate.setId('planting-area-all');
+    const sourceObject = new Feature({ geometry: square(), kind: 'annotation', source_layer: 'SMALL_OBJECTS' });
+    sourceObject.setId('small-object-42');
+
+    expect(mapHitStack([aggregate, sourceObject])[0]).toBe(sourceObject);
   });
 
   it('turns the selected polygon component into a deduplicated draft-zone target', () => {

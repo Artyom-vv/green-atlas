@@ -71,7 +71,7 @@ describe('GrowthHorizonControl', () => {
     fireEvent.change(slider, { target: { value: '23' } });
 
     expect(onChange).toHaveBeenCalledWith(23);
-    expect(screen.getByText('Нет данных для этого горизонта')).toBeVisible();
+    expect(screen.getByText('Нет данных для этого года')).toBeVisible();
     expect(screen.queryByText('Диаметр кроны')).not.toBeInTheDocument();
   });
 });

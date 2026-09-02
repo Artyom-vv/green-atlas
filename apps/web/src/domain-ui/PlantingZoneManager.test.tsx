@@ -17,10 +17,10 @@ describe('PlantingZoneManager', () => {
     const onDelete = vi.fn();
     render(<PlantingZoneManager zones={zones} onFocus={onFocus} onRename={onRename} onRedraw={onRedraw} onDelete={onDelete} onDraw={vi.fn()} onCancelDraw={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Показать Северный участок' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Перерисовать Северный участок' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Удалить Северный участок' }));
-    const name = screen.getByRole('textbox', { name: 'Название Северный участок' });
+    fireEvent.click(screen.getByRole('button', { name: 'Показать участок 1: Северный участок' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Перерисовать участок 1: Северный участок' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить участок 1: Северный участок' }));
+    const name = screen.getByRole('textbox', { name: 'Название участка 1: Северный участок' });
     fireEvent.change(name, { target: { value: 'Главная аллея' } });
     fireEvent.blur(name);
 
@@ -34,14 +34,14 @@ describe('PlantingZoneManager', () => {
     render(<PlantingZoneManager zones={zones} zoneUsage={{ a: 3 }} onFocus={vi.fn()} onRename={vi.fn()} onRedraw={vi.fn()} onDelete={vi.fn()} onDraw={vi.fn()} onCancelDraw={vi.fn()} />);
 
     expect(screen.getByText('Сначала перенесите или удалите 3 посадки')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Удалить Северный участок' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Удалить Южный участок' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Удалить участок 1: Северный участок' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Удалить участок 2: Южный участок' })).toBeEnabled();
   });
 
   it('requires a replacement before deleting the only area', () => {
     render(<PlantingZoneManager zones={[zones[0]]} onFocus={vi.fn()} onRename={vi.fn()} onRedraw={vi.fn()} onDelete={vi.fn()} onDraw={vi.fn()} onCancelDraw={vi.fn()} />);
 
     expect(screen.getByText('Сначала создайте другой рабочий участок')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Удалить Северный участок' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Удалить участок 1: Северный участок' })).toBeDisabled();
   });
 });

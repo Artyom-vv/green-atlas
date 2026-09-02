@@ -19,8 +19,9 @@ describe('PatternToolPanel', () => {
 
     expect(screen.getByRole('checkbox', { name: 'Западный участок' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Восточный участок' })).toBeChecked();
+    fireEvent.change(screen.getByLabelText('Объём посадок'), { target: { value: 'exact' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Количество посадок' }), { target: { value: '5000' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Показать' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
 
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
       type: 'fill',
@@ -44,11 +45,10 @@ describe('PatternToolPanel', () => {
       reasons: ['Предварительный выбор для 2 выбранных участков', 'Корневая архитектура учтена прогнозным диапазоном'],
     }]} selectedZoneIds={['west', 'east']} onPreview={vi.fn()} onCancel={vi.fn()} />);
 
-    expect(screen.getByText('Порода для участка')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Липа. Нужна проверка' })).toHaveAttribute('title', expect.stringContaining('Корневая архитектура'));
-    expect(screen.getByText('Корни: смешанные')).toBeVisible();
-    expect(screen.getByText('Нужна проверка')).toBeVisible();
-    expect(screen.getByText('Оценка: до 18 на участке')).toBeVisible();
+    expect(screen.getByLabelText('Порода для участка')).toHaveValue('tree@1');
+    expect(screen.getByText('смешанные корни')).toBeVisible();
+    expect(screen.getByText('средняя крона')).toBeVisible();
+    expect(screen.queryByText('до 18 мест')).not.toBeInTheDocument();
   });
 
   it('previews a mixed tree and shrub group through the primary fill flow', () => {
@@ -57,7 +57,7 @@ describe('PatternToolPanel', () => {
 
     fireEvent.change(screen.getByLabelText('Состав группы'), { target: { value: 'mixed' } });
     expect(screen.getByLabelText('Порода кустарника')).toHaveValue('shrub@1');
-    fireEvent.click(screen.getByRole('button', { name: 'Показать' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
 
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
       type: 'fill',
@@ -87,8 +87,8 @@ describe('PatternToolPanel', () => {
     expect(screen.queryByLabelText('Состав группы')).not.toBeInTheDocument();
 
     rerender(<PatternToolPanel mode="row" zones={zones} species={species} selectedZoneIds={['west']} axis={{ type: 'LineString', coordinates: [[0, 0], [10, 0]] }} onPreview={onPreview} onCancel={vi.fn()} />);
-    expect(screen.getByRole('button', { name: 'Показать' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Показать' }));
+    expect(screen.getByRole('button', { name: 'Проверить места' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ type: 'row', zone_ids: ['west'] }));
   });
 
@@ -117,13 +117,57 @@ describe('PatternToolPanel', () => {
       reason_summary: [{ status: 'blocked', code: 'EXISTING_GREEN_OVERLAP', category: 'constraint', count: 3, message: 'Контур пересекает существующее озеленение' }],
     };
 
-    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} preview={preview} onPreview={vi.fn()} onCancel={vi.fn()} />);
+    const onResetPreview = vi.fn();
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} preview={preview} onPreview={vi.fn()} onResetPreview={onResetPreview} onCancel={vi.fn()} />);
 
-    expect(screen.getByText('Почему позиции исключены')).toBeVisible();
+    fireEvent.click(screen.getByText('Почему меньше'));
     expect(screen.getByText('3 — Контур пересекает существующее озеленение')).toBeVisible();
     const result = screen.getByLabelText('Результат расчёта');
-    const controls = screen.getByRole('spinbutton', { name: 'Количество посадок' });
-    expect(result.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(result).toBeVisible();
+    expect(screen.queryByLabelText('Объём посадок')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить условия' }));
+    expect(onResetPreview).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'Проверить места' })).not.toBeInTheDocument();
+  });
+
+  it('offers a smaller species after an empty result without starting another calculation', () => {
+    const onPreview = vi.fn();
+    const onResetPreview = vi.fn();
+    const compact = { ...species[0], id: 'compact@1', common_name: 'Рябина', mature_crown_diameter_min_m: 3, mature_crown_diameter_max_m: 4 };
+    const preview: PatternPreview = {
+      pattern_id: 'pattern-empty', type: 'fill', requested_count: 40, generated_count: 40,
+      accepted_count: 0, rejected_count: 40, capacity_shortfall: 0, skipped: [],
+      unverified_data: [], data_confidence: 'verified', data_confidence_reasons: [], reason_summary: [],
+    };
+    render(<PatternToolPanel mode="fill" zones={zones} species={[species[0], compact]} selectedZoneIds={['west']} preview={preview} onPreview={onPreview} onResetPreview={onResetPreview} onCancel={vi.fn()} />);
+
+    expect(screen.getByText('Попробуйте компактную породу')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать Рябина' }));
+    expect(onResetPreview).toHaveBeenCalledOnce();
+    expect(onPreview).not.toHaveBeenCalled();
+  });
+
+  it('bounds automatic quantity instead of treating an area estimate as a promise', () => {
+    const onPreview = vi.fn();
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} shortlist={[{
+      species: species[0], status: 'available', selected_area_m2: 100000, estimated_safe_area_m2: 80000,
+      estimated_capacity: 1200, estimated_mature_diameter_m: 8, reasons: [],
+    }]} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
+
+    expect(screen.getByText('Проверим до 40 мест и покажем результат')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ target_count: 40 }));
+  });
+
+  it('waits for an explicit preview action', () => {
+    const onPreview = vi.fn();
+    render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} onPreview={onPreview} onCancel={vi.fn()} />);
+
+    expect(onPreview).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Схема размещения'), { target: { value: 'staggered' } });
+    expect(onPreview).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
+    expect(onPreview).toHaveBeenCalledOnce();
   });
 
   it('shows derived group spacing without a second fill control', () => {
@@ -159,6 +203,6 @@ describe('PatternToolPanel', () => {
     render(<PatternToolPanel mode="fill" zones={zones} species={species} selectedZoneIds={['west']} preview={preview} onPreview={vi.fn()} onCancel={vi.fn()} />);
 
     expect(screen.queryByRole('spinbutton', { name: 'Шаг между посадками' })).not.toBeInTheDocument();
-    expect(screen.getByText('Расчётный шаг 7.4 м')).toBeVisible();
+    expect(screen.getByText('шаг 7.4 м')).toBeVisible();
   });
 });

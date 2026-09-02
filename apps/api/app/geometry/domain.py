@@ -82,6 +82,7 @@ class PositionChecker:
         self.selected_area: BaseGeometry | None = None
         self.prepared_selected_area = None
         self.constraints: dict[str, BaseGeometry] = {}
+        self.feature_geometries: dict[str, list[tuple[dict, BaseGeometry]]] = {}
         if project.geometry is None:
             return
         self.features = project.geometry.feature_collection.get("features", [])
@@ -112,10 +113,11 @@ class PositionChecker:
             self.selected_area = unary_union(selected_geometries)
             self.prepared_selected_area = prep(self.selected_area)
 
-    def _constraint(self, kind: str) -> BaseGeometry | None:
-        if kind in self.constraints:
-            return self.constraints[kind]
-        geometries = []
+    def _features_of_kind(self, kind: str) -> list[tuple[dict, BaseGeometry]]:
+        cached = self.feature_geometries.get(kind)
+        if cached is not None:
+            return cached
+        result: list[tuple[dict, BaseGeometry]] = []
         for feature in self.features:
             if feature.get("properties", {}).get("kind") != kind:
                 continue
@@ -124,7 +126,14 @@ class PositionChecker:
             except Exception:
                 continue
             if not geometry.is_empty:
-                geometries.append(geometry)
+                result.append((feature, geometry))
+        self.feature_geometries[kind] = result
+        return result
+
+    def _constraint(self, kind: str) -> BaseGeometry | None:
+        if kind in self.constraints:
+            return self.constraints[kind]
+        geometries = [geometry for _, geometry in self._features_of_kind(kind)]
         if not geometries:
             return None
         constraint = unary_union(geometries)
@@ -151,26 +160,33 @@ class PositionChecker:
         for kind in CONSTRAINT_KINDS:
             geometry = self._constraint(kind)
             if geometry is not None:
-                safe = safe.difference(geometry.buffer(rule_distance(kind, plant_kind)))
+                distance = rule_distance(kind, plant_kind)
+                # Municipal drawings may contain thousands of roads and
+                # buildings far outside the operator's current work frame.
+                # Buffering that complete union dominated every preview.
+                # Clip to the selected area's influence envelope first; an
+                # obstacle farther away than the statutory distance cannot
+                # affect this result. Individual candidates are still passed
+                # through ``check`` afterwards, so this is only a safe spatial
+                # acceleration and never a weaker validation path.
+                nearby = geometry.intersection(safe.buffer(distance))
+                if not nearby.is_empty:
+                    safe = safe.difference(nearby.buffer(distance))
         for kind in OCCUPIED_KINDS:
             geometry = self._constraint(kind)
             if geometry is not None:
-                safe = safe.difference(geometry.buffer(radius))
+                nearby = geometry.intersection(safe.buffer(radius))
+                if not nearby.is_empty:
+                    safe = safe.difference(nearby.buffer(radius))
         return safe
 
     def _evidence(self, kind: str, center: Point, distance: float) -> tuple[str | None, tuple[str, ...]]:
         layers: set[str] = set()
         identifiers: list[str] = []
-        for feature in self.features:
+        for feature, geometry in self._features_of_kind(kind):
+            if center.distance(geometry) > distance + 1e-6:
+                continue
             properties = feature.get("properties", {})
-            if properties.get("kind") != kind:
-                continue
-            try:
-                geometry = shape(feature["geometry"])
-            except Exception:
-                continue
-            if geometry.is_empty or center.distance(geometry) > distance + 1e-6:
-                continue
             source_layer = str(properties.get("source_layer", "")).strip()
             if source_layer:
                 layers.add(source_layer)

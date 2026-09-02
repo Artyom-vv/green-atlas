@@ -234,10 +234,6 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .map-statusbar .ui-button.is-active { color: var(--color-blue-700); background: var(--color-blue-100); }
 .map-canvas.has-right-dock { --map-safe-right: 68px; }
 .map-canvas.has-right-dock .map-statusbar { padding-right: 60px; }
-.selection-context-bar { position: absolute; z-index: 14; display: flex; align-items: center; gap: 4px; max-width: calc(100% - 32px); min-height: 40px; padding: 3px 4px 3px 10px; transform: translateX(-50%); border: 1px solid var(--color-neutral-200); border-radius: 4px; background: var(--color-white); }
-.selection-context-bar > strong { margin-right: 4px; white-space: nowrap; font-size: 12px; line-height: 18px; }
-.selection-context-bar .ui-button { white-space: nowrap; }
-.selection-context-bar select { width: auto; min-width: 104px; height: 32px; padding-right: 28px; }
 .map-busy { position: absolute; z-index: 15; top: 64px; left: 50%; width: 260px; padding: 10px 12px; transform: translateX(-50%); border: 1px solid var(--color-neutral-200); background: var(--color-white); }
 .map-operation-progress { position: absolute; z-index: 15; top: 64px; left: 50%; width: min(380px, calc(100% - 32px)); padding: 0 12px; transform: translateX(-50%); border: 1px solid var(--color-neutral-300); border-radius: 4px; background: var(--color-white); }
 .map-operation-progress .operation-progress { border-top: 0; }
@@ -301,7 +297,9 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .planting-zone-manager__list { display: grid; gap: 8px; }
 .planting-zone-manager__list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 6px; border-left: 2px solid transparent; background: var(--color-neutral-100); }
 .planting-zone-manager__list article.is-active { border-left-color: var(--color-blue-600); background: var(--color-blue-100); }
-.planting-zone-manager__list article > div { display: flex; align-items: center; }
+.planting-zone-manager__identity { min-width: 0; display: grid; gap: 0; }
+.planting-zone-manager__identity > small { padding: 0 8px; color: var(--color-neutral-500); font-size: 10px; line-height: 14px; }
+.planting-zone-manager__actions { display: flex; align-items: center; }
 .planting-zone-manager__reason { grid-column: 1 / -1; max-width: 32ch; padding: 0 6px 4px; color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .planting-zone-manager__list .ui-input { min-width: 0; border-color: transparent; background: transparent; }
 .planting-zone-manager__list .ui-input:focus { border-color: var(--color-blue-600); background: var(--color-white); }
@@ -338,9 +336,20 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .pattern-tool-panel__zones { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .pattern-tool-panel__zones legend { margin-bottom: 8px; color: var(--color-neutral-700); font-size: 12px; font-weight: 600; }
 .pattern-tool-panel__setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; color: var(--color-neutral-700); font-size: 12px; }
-.pattern-live-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-left: 2px solid var(--color-blue-600); background: var(--color-blue-100); }
-.pattern-live-summary strong, .pattern-live-summary span { font-size: 12px; line-height: 18px; }
-.pattern-live-summary span { color: var(--color-neutral-600); font-family: var(--font-mono); }
+.pattern-live-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-left: 2px solid var(--color-blue-600); background: var(--color-blue-100); }
+.pattern-live-summary > span { display: grid; gap: 2px; }
+.pattern-live-summary strong { color: var(--color-neutral-900); font-size: 14px; line-height: 18px; }
+.pattern-live-summary small { color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
+.pattern-live-summary b { color: var(--color-blue-700); font: 500 11px/16px var(--font-mono); white-space: nowrap; }
+.pattern-review-details { padding: 10px 12px; background: var(--color-neutral-100); color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
+.pattern-review-details summary { color: var(--color-neutral-800); cursor: pointer; font-weight: 600; }
+.pattern-review-details ul { display: grid; gap: 4px; margin: 8px 0 0; padding-left: 18px; }
+.pattern-capacity-note { margin: -8px 0 0; color: var(--color-neutral-500); font-size: 11px; line-height: 16px; }
+.pattern-next-action { display: grid; gap: 10px; padding-top: 12px; }
+.pattern-next-action > span { display: grid; gap: 2px; }
+.pattern-next-action strong { color: var(--color-neutral-900); font-size: 13px; line-height: 18px; }
+.pattern-next-action small { max-width: 32ch; color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
+.pattern-next-action .ui-button { justify-self: start; }
 .pattern-funnel { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0; }
 .pattern-funnel div { min-width: 0; }
 .pattern-funnel dt { color: var(--color-neutral-500); font-size: 10px; line-height: 14px; }
@@ -365,6 +374,12 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .species-choice__item b { flex: none; color: var(--color-neutral-600); font: 500 11px/16px 'IBM Plex Mono', monospace; }
 .species-choice__item .species-choice__measure { flex: none; justify-items: end; text-align: right; }
 .species-choice__item.is-selected { border-color: var(--color-blue-600); background: var(--color-blue-100); }
+.species-preview-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--color-neutral-100); }
+.species-preview-card > span { display: grid; gap: 1px; min-width: 0; }
+.species-preview-card > span:last-child { justify-items: end; text-align: right; }
+.species-preview-card strong { font-size: 13px; line-height: 18px; }
+.species-preview-card b { color: var(--color-neutral-800); font: 500 11px/16px var(--font-mono); }
+.species-preview-card small { color: var(--color-neutral-500); font-size: 11px; line-height: 16px; }
 .object-species > strong { font-size: 13px; line-height: 18px; }
 .object-species > span { max-width: 28ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
 .species-assignment-panel__content { display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow: visible auto; }
@@ -394,7 +409,11 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .brush-tool-panel__guide span { max-width: 28ch; color: var(--color-neutral-600); font-size: 12px; line-height: 18px; }
 .brush-tool-panel__guide small { color: var(--color-neutral-500); font-family: var(--font-mono); font-size: 10px; line-height: 14px; }
 .brush-tool-panel__setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; color: var(--color-neutral-700); font-size: 12px; }
+.brush-preview-summary { display: grid; gap: 2px; padding: 10px 12px; border-left: 2px solid var(--color-green-600); background: var(--color-green-100); }
+.brush-preview-summary strong { font-size: 13px; line-height: 18px; }
+.brush-preview-summary span { color: var(--color-neutral-600); font-size: 11px; line-height: 16px; }
 .brush-tool-panel > footer { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-neutral-200); }
+.inspector-drag-hint { max-width: 30ch; margin: 0 16px; padding: 10px 12px; color: var(--color-neutral-600); background: var(--color-neutral-100); font-size: 12px; line-height: 18px; }
 .scene-review { position: absolute; z-index: 30; inset: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) 36px; color: var(--color-neutral-800); background: var(--color-neutral-100); }
 .scene-review--loading { place-items: center; display: grid; }
 .scene-review__header { min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 16px; border-bottom: 1px solid var(--color-neutral-300); background: var(--color-white); }

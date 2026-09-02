@@ -17,6 +17,7 @@ from app.projects.adapters import SqliteProjectRepository
 
 SITE_DXF = Path(__file__).parents[3] / "fixtures" / "site.dxf"
 LARGE_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "vdnkh-large.dxf"
+KITAY_GOROD_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "kitay-gorod" / "kitay-gorod-large.dxf"
 
 
 def imported_project(source: bytes | None = None) -> Project:
@@ -808,6 +809,23 @@ def test_large_real_dxf_keeps_extent_and_local_context() -> None:
     assert imported.entity_count == 4859
     assert imported.bounds is not None and imported.bounds[2] - imported.bounds[0] > 4000
     assert any(feature["properties"].get("source_layer") == "OSM_ROAD_LOCAL" for feature in page.feature_collection["features"])
+
+
+def test_dense_moscow_dxf_keeps_pedestrian_technical_and_existing_green_context() -> None:
+    imported = EzdxfReader().read(KITAY_GOROD_DXF.name, KITAY_GOROD_DXF.read_bytes())
+    project = Project(name="Китай-город", layers=imported.layers, source_geometry=imported.geometry, geometry_version=1)
+    page = IndexedGeometryQuery().query(project, tuple(imported.bounds or [0, 0, 1, 1]), 2)
+    source_layers = {feature["properties"].get("source_layer") for feature in page.feature_collection["features"]}
+
+    assert imported.entity_count == 9020
+    assert imported.bounds is not None and imported.bounds[2] - imported.bounds[0] > 1_500
+    assert {
+        "OSM_BUILDING",
+        "OSM_PATH",
+        "OSM_GREEN_EXISTING",
+        "OSM_BARRIER",
+        "OSM_ROAD_LOCAL",
+    } <= source_layers
 
 
 def test_viewport_index_is_reused_after_non_geometry_project_changes() -> None:

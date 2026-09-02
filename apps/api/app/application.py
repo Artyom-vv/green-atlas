@@ -8,7 +8,9 @@ from math import isfinite
 from threading import RLock
 
 from shapely.geometry import Point, shape
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
+from shapely.prepared import prep
 
 from app.contracts import (
     BrushPreview,
@@ -830,12 +832,29 @@ class ProjectApplication:
         return self.repository.save(project)
 
     @staticmethod
-    def _planting_zone_at(project: Project, x: float, y: float, radius: float) -> PlantingZoneAssignment | None:
+    def _compiled_planting_zones(project: Project) -> list[tuple[PlantingZoneAssignment, BaseGeometry, object]]:
+        """Compile zone shapes once for bulk operations over complex DXF areas."""
+        compiled = []
+        for zone in project.planting_zones:
+            geometry = shape(zone.geometry)
+            if not geometry.is_empty:
+                compiled.append((zone, geometry, prep(geometry)))
+        return compiled
+
+    @staticmethod
+    def _planting_zone_at(
+        project: Project,
+        x: float,
+        y: float,
+        radius: float,
+        compiled: list[tuple[PlantingZoneAssignment, BaseGeometry, object]] | None = None,
+    ) -> PlantingZoneAssignment | None:
         footprint = Point(x, y).buffer(radius)
-        matching = [zone for zone in project.planting_zones if shape(zone.geometry).covers(footprint)]
+        zones = compiled if compiled is not None else ProjectApplication._compiled_planting_zones(project)
+        matching = [(zone, geometry.area) for zone, geometry, prepared in zones if prepared.covers(footprint)]
         # Prefer the most specific nested task instead of the broad site
         # contour that contains it.
-        return min(matching, key=lambda zone: shape(zone.geometry).area, default=None)
+        return min(matching, key=lambda item: item[1], default=(None, 0))[0]
 
     def check_placement(self, project_id: str, payload: PlacementCheckRequest) -> PlacementCheck:
         project = self.get(project_id)
@@ -930,11 +949,14 @@ class ProjectApplication:
         project: Project,
         plant_kind: str,
         layout_radius_m: float | None,
+        zone_ids: set[str] | None = None,
     ) -> list[PlantingZoneAssignment]:
         kind = "shrub" if plant_kind == "shrub" else "tree"
         radius = layout_radius_m or self._default_layout_radius(kind)
         result: list[PlantingZoneAssignment] = []
         for zone in project.planting_zones:
+            if zone_ids is not None and zone.id not in zone_ids:
+                continue
             geometry = self.geometry.automatic_safe_geometry(project, zone.geometry, radius, kind)
             result.append(zone.model_copy(update={"geometry": geometry}))
         return result
@@ -965,12 +987,19 @@ class ProjectApplication:
         )
         return round(required_spacing(prototype, prototype), 2)
 
-    def _preview_addition(self, project: Project, plan: Plan, payload: PlanObjectCreate, spacing_index: PlantSpacingIndex | None = None) -> tuple[PlanObject, _CandidateIssue | None]:
+    def _preview_addition(
+        self,
+        project: Project,
+        plan: Plan,
+        payload: PlanObjectCreate,
+        spacing_index: PlantSpacingIndex | None = None,
+        compiled_zones: list[tuple[PlantingZoneAssignment, BaseGeometry, object]] | None = None,
+    ) -> tuple[PlanObject, _CandidateIssue | None]:
         radius = payload.layout_radius_m or payload.radius or self._default_layout_radius(payload.kind)
         violation = self.geometry.position_violation(project, payload.x, payload.y, radius, payload.kind)
         if violation is not None:
             raise _CandidateRejected(_violation_issue(violation))
-        zone = self._planting_zone_at(project, payload.x, payload.y, radius)
+        zone = self._planting_zone_at(project, payload.x, payload.y, radius, compiled_zones)
         if project.planting_zones and zone is None:
             raise _CandidateRejected(_CandidateIssue(
                 status="blocked",
@@ -1026,6 +1055,7 @@ class ProjectApplication:
         object_id: str,
         payload: PlanObjectUpdate,
         spacing_index: PlantSpacingIndex | None = None,
+        compiled_zones: list[tuple[PlantingZoneAssignment, BaseGeometry, object]] | None = None,
     ) -> tuple[PlanObject, str | None]:
         current = next((item for item in plan.objects if item.id == object_id), None)
         if current is None:
@@ -1042,7 +1072,7 @@ class ProjectApplication:
         next_x = float(updates.get("x", current.x))
         next_y = float(updates.get("y", current.y))
         self.geometry.validate_position(project, next_x, next_y, next_radius, current.kind)
-        zone = self._planting_zone_at(project, next_x, next_y, next_radius)
+        zone = self._planting_zone_at(project, next_x, next_y, next_radius, compiled_zones)
         if project.planting_zones and zone is None:
             raise ValueError("Выберите позицию внутри одного из участков задания")
         updates["x"] = next_x
@@ -1103,6 +1133,7 @@ class ProjectApplication:
         deletion_ids: list[str] = []
         results: list[ChangeSetCandidateResult] = []
         spacing_index: PlantSpacingIndex | None = PlantSpacingIndex(working.objects)
+        compiled_zones = self._compiled_planting_zones(project)
         manual_single_review = draft.source == "manual" and len(draft.operations) == 1
         group_update_ids = {
             operation.object_id for operation in draft.operations
@@ -1116,7 +1147,7 @@ class ProjectApplication:
                 if operation.type == "add":
                     if spacing_index is None:
                         spacing_index = PlantSpacingIndex(working.objects)
-                    candidate, issue = self._preview_addition(project, working, operation.object, spacing_index)
+                    candidate, issue = self._preview_addition(project, working, operation.object, spacing_index, compiled_zones)
                     additions.append(candidate.model_copy(deep=True))
                     results.append(_candidate_result(index, "add", issue, candidate.id, "Позиция проходит текущую проверку", candidate.planting_zone_id))
                     # A warning remains visible as a ghost candidate, but it
@@ -1132,6 +1163,7 @@ class ProjectApplication:
                         operation.object_id,
                         operation.changes,
                         group_update_spacing,
+                        compiled_zones,
                     )
                     updates.append(candidate.model_copy(deep=True))
                     issue = _CandidateIssue(status="unknown", code="REVIEW_REQUIRED", category="data", message=advisory) if advisory else None
@@ -1288,13 +1320,15 @@ class ProjectApplication:
             project,
             request.plant_kind,
             request.layout_radius_m,
+            requested_zone_ids,
         )
         generated_candidates = self.candidate_generator.generate(generation_request, generation_zones)
         layout_radius = request.layout_radius_m or self._default_layout_radius(request.plant_kind)
+        compiled_zones = self._compiled_planting_zones(project)
         candidates = []
         skipped: list[PatternSkippedCandidate] = []
         for candidate in generated_candidates:
-            zone = self._planting_zone_at(project, candidate.x, candidate.y, layout_radius)
+            zone = self._planting_zone_at(project, candidate.x, candidate.y, layout_radius, compiled_zones)
             if zone is not None and zone.id in requested_zone_ids:
                 candidates.append(candidate)
                 continue
@@ -1486,7 +1520,7 @@ class ProjectApplication:
         )
         candidates = self.candidate_generator.generate(
             fill,
-            self._automatic_generation_zones(project, fill.plant_kind, fill.layout_radius_m),
+            self._automatic_generation_zones(project, fill.plant_kind, fill.layout_radius_m, set(request.zone_ids)),
         )
         digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         recommendation_id = f"recommendation-{digest[:16]}"
@@ -1649,7 +1683,7 @@ class ProjectApplication:
         brush_kind = "shrub" if request.composition == "shrubs" else "tree"
         candidates = self.candidate_generator.generate(
             request,
-            self._automatic_generation_zones(project, brush_kind, None),
+            self._automatic_generation_zones(project, brush_kind, None, set(request.zone_ids)),
         )
         for candidate in candidates:
             kind = candidate.kind or "tree"

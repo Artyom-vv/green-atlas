@@ -24,9 +24,11 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
 
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.getByRole('checkbox', { name: 'Ручной участок 1' })).toBeChecked();
-  await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
+  await page.getByLabel('Объём посадок').selectOption('exact');
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('3');
-  await expect(page.getByText('Черновик на карте')).toBeVisible();
+  await page.getByRole('button', { name: 'Проверить места' }).click();
+  await expect(page.getByText(/Найдено [1-3]/)).toBeVisible();
   await page.getByRole('button', { name: /Добавить [1-3]/ }).click();
   const projectId = new URL(page.url()).pathname.split('/')[2];
   await expect.poll(async () => {
@@ -127,17 +129,23 @@ test('release bundle reopens as an editable revision and exports the edited ID',
   await page.mouse.up();
   await expect(page.getByText('Выбранная посадка', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Переместить', exact: true }).last().click();
-  const viewportBox = await map.locator('.ol-viewport').boundingBox();
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number);
+  const viewportBox = await map.boundingBox();
   expect(viewportBox).not.toBeNull();
-  const moveStart = { x: viewportBox!.x + viewportBox!.width / 2, y: viewportBox!.y + viewportBox!.height / 2 };
-  const moveEnd = { x: moveStart.x + 80, y: moveStart.y - 40 };
+  const point = (x: number, y: number) => ({
+    x: viewportBox!.x + (x - extent[0]) / (extent[2] - extent[0]) * viewportBox!.width,
+    y: viewportBox!.y + (extent[3] - y) / (extent[3] - extent[1]) * viewportBox!.height,
+  });
+  const moveStart = point(20, 20);
+  const moveEnd = point(21, 21);
   await page.mouse.move(moveStart.x, moveStart.y);
   await page.mouse.down();
   await page.mouse.move(moveEnd.x, moveEnd.y, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByText('Перемещение группы (1)')).toBeVisible();
-  await page.keyboard.press('F2');
+  await expect(page.getByRole('button', { name: 'Применить', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Применить', exact: true }).click();
   await expect(page.getByText('Перемещение группы (1)')).toHaveCount(0);
   const movedProject = await page.request.get(`${apiBase}/api/projects/${target}`);
   const movedObject = (await movedProject.json() as { plan: { objects: Array<{ id: string; x: number; y: number }> } }).plan.objects.find((item) => item.id === objectId)!;

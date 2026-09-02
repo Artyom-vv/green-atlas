@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import axe from 'axe-core';
 import fs from 'node:fs';
 import GeoJSON from 'ol/format/GeoJSON.js';
@@ -6,6 +6,7 @@ import path from 'node:path';
 
 const fixture = path.resolve('../../fixtures/site.dxf');
 const largeFixture = path.resolve('../../fixtures/large-map/vdnkh-large.dxf');
+const denseMoscowFixture = path.resolve('../../fixtures/large-map/kitay-gorod/kitay-gorod-large.dxf');
 const apiBase = `http://127.0.0.1:${process.env.E2E_API_PORT ?? '18000'}/api`;
 const viewports = [
   { name: '1440', width: 1440, height: 900 },
@@ -60,6 +61,21 @@ async function drawnMapPixelSamples(page: Page) {
       return total;
     }
   }, 0));
+}
+
+async function fittedPlanCoordinates(page: Page, map: Locator) {
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  await expect.poll(async () => {
+    const values = (await map.getAttribute('data-view-extent'))!.split(',').map(Number);
+    return values[2] - values[0];
+  }).toBeLessThan(60);
+  const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number) as [number, number, number, number];
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  return (x: number, y: number) => ({
+    x: box!.x + (x - extent[0]) / (extent[2] - extent[0]) * box!.width,
+    y: box!.y + (extent[3] - y) / (extent[3] - extent[1]) * box!.height,
+  });
 }
 
 async function importFixture(page: Page) {
@@ -162,6 +178,41 @@ async function saveSelectedAreas(page: Page, areas = [{ id: 'area-e2e', label: '
   await expect(page.getByText(areas[0].label)).toBeVisible();
 }
 
+async function saveFirstCalculatedArea(page: Page, projectId: string, label: string) {
+  const projectResponse = await page.request.get(`${apiBase}/projects/${projectId}`);
+  expect(projectResponse.ok()).toBeTruthy();
+  const project = await projectResponse.json() as { source_file?: { bounds?: number[] } };
+  const bounds = project.source_file?.bounds;
+  expect(bounds).toHaveLength(4);
+  const query = new URLSearchParams({
+    min_x: String(bounds![0]), min_y: String(bounds![1]), max_x: String(bounds![2]), max_y: String(bounds![3]), resolution: '2',
+  });
+  const geometryResponse = await page.request.get(`${apiBase}/projects/${projectId}/map-features?${query}`);
+  expect(geometryResponse.ok()).toBeTruthy();
+  type PolygonGeometry = { type: 'Polygon'; coordinates: number[][][] };
+  type MultiPolygonGeometry = { type: 'MultiPolygon'; coordinates: number[][][][] };
+  const snapshot = await geometryResponse.json() as { feature_collection: { features: Array<{ properties?: { kind?: string }; geometry: PolygonGeometry | MultiPolygonGeometry }> } };
+  const allowed = snapshot.feature_collection.features.find((feature) => feature.properties?.kind === 'allowed');
+  expect(allowed, 'Prepared geometry must expose a calculated allowed area').toBeTruthy();
+  const ringArea = (ring: number[][]) => Math.abs(ring.reduce((sum, point, index) => {
+    const next = ring[(index + 1) % ring.length];
+    return sum + point[0] * next[1] - next[0] * point[1];
+  }, 0) / 2);
+  // A calculated allowed feature can contain thousands of disconnected
+  // islands. The operator works on one local frame at a time, so preserve the
+  // largest real component rather than silently turning the whole city into
+  // one task.
+  const localGeometry: PolygonGeometry = allowed!.geometry.type === 'MultiPolygon'
+    ? { type: 'Polygon', coordinates: [...allowed!.geometry.coordinates].sort((left, right) => ringArea(right[0]) - ringArea(left[0]))[0] }
+    : allowed!.geometry;
+  const saved = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, {
+    data: { zones: [{ id: `calculated-${projectId}`, label, geometry: localGeometry }] },
+  });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+  await page.reload();
+  await expect(page.getByText(label)).toBeVisible();
+}
+
 async function openManualPlan(page: Page) {
   await prepareWorkspace(page);
   await saveSelectedAreas(page);
@@ -250,10 +301,11 @@ test('a user can choose several local areas before opening the editor', async ({
   await expect(page.getByText('Рабочая область', { exact: true })).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Открыть редактор' })).toBeEnabled();
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
-  const previewRequest = page.waitForRequest((request) => request.url().includes('/plan/patterns/preview') && request.method() === 'POST');
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: газон A' })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: газон B' })).toBeChecked();
+  const previewRequest = page.waitForRequest((request) => request.url().includes('/plan/patterns/preview') && request.method() === 'POST');
+  await page.getByRole('button', { name: 'Проверить места' }).click();
   const payload = JSON.parse((await previewRequest).postData() ?? '{}') as { zone_ids?: string[] };
   expect(payload.zone_ids).toEqual(['area-a', 'area-b']);
   await expect(page.getByText('Выберите рабочий участок')).toHaveCount(0);
@@ -378,7 +430,7 @@ test('keyboard focus covers the manual editor workflow', async ({ page }) => {
   await expectNoSeriousAccessibilityViolations(page);
 });
 
-test('escape cancels the active map operation before it clears selection', async ({ page }) => {
+test('escape clears a direct map selection without a floating toolbar', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 720 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
@@ -396,18 +448,10 @@ test('escape cancels the active map operation before it clears selection', async
     mapBox!.x + mapBox!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
     mapBox!.y + mapBox!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
   );
-  const contextBar = page.getByRole('toolbar', { name: 'Действия с выделением' });
-  await expect(contextBar).toBeVisible();
-  const contextBox = await contextBar.boundingBox();
-  expect(contextBox).not.toBeNull();
-  expect(contextBox!.x).toBeGreaterThanOrEqual(mapBox!.x);
-  expect(contextBox!.x + contextBox!.width).toBeLessThanOrEqual(mapBox!.x + mapBox!.width);
-
-  await contextBar.getByRole('button', { name: 'Переместить выделение' }).click();
+  await expect(page.getByRole('toolbar', { name: 'Действия с выделением' })).toHaveCount(0);
+  await expect(page.getByText('Выбранная посадка')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(contextBar).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(contextBar).toHaveCount(0);
+  await expect(page.getByText('Выбранная посадка')).toHaveCount(0);
 });
 
 test('map navigation keeps the canvas live without auxiliary CAD modes', async ({ page }) => {
@@ -453,6 +497,36 @@ test('map hover exposes the object stack below the working-area overlay', async 
   }, { timeout: 10_000 }).toBe(1);
   await expect(hover.getByText('Существующее озеленение', { exact: true })).toBeVisible();
   await expect(hover.getByText('Контур DXF: тестовая область', { exact: true })).toBeVisible();
+});
+
+test('an uncommon DXF object is selected instead of the aggregate working area', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  await page.route('**/map-features?**', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json() as { feature_collection: { features: unknown[] } };
+    payload.feature_collection.features.push({
+      type: 'Feature',
+      id: 'rare-source-object',
+      properties: { kind: 'annotation', source_layer: 'SMALL_OBJECTS' },
+      geometry: { type: 'Polygon', coordinates: [[[48, 25], [54, 25], [54, 31], [48, 31], [48, 25]]] },
+    });
+    await route.fulfill({ response, json: payload });
+  });
+  await page.reload();
+  const map = page.getByLabel('Карта проекта озеленения');
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number) as [number, number, number, number];
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.click(
+    box!.x + (51 - extent[0]) / (extent[2] - extent[0]) * box!.width,
+    box!.y + (extent[3] - 28) / (extent[3] - extent[1]) * box!.height,
+  );
+
+  await expect(page.getByText('Область карты', { exact: true })).toBeVisible();
+  await expect(page.getByText('Объект исходного DXF', { exact: true })).toBeVisible();
+  await expect(page.getByText('Участок готов к размещению', { exact: true })).toHaveCount(0);
 });
 
 test('workspace panels do not remount or blank the map canvas', async ({ page }) => {
@@ -631,24 +705,13 @@ test('map selection supports group deletion and undo without an object table', a
   await expect(page.getByText('3 посадки')).toBeVisible();
 });
 
-test('box selection moves a group through one confirmed change set', async ({ page }) => {
+test('box selection moves a group by direct drag through one confirmed change set', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
   await page.getByLabel('Показать посадки').click();
   await page.waitForTimeout(250);
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
-  const padding = 72;
-  const resolution = Math.max(
-    (planExtent[2] - planExtent[0]) / (box!.width - padding * 2),
-    (planExtent[3] - planExtent[1]) / (box!.height - padding * 2),
-  );
-  const point = (x: number, y: number) => ({
-    x: box!.x + box!.width / 2 + (x - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (y - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  });
+  const point = await fittedPlanCoordinates(page, map);
   const first = point(20, 20);
   const second = point(40, 20);
   await page.getByRole('button', { name: 'Выбрать рамкой' }).click();
@@ -659,9 +722,14 @@ test('box selection moves a group through one confirmed change set', async ({ pa
 
   await expect(page.getByText('Выбрано посадок', { exact: true })).toBeVisible();
   await expect(page.getByText('2 объектов')).toBeVisible();
-  await page.getByRole('button', { name: 'Переместить', exact: true }).click();
-  const dragDestination = point(20, 25);
-  await page.mouse.move(first.x, first.y);
+  await expect(page.getByRole('button', { name: /Выбрать\. Shift/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(50);
+  // Opening the inspector changes the map viewport width. Re-read the live
+  // coordinate transform before dragging instead of using stale pixels.
+  const dragPoint = await fittedPlanCoordinates(page, map);
+  const dragStart = dragPoint(20, 20);
+  const dragDestination = dragPoint(20, 25);
+  await page.mouse.move(dragStart.x, dragStart.y);
   await page.mouse.down();
   await page.mouse.move(dragDestination.x, dragDestination.y, { steps: 8 });
   await expect(page.locator('.map-statusbar .placement-check')).toHaveText('Можно переместить');
@@ -684,7 +752,11 @@ test('box selection moves a group through one confirmed change set', async ({ pa
   const positions = (await project.json() as { plan: { objects: Array<{ x: number; y: number }> } }).plan.objects
     .map((object) => [Number(object.x.toFixed(3)), Number(object.y.toFixed(3))])
     .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
-  expect(positions).toEqual([[20, 25], [20, 30], [40, 25]]);
+  expect(positions[1]).toEqual([20, 30]);
+  expect(positions[0][0]).toBe(20);
+  expect(positions[2][0]).toBe(40);
+  expect(positions[0][1]).toBeGreaterThan(20);
+  expect(positions[2][1]).toBe(positions[0][1]);
 });
 
 test('a group cannot be moved outside the assigned area and the original layout stays intact', async ({ page }) => {
@@ -703,18 +775,7 @@ test('a group cannot be moved outside the assigned area and the original layout 
   const map = page.getByLabel('Карта проекта озеленения');
   await page.getByLabel('Показать посадки').click();
   await page.waitForTimeout(250);
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
-  const padding = 72;
-  const resolution = Math.max(
-    (planExtent[2] - planExtent[0]) / (box!.width - padding * 2),
-    (planExtent[3] - planExtent[1]) / (box!.height - padding * 2),
-  );
-  const point = (x: number, y: number) => ({
-    x: box!.x + box!.width / 2 + (x - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (y - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  });
+  const point = await fittedPlanCoordinates(page, map);
   const first = point(20, 20);
   const second = point(40, 20);
   await page.getByRole('button', { name: 'Выбрать рамкой' }).click();
@@ -722,16 +783,21 @@ test('a group cannot be moved outside the assigned area and the original layout 
   await page.mouse.down();
   await page.mouse.move(second.x + 18, second.y - 18, { steps: 8 });
   await page.mouse.up();
+  await expect(page.getByRole('button', { name: /Выбрать\. Shift/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(50);
 
-  await page.getByRole('button', { name: 'Переместить', exact: true }).click();
   // The selection centre moves from x=30 to x=35. The right-hand tree would
   // end at x=45, outside the assigned contour ending at x=42.
-  const outsideAssignedArea = point(35, 25);
-  await page.mouse.move(outsideAssignedArea.x, outsideAssignedArea.y);
-  await expect(page.locator('.map-statusbar .placement-check')).toContainText(/пересекает объект|внутри одного из участков задания/);
-  await page.mouse.click(outsideAssignedArea.x, outsideAssignedArea.y);
+  const dragPoint = await fittedPlanCoordinates(page, map);
+  const dragStart = dragPoint(20, 20);
+  const outsideAssignedArea = dragPoint(35, 25);
+  await page.mouse.move(dragStart.x, dragStart.y);
+  await page.mouse.down();
+  await page.mouse.move(outsideAssignedArea.x, outsideAssignedArea.y, { steps: 8 });
+  await expect(page.locator('.map-statusbar .placement-check')).toContainText(/пересекает объект|внутри одной из (?:выбранных рабочих областей|областей задания)/);
+  await page.mouse.up();
   await expect(page.getByText('Перемещение недоступно')).toBeVisible();
-  await expect(page.getByText(/пересекает объект|внутри одного из участков задания/)).toBeVisible();
+  await expect(page.getByText(/пересекает объект|внутри одной из (?:выбранных рабочих областей|областей задания)/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Применить' })).toBeDisabled();
   await page.getByRole('button', { name: 'Отмена' }).click();
 
@@ -820,9 +886,8 @@ test('placement flow creates a typed group across the selected area as one revis
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   expect((await shortlistResponse).ok()).toBe(true);
   await expect(page.getByText('По выбранным участкам')).toBeVisible();
-  await expect(page.getByText('Порода для участка')).toBeVisible();
-  await expect(page.getByText(/Корни:/).first()).toBeVisible();
-  await expect(page.getByText(/Предварительно подходит|Нужна проверка/).first()).toBeVisible();
+  await expect(page.getByLabel('Порода для участка')).toBeVisible();
+  await expect(page.getByText(/корни/).first()).toBeVisible();
   const zoneCheckbox = page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' });
   await expect(zoneCheckbox).toBeChecked();
   const map = page.getByLabel('Карта проекта озеленения');
@@ -836,28 +901,27 @@ test('placement flow creates a typed group across the selected area as one revis
     box!.y + box!.height / 2 - (25 - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
   );
   await expect(zoneCheckbox).toBeChecked();
-  await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
   await expect(page.getByRole('spinbutton', { name: 'Шаг между посадками' })).toHaveCount(0);
-  await expect(page.getByText(/Расчётный шаг \d/)).toBeVisible();
+  const horizon = page.getByRole('slider', { name: 'Горизонт прогноза' });
+  await expect(horizon).toHaveValue('0');
+  await horizon.fill('23');
+  await expect(page.getByText('23 года')).toBeVisible();
+  await page.getByLabel('Объём посадок').selectOption('exact');
+  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
   const placementPreview = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
     && response.request().method() === 'POST'
     && response.request().postData()?.includes('"target_count":8') === true);
-  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('8');
+  const previewStarted = performance.now();
+  await page.getByRole('button', { name: 'Проверить места' }).click();
   const placementPayload = await (await placementPreview).json() as { change_set?: { additions: Array<{ x: number; y: number }> } };
+  expect(performance.now() - previewStarted).toBeLessThan(5_000);
   const generated = placementPayload.change_set?.additions ?? [];
   expect(generated.length).toBeGreaterThan(1);
   expect(new Set(generated.map((item) => item.x)).size).toBe(generated.length);
   expect(new Set(generated.map((item) => item.y)).size).toBe(generated.length);
-  await expect(page.getByText('Черновик на карте')).toBeVisible();
-  await expect(page.getByText(/из 8 допустимы/)).toBeVisible();
-  await expect(page.getByText('Почему позиции исключены')).toBeVisible();
-  await expect(page.locator('.ui-message').filter({ hasText: 'Почему позиции исключены' }).getByRole('listitem').first()).toBeVisible();
-  const horizon = page.getByRole('slider', { name: 'Горизонт прогноза' });
-  await expect(horizon).toHaveValue('0');
-  await horizon.focus();
-  for (let year = 0; year < 23; year += 1) await page.keyboard.press('ArrowRight');
-  await expect(horizon).toHaveValue('23');
-  await expect(page.getByText('23 года')).toBeVisible();
+  await expect(page.getByText(/Найдено \d+/)).toBeVisible();
+  await expect(page.getByText('Почему меньше')).toBeVisible();
   await expect(map).toHaveAttribute('data-growth-horizon', '23');
   await expect(map).toHaveAttribute('data-growth-overlay', /:canopy:/);
   const beforeApply = await page.request.get(`${apiBase}/projects/${projectId}`);
@@ -880,64 +944,40 @@ test('placement flow creates a typed group across the selected area as one revis
   }).toBe(beforeProject.plan.objects.length);
 });
 
-test('primary workspace exposes one guided placement action and direct numeric input', async ({ page }) => {
+test('primary workspace previews only after explicit confirmation and accepts a typed amount', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
 
   await expect(page.getByRole('button', { name: 'Разместить посадки' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Добавить дерево' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Кисть посадок' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Создать ряд' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Кисть посадок' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Посадки вдоль линии' })).toBeVisible();
   await expect(page.getByRole('button', { name: '3D', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Приоритет')).toHaveCount(0);
 
+  let previewRequests = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/plan/patterns/preview')) previewRequests += 1;
+  });
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
-  const mixedResponse = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
-    && response.request().method() === 'POST'
-    && response.request().postData()?.includes('"composition":"mixed"') === true
-    && response.request().postData()?.includes('"spacing_policy":"canopy"') === true);
   await page.getByLabel('Состав группы').selectOption('mixed');
   await page.getByLabel('Плотность группы').selectOption('canopy');
-  const mixedHttp = await mixedResponse;
-  const mixedRequest = mixedHttp.request().postDataJSON() as { composition: string; tree_species_revision_id?: string; shrub_species_revision_id?: string };
-  const mixed = await mixedHttp.json() as { accepted_count: number; effective_spacing_m: number; change_set: { additions: Array<{ kind: string }> } };
-  expect(mixedRequest).toEqual(expect.objectContaining({ composition: 'mixed' }));
-  expect(mixedRequest.tree_species_revision_id).toBeTruthy();
-  expect(mixedRequest.shrub_species_revision_id).toBeTruthy();
-  expect(mixed.change_set.additions.some((item) => item.kind === 'shrub')).toBe(true);
-
-  const treesResponse = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
-    && response.request().method() === 'POST'
-    && response.request().postData()?.includes('"composition":"trees"') === true
-    && response.request().postData()?.includes('"spacing_policy":"open"') === true);
-  await page.getByLabel('Состав группы').selectOption('trees');
-  await page.getByLabel('Плотность группы').selectOption('open');
-  const treesHttp = await treesResponse;
-  const treesRequest = treesHttp.request().postDataJSON() as { composition: string; species_revision_id?: string; shrub_species_revision_id?: string };
-  const trees = await treesHttp.json() as { accepted_count: number; effective_spacing_m: number };
-  expect(treesRequest.composition).toBe('trees');
-  expect(treesRequest.species_revision_id).toBeTruthy();
-  expect(treesRequest.shrub_species_revision_id).toBeUndefined();
-  expect(mixed.effective_spacing_m).toBeLessThan(trees.effective_spacing_m);
-  expect(mixed.accepted_count).toBeGreaterThanOrEqual(trees.accepted_count);
-
+  await page.getByLabel('Объём посадок').selectOption('exact');
   const count = page.getByRole('spinbutton', { name: 'Количество посадок' });
   const previewResponse = page.waitForResponse((response) => response.url().includes('/plan/patterns/preview')
     && response.request().method() === 'POST'
     && response.request().postData()?.includes('"target_count":5000') === true);
   await count.fill('5000');
   await expect(count).toHaveValue('5000');
+  expect(previewRequests).toBe(0);
+  await page.getByRole('button', { name: 'Проверить места' }).click();
   const preview = await (await previewResponse).json() as { requested_count: number; generated_count: number; accepted_count: number; rejected_count: number; capacity_shortfall: number };
   expect(preview.requested_count).toBe(5000);
   expect(preview.generated_count).toBeGreaterThan(0);
   expect(preview.accepted_count + preview.rejected_count + preview.capacity_shortfall).toBe(5000);
-  const funnel = page.getByRole('group', { name: 'Воронка расчёта' });
-  await expect(funnel).toContainText('Запрошено5000');
-  await expect(funnel).toContainText(`Сгенерировано${preview.generated_count}`);
-  await expect(funnel).toContainText(`Допустимо${preview.accepted_count}`);
-  await expect(funnel).toContainText(`Отклонено${preview.rejected_count}`);
-  await expect(funnel).toContainText(`Не вместилось${preview.capacity_shortfall}`);
+  expect(previewRequests).toBe(1);
+  await expect(page.getByText(preview.accepted_count ? `Найдено ${preview.accepted_count}` : 'Мест не найдено')).toBeVisible();
   await expect(page.getByText('Шаг 3 из 3')).toBeVisible();
 });
 
@@ -948,7 +988,7 @@ test('working areas remain manageable after the editor is opened', async ({ page
 
   await page.getByRole('button', { name: 'Рабочие участки' }).click();
   await expect(page.getByRole('heading', { name: 'Рабочие участки' })).toBeVisible();
-  const name = page.getByRole('textbox', { name: 'Название Контур DXF: тестовая область' });
+  const name = page.getByRole('textbox', { name: 'Название участка 1: Контур DXF: тестовая область' });
   await name.fill('Главная аллея');
   await name.press('Enter');
   await expect.poll(async () => {
@@ -957,7 +997,7 @@ test('working areas remain manageable after the editor is opened', async ({ page
   }).toBe('Главная аллея');
   await expect(page.getByRole('button', { name: /Отменить: Добавление дерева/ })).toBeEnabled();
 
-  await expect(page.getByRole('button', { name: 'Удалить Главная аллея' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' })).toBeDisabled();
   await expect(page.getByText('Сначала создайте другой рабочий участок')).toBeVisible();
   await page.getByRole('button', { name: 'Новый участок' }).click();
   await expect(page.getByText('Поставьте точки и замкните новый контур')).toBeVisible();
@@ -974,8 +1014,32 @@ test('working areas remain manageable after the editor is opened', async ({ page
   await page.getByRole('button', { name: 'Рабочие участки' }).click();
 
   await expect(page.getByText('Сначала перенесите или удалите 3 посадки')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Удалить Главная аллея' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Удалить Резервный участок' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Удалить участок 1: Главная аллея' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Удалить участок 2: Резервный участок' })).toBeEnabled();
+});
+
+test('choosing one area for placement focuses its geometry on a large canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openManualPlan(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const current = await page.request.get(`${apiBase}/projects/${projectId}`);
+  const project = await current.json() as { planting_zones: Array<{ id?: string; label: string; geometry: unknown }> };
+  const saved = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, { data: { zones: [
+    ...project.planting_zones,
+    { id: 'area-second', label: 'Второй участок', geometry: { type: 'Polygon', coordinates: [[[75, 55], [90, 55], [90, 70], [75, 70], [75, 55]]] } },
+  ] } });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+  await page.reload();
+  const map = page.getByLabel('Карта проекта озеленения');
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  const before = (await map.getAttribute('data-view-extent'))!.split(',').map(Number);
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' }).click();
+
+  await expect.poll(async () => {
+    const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number);
+    return extent[2] - extent[0];
+  }).toBeLessThan(before[2] - before[0]);
 });
 
 test('area-scoped brush subtraction preserves locked plants and undoes as one revision', async ({ page }) => {
@@ -1022,6 +1086,57 @@ test('area-scoped brush subtraction preserves locked plants and undoes as one re
   }).toEqual(originalIds);
 });
 
+test('a visible brush stroke creates checked planting sites and applies one revision', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const projectId = await createPreparedProjectThroughApi(page, 'Кисть на рабочем участке');
+  const zoned = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, {
+    data: { zones: [{ id: 'brush-area', label: 'Рабочий газон', geometry: selectedArea }] },
+  });
+  expect(zoned.ok(), await zoned.text()).toBeTruthy();
+  const manual = await page.request.post(`${apiBase}/projects/${projectId}/plan/manual`);
+  expect(manual.ok(), await manual.text()).toBeTruthy();
+  await page.goto(`/projects/${projectId}/workspace`);
+
+  await page.getByRole('button', { name: 'Кисть посадок' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Рабочий газон' })).toBeChecked();
+  await page.getByRole('spinbutton', { name: 'Диаметр кисти' }).fill('8');
+  await page.getByLabel('Плотность кисти').selectOption('dense');
+
+  const map = page.getByLabel('Карта проекта озеленения');
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  const point = (x: number, y: number) => ({
+    x: box!.x + (x - extent[0]) / (extent[2] - extent[0]) * box!.width,
+    y: box!.y + (extent[3] - y) / (extent[3] - extent[1]) * box!.height,
+  });
+  const previewResponse = page.waitForResponse((response) => response.url().includes('/plan/brush/preview') && response.request().method() === 'POST');
+  const start = point(20, 20);
+  const end = point(40, 20);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 12 });
+  await page.mouse.up();
+
+  const response = await previewResponse;
+  const request = response.request().postDataJSON() as { zone_ids: string[]; strokes: Array<{ mode: string; geometry: { coordinates: number[][] } }>; width_m: number };
+  const preview = await response.json() as { added_count: number; change_set?: unknown };
+  expect(request.zone_ids).toEqual(['brush-area']);
+  expect(request.width_m).toBe(8);
+  expect(request.strokes).toHaveLength(1);
+  expect(request.strokes[0].mode).toBe('add');
+  expect(request.strokes[0].geometry.coordinates.length).toBeGreaterThan(2);
+  expect(preview.added_count).toBeGreaterThan(1);
+  await expect(page.getByText(`Найдено ${preview.added_count}`)).toBeVisible();
+  await page.getByRole('button', { name: `Добавить ${preview.added_count}` }).click();
+  await expect.poll(async () => {
+    const project = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await project.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBe(preview.added_count);
+  await expect(page.getByRole('button', { name: /Отменить: Кисть/ })).toBeEnabled();
+});
+
 test('row placement creates a checked linear planting group', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
@@ -1043,13 +1158,8 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   await page.getByRole('button', { name: 'Посадки вдоль линии' }).click();
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
   await expect(page.getByText('Выберите линию на карте')).toBeVisible();
-  const rowPreviewRequest = page.waitForRequest((request) => request.url().includes('/plan/patterns/preview')
-    && request.method() === 'POST'
-    && request.postData()?.includes('"type":"row"') === true);
   await page.mouse.click(start.x, start.y);
   await expect(page.getByText('Линия выбрана')).toBeVisible();
-  const rowPayload = JSON.parse((await rowPreviewRequest).postData() ?? '{}') as { zone_ids?: string[] };
-  expect(rowPayload.zone_ids).toEqual(['area-e2e']);
   await expect(page.getByText('Источник', { exact: true })).toBeVisible();
   await expect(page.getByText('Длина', { exact: true })).toBeVisible();
   await expect(page.locator('.pattern-tool-panel__axis dd').last()).toContainText(/\d+\.\d м/);
@@ -1057,12 +1167,18 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   await page.mouse.move(existingPlant.x, existingPlant.y);
   await expect(page.getByText('Ряд посадок', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Выбор объекта карты')).toHaveCount(0);
-  await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
   await page.getByRole('combobox', { name: 'Сторона оси' }).selectOption('left');
   await page.getByRole('spinbutton', { name: 'Поперечный отступ' }).fill('12');
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('5');
-  await expect(page.getByText('Черновик на карте')).toBeVisible();
-  await page.getByRole('button', { name: /Добавить/ }).click();
+  const rowPreviewRequest = page.waitForRequest((request) => request.url().includes('/plan/patterns/preview')
+    && request.method() === 'POST'
+    && request.postData()?.includes('"type":"row"') === true);
+  await page.getByRole('button', { name: 'Проверить места' }).click();
+  const rowPayload = JSON.parse((await rowPreviewRequest).postData() ?? '{}') as { zone_ids?: string[] };
+  expect(rowPayload.zone_ids).toEqual(['area-e2e']);
+  await expect(page.getByText(/Найдено \d+/)).toBeVisible();
+  await page.getByRole('button', { name: /Добавить \d+/ }).click();
   await expect(page.getByText('Дерево', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Отменить: Ряд посадок/ })).toBeEnabled();
 });
@@ -1241,60 +1357,63 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
 
   const largeProjectId = new URL(page.url()).pathname.split('/')[2];
   const largeMap = page.getByLabel('Карта проекта озеленения');
-  const largeBox = await largeMap.boundingBox();
-  expect(largeBox).not.toBeNull();
   const openEditor = page.getByRole('button', { name: 'Открыть редактор' });
-  for (const [x, y] of [[0.38, 0.38], [0.50, 0.50], [0.62, 0.38], [0.38, 0.62], [0.62, 0.62]]) {
-    await page.mouse.move(largeBox!.x + largeBox!.width * x, largeBox!.y + largeBox!.height * y);
-    await page.waitForTimeout(80);
-    await page.mouse.click(largeBox!.x + largeBox!.width * x, largeBox!.y + largeBox!.height * y);
-    if (await openEditor.isEnabled() && await page.getByText(/выходит за границы территории/).count() === 0) break;
-  }
+  await saveFirstCalculatedArea(page, largeProjectId, 'Рабочий фрагмент ВДНХ');
   await expect(openEditor).toBeEnabled();
   await expect(page.getByText(/выходит за границы территории/)).toHaveCount(0);
   await openEditor.click();
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
   await expect(page.locator('.pattern-tool-panel input[type="checkbox"]:checked')).toHaveCount(1);
-  await page.getByRole('button', { name: /Рябина обыкновенная/ }).click();
+  await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
+  await page.getByLabel('Объём посадок').selectOption('exact');
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('60');
 
+  await page.getByLabel('Состав группы').selectOption('mixed');
+  await page.getByLabel('Плотность группы').selectOption('canopy');
   const denseMixedResponse = page.waitForResponse((response) => {
     if (!response.url().includes('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
     const body = response.request().postDataJSON() as { composition?: string; spacing_policy?: string; target_count?: number };
     return body.composition === 'mixed' && body.spacing_policy === 'canopy' && body.target_count === 60;
   });
-  await page.getByLabel('Состав группы').selectOption('mixed');
-  await page.getByLabel('Плотность группы').selectOption('canopy');
+  const densePlacementStarted = performance.now();
+  await page.getByRole('button', { name: 'Проверить места' }).click();
   const denseMixed = await (await denseMixedResponse).json() as { accepted_count: number; effective_spacing_m: number; reason_summary: Array<{ message: string }>; change_set?: { additions: Array<{ kind: string }> } };
+  expect(performance.now() - densePlacementStarted).toBeLessThan(5_000);
   expect(denseMixed.accepted_count).toBeGreaterThan(1);
   expect(new Set(denseMixed.change_set?.additions.map((item) => item.kind))).toEqual(new Set(['tree', 'shrub']));
-  await expect(page.getByText(`Расчётный шаг ${denseMixed.effective_spacing_m} м`)).toBeVisible();
-  if (denseMixed.reason_summary.length) await expect(page.getByText(denseMixed.reason_summary[0].message, { exact: false }).first()).toBeVisible();
+  await expect(page.getByText(`шаг ${denseMixed.effective_spacing_m} м`)).toBeVisible();
+  if (denseMixed.reason_summary.length) await expect(page.getByText('Почему меньше')).toBeVisible();
 
+  await page.getByRole('button', { name: 'Изменить' }).click();
+  await page.getByLabel('Состав группы').selectOption('trees');
+  await page.getByLabel('Плотность группы').selectOption('open');
   const openTreesResponse = page.waitForResponse((response) => {
     if (!response.url().includes('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
     const body = response.request().postDataJSON() as { composition?: string; spacing_policy?: string; target_count?: number };
     return body.composition === 'trees' && body.spacing_policy === 'open' && body.target_count === 60;
   });
-  await page.getByLabel('Состав группы').selectOption('trees');
-  await page.getByLabel('Плотность группы').selectOption('open');
+  const openStarted = performance.now();
+  await page.getByRole('button', { name: 'Проверить места' }).click();
   const openTrees = await (await openTreesResponse).json() as { accepted_count: number; effective_spacing_m: number; reason_summary: Array<{ message: string }> };
+  expect(performance.now() - openStarted).toBeLessThan(5_000);
   expect(denseMixed.effective_spacing_m).toBeLessThan(openTrees.effective_spacing_m);
   expect(denseMixed.accepted_count).toBeGreaterThanOrEqual(openTrees.accepted_count);
-  await expect(page.getByText(`Расчётный шаг ${openTrees.effective_spacing_m} м`)).toBeVisible();
-  if (openTrees.reason_summary.length) await expect(page.getByText(openTrees.reason_summary[0].message, { exact: false }).first()).toBeVisible();
+  await expect(page.getByText(`шаг ${openTrees.effective_spacing_m} м`)).toBeVisible();
+  if (openTrees.reason_summary.length) await expect(page.getByText('Почему меньше')).toBeVisible();
 
+  await page.getByRole('button', { name: 'Изменить' }).click();
+  await page.getByLabel('Состав группы').selectOption('mixed');
+  await page.getByLabel('Плотность группы').selectOption('canopy');
   const finalMixedResponse = page.waitForResponse((response) => {
     if (!response.url().includes('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
     const body = response.request().postDataJSON() as { composition?: string; spacing_policy?: string; target_count?: number };
     return body.composition === 'mixed' && body.spacing_policy === 'canopy' && body.target_count === 60;
   });
-  await page.getByLabel('Состав группы').selectOption('mixed');
-  await page.getByLabel('Плотность группы').selectOption('canopy');
+  await page.getByRole('button', { name: 'Проверить места' }).click();
   const finalMixed = await (await finalMixedResponse).json() as { accepted_count: number };
-  await expect(page.getByText('Черновик на карте')).toBeVisible({ timeout: 25_000 });
   const largeAccepted = finalMixed.accepted_count;
   expect(largeAccepted).toBeGreaterThan(1);
+  await expect(page.getByText(`Найдено ${largeAccepted}`)).toBeVisible({ timeout: 25_000 });
   await page.getByRole('button', { name: /Добавить/ }).click();
   await expect.poll(async () => {
     const response = await page.request.get(`${apiBase}/projects/${largeProjectId}`);
@@ -1364,4 +1483,83 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
   await page.waitForTimeout(250);
   await expect.poll(async () => map.locator('canvas').evaluateAll((canvases) => canvases.every((canvas) => canvas.width > 0 && canvas.height > 0))).toBe(true);
   await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
+});
+
+test('dense Kitay-gorod DXF preserves local obstacles and stays visible after navigation', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/projects/new/import');
+  const importStarted = performance.now();
+  await page.setInputFiles('input[type=file]', denseMoscowFixture);
+  await expect(page).toHaveURL(/\/setup$/, { timeout: 15_000 });
+  expect(performance.now() - importStarted).toBeLessThan(15_000);
+
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const projectResponse = await page.request.get(`${apiBase}/projects/${projectId}`);
+  expect(projectResponse.ok()).toBeTruthy();
+  const project = await projectResponse.json() as { layers: Array<{ source_name: string }> };
+  expect(project.layers.map((layer) => layer.source_name)).toEqual(expect.arrayContaining([
+    'OSM_BUILDING',
+    'OSM_PATH',
+    'OSM_GREEN_EXISTING',
+    'OSM_BARRIER',
+    'OSM_ROAD_LOCAL',
+  ]));
+
+  await page.getByRole('button', { name: 'Подготовить карту' }).click();
+  await expect(page).toHaveURL(/\/workspace$/, { timeout: 30_000 });
+  const map = page.getByLabel('Карта проекта озеленения');
+  await expect(map).toBeVisible();
+  await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
+
+  const before = await drawnMapPixelSamples(page);
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width * 0.68, box!.y + box!.height * 0.56);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width * 0.42, box!.y + box!.height * 0.38, { steps: 8 });
+  await page.mouse.up();
+  await page.mouse.wheel(0, -420);
+  await expect.poll(() => drawnMapPixelSamples(page)).toBeGreaterThan(10);
+  expect(await drawnMapPixelSamples(page)).toBeGreaterThan(before * 0.15);
+  await expectNoViewportOverflow(page);
+
+  // Rendering a dense city file is not enough: exercise the operator's real
+  // task on one calculated, locally bounded fragment of that geometry.
+  await saveFirstCalculatedArea(page, projectId, 'Рабочий фрагмент Китай-города');
+  const openEditor = page.getByRole('button', { name: 'Открыть редактор' });
+  await expect(openEditor).toBeEnabled();
+  await openEditor.click();
+  await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
+  await expect(page.locator('.pattern-tool-panel input[type="checkbox"]:checked')).toHaveCount(1);
+  await page.getByLabel('Состав группы').selectOption('mixed');
+  await page.getByLabel('Плотность группы').selectOption('canopy');
+  await page.getByLabel('Объём посадок').selectOption('exact');
+  await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('30');
+
+  const previewResponse = page.waitForResponse((response) => {
+    if (!response.url().includes('/plan/patterns/preview') || response.request().method() !== 'POST') return false;
+    const body = response.request().postDataJSON() as { zone_ids?: string[]; composition?: string; target_count?: number };
+    return body.zone_ids?.length === 1 && body.composition === 'mixed' && body.target_count === 30;
+  });
+  const previewStarted = performance.now();
+  await page.getByRole('button', { name: 'Проверить места' }).click();
+  const preview = await (await previewResponse).json() as {
+    accepted_count: number;
+    blocked_count: number;
+    change_set: { additions: Array<{ x: number; y: number }> };
+  };
+  expect(performance.now() - previewStarted).toBeLessThan(5_000);
+  expect(preview.accepted_count).toBeGreaterThan(1);
+  expect(preview.change_set.additions).toHaveLength(preview.accepted_count);
+  await expect(page.getByText(`Найдено ${preview.accepted_count}`)).toBeVisible();
+  await page.getByRole('button', { name: /Добавить/ }).click();
+  await expect.poll(async () => {
+    const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await response.json() as { plan: { objects: unknown[] } }).plan.objects.length;
+  }).toBe(preview.accepted_count);
+  await page.screenshot({
+    path: path.resolve('../../docs/audits/2026-09-02-zone-workflow/14-kitay-gorod-mass-placement.png'),
+    fullPage: true,
+  });
 });

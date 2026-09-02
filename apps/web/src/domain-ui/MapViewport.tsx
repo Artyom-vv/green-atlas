@@ -1,7 +1,6 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef } from 'react';
 import type { BrushStroke, ChangeSetPreview, PlanObject, PlantingZoneAssignment } from '@green/api-client';
 import Feature from 'ol/Feature';
-import Collection from 'ol/Collection';
 import GeoJSON from 'ol/format/GeoJSON';
 import Map from 'ol/Map';
 import View from 'ol/View';
@@ -63,7 +62,6 @@ export function mapHitStack(features: readonly Feature[]): Feature[] {
   const seen = new Set<Feature>();
   const seenIds = new Set<string>();
   return features
-    .filter((feature) => Object.prototype.hasOwnProperty.call(mapHitPriority, String(feature.get('kind') ?? '')))
     .filter((feature) => {
       if (seen.has(feature)) return false;
       const id = feature.getId();
@@ -74,7 +72,13 @@ export function mapHitStack(features: readonly Feature[]): Feature[] {
       return true;
     })
     .sort((left, right) => {
-      const priorityDifference = mapHitPriority[String(left.get('kind'))] - mapHitPriority[String(right.get('kind'))];
+      // Unclassified source geometry is still a concrete DXF object. Keep it
+      // ahead of aggregate `planting_area` and `allowed` polygons; otherwise
+      // a click on an annotation or uncommon CAD layer resolves to the whole
+      // project area and highlights every contour as one object.
+      const leftPriority = mapHitPriority[String(left.get('kind'))] ?? 7.5;
+      const rightPriority = mapHitPriority[String(right.get('kind'))] ?? 7.5;
+      const priorityDifference = leftPriority - rightPriority;
       if (priorityDifference) return priorityDifference;
       return String(left.getId() ?? '').localeCompare(String(right.getId() ?? ''));
     });
@@ -457,7 +461,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMoveCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; tool: MapTool; brushWidthM?: number; brushOperation?: 'add' | 'subtract'; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMoveCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = [], hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, tool, brushWidthM = 12, brushOperation = 'add', onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -485,6 +489,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const selectionInteractionRef = useRef<Draw | DragBox | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
   const translateInteractionRef = useRef<Translate | null>(null);
+  const translatingSelectionRef = useRef(false);
   const hoveredMapFeatureRef = useRef<Feature | null>(null);
   const hoveredMapGeometryKeyRef = useRef<string | undefined>(undefined);
   const selectedRef = useRef<ReadonlySet<string>>(new Set(selectedIds));
@@ -702,6 +707,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const size = map.getSize();
       if (!size?.[0] || !size?.[1]) return;
       const extent = view.calculateExtent(size);
+      target.dataset.viewExtent = extent.map((value) => Number(value.toFixed(4))).join(',');
+      target.dataset.viewResolution = String(Number((view.getResolution() ?? 1).toFixed(6)));
       callbackRef.current.onExtentChange?.([extent[0], extent[1], extent[2], extent[3]], view.getResolution() ?? 1);
     };
     let resizeFrame = 0;
@@ -781,7 +788,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     });
     map.on('pointermove', (event) => {
       if (event.dragging) {
-        if (toolRef.current === 'move') callbackRef.current.onMoveCoordinate?.([event.coordinate[0], event.coordinate[1]]);
+        if (toolRef.current === 'move' || translatingSelectionRef.current) callbackRef.current.onMoveCoordinate?.([event.coordinate[0], event.coordinate[1]]);
         callbackRef.current.onPointerCoordinate?.(undefined);
         callbackRef.current.onMapHover?.(undefined);
         mapHoverSourceRef.current.clear();
@@ -902,10 +909,14 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     drawRef.current = null;
     if (tool !== 'draw_area' && tool !== 'pattern_row' && tool !== 'brush') return;
     const rememberBrushMode = (event: PointerEvent) => {
-      brushModeRef.current = event.altKey ? 'subtract' : 'append';
+      const operation = event.altKey ? (brushOperation === 'add' ? 'subtract' : 'append') : brushOperation === 'add' ? 'append' : 'subtract';
+      brushModeRef.current = operation;
     };
     if (tool === 'brush') target?.addEventListener('pointerdown', rememberBrushMode, true);
-    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', trace: tool === 'pattern_row', traceSource: tool === 'pattern_row' ? snapTargetSourceRef.current : undefined, style: drawStyle, stopClick: true, condition: (event) => {
+    const activeDrawStyle = tool === 'brush' ? (_feature: FeatureLike, resolution: number) => new Style({
+      stroke: new Stroke({ color: brushOperation === 'subtract' ? 'rgba(217,45,32,.28)' : 'rgba(34,92,255,.24)', width: Math.max(8, brushWidthM / Math.max(resolution, 0.0001)), lineCap: 'round', lineJoin: 'round' }),
+    }) : drawStyle;
+    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', trace: tool === 'pattern_row', traceSource: tool === 'pattern_row' ? snapTargetSourceRef.current : undefined, style: activeDrawStyle, stopClick: true, condition: (event) => {
       const original = event.originalEvent as PointerEvent;
       return !spacePanRef.current && original.button === 0 && (tool !== 'pattern_row' || original.shiftKey);
     } });
@@ -922,11 +933,14 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         areaDrawingSourceRef.current.clear();
       } else if (featureGeometry instanceof LineString) {
         const resolution = map.getView().getResolution() ?? 1;
+        let coordinates = featureGeometry.getCoordinates();
         if (tool === 'brush' && featureGeometry.getLength() < resolution * 5) {
-          areaDrawingSourceRef.current.clear();
-          return;
+          const point = coordinates.at(-1) ?? coordinates[0];
+          if (!point) return;
+          const epsilon = Math.max(0.01, brushWidthM / 1000);
+          coordinates = [[point[0] - epsilon, point[1]], [point[0] + epsilon, point[1]]];
         }
-        const geometry = { type: 'LineString' as const, coordinates: featureGeometry.getCoordinates() };
+        const geometry = { type: 'LineString' as const, coordinates };
         if (tool === 'brush') callbackRef.current.onDrawBrush?.({ mode: brushModeRef.current === 'subtract' ? 'subtract' : 'add', geometry }, brushModeRef.current);
         else callbackRef.current.onDrawAxis?.(geometry, { type: 'manual', label: 'Нарисована вручную' });
         areaDrawingSourceRef.current.clear();
@@ -948,7 +962,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       map.removeInteraction(draw);
       if (drawRef.current === draw) drawRef.current = null;
     };
-  }, [tool]);
+  }, [brushOperation, brushWidthM, tool]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1144,10 +1158,15 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     if (!map) return;
     if (translateInteractionRef.current) map.removeInteraction(translateInteractionRef.current);
     translateInteractionRef.current = null;
-    if (tool !== 'move' || !selectedIds?.length) return;
+    if ((tool !== 'move' && tool !== 'select') || !selectedIds?.length) return;
     const features = planSourceRef.current.getFeatures().filter((feature) => selectedRef.current.has(String(feature.get('objectId'))));
     if (!features.length) return;
-    const translate = new Translate({ features: new Collection(features), hitTolerance: 8 });
+    const translate = new Translate({
+      layers: planLayerRef.current ? [planLayerRef.current] : undefined,
+      filter: (feature) => selectedRef.current.has(String(feature.get('objectId'))),
+      hitTolerance: 12,
+    });
+    translate.on('translatestart', () => { translatingSelectionRef.current = true; });
     translate.on('translating', () => {
       const centers = features.flatMap((feature) => {
         const geometry = feature.getGeometry();
@@ -1160,6 +1179,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       callbackRef.current.onSelectionAnchor?.([pixel[0], pixel[1]]);
     });
     translate.on('translateend', () => {
+      translatingSelectionRef.current = false;
       const centers = features.flatMap((feature) => {
         const geometry = feature.getGeometry();
         return geometry instanceof Circle ? [geometry.getCenter()] : [];
@@ -1175,6 +1195,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     map.addInteraction(translate);
     translateInteractionRef.current = translate;
     return () => {
+      translatingSelectionRef.current = false;
       map.removeInteraction(translate);
       if (translateInteractionRef.current === translate) translateInteractionRef.current = null;
     };
