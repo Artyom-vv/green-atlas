@@ -78,6 +78,17 @@ async function fittedPlanCoordinates(page: Page, map: Locator) {
   });
 }
 
+async function mapCoordinatePixel(map: Locator, coordinate: [number, number]) {
+  await expect(map).toHaveAttribute('data-view-extent', /,/);
+  const extent = (await map.getAttribute('data-view-extent'))!.split(',').map(Number) as [number, number, number, number];
+  const box = await map.boundingBox();
+  expect(box).not.toBeNull();
+  return {
+    x: box!.x + (coordinate[0] - extent[0]) / (extent[2] - extent[0]) * box!.width,
+    y: box!.y + (extent[3] - coordinate[1]) / (extent[3] - extent[1]) * box!.height,
+  };
+}
+
 async function importFixture(page: Page) {
   await page.goto('/projects/new/import');
   await page.setInputFiles('input[type=file]', fixture);
@@ -298,7 +309,7 @@ test('a user can choose several local areas before opening the editor', async ({
     { id: 'area-b', label: 'Контур DXF: газон B', geometry: { type: 'Polygon', coordinates: [[[62, 12], [72, 12], [72, 30], [62, 30], [62, 12]]] } },
   ]);
   await expect(page.getByText('Выбрано', { exact: true })).toBeVisible();
-  await expect(page.getByText('Рабочая область', { exact: true })).toHaveCount(2);
+  await expect(page.locator('.planting-place-group .planting-assignment-row')).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Открыть редактор' })).toBeEnabled();
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
   await page.getByRole('button', { name: 'Разместить посадки' }).first().click();
@@ -376,7 +387,7 @@ test('an overlapping dense DXF hit-stack lets the operator choose the allowed co
     return stack.getByText('Допустимая область', { exact: true }).count();
   }, { timeout: 10_000 }).toBe(1);
   await expect(stack.getByText('Контур DXF: 0', { exact: true })).toBeVisible();
-  await stack.getByRole('button', { name: 'Выбрать Допустимая область' }).click();
+  await page.mouse.click(point.x, point.y);
   await expect(page.locator('.planting-assignment-row')).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Выберите место' })).toBeVisible();
 });
@@ -393,7 +404,7 @@ test('drawn area is stored only as a local planting zone', async ({ page }) => {
   await page.mouse.click(box!.x + box!.width * 0.60, box!.y + box!.height * 0.35);
   await page.mouse.click(box!.x + box!.width * 0.60, box!.y + box!.height * 0.65);
   await page.mouse.dblclick(box!.x + box!.width * 0.35, box!.y + box!.height * 0.65);
-  await expect(page.getByText('Ручной участок 1')).toBeVisible();
+  await expect(page.locator('.planting-assignment-row').getByText('Ручной участок 1', { exact: true })).toBeVisible();
   expect(await unexpectedRequest).toBe(false);
 });
 
@@ -435,19 +446,8 @@ test('escape clears a direct map selection without a floating toolbar', async ({
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
   await page.getByLabel('Показать посадки').click();
-  await page.waitForTimeout(250);
-  const mapBox = await map.boundingBox();
-  expect(mapBox).not.toBeNull();
-  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
-  const padding = 72;
-  const resolution = Math.max(
-    (planExtent[2] - planExtent[0]) / (mapBox!.width - padding * 2),
-    (planExtent[3] - planExtent[1]) / (mapBox!.height - padding * 2),
-  );
-  await page.mouse.click(
-    mapBox!.x + mapBox!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    mapBox!.y + mapBox!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  );
+  const point = await fittedPlanCoordinates(page, map);
+  await page.mouse.click(point(20, 20).x, point(20, 20).y);
   await expect(page.getByRole('toolbar', { name: 'Действия с выделением' })).toHaveCount(0);
   await expect(page.getByText('Выбранная посадка')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -539,12 +539,13 @@ test('workspace panels do not remount or blank the map canvas', async ({ page })
   const initialCanvases = await map.locator('canvas').count();
   expect(initialCanvases).toBeGreaterThan(0);
   const initialMapBox = await map.boundingBox();
-  const initialToolbarBox = await page.locator('.map-edit-tools').boundingBox();
   await page.getByRole('button', { name: 'Развернуть слои' }).click();
   const openMapBox = await map.boundingBox();
   const openToolbarBox = await page.locator('.map-edit-tools').boundingBox();
+  const leftPanelBox = await page.locator('.workspace-left').boundingBox();
   expect(Math.abs(openMapBox!.width - initialMapBox!.width)).toBeLessThan(1);
-  expect(Math.abs(openToolbarBox!.x - initialToolbarBox!.x)).toBeLessThan(1);
+  expect(openToolbarBox!.x).toBeGreaterThanOrEqual(leftPanelBox!.x + leftPanelBox!.width);
+  expect(openToolbarBox!.x + openToolbarBox!.width).toBeLessThanOrEqual(openMapBox!.x + openMapBox!.width);
   await page.getByRole('button', { name: 'Свернуть слои' }).click();
   await page.getByRole('button', { name: 'Свернуть боковую панель' }).click();
   const dockBox = await page.locator('.right-dock').boundingBox();
@@ -699,24 +700,7 @@ test('map selection supports group deletion and undo without an object table', a
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
   await page.getByLabel('Показать посадки').click();
-  // fitPlan animates the view for 220 ms. Calculate screen coordinates only
-  // after its final extent is in place, otherwise a valid hover can turn into
-  // a different click while the camera is still moving.
-  await page.waitForTimeout(250);
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  // The three fixture trees produce this circle extent. It is the same input
-  // used by MapViewport.fitPlan(), including its 72 px padding.
-  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
-  const padding = 72;
-  const resolution = Math.max(
-    (planExtent[2] - planExtent[0]) / (box!.width - padding * 2),
-    (planExtent[3] - planExtent[1]) / (box!.height - padding * 2),
-  );
-  const point = (x: number, y: number) => ({
-    x: box!.x + box!.width / 2 + (x - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (y - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  });
+  const point = await fittedPlanCoordinates(page, map);
   const first = point(20, 20);
   const second = point(40, 20);
   await page.mouse.click(first.x, first.y);
@@ -1017,8 +1001,9 @@ test('operator can preview a realistic placement mask without mutating the plan'
   expect((await catalogResponse).ok()).toBe(true);
   await expect(page.getByRole('group', { name: /Сценарий размещения/ })).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(4);
-  await page.getByText('Куртины', { exact: true }).click();
-  await expect(page.getByRole('radio', { name: 'Куртины' })).toBeChecked();
+  const clusterScenario = page.getByRole('radio', { name: 'Куртины' });
+  await clusterScenario.click();
+  await expect(clusterScenario).toBeChecked();
   await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('12');
 
@@ -1044,7 +1029,7 @@ test('primary workspace previews only after explicit confirmation and accepts a 
   await expect(page.getByRole('button', { name: 'Добавить дерево' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Кисть посадок' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Посадки вдоль линии' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '3D', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('toolbar', { name: 'Режим отображения' }).getByRole('button', { name: '3D', exact: true })).toBeVisible();
   await expect(page.getByLabel('Приоритет')).toHaveCount(0);
 
   let previewRequests = 0;
@@ -1069,7 +1054,7 @@ test('primary workspace previews only after explicit confirmation and accepts a 
   expect(preview.accepted_count + preview.rejected_count + preview.capacity_shortfall).toBe(5000);
   expect(previewRequests).toBe(1);
   await expect(page.getByText(preview.accepted_count ? `Найдено ${preview.accepted_count}` : 'Мест не найдено')).toBeVisible();
-  await expect(page.getByText('Проверка', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status', { name: /Этапы настройки: 3 из 3/ })).toBeVisible();
 });
 
 test('working areas remain manageable after the editor is opened', async ({ page }) => {
@@ -1237,19 +1222,8 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const sourceExtent = [-5, -5, 125, 95] as const;
-  const padding = 28;
-  const resolution = Math.max(
-    (sourceExtent[2] - sourceExtent[0]) / (box!.width - padding * 2),
-    (sourceExtent[3] - sourceExtent[1]) / (box!.height - padding * 2),
-  );
-  const point = (x: number, y: number) => ({
-    x: box!.x + box!.width / 2 + (x - (sourceExtent[0] + sourceExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (y - (sourceExtent[1] + sourceExtent[3]) / 2) / resolution,
-  });
-  const start = point(34, 7);
+  await expect(map).toHaveAttribute('data-geometry-ready', 'true');
+  const start = await mapCoordinatePixel(map, [34, 7]);
 
   await page.getByRole('button', { name: 'Посадки вдоль линии' }).click();
   await expect(page.getByRole('checkbox', { name: 'Контур DXF: тестовая область' })).toBeChecked();
@@ -1259,11 +1233,12 @@ test('row placement creates a checked linear planting group', async ({ page }) =
   await expect(page.getByText('Источник', { exact: true })).toBeVisible();
   await expect(page.getByText('Длина', { exact: true })).toBeVisible();
   await expect(page.locator('.pattern-tool-panel__axis dd').last()).toContainText(/\d+\.\d м/);
-  const existingPlant = point(20, 20);
+  const existingPlant = await mapCoordinatePixel(map, [20, 20]);
   await page.mouse.move(existingPlant.x, existingPlant.y);
   await expect(page.getByText('Ряд посадок', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Выбор объекта карты')).toHaveCount(0);
   await page.getByLabel('Порода для участка').selectOption({ label: 'Рябина обыкновенная' });
+  await page.getByRole('button', { name: 'Дополнительные настройки' }).click();
   await page.getByRole('combobox', { name: 'Сторона оси' }).selectOption('left');
   await page.getByRole('spinbutton', { name: 'Поперечный отступ' }).fill('12');
   await page.getByRole('spinbutton', { name: 'Количество посадок' }).fill('5');
@@ -1372,16 +1347,8 @@ test('species assignment adds crown and root horizons without reloading the DXF'
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
   await page.getByLabel('Показать посадки').click();
-  await page.waitForTimeout(250);
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
-  const padding = 72;
-  const resolution = Math.max((planExtent[2] - planExtent[0]) / (box!.width - padding * 2), (planExtent[3] - planExtent[1]) / (box!.height - padding * 2));
-  await page.mouse.click(
-    box!.x + box!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    box!.y + box!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  );
+  const point = await fittedPlanCoordinates(page, map);
+  await page.mouse.click(point(20, 20).x, point(20, 20).y);
 
   await page.getByRole('button', { name: 'Назначить породу' }).click();
   const species = page.getByRole('combobox', { name: /Порода/ });
@@ -1423,16 +1390,8 @@ test('growth horizon is controlled at an arbitrary year and updates dimensions p
   await page.getByLabel('Показать посадки').click();
   const map = page.getByLabel('Карта проекта озеленения');
   await expect.poll(async () => Number(await map.getAttribute('data-view-resolution'))).toBeLessThan(0.05);
-  await page.waitForTimeout(250);
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const planExtent = [18.4, 18.4, 21.6, 21.6] as const;
-  const padding = 72;
-  const resolution = Math.max((planExtent[2] - planExtent[0]) / (box!.width - padding * 2), (planExtent[3] - planExtent[1]) / (box!.height - padding * 2));
-  await page.mouse.click(
-    box!.x + box!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    box!.y + box!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  );
+  const point = await fittedPlanCoordinates(page, map);
+  await page.mouse.click(point(20, 20).x, point(20, 20).y);
   await expect(page.getByText('Выбранная посадка')).toBeVisible();
   await expect(page.getByText('Липа мелколистная')).toBeVisible();
 
@@ -1494,16 +1453,8 @@ test('tree hover then click selects the planting instead of the underlying DXF z
   await page.getByLabel('Показать посадки').click();
   const map = page.getByLabel('Карта проекта озеленения');
   await expect.poll(async () => Number(await map.getAttribute('data-view-resolution'))).toBeLessThan(0.05);
-  await page.waitForTimeout(250);
-  const box = await map.boundingBox();
-  expect(box).not.toBeNull();
-  const planExtent = [18.4, 18.4, 21.6, 21.6] as const;
-  const padding = 72;
-  const resolution = Math.max((planExtent[2] - planExtent[0]) / (box!.width - padding * 2), (planExtent[3] - planExtent[1]) / (box!.height - padding * 2));
-  const treePixel = {
-    x: box!.x + box!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    y: box!.y + box!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  };
+  const point = await fittedPlanCoordinates(page, map);
+  const treePixel = point(20, 20);
   const extentBefore = await map.getAttribute('data-view-extent');
   const resolutionBefore = await map.getAttribute('data-view-resolution');
   await page.mouse.move(treePixel.x + 7, treePixel.y + 3);
@@ -1545,19 +1496,8 @@ test('opening another workspace directly drops the prior map selection', async (
   await openManualPlan(page);
   const firstMap = page.getByLabel('Карта проекта озеленения');
   await page.getByLabel('Показать посадки').click();
-  await page.waitForTimeout(250);
-  const firstBox = await firstMap.boundingBox();
-  expect(firstBox).not.toBeNull();
-  const planExtent = [18.4, 18.4, 41.6, 31.6] as const;
-  const padding = 72;
-  const resolution = Math.max(
-    (planExtent[2] - planExtent[0]) / (firstBox!.width - padding * 2),
-    (planExtent[3] - planExtent[1]) / (firstBox!.height - padding * 2),
-  );
-  await page.mouse.click(
-    firstBox!.x + firstBox!.width / 2 + (20 - (planExtent[0] + planExtent[2]) / 2) / resolution,
-    firstBox!.y + firstBox!.height / 2 - (20 - (planExtent[1] + planExtent[3]) / 2) / resolution,
-  );
+  const point = await fittedPlanCoordinates(page, firstMap);
+  await page.mouse.click(point(20, 20).x, point(20, 20).y);
   await expect(page.getByText('Дерево', { exact: true })).toBeVisible();
 
   const secondProjectId = await createPreparedProjectThroughApi(page, 'Второй проект без посадок');
@@ -1585,7 +1525,7 @@ test('opening another workspace directly drops the prior map selection', async (
   await page.mouse.click(secondBox!.x + secondBox!.width * 0.60, secondBox!.y + secondBox!.height * 0.35);
   await page.mouse.click(secondBox!.x + secondBox!.width * 0.60, secondBox!.y + secondBox!.height * 0.65);
   await page.mouse.dblclick(secondBox!.x + secondBox!.width * 0.35, secondBox!.y + secondBox!.height * 0.65);
-  await expect(page.getByText('Ручной участок 1')).toBeVisible();
+  await expect(page.locator('.planting-assignment-row').getByText('Ручной участок 1', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
   await expect(page.getByText('Создайте первую схему')).toBeVisible();
 });

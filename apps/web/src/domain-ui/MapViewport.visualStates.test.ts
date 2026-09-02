@@ -68,8 +68,8 @@ describe('plan marker visual semantics', () => {
     const styles = planStyle(planFeature('error'), new Set(['tree-1']), 2) as Style[];
     const markerImages = styles.map((style) => style.getImage()).filter((image): image is CircleStyle => image instanceof CircleStyle);
 
-    expect(markerImages.some((image) => image.getRadius() === 10)).toBe(true);
-    expect(markerImages.some((image) => image.getRadius() === 6 && image.getFill()?.getColor() === '#D92D20')).toBe(true);
+    expect(markerImages.some((image) => image.getRadius() === 14)).toBe(true);
+    expect(markerImages.some((image) => image.getRadius() === 10 && image.getFill()?.getColor() === '#D92D20')).toBe(true);
     expect(styles.some((style) => style.getImage() instanceof Icon)).toBe(false);
   });
 

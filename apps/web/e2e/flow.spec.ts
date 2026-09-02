@@ -18,7 +18,7 @@ test('user can import any DXF, prepare a manual plan and release a reproducible 
   await page.mouse.click(box!.x + box!.width * 0.60, box!.y + box!.height * 0.35);
   await page.mouse.click(box!.x + box!.width * 0.60, box!.y + box!.height * 0.65);
   await page.mouse.dblclick(box!.x + box!.width * 0.35, box!.y + box!.height * 0.65);
-  await expect(page.getByText('Ручной участок 1')).toBeVisible();
+  await expect(page.locator('.planting-assignment-row').getByText('Ручной участок 1', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Открыть редактор' }).click();
   await expect(page.getByRole('main').getByText('План озеленения', { exact: true })).toBeVisible();
 

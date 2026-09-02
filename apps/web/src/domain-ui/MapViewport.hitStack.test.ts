@@ -3,11 +3,19 @@ import Polygon from 'ol/geom/Polygon';
 import Circle from 'ol/geom/Circle';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import { describe, expect, it } from 'vitest';
-import { contextualConstraintHits, mapAreaTargetFromFeature, mapHitStack, plantingZoneIsShadowedByDraft, previewHoverTargetFromFeature, resolveHoverFeature } from './MapViewport';
+import { contextualConstraintHits, featureDistanceToCoordinate, mapAreaTargetFromFeature, mapHitStack, plantingZoneIsShadowedByDraft, previewHoverTargetFromFeature, resolveHoverFeature } from './MapViewport';
 
 const square = (size = 10) => new Polygon([[[0, 0], [size, 0], [size, size], [0, size], [0, 0]]]);
 
 describe('map hit stack', () => {
+  it('treats the full planting circle as a direct hit', () => {
+    const tree = new Feature({ geometry: new Circle([5, 5], 1.6), kind: 'tree' });
+
+    expect(featureDistanceToCoordinate(tree, [5.0001, 5])).toBe(0);
+    expect(featureDistanceToCoordinate(tree, [5.5, 5])).toBe(0);
+    expect(featureDistanceToCoordinate(tree, [8, 5])).toBeCloseTo(1.4);
+  });
+
   it('keeps every relevant overlapping feature in stable semantic order', () => {
     const allowed = new Feature({ geometry: square(), kind: 'allowed' });
     allowed.setId('allowed-area');

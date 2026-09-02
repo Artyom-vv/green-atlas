@@ -396,7 +396,7 @@ code { font-family: var(--font-mono); font-weight: 400; }
 .placement-scenario-card:hover:not([data-unavailable]) { border-color: var(--color-neutral-500); transform: translateY(-1px); }
 .placement-scenario-card[data-selected] { border-color: var(--color-blue-600); background: linear-gradient(145deg, var(--color-blue-100), var(--color-white) 72%); box-shadow: inset 0 0 0 1px var(--color-blue-600); }
 .placement-scenario-card[data-unavailable] { color: var(--color-neutral-500); background: var(--color-neutral-100); cursor: not-allowed; }
-.placement-scenario-card > input { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; opacity: 0; pointer-events: none; }
+.placement-scenario-card > input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 .placement-scenario-card:has(input:focus-visible) { outline: 2px solid var(--color-blue-600); outline-offset: 2px; }
 .placement-scenario-card__diagram { position: relative; width: 48px; height: 48px; display: block; overflow: hidden; border: 1px solid rgba(31, 143, 103, .24); border-radius: 4px; background-color: #eef8f3; background-image: linear-gradient(rgba(31,143,103,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(31,143,103,.09) 1px, transparent 1px); background-size: 9px 9px; }
 .placement-scenario-card__diagram i { position: absolute; width: 6px; height: 6px; display: block; border: 1px solid #fff; border-radius: 50%; background: var(--color-green-700); box-shadow: 0 0 0 1px rgba(17, 113, 78, .18); }

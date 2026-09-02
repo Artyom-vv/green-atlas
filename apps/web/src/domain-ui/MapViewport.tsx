@@ -257,11 +257,35 @@ export function selectionDraftStyle(feature: FeatureLike): Style | Style[] {
   return selectionAreaDraftStyle;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- pure geometry helper is exported for hit-test regression coverage.
+export function featureDistanceToCoordinate(feature: FeatureLike, coordinate: [number, number]): number | undefined {
+  const geometry = feature.getGeometry();
+  if (!geometry) return undefined;
+  // OpenLayers returns a point on a Circle's circumference from getClosestPoint,
+  // even when the requested coordinate is already inside it. Treating every
+  // interior point as a direct hit keeps planting markers clickable.
+  if (geometry.intersectsCoordinate(coordinate)) return 0;
+  const closest = geometry.getClosestPoint(coordinate);
+  return Math.hypot(closest[0] - coordinate[0], closest[1] - coordinate[1]);
+}
+
 function plantGlyph(kind: string, color: string, outline: string): string {
   const body = kind === 'shrub'
     ? '<circle cx="8" cy="11" r="4"/><circle cx="12" cy="8" r="5"/><circle cx="16" cy="11" r="4"/>'
     : '<path d="M12 2.2c-2.7 0-4.6 1.7-4.9 4.1A5 5 0 0 0 4.5 15a5.3 5.3 0 0 0 7.5 1.2A5.3 5.3 0 0 0 19.5 15a5 5 0 0 0-2.6-8.7C16.6 3.9 14.7 2.2 12 2.2Z"/><path d="M11 15h2v6h-2z"/>';
   return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="${color}" stroke="${outline}" stroke-width="1.5" stroke-linejoin="round">${body}</g></svg>`)}`;
+}
+
+function plantMarkerMetrics(kind: string) {
+  const tree = kind === 'tree';
+  return {
+    overviewRadius: tree ? 10 : 8,
+    overviewBackdropRadius: tree ? 12 : 10,
+    overviewSelectionRadius: tree ? 14 : 12,
+    detailHaloRadius: tree ? 10 : 8.5,
+    detailSelectionRadius: tree ? 13 : 11.5,
+    glyphSize: tree ? 20 : 17,
+  };
 }
 
 const changePreviewStyles = new globalThis.Map<string, Style[]>();
@@ -272,6 +296,7 @@ export function changePreviewStyle(feature: FeatureLike, resolution = 1): Style[
   const role = String(feature.get('previewRole') ?? 'candidate');
   const semanticColor = status === 'blocked' ? '#D92D20' : status === 'unknown' || status === 'soft_conflict' ? '#B76400' : '#168A5B';
   const overview = resolution > 0.9;
+  const marker = plantMarkerMetrics(kind);
   const key = `${kind}:${status}:${role}:${overview}`;
   const cached = changePreviewStyles.get(key);
   if (cached) return cached;
@@ -300,8 +325,8 @@ export function changePreviewStyle(feature: FeatureLike, resolution = 1): Style[
   };
   const styles = overview
     ? [
-      new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 8 : 7, fill: new Fill({ color: '#FFFFFF' }), stroke: new Stroke({ color: '#FFFFFF', width: 3 }) }) }),
-      new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 6 : 5, fill: new Fill({ color: semanticColor }), stroke: new Stroke({ color: semanticColor, width: 1 }) }) }),
+      new Style({ geometry, image: new CircleStyle({ radius: marker.overviewBackdropRadius, fill: new Fill({ color: '#FFFFFF' }), stroke: new Stroke({ color: '#FFFFFF', width: 3 }) }) }),
+      new Style({ geometry, image: new CircleStyle({ radius: marker.overviewRadius, fill: new Fill({ color: semanticColor }), stroke: new Stroke({ color: semanticColor, width: 1 }) }) }),
     ]
     : [
       new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 11 : 9, fill: new Fill({ color: '#FFFFFF' }), stroke: new Stroke({ color: semanticColor, width: 2 }) }) }),
@@ -535,6 +560,7 @@ export function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string>
   // Muting it used to erase both selection and validation status.
   const zoneMuted = Boolean(feature.get('_zoneMuted')) && !selected;
   const overview = resolution > 0.9;
+  const marker = plantMarkerMetrics(kind);
   const key = `${kind}:${visualStatus}:${selected}:${overview}:${zoneMuted}`;
   const cached = planStyles.get(key);
   if (cached) return cached;
@@ -566,18 +592,18 @@ export function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string>
     geometry: markerGeometry,
     image: new Icon({
       src: plantGlyph(kind, markerColor, '#FFFFFF'),
-      width: kind === 'tree' ? 20 : 17,
-      height: kind === 'tree' ? 20 : 17,
+      width: marker.glyphSize,
+      height: marker.glyphSize,
     }),
   });
   const markerHaloStyle = new Style({
     geometry: markerGeometry,
-    image: new CircleStyle({ radius: kind === 'tree' ? 10 : 8.5, fill: new Fill({ color: 'rgba(255,255,255,.96)' }), stroke: new Stroke({ color: zoneMuted ? '#91A0AE' : semanticColor, width: 1.25 }) }),
+    image: new CircleStyle({ radius: marker.detailHaloRadius, fill: new Fill({ color: 'rgba(255,255,255,.96)' }), stroke: new Stroke({ color: zoneMuted ? '#91A0AE' : semanticColor, width: 1.25 }) }),
   });
   const compactMarkerStyle = new Style({
     geometry: markerGeometry,
     image: new CircleStyle({
-      radius: kind === 'tree' ? 6 : 5,
+      radius: marker.overviewRadius,
       fill: new Fill({ color: markerColor }),
       stroke: new Stroke({ color: '#FFFFFF', width: 2 }),
     }),
@@ -585,7 +611,7 @@ export function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string>
   const selectionMarkerStyle = new Style({
     geometry: markerGeometry,
     image: new CircleStyle({
-      radius: overview ? (kind === 'tree' ? 10 : 9) : (kind === 'tree' ? 13 : 11.5),
+      radius: overview ? marker.overviewSelectionRadius : marker.detailSelectionRadius,
       fill: new Fill({ color: 'rgba(255,255,255,.96)' }),
       stroke: new Stroke({ color: '#225CFF', width: overview ? 2.5 : 3 }),
     }),
@@ -1023,10 +1049,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       let nearest: { feature: Feature; distance: number } | undefined;
       source.forEachFeatureInExtent(extent, (feature) => {
         if (predicate && !predicate(feature)) return;
-        const geometry = feature.getGeometry();
-        if (!geometry) return;
-        const closest = geometry.getClosestPoint(coordinate);
-        const distance = Math.hypot(closest[0] - coordinate[0], closest[1] - coordinate[1]);
+        const distance = featureDistanceToCoordinate(feature, coordinate);
+        if (distance === undefined) return;
         if (distance <= tolerance && (!nearest || distance < nearest.distance)) nearest = { feature, distance };
       });
       return nearest?.feature;
@@ -1113,6 +1137,12 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         const candidates = hitFeatures(event.pixel);
         const plantingArea = candidates.find((candidate) => candidate.get('kind') === 'planting_area');
         const selectableArea = plantingArea ?? candidates.find((candidate) => ['allowed', 'site_border'].includes(String(candidate.get('kind'))));
+        const concreteSourceArea = activeTool === 'select' ? candidates.find((candidate) => {
+          const kind = String(candidate.get('kind'));
+          const candidateGeometry = candidate.getGeometry();
+          return !['forbidden', 'allowed', 'planting_area', 'site_border'].includes(kind)
+            && (candidateGeometry instanceof Polygon || candidateGeometry instanceof MultiPolygon);
+        }) : undefined;
         const relevantCandidates = activeTool === 'pattern_fill' ? (selectableArea ? [selectableArea] : []) : candidates;
         if (!selectableArea && relevantCandidates.length > 1) {
           callbackRef.current.onMapInspect?.({
@@ -1125,7 +1155,10 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
           });
           return;
         }
-        const areaTarget = selectableArea ?? relevantCandidates[0];
+        // A concrete polygonal DXF object wins when the pointer is directly
+        // on it; otherwise the saved/calculated working area remains the
+        // one-click default. Thin CAD lines do not steal area selection.
+        const areaTarget = concreteSourceArea ?? selectableArea ?? relevantCandidates[0];
         const areaGeometry = areaTarget?.getGeometry();
         if (areaTarget && areaGeometry) {
           callbackRef.current.onMapArea?.(mapAreaTargetFromFeature(areaTarget, [event.coordinate[0], event.coordinate[1]]), selectionMode(event.originalEvent));
@@ -1473,6 +1506,12 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   }, [rebuildVisibleGeometry]);
 
   useEffect(() => {
+    const target = targetRef.current;
+    if (!geometry) {
+      if (target) target.dataset.geometryReady = 'false';
+      return;
+    }
+    if (target) target.dataset.geometryReady = 'false';
     if (geometryRevision !== undefined && geometryRevisionRef.current !== geometryRevision) {
       geometryRevisionRef.current = geometryRevision;
       geometryCacheRef.current.clear();
@@ -1480,7 +1519,6 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       zoneSourceRef.current.clear();
       constraintSourceRef.current.clear();
     }
-    if (!geometry) return;
     const rawFeatures = Array.isArray((geometry as { features?: unknown[] }).features)
       ? (geometry as { features: unknown[] }).features
       : [];
@@ -1539,6 +1577,10 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
         requestAnimationFrame(fit);
       }
       rebuildSnapTargets();
+      if (target) {
+        target.dataset.geometryReady = 'true';
+        if (geometryRevision !== undefined) target.dataset.geometryRevision = String(geometryRevision);
+      }
     };
     appendChunk();
     return () => {
@@ -1792,5 +1834,5 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     planLayerRef.current?.changed();
   }, [selectedIds]);
 
-  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} data-growth-horizon={growthHorizon ?? ''} data-growth-overlay={growthOverlaySummary} data-brush-stroke-count={brushStrokes.length}><span className="sr-only" aria-live="polite" aria-label="Прогнозный слой карты">{growthOverlaySummary ? `Слой прогноза: ${growthOverlaySummary}` : 'Прогнозный слой недоступен'}</span></div><span id={helpId} className="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб</span></>;
+  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} data-geometry-ready="false" data-growth-horizon={growthHorizon ?? ''} data-growth-overlay={growthOverlaySummary} data-brush-stroke-count={brushStrokes.length}><span className="sr-only" aria-live="polite" aria-label="Прогнозный слой карты">{growthOverlaySummary ? `Слой прогноза: ${growthOverlaySummary}` : 'Прогнозный слой недоступен'}</span></div><span id={helpId} className="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб</span></>;
 });
