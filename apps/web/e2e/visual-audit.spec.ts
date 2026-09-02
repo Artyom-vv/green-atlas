@@ -705,7 +705,7 @@ test('map selection supports group deletion and undo without an object table', a
   await expect(page.getByText('3 посадки')).toBeVisible();
 });
 
-test('box selection moves a group by direct drag through one confirmed change set', async ({ page }) => {
+test('box selection moves a group live and commits one undoable change set', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openManualPlan(page);
   const map = page.getByLabel('Карта проекта озеленения');
@@ -729,13 +729,49 @@ test('box selection moves a group by direct drag through one confirmed change se
   const dragPoint = await fittedPlanCoordinates(page, map);
   const dragStart = dragPoint(20, 20);
   const dragDestination = dragPoint(20, 25);
+  const movePreviewRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/plan/change-sets/preview') && request.method() === 'POST') movePreviewRequests.push(request.url());
+  });
   await page.mouse.move(dragStart.x, dragStart.y);
   await page.mouse.down();
   await page.mouse.move(dragDestination.x, dragDestination.y, { steps: 8 });
-  await expect(page.locator('.map-statusbar .placement-check')).toHaveText('Можно переместить');
+  // The map owns the live gesture. The server validates the completed drop,
+  // never an intermediate pointer position.
+  await page.waitForTimeout(280);
+  expect(movePreviewRequests).toHaveLength(0);
+  const liveCoordinates = JSON.parse((await map.getAttribute('data-selection-drag')) ?? '[]') as Array<{ coordinate: number[] }>;
+  expect(liveCoordinates.map(({ coordinate }) => coordinate.map((value) => Number(value.toFixed(3)))).sort((left, right) => left[0] - right[0]))
+    .toEqual([[20, 25], [40, 25]]);
+  await page.screenshot({ path: testInfo.outputPath('group-direct-drag-live.png'), fullPage: true });
   await page.mouse.up();
   await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
   await expect(page.getByText('Пунктиром показан результат до сохранения')).toBeVisible();
+  await expect.poll(() => movePreviewRequests.length).toBe(1);
+  await expect(map).not.toHaveAttribute('data-selection-drag');
+
+  // Escape rejects the checked drop without changing the durable plan.
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Перемещение группы (2)')).toHaveCount(0);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const positionsFromProject = async () => {
+    const response = await page.request.get(`${apiBase}/projects/${projectId}`);
+    return (await response.json() as { plan: { objects: Array<{ x: number; y: number }> } }).plan.objects
+      .map((object) => [Number(object.x.toFixed(3)), Number(object.y.toFixed(3))])
+      .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+  };
+  expect(await positionsFromProject()).toEqual([[20, 20], [20, 30], [40, 20]]);
+
+  // Repeat the same direct gesture and commit the checked drop.
+  const secondDragPoint = await fittedPlanCoordinates(page, map);
+  const secondStart = secondDragPoint(20, 20);
+  const secondDestination = secondDragPoint(20, 25);
+  await page.mouse.move(secondStart.x, secondStart.y);
+  await page.mouse.down();
+  await page.mouse.move(secondDestination.x, secondDestination.y, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByText('Перемещение группы (2)')).toBeVisible();
+  await expect.poll(() => movePreviewRequests.length).toBe(2);
 
   let viewportRequests = 0;
   page.on('request', (request) => {
@@ -747,16 +783,10 @@ test('box selection moves a group by direct drag through one confirmed change se
   await page.waitForTimeout(150);
   expect(viewportRequests).toBe(0);
 
-  const projectId = new URL(page.url()).pathname.split('/')[2];
-  const project = await page.request.get(`${apiBase}/projects/${projectId}`);
-  const positions = (await project.json() as { plan: { objects: Array<{ x: number; y: number }> } }).plan.objects
-    .map((object) => [Number(object.x.toFixed(3)), Number(object.y.toFixed(3))])
-    .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
-  expect(positions[1]).toEqual([20, 30]);
-  expect(positions[0][0]).toBe(20);
-  expect(positions[2][0]).toBe(40);
-  expect(positions[0][1]).toBeGreaterThan(20);
-  expect(positions[2][1]).toBe(positions[0][1]);
+  expect(await positionsFromProject()).toEqual([[20, 25], [20, 30], [40, 25]]);
+  await expect(page.getByRole('button', { name: /Отменить: Перемещение группы/ })).toBeEnabled();
+  await page.keyboard.press('Control+z');
+  await expect.poll(positionsFromProject).toEqual([[20, 20], [20, 30], [40, 20]]);
 });
 
 test('a group cannot be moved outside the assigned area and the original layout stays intact', async ({ page }) => {
