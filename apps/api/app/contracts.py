@@ -774,6 +774,14 @@ class ScenePlantObject(BaseModel):
     object_id: str
     kind: Literal["tree", "shrub"]
     species_revision_id: str | None = None
+    species_id: str | None = None
+    common_name: str | None = None
+    scientific_name: str | None = None
+    size_class: Literal["unspecified", "sapling", "standard", "large"] = "unspecified"
+    model_variant_key: str | None = None
+    growth_stage: Literal["planting", "young", "developing", "mature"] = "planting"
+    growth_stage_status: Literal["confirmed", "estimated", "missing"] = "missing"
+    forecast_horizon_year: int = Field(default=0, ge=0, le=40)
     local_x: float = Field(allow_inf_nan=False)
     local_y: float = Field(allow_inf_nan=False)
     crown_shape: Literal["columnar", "conical", "oval", "round", "spreading", "irregular", "placeholder"]
@@ -783,7 +791,13 @@ class ScenePlantObject(BaseModel):
     height_max_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     root_radius_min_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     root_radius_max_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    height_status: Literal["confirmed", "estimated", "missing"] = "missing"
     confidence: Literal["unknown", "low", "medium", "high"] = "unknown"
+    status: Literal["valid", "warning", "error"] = "valid"
+    planting_zone_id: str | None = None
+    pattern_id: str | None = None
+    group_ids: list[str] = Field(default_factory=list)
+    locked: bool = False
 
 
 class SceneContextFeature(BaseModel):
@@ -793,15 +807,29 @@ class SceneContextFeature(BaseModel):
     kind: str
     geometry: dict[str, Any]
     label: str | None = None
+    source_layer: str | None = None
+    source_entity_type: str | None = None
+    source_handle: str | None = None
+    base_elevation_m: float | None = Field(default=None, allow_inf_nan=False)
+    height_m: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    height_status: Literal["confirmed", "estimated", "missing"] | None = None
+    height_source: Literal["dxf_extrusion", "dxf_attribute"] | None = None
 
 
 class SceneSnapshot(BaseModel):
     plan_version: int = Field(ge=1)
     horizon_year: int = Field(ge=0, le=40)
     coordinate_origin: list[float] = Field(min_length=2, max_length=2)
+    coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
+    georeference_status: Literal["confirmed", "declared", "local", "missing"] = "missing"
+    geometry_source: Literal["prepared_geometry", "source_geometry", "missing"] = "missing"
+    geometry_source_file_name: str | None = None
     completeness: Literal["partial"] = "partial"
-    terrain_status: Literal["missing"] = "missing"
-    building_heights_status: Literal["missing"] = "missing"
+    terrain_status: Literal["confirmed", "estimated", "missing"] = "missing"
+    terrain_elevation_m: float | None = Field(default=None, allow_inf_nan=False)
+    building_heights_status: Literal["confirmed", "estimated", "missing"] = "missing"
+    building_feature_count: int = Field(default=0, ge=0)
+    building_height_confirmed_count: int = Field(default=0, ge=0)
     note: str
     data_gaps: list[str] = Field(default_factory=list)
     objects: list[ScenePlantObject] = Field(default_factory=list)

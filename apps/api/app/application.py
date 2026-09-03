@@ -192,6 +192,58 @@ def _translate_geojson(geometry: dict, origin_x: float, origin_y: float) -> dict
     return {**geometry, "coordinates": translate(geometry.get("coordinates", []))}
 
 
+def _confirmed_context_height(properties: dict) -> tuple[float | None, str | None]:
+    """Read only height evidence normalised by the DXF adapter.
+
+    Deliberately do not recognise generic keys such as ``height``: imported
+    GIS/DXF payloads frequently use them for text or symbol sizes.  The two
+    accepted keys have explicit metre semantics and retain their provenance.
+    """
+
+    for key, source in (
+        ("source_extrusion_height_m", "dxf_extrusion"),
+        ("source_attribute_height_m", "dxf_attribute"),
+    ):
+        value = properties.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value)) and float(value) > 0:
+            return round(float(value), 6), source
+    return None, None
+
+
+def _context_base_elevation(properties: dict) -> float | None:
+    value = properties.get("source_base_elevation_m")
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value)):
+        return round(float(value), 6)
+    return None
+
+
+def _scene_growth_stage(
+    *,
+    size_class: str,
+    horizon_year: int,
+    scale: float | None,
+) -> tuple[str, str]:
+    """Return a renderer variant band, never a fabricated biological age."""
+
+    if horizon_year == 0:
+        if size_class == "sapling":
+            return "planting", "estimated"
+        if size_class == "standard":
+            return "young", "estimated"
+        if size_class == "large":
+            return "developing", "estimated"
+        return "planting", "missing"
+    if scale is None:
+        return "planting", "missing"
+    if scale < 0.35:
+        return "planting", "estimated"
+    if scale < 0.62:
+        return "young", "estimated"
+    if scale < 0.9:
+        return "developing", "estimated"
+    return "mature", "estimated"
+
+
 def _reason_summary(skipped: list[PatternSkippedCandidate]) -> list[dict[str, object]]:
     counts = Counter((item.status, item.code, item.category, item.reason) for item in skipped)
     return [
@@ -1887,6 +1939,7 @@ class ProjectApplication:
             canopy = forecast_at(object_.canopy_forecast, horizon_year)
             roots = forecast_at(object_.root_forecast, horizon_year)
             layout_radius = object_.layout_radius_m or object_.radius
+            scale: float | None = None
             if horizon_year == 0:
                 # Keep the current planting footprint for an unassigned
                 # object, but use the same catalogue anchor as the 2D
@@ -1915,10 +1968,27 @@ class ProjectApplication:
                 else:
                     heights = None
                 confidence = canopy.confidence
+            growth_stage, growth_stage_status = _scene_growth_stage(
+                size_class=object_.size_class,
+                horizon_year=horizon_year,
+                scale=scale,
+            )
             scene_objects.append(ScenePlantObject(
                 object_id=object_.id,
                 kind=object_.kind,
                 species_revision_id=object_.species_revision_id,
+                species_id=revision.species_id if revision else None,
+                common_name=revision.common_name if revision else None,
+                scientific_name=revision.scientific_name if revision else None,
+                size_class=object_.size_class,
+                model_variant_key=(
+                    f"species:{revision.species_id}"
+                    if revision
+                    else f"generic:{object_.kind}:placeholder"
+                ),
+                growth_stage=growth_stage,
+                growth_stage_status=growth_stage_status,
+                forecast_horizon_year=horizon_year,
                 local_x=round(object_.x - origin_x, 6),
                 local_y=round(object_.y - origin_y, 6),
                 crown_shape=revision.crown_shape if revision else "placeholder",
@@ -1928,17 +1998,36 @@ class ProjectApplication:
                 height_max_m=heights[1] if heights else None,
                 root_radius_min_m=roots.radius_min_m if roots else None,
                 root_radius_max_m=roots.radius_max_m if roots else None,
+                height_status="estimated" if heights else "missing",
                 confidence=confidence,
+                status=object_.status,
+                planting_zone_id=object_.planting_zone_id,
+                pattern_id=object_.pattern_id,
+                group_ids=object_.group_ids,
+                locked=object_.locked,
             ))
         context_features: list[SceneContextFeature] = []
         context_snapshot = project.geometry or project.source_geometry
+        geometry_source = (
+            "prepared_geometry"
+            if project.geometry is not None
+            else "source_geometry"
+            if project.source_geometry is not None
+            else "missing"
+        )
+        building_feature_count = 0
+        building_height_confirmed_count = 0
         if context_snapshot is not None:
             # Keep the scene responsive and focused on the plan. This is a
             # visual reference only: no missing terrain, utility depth or
             # building height is inferred here.
             context_kinds = {"site_border", "building", "road", "water", "existing_green", "utility", "restricted", "allowed"}
-            if scene_objects:
-                context_extent = unary_union([Point(item.local_x, item.local_y).buffer(90) for item in scene_objects]).envelope
+            if project.plan.objects:
+                # Clip in the same (source-DXF) coordinate system as the
+                # geometry, then translate the result into scene-local space.
+                # Using ScenePlantObject.local_* here shifts the context a
+                # second time whenever the planting centroid is not (0, 0).
+                context_extent = unary_union([Point(item.x, item.y).buffer(90) for item in project.plan.objects]).envelope
             else:
                 context_extent = None
             for index, feature in enumerate(context_snapshot.feature_collection.get("features", [])):
@@ -1956,20 +2045,63 @@ class ProjectApplication:
                     translated = mapping(geometry)
                 except Exception:
                     continue
+                height_m, height_source = _confirmed_context_height(properties) if kind == "building" else (None, None)
+                if kind == "building":
+                    building_feature_count += 1
+                    if height_m is not None:
+                        building_height_confirmed_count += 1
                 context_features.append(SceneContextFeature(
                     feature_id=str(feature.get("id") or properties.get("source_handle") or f"context-{index}"),
                     kind=kind,
                     geometry=_translate_geojson(translated, origin_x, origin_y),
                     label=str(properties.get("label")) if properties.get("label") else None,
+                    source_layer=str(properties.get("source_layer")) if properties.get("source_layer") else None,
+                    source_entity_type=str(properties.get("entity_type")) if properties.get("entity_type") else None,
+                    source_handle=str(properties.get("source_handle")) if properties.get("source_handle") else None,
+                    base_elevation_m=_context_base_elevation(properties),
+                    height_m=height_m,
+                    height_status=("confirmed" if height_m is not None else "missing") if kind == "building" else None,
+                    height_source=height_source,
                 ))
                 if len(context_features) >= 2500:
                     break
+        building_heights_status = (
+            "confirmed"
+            if building_feature_count > 0 and building_height_confirmed_count == building_feature_count
+            else "missing"
+        )
+        data_gaps = ["Рельеф", "Точные модели пород", "Инсоляция"]
+        if building_feature_count == 0 or building_height_confirmed_count == 0:
+            data_gaps.append("Высоты зданий")
+        elif building_height_confirmed_count < building_feature_count:
+            data_gaps.append(
+                f"Высоты зданий: подтверждено {building_height_confirmed_count} из {building_feature_count} видимых объектов"
+            )
+        georeference_status = {
+            "verified": "confirmed",
+            "declared": "declared",
+            "local": "local",
+            "unknown": "missing",
+        }[project.coordinate_reference.status]
         return SceneSnapshot(
             plan_version=project.plan.version,
             horizon_year=horizon_year,
             coordinate_origin=[round(origin_x, 6), round(origin_y, 6)],
-            note="Упрощённая параметрическая сцена посадок. Это не геодезическая 3D-модель и не расчёт инсоляции.",
-            data_gaps=["Рельеф", "Высоты зданий", "Точные модели пород", "Инсоляция"],
+            coordinate_reference=project.coordinate_reference,
+            georeference_status=georeference_status,
+            geometry_source=geometry_source,
+            geometry_source_file_name=project.source_file.name if project.source_file else None,
+            terrain_status="missing",
+            terrain_elevation_m=None,
+            building_heights_status=building_heights_status,
+            building_feature_count=building_feature_count,
+            building_height_confirmed_count=building_height_confirmed_count,
+            note=(
+                "Сцена собрана из плана и геометрии DXF. "
+                "Рельеф не известен; неподтверждённые высоты зданий не экструдируются. "
+                "Размеры посадок — сценарный прогноз, а не геодезическое измерение."
+            ),
+            data_gaps=data_gaps,
             objects=scene_objects,
             context_features=context_features,
         )

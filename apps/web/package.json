@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "assets:plants": "node scripts/build-plant-assets.mjs",
+    "assets:plants:validate": "node scripts/validate-plant-assets.mjs",
+    "prebuild": "pnpm assets:plants && pnpm assets:plants:validate",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",

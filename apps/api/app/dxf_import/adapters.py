@@ -204,6 +204,75 @@ def _ocs_point(entity: Any, value: Any, factor: float) -> list[float]:
         return _point(value, factor)
 
 
+_HEIGHT_ATTRIBUTE_TAGS = {"BUILDING_HEIGHT_M", "HEIGHT_M", "ВЫСОТА_М"}
+
+
+def _source_vertical_properties(
+    entity: Any,
+    factor: float,
+    attributes: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Preserve explicit DXF vertical evidence without deriving a volume.
+
+    A layer name, colour or 2D footprint does not prove a building height.
+    ``thickness`` does, but only when its extrusion is vertical.  A block
+    attribute is accepted only when its tag explicitly declares metres.  The
+    scene API can therefore extrude confirmed objects while leaving every
+    other footprint flat.
+    """
+
+    result: dict[str, Any] = {}
+    try:
+        if entity.dxf.hasattr("thickness"):
+            thickness = float(entity.dxf.thickness)
+            extrusion = Vec3(entity.dxf.get("extrusion", (0, 0, 1)))
+            if (
+                isfinite(thickness)
+                and abs(thickness) > 1e-9
+                and abs(float(extrusion.x)) <= 1e-9
+                and abs(float(extrusion.y)) <= 1e-9
+                and abs(abs(float(extrusion.z)) - 1.0) <= 1e-9
+            ):
+                result["source_extrusion_height_m"] = round(abs(thickness) * factor, 6)
+    except Exception:
+        pass
+
+    try:
+        elevation: Any | None = None
+        entity_type = entity.dxftype()
+        if entity_type in {"LWPOLYLINE", "HATCH"} and entity.dxf.hasattr("elevation"):
+            elevation = entity.dxf.elevation
+        elif entity_type == "POLYLINE" and entity.dxf.hasattr("elevation"):
+            elevation = entity.dxf.elevation
+        elif entity_type in {"CIRCLE", "ARC"} and entity.dxf.hasattr("center"):
+            elevation = entity.dxf.center
+        elif entity_type in {"INSERT", "POINT", "TEXT", "MTEXT"} and entity.dxf.hasattr("insert"):
+            elevation = entity.dxf.insert
+        if elevation is not None:
+            if isinstance(elevation, (tuple, list, Vec3)):
+                value = float(elevation[2])
+            else:
+                value = float(elevation)
+            if isfinite(value):
+                result["source_base_elevation_m"] = round(value * factor, 6)
+    except Exception:
+        pass
+
+    for raw_tag, raw_value in (attributes or {}).items():
+        tag = str(raw_tag).strip().upper().replace(" ", "_")
+        if tag not in _HEIGHT_ATTRIBUTE_TAGS:
+            continue
+        try:
+            height = float(str(raw_value).strip().replace(",", "."))
+        except ValueError:
+            continue
+        if isfinite(height) and height > 0:
+            result["source_attribute_height_m"] = round(height, 6)
+            result["source_attribute_height_tag"] = str(raw_tag)
+            break
+    return result
+
+
 def _flatten_bulged_points(
     raw_points: list[tuple[float, float, float]],
     closed: bool,
@@ -1159,6 +1228,7 @@ class EzdxfReader:
                             # retain its parent handle as the audit link.
                             "source_handle": str(entity.dxf.get("handle", "")),
                             **_resolved_style(document, virtual, source_layer, fallback_color),
+                            **_source_vertical_properties(virtual, factor, attributes),
                             "source_block": block_name,
                             "source_block_parent_layer": parent_layer,
                             "source_block_component": component_index,
@@ -1221,12 +1291,18 @@ class EzdxfReader:
             source_layer = str(entity.dxf.layer)
             fallback_color = LAYER_COLORS[list(counts).index(source_layer) % len(LAYER_COLORS)]
             for instance_index, geometry in enumerate(geometries):
+                source_attributes = (
+                    {str(attribute.dxf.tag): str(attribute.dxf.text) for attribute in entity.attribs}
+                    if entity.dxftype() == "INSERT"
+                    else None
+                )
                 properties: dict[str, Any] = {
                     "source_layer": source_layer,
                     "kind": _kind_for_layer(source_layer).value,
                     "entity_type": entity.dxftype(),
                     "source_handle": str(entity.dxf.get("handle", "")),
                     **_resolved_style(document, entity, source_layer, fallback_color),
+                    **_source_vertical_properties(entity, factor, source_attributes),
                 }
                 if entity.dxftype() in simplified:
                     properties.update({
@@ -1272,7 +1348,7 @@ class EzdxfReader:
                         "source_block": str(entity.dxf.name),
                         "source_rotation": round(float(entity.dxf.get("rotation", 0) or 0), 3),
                         "source_scale": [round(float(entity.dxf.get("xscale", 1) or 1), 4), round(float(entity.dxf.get("yscale", 1) or 1), 4)],
-                        "source_attributes": {str(attribute.dxf.tag): str(attribute.dxf.text) for attribute in entity.attribs},
+                        "source_attributes": source_attributes or {},
                         "block_rendered": geometry["type"] == "GeometryCollection",
                         "source_block_instances": block_instances,
                         "source_block_instance": instance_index + 1,

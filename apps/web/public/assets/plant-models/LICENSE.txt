@@ -1,0 +1,12 @@
+CC0 1.0 Universal
+
+To the extent possible under law, the Green Atlas contributors have waived all
+copyright and related or neighboring rights to the original procedural plant
+geometry in this directory.
+
+https://creativecommons.org/publicdomain/zero/1.0/
+
+This dedication covers only generated files under public/assets/plant-models/models.
+It does not change the license of application source code or future third-party
+assets. Third-party assets must carry their own source and license records in
+manifest.json.

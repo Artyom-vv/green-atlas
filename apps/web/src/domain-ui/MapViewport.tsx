@@ -262,7 +262,7 @@ export function selectionDraftStyle(feature: FeatureLike): Style | Style[] {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure geometry helper is exported for hit-test regression coverage.
-export function featureDistanceToCoordinate(feature: FeatureLike, coordinate: [number, number]): number | undefined {
+export function featureDistanceToCoordinate(feature: Feature, coordinate: [number, number]): number | undefined {
   const geometry = feature.getGeometry();
   if (!geometry) return undefined;
   // OpenLayers returns a point on a Circle's circumference from getClosestPoint,

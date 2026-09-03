@@ -10,10 +10,12 @@ const project = {
   name: 'Проект после восстановления',
   source_name: 'site.dxf',
   source_size: 1024,
-  status: 'ready',
+  status: 'editing',
   has_geometry: true,
   planting_zone_count: 1,
   plan_object_count: 3,
+  state_version: 1,
+  created_at: '2026-09-02T11:00:00Z',
   updated_at: '2026-09-02T12:00:00Z',
 } as ProjectSummary;
 

@@ -1,0 +1,708 @@
+{
+  "version": 1,
+  "schemaVersion": 1,
+  "libraryVersion": "1.0.0",
+  "generator": "scripts/build-plant-assets.mjs",
+  "license": {
+    "spdx": "CC0-1.0",
+    "attributionRequired": false,
+    "notice": "Original procedural Green Atlas plant archetypes. No third-party geometry or textures are embedded."
+  },
+  "format": {
+    "container": "GLB",
+    "gltfVersion": "2.0",
+    "units": "meter",
+    "upAxis": "+Y",
+    "origin": "ground-center",
+    "textures": "none; PBR vertex colors avoid texture memory and alpha overdraw"
+  },
+  "lodPolicy": {
+    "selectionMetric": "camera distance to instance bounding sphere",
+    "hysteresisM": 4,
+    "tiers": {
+      "near": {
+        "maxDistanceM": 24
+      },
+      "mid": {
+        "maxDistanceM": 62
+      },
+      "far": {
+        "maxDistanceM": null
+      }
+    }
+  },
+  "ageScaleProfiles": {
+    "young": {
+      "height": 0.34,
+      "crownWidth": 0.28,
+      "trunkWidth": 0.55
+    },
+    "juvenile": {
+      "height": 0.58,
+      "crownWidth": 0.5,
+      "trunkWidth": 0.72
+    },
+    "mature": {
+      "height": 1,
+      "crownWidth": 1,
+      "trunkWidth": 1
+    },
+    "veteran": {
+      "height": 1.08,
+      "crownWidth": 1.18,
+      "trunkWidth": 1.16
+    }
+  },
+  "fidelityStatement": "These are morphology-level archetypes, not botanically exact digital twins. Species mapping is explicit and must not be presented as scanned species geometry.",
+  "speciesMap": {
+    "Tilia cordata": "broadleaf-round",
+    "Acer platanoides": "broadleaf-oval",
+    "Quercus robur": "broadleaf-spreading",
+    "Betula pendula": "broadleaf-columnar",
+    "Sorbus aucuparia": "broadleaf-irregular",
+    "Ulmus laevis": "broadleaf-spreading",
+    "Pinus sylvestris": "pine-open",
+    "Picea abies": "spruce-dense",
+    "Cornus alba": "shrub-spreading",
+    "Spiraea japonica": "shrub-round"
+  },
+  "speciesMetadata": {
+    "Tilia cordata": {
+      "archetype": "broadleaf-round",
+      "labelRu": "Липа мелколистная",
+      "fidelity": "morphological"
+    },
+    "Acer platanoides": {
+      "archetype": "broadleaf-oval",
+      "labelRu": "Клён остролистный",
+      "fidelity": "morphological"
+    },
+    "Quercus robur": {
+      "archetype": "broadleaf-spreading",
+      "labelRu": "Дуб черешчатый",
+      "fidelity": "morphological"
+    },
+    "Betula pendula": {
+      "archetype": "broadleaf-columnar",
+      "labelRu": "Берёза повислая",
+      "fidelity": "morphological"
+    },
+    "Sorbus aucuparia": {
+      "archetype": "broadleaf-irregular",
+      "labelRu": "Рябина обыкновенная",
+      "fidelity": "morphological"
+    },
+    "Ulmus laevis": {
+      "archetype": "broadleaf-spreading",
+      "labelRu": "Вяз гладкий",
+      "fidelity": "morphological"
+    },
+    "Pinus sylvestris": {
+      "archetype": "pine-open",
+      "labelRu": "Сосна обыкновенная",
+      "fidelity": "morphological"
+    },
+    "Picea abies": {
+      "archetype": "spruce-dense",
+      "labelRu": "Ель европейская",
+      "fidelity": "morphological"
+    },
+    "Cornus alba": {
+      "archetype": "shrub-spreading",
+      "labelRu": "Дерён белый",
+      "fidelity": "morphological"
+    },
+    "Spiraea japonica": {
+      "archetype": "shrub-round",
+      "labelRu": "Спирея японская",
+      "fidelity": "morphological"
+    }
+  },
+  "archetypes": {
+    "broadleaf-round": {
+      "label": "Овальная лиственная крона",
+      "form": "oval",
+      "nominalHeightM": 11,
+      "nominalRadiusM": 3.5,
+      "nominalCrownDiameterM": 7,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -3.467,
+          0,
+          -3.478
+        ],
+        "max": [
+          3.064,
+          11,
+          3.5
+        ],
+        "size": [
+          6.531,
+          11,
+          6.978
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-round.near.glb",
+          "bytes": 323652,
+          "triangleCount": 3968,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "e48b6d38d9424b09588a248f587a7ea62ae415c06be36fd1a986cb625d184773"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-round.mid.glb",
+          "bytes": 83188,
+          "triangleCount": 1008,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "3cfef860797b6c52e8735248b189680391df85b6a32a4f559c1ceda291a9f7a1"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-round.far.glb",
+          "bytes": 14668,
+          "triangleCount": 168,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "d77872c3f3e1899734a9c8b0e101f107f334aa4f1f2cc37339595e69f3e28a52"
+        }
+      ]
+    },
+    "broadleaf-oval": {
+      "label": "Вытянутая лиственная крона",
+      "form": "oval",
+      "nominalHeightM": 12,
+      "nominalRadiusM": 3.25,
+      "nominalCrownDiameterM": 6.5,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -3.25,
+          0,
+          -3.112
+        ],
+        "max": [
+          2.984,
+          12,
+          3.081
+        ],
+        "size": [
+          6.234,
+          12,
+          6.193
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-oval.near.glb",
+          "bytes": 323644,
+          "triangleCount": 3968,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "f607896b4ec199a2c4b2322af66eb02876fdc770f7f5220799e6a61bac79a434"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-oval.mid.glb",
+          "bytes": 83184,
+          "triangleCount": 1008,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "1fea153e1940aca8cf80a2d6073d88ca9bdb9a92f2292256868d1af738058453"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-oval.far.glb",
+          "bytes": 14656,
+          "triangleCount": 168,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "b558fd3d4fb6706cb95eaaaf6ff85c7f713bdbba8b98f364668e52bcfce58adf"
+        }
+      ]
+    },
+    "broadleaf-spreading": {
+      "label": "Раскидистая лиственная крона",
+      "form": "spreading",
+      "nominalHeightM": 12,
+      "nominalRadiusM": 5,
+      "nominalCrownDiameterM": 10,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -4.698,
+          0,
+          -4.516
+        ],
+        "max": [
+          5,
+          12,
+          4.323
+        ],
+        "size": [
+          9.698,
+          12,
+          8.839
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-spreading.near.glb",
+          "bytes": 357956,
+          "triangleCount": 4408,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "c5a9703c46912d3416e7416c94ad31fed93c7e84932cebd890d993f8aa358aa4"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-spreading.mid.glb",
+          "bytes": 91176,
+          "triangleCount": 1112,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "d6d78f906208547a2b2645223e004cd0750eaa2b7ab5f91a60a7520c776ab1f3"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-spreading.far.glb",
+          "bytes": 14676,
+          "triangleCount": 168,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "ce0ddfaf7f6e54492be9882e46c1710e2ec0d860673e5473083952f18b12d8b2"
+        }
+      ]
+    },
+    "broadleaf-columnar": {
+      "label": "Ажурная берёза",
+      "form": "birch",
+      "nominalHeightM": 13,
+      "nominalRadiusM": 3,
+      "nominalCrownDiameterM": 6,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -2.652,
+          0,
+          -3
+        ],
+        "max": [
+          2.391,
+          13,
+          2.839
+        ],
+        "size": [
+          5.043,
+          13,
+          5.839
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-columnar.near.glb",
+          "bytes": 308536,
+          "triangleCount": 3788,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "df53180389640c603cb7ad83fd3f9c6d3124088ffc7ab0f74704371cbc974cbf"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-columnar.mid.glb",
+          "bytes": 76480,
+          "triangleCount": 928,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "3f443e0013ce0d754df7c5a00c1b72a181a9142fe381ad87c0abc0984f9e39f8"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-columnar.far.glb",
+          "bytes": 14672,
+          "triangleCount": 168,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "a24835ca6ec5a6ae80cafafd8f01af4959fdf4f6fed9d10fb0c71017267bdd00"
+        }
+      ]
+    },
+    "broadleaf-irregular": {
+      "label": "Невысокая ажурная крона",
+      "form": "rowan",
+      "nominalHeightM": 7,
+      "nominalRadiusM": 2.4,
+      "nominalCrownDiameterM": 4.8,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -2.286,
+          0,
+          -2.4
+        ],
+        "max": [
+          1.836,
+          7,
+          2.376
+        ],
+        "size": [
+          4.122,
+          7,
+          4.776
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-irregular.near.glb",
+          "bytes": 248048,
+          "triangleCount": 3068,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "5c0daf80715d0a7148ff4a9f2fcc1b69a6ad7271d1f20de477c76a9da2fe21c5"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-irregular.mid.glb",
+          "bytes": 63032,
+          "triangleCount": 768,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "68ebaa36e70b94adb946f38ebcd5213ec0b59d26a793f0b5fd5149bc29bb5cec"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-irregular.far.glb",
+          "bytes": 12992,
+          "triangleCount": 148,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "afe488dd47e01eaa02976e2443c29e9f99295454a53488735fd5f94cc370062a"
+        }
+      ]
+    },
+    "pine-open": {
+      "label": "Сосна с ярусной кроной",
+      "form": "pine",
+      "nominalHeightM": 15,
+      "nominalRadiusM": 3.25,
+      "nominalCrownDiameterM": 6.5,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -3.196,
+          0,
+          -3.201
+        ],
+        "max": [
+          2.951,
+          15,
+          3.25
+        ],
+        "size": [
+          6.147,
+          15,
+          6.451
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/pine-open.near.glb",
+          "bytes": 624872,
+          "triangleCount": 7428,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "54cb62524320a1e2578afd2cb52efba27c84650cce1c4f6b644ae50dd56a000e"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/pine-open.mid.glb",
+          "bytes": 111696,
+          "triangleCount": 1312,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "58d1fe133e2ab80af4071d053c486da59c00a4bd2e6c449d97a6a28362d62ef3"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/pine-open.far.glb",
+          "bytes": 15348,
+          "triangleCount": 160,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "bcf8d25cf77ef0b72505bd648d3d232bbdbf7d1d986f2c53684d1d2465632287"
+        }
+      ]
+    },
+    "spruce-dense": {
+      "label": "Плотная еловая крона",
+      "form": "spruce",
+      "nominalHeightM": 13,
+      "nominalRadiusM": 3,
+      "nominalCrownDiameterM": 6,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -3,
+          0,
+          -3
+        ],
+        "max": [
+          3,
+          13,
+          3
+        ],
+        "size": [
+          6,
+          13,
+          6
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/spruce-dense.near.glb",
+          "bytes": 25504,
+          "triangleCount": 360,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "7955852b6b90c1b5addf0f327dee99dcd20d6f37c4609f829a049521f4d02337"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/spruce-dense.mid.glb",
+          "bytes": 11828,
+          "triangleCount": 144,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "00189aee4b710df54f5d9fdb03729c53120bec38fe7574ae466c6a00dc780929"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/spruce-dense.far.glb",
+          "bytes": 5824,
+          "triangleCount": 50,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "3aaee99d9084d833c9454b121079f4b7148e5cb2d507a85b9fb6cc165b2889e3"
+        }
+      ]
+    },
+    "conifer": {
+      "label": "Универсальная хвойная крона",
+      "form": "spruce",
+      "nominalHeightM": 11,
+      "nominalRadiusM": 2.7,
+      "nominalCrownDiameterM": 5.4,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -2.7,
+          0,
+          -2.7
+        ],
+        "max": [
+          2.7,
+          11,
+          2.7
+        ],
+        "size": [
+          5.4,
+          11,
+          5.4
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/conifer.near.glb",
+          "bytes": 25520,
+          "triangleCount": 360,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "d144ac61cb47c949d229ac6e98a27c1fd097790c052bf6b1d560745933f5b388"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/conifer.mid.glb",
+          "bytes": 11844,
+          "triangleCount": 144,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "a37b9bd02e4a568b60e31681f18a4aba96ffd149687e638d5bc330ffe1366773"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/conifer.far.glb",
+          "bytes": 5836,
+          "triangleCount": 50,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "d0dce539a751ac858a287ca5b8cb000cda9790cd9ee2bf2699f31de633381ef2"
+        }
+      ]
+    },
+    "shrub-round": {
+      "label": "Раскидистый кустарник",
+      "form": "shrub-mounded",
+      "nominalHeightM": 1.8,
+      "nominalRadiusM": 1.4,
+      "nominalCrownDiameterM": 2.8,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -1.334,
+          -0.001,
+          -1.383
+        ],
+        "max": [
+          1.4,
+          1.799,
+          1.258
+        ],
+        "size": [
+          2.734,
+          1.8,
+          2.641
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/shrub-round.near.glb",
+          "bytes": 262812,
+          "triangleCount": 3240,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "e9eec332a0fb74a4342ba88066052c0187298b9401233a6ccd217877ba185b46"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/shrub-round.mid.glb",
+          "bytes": 68128,
+          "triangleCount": 816,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "37b29ac52f1d1d30fe97ef8ed791d5e8bf3b7e9bcdaa59bde70635819ec2c582"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/shrub-round.far.glb",
+          "bytes": 11056,
+          "triangleCount": 112,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "a12476750a77a5dac910374abfcf5e3fe1ffb35449717204deeb85be665bf462"
+        }
+      ]
+    },
+    "shrub-spreading": {
+      "label": "Вертикальный кустарник",
+      "form": "shrub-upright",
+      "nominalHeightM": 2.4,
+      "nominalRadiusM": 1.05,
+      "nominalCrownDiameterM": 2.1,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -0.966,
+          0.002,
+          -0.964
+        ],
+        "max": [
+          1.05,
+          2.402,
+          0.861
+        ],
+        "size": [
+          2.016,
+          2.4,
+          1.825
+        ]
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/shrub-spreading.near.glb",
+          "bytes": 217460,
+          "triangleCount": 2700,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 24,
+          "sha256": "1109b2e9d27770fa96b01948c79e36b10141d3aa01e96649a9a8e2c7d2a6069f"
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/shrub-spreading.mid.glb",
+          "bytes": 54696,
+          "triangleCount": 656,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": 62,
+          "sha256": "cfbda7a69867b724c0bf61148db8fd0406d3447fc6fb9c42b594ba7d2cee38ee"
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/shrub-spreading.far.glb",
+          "bytes": 9388,
+          "triangleCount": 92,
+          "meshes": 2,
+          "materials": 2,
+          "maxDistanceM": null,
+          "sha256": "5fb223cf5d2bbdf41c1f6885e29c8e775bea7c72eeb87085e4fc08c48ef477ee"
+        }
+      ]
+    }
+  },
+  "totals": {
+    "archetypes": 10,
+    "files": 30,
+    "bytes": 3492372
+  }
+}

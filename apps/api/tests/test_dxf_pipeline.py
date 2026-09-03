@@ -561,6 +561,38 @@ def test_planar_ocs_entities_are_normalized_before_mapping_or_calculation() -> N
         ShapelyGeometryEngine().validate_position(project, -40, 50, 1.6, "tree")
 
 
+def test_reader_preserves_only_explicit_vertical_building_evidence() -> None:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.M
+    document.layers.add("BUILDING", color=2)
+    modelspace = document.modelspace()
+    with_height = modelspace.add_lwpolyline(
+        [(0, 0), (8, 0), (8, 6), (0, 6)],
+        close=True,
+        dxfattribs={"layer": "BUILDING", "elevation": 1.5, "thickness": 12},
+    )
+    modelspace.add_lwpolyline(
+        [(12, 0), (20, 0), (20, 6), (12, 6)],
+        close=True,
+        dxfattribs={"layer": "BUILDING"},
+    )
+    stream = StringIO()
+    document.write(stream)
+
+    imported = EzdxfReader().read("explicit-height.dxf", stream.getvalue().encode())
+    buildings = [
+        feature for feature in imported.geometry.feature_collection["features"]
+        if feature["properties"]["source_layer"] == "BUILDING"
+    ]
+    by_handle = {feature["properties"]["source_handle"]: feature["properties"] for feature in buildings}
+
+    assert by_handle[str(with_height.dxf.handle)]["source_extrusion_height_m"] == 12
+    assert by_handle[str(with_height.dxf.handle)]["source_base_elevation_m"] == 1.5
+    assert "source_extrusion_height_m" not in next(
+        properties for handle, properties in by_handle.items() if handle != str(with_height.dxf.handle)
+    )
+
+
 def test_invalid_mapped_polygon_blocks_calculation_instead_of_crashing_geos() -> None:
     document = ezdxf.new("R2013", setup=True)
     document.units = ezdxf.units.M

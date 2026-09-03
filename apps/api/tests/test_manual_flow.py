@@ -11,6 +11,7 @@ import zipfile
 import ezdxf
 import pytest
 from fastapi.testclient import TestClient
+from shapely.affinity import translate
 from shapely.geometry import Point, mapping, shape
 from shapely.ops import unary_union
 from starlette.datastructures import UploadFile
@@ -18,7 +19,7 @@ from starlette.datastructures import UploadFile
 from app import api as api_module
 from app import application as application_module
 from app.application import ProjectApplication
-from app.contracts import FillPatternRequest, GrowthEnvelopeForecast, LayerMapping, PlanObject, PlanObjectCreate, PlantingZoneAssignment
+from app.contracts import CoordinateReference, FillPatternRequest, GrowthEnvelopeForecast, LayerMapping, PlanObject, PlanObjectCreate, PlantingZoneAssignment
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
@@ -1927,6 +1928,34 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={"preview_id": preview["id"], "digest": preview["digest"], "base_plan_version": preview["base_plan_version"]})
     assert applied.status_code == 200
 
+    unproven = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
+    assert unproven.status_code == 200
+    assert unproven.json()["georeference_status"] == "missing"
+    assert unproven.json()["building_heights_status"] == "missing"
+    assert all(
+        item["height_m"] is None and item["height_status"] == "missing"
+        for item in unproven.json()["context_features"]
+        if item["kind"] == "building"
+    )
+
+    project = api_module.application.get(project_id)
+    project.coordinate_reference = CoordinateReference(
+        status="verified",
+        crs_id="EPSG:32637",
+        name="WGS 84 / UTM zone 37N",
+        source="control_points",
+        axis_order="xy",
+        control_points_count=3,
+        evidence="Сверено по трём контрольным точкам.",
+    )
+    building_count = 0
+    for feature in project.geometry.feature_collection["features"]:
+        if feature.get("properties", {}).get("kind") == "building":
+            building_count += 1
+            feature["properties"]["source_extrusion_height_m"] = 9.75
+    assert building_count > 0
+    api_module.application.repository.save(project)
+
     current = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
     early = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 1})
     future = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 20})
@@ -1937,6 +1966,14 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     assert current_scene["coordinate_origin"] == [40.0, 30.0]
     assert current_scene["completeness"] == "partial"
     assert current_scene["terrain_status"] == "missing"
+    assert current_scene["terrain_elevation_m"] is None
+    assert current_scene["coordinate_reference"]["crs_id"] == "EPSG:32637"
+    assert current_scene["georeference_status"] == "confirmed"
+    assert current_scene["geometry_source"] == "prepared_geometry"
+    assert current_scene["geometry_source_file_name"] == "site.dxf"
+    assert current_scene["building_heights_status"] == "confirmed"
+    assert current_scene["building_feature_count"] > 0
+    assert current_scene["building_height_confirmed_count"] == current_scene["building_feature_count"]
     assert isinstance(current_scene["context_features"], list)
     assert {item["kind"] for item in current_scene["context_features"]}.intersection({"building", "road", "site_border"})
     assert {item["object_id"] for item in current_scene["objects"]} == {item["id"] for item in applied.json()["plan"]["objects"]}
@@ -1944,6 +1981,16 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     early_tree = next(item for item in early_scene["objects"] if item["object_id"] == tree_id)
     future_tree = next(item for item in future_scene["objects"] if item["object_id"] == tree_id)
     assert early_tree["height_max_m"] is not None
+    assert current_tree["species_id"] == "tilia-cordata"
+    assert current_tree["scientific_name"] == "Tilia cordata"
+    assert current_tree["size_class"] == "standard"
+    assert current_tree["model_variant_key"] == "species:tilia-cordata"
+    assert current_tree["growth_stage"] == "young"
+    assert current_tree["growth_stage_status"] == "estimated"
+    assert current_tree["forecast_horizon_year"] == 0
+    assert current_tree["height_status"] == "estimated"
+    assert future_tree["growth_stage_status"] == "estimated"
+    assert future_tree["forecast_horizon_year"] == 20
     assert future_tree["canopy_radius_max_m"] > current_tree["canopy_radius_max_m"]
     assert future_tree["height_max_m"] is not None
     interpolated_tree = next(item for item in interpolated_scene["objects"] if item["object_id"] == tree_id)
@@ -1952,3 +1999,43 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     assert interpolated_tree["height_max_m"] is not None
     assert max(abs(item["local_x"]) for item in future_scene["objects"]) == 20
     assert client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 41}).status_code == 422
+
+
+def test_scene_clips_dxf_context_before_translating_to_local_coordinates() -> None:
+    project_id = prepare_project("Смещённая сцена")
+    select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
+    client.post(f"/api/projects/{project_id}/plan/manual")
+    client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20})
+    client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 60, "y": 40})
+
+    project = api_module.application.get(project_id)
+    assert project.geometry is not None and project.plan is not None
+    x_offset, y_offset = 1_000, 2_000
+    shifted_features = [
+        {
+            **feature,
+            "geometry": mapping(translate(shape(feature["geometry"]), xoff=x_offset, yoff=y_offset)),
+        }
+        for feature in project.geometry.feature_collection["features"]
+    ]
+    project.geometry = project.geometry.model_copy(update={
+        "feature_collection": {"type": "FeatureCollection", "features": shifted_features},
+    })
+    project.plan = project.plan.model_copy(update={
+        "objects": [
+            item.model_copy(update={"x": item.x + x_offset, "y": item.y + y_offset})
+            for item in project.plan.objects
+        ],
+    })
+    api_module.application.repository.save(project)
+
+    response = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
+    assert response.status_code == 200, response.json()
+    scene = response.json()
+    assert scene["coordinate_origin"] == [1_040.0, 2_030.0]
+    site_context = [shape(item["geometry"]) for item in scene["context_features"] if item["kind"] == "site_border"]
+    assert site_context
+    assert all(
+        any(context.covers(Point(item["local_x"], item["local_y"])) for context in site_context)
+        for item in scene["objects"]
+    )

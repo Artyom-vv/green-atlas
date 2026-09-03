@@ -6208,6 +6208,93 @@
               }
             ],
             "title": "Label"
+          },
+          "source_layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Layer"
+          },
+          "source_entity_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Entity Type"
+          },
+          "source_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Handle"
+          },
+          "base_elevation_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Elevation M"
+          },
+          "height_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height M"
+          },
+          "height_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "confirmed",
+                  "estimated",
+                  "missing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Status"
+          },
+          "height_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dxf_extrusion",
+                  "dxf_attribute"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Source"
           }
         },
         "type": "object",
@@ -6243,6 +6330,89 @@
               }
             ],
             "title": "Species Revision Id"
+          },
+          "species_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Id"
+          },
+          "common_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Common Name"
+          },
+          "scientific_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scientific Name"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "unspecified",
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "unspecified"
+          },
+          "model_variant_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Variant Key"
+          },
+          "growth_stage": {
+            "type": "string",
+            "enum": [
+              "planting",
+              "young",
+              "developing",
+              "mature"
+            ],
+            "title": "Growth Stage",
+            "default": "planting"
+          },
+          "growth_stage_status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "estimated",
+              "missing"
+            ],
+            "title": "Growth Stage Status",
+            "default": "missing"
+          },
+          "forecast_horizon_year": {
+            "type": "integer",
+            "maximum": 40.0,
+            "minimum": 0.0,
+            "title": "Forecast Horizon Year",
+            "default": 0
           },
           "local_x": {
             "type": "number",
@@ -6323,6 +6493,16 @@
             ],
             "title": "Root Radius Max M"
           },
+          "height_status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "estimated",
+              "missing"
+            ],
+            "title": "Height Status",
+            "default": "missing"
+          },
           "confidence": {
             "type": "string",
             "enum": [
@@ -6333,6 +6513,50 @@
             ],
             "title": "Confidence",
             "default": "unknown"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "warning",
+              "error"
+            ],
+            "title": "Status",
+            "default": "valid"
+          },
+          "planting_zone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planting Zone Id"
+          },
+          "pattern_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern Id"
+          },
+          "group_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Group Ids"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked",
+            "default": false
           }
         },
         "type": "object",
@@ -6369,6 +6593,41 @@
             "minItems": 2,
             "title": "Coordinate Origin"
           },
+          "coordinate_reference": {
+            "$ref": "#/components/schemas/CoordinateReference"
+          },
+          "georeference_status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "declared",
+              "local",
+              "missing"
+            ],
+            "title": "Georeference Status",
+            "default": "missing"
+          },
+          "geometry_source": {
+            "type": "string",
+            "enum": [
+              "prepared_geometry",
+              "source_geometry",
+              "missing"
+            ],
+            "title": "Geometry Source",
+            "default": "missing"
+          },
+          "geometry_source_file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Source File Name"
+          },
           "completeness": {
             "type": "string",
             "const": "partial",
@@ -6377,15 +6636,46 @@
           },
           "terrain_status": {
             "type": "string",
-            "const": "missing",
+            "enum": [
+              "confirmed",
+              "estimated",
+              "missing"
+            ],
             "title": "Terrain Status",
             "default": "missing"
           },
+          "terrain_elevation_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Elevation M"
+          },
           "building_heights_status": {
             "type": "string",
-            "const": "missing",
+            "enum": [
+              "confirmed",
+              "estimated",
+              "missing"
+            ],
             "title": "Building Heights Status",
             "default": "missing"
+          },
+          "building_feature_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Building Feature Count",
+            "default": 0
+          },
+          "building_height_confirmed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Building Height Confirmed Count",
+            "default": 0
           },
           "note": {
             "type": "string",

@@ -2145,6 +2145,20 @@ export interface components {
             };
             /** Label */
             label?: string | null;
+            /** Source Layer */
+            source_layer?: string | null;
+            /** Source Entity Type */
+            source_entity_type?: string | null;
+            /** Source Handle */
+            source_handle?: string | null;
+            /** Base Elevation M */
+            base_elevation_m?: number | null;
+            /** Height M */
+            height_m?: number | null;
+            /** Height Status */
+            height_status?: ("confirmed" | "estimated" | "missing") | null;
+            /** Height Source */
+            height_source?: ("dxf_extrusion" | "dxf_attribute") | null;
         };
         /** ScenePlantObject */
         ScenePlantObject: {
@@ -2157,6 +2171,37 @@ export interface components {
             kind: "tree" | "shrub";
             /** Species Revision Id */
             species_revision_id?: string | null;
+            /** Species Id */
+            species_id?: string | null;
+            /** Common Name */
+            common_name?: string | null;
+            /** Scientific Name */
+            scientific_name?: string | null;
+            /**
+             * Size Class
+             * @default unspecified
+             * @enum {string}
+             */
+            size_class: "unspecified" | "sapling" | "standard" | "large";
+            /** Model Variant Key */
+            model_variant_key?: string | null;
+            /**
+             * Growth Stage
+             * @default planting
+             * @enum {string}
+             */
+            growth_stage: "planting" | "young" | "developing" | "mature";
+            /**
+             * Growth Stage Status
+             * @default missing
+             * @enum {string}
+             */
+            growth_stage_status: "confirmed" | "estimated" | "missing";
+            /**
+             * Forecast Horizon Year
+             * @default 0
+             */
+            forecast_horizon_year: number;
             /** Local X */
             local_x: number;
             /** Local Y */
@@ -2179,11 +2224,34 @@ export interface components {
             /** Root Radius Max M */
             root_radius_max_m?: number | null;
             /**
+             * Height Status
+             * @default missing
+             * @enum {string}
+             */
+            height_status: "confirmed" | "estimated" | "missing";
+            /**
              * Confidence
              * @default unknown
              * @enum {string}
              */
             confidence: "unknown" | "low" | "medium" | "high";
+            /**
+             * Status
+             * @default valid
+             * @enum {string}
+             */
+            status: "valid" | "warning" | "error";
+            /** Planting Zone Id */
+            planting_zone_id?: string | null;
+            /** Pattern Id */
+            pattern_id?: string | null;
+            /** Group Ids */
+            group_ids?: string[];
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
         };
         /** SceneSnapshot */
         SceneSnapshot: {
@@ -2193,6 +2261,21 @@ export interface components {
             horizon_year: number;
             /** Coordinate Origin */
             coordinate_origin: number[];
+            coordinate_reference?: components["schemas"]["CoordinateReference"];
+            /**
+             * Georeference Status
+             * @default missing
+             * @enum {string}
+             */
+            georeference_status: "confirmed" | "declared" | "local" | "missing";
+            /**
+             * Geometry Source
+             * @default missing
+             * @enum {string}
+             */
+            geometry_source: "prepared_geometry" | "source_geometry" | "missing";
+            /** Geometry Source File Name */
+            geometry_source_file_name?: string | null;
             /**
              * Completeness
              * @default partial
@@ -2202,15 +2285,27 @@ export interface components {
             /**
              * Terrain Status
              * @default missing
-             * @constant
+             * @enum {string}
              */
-            terrain_status: "missing";
+            terrain_status: "confirmed" | "estimated" | "missing";
+            /** Terrain Elevation M */
+            terrain_elevation_m?: number | null;
             /**
              * Building Heights Status
              * @default missing
-             * @constant
+             * @enum {string}
              */
-            building_heights_status: "missing";
+            building_heights_status: "confirmed" | "estimated" | "missing";
+            /**
+             * Building Feature Count
+             * @default 0
+             */
+            building_feature_count: number;
+            /**
+             * Building Height Confirmed Count
+             * @default 0
+             */
+            building_height_confirmed_count: number;
             /** Note */
             note: string;
             /** Data Gaps */
