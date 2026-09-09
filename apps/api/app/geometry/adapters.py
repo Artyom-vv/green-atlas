@@ -148,11 +148,14 @@ class ShapelyGeometryEngine:
 
     def __init__(self, max_cached_projects: int = 32) -> None:
         self.max_cached_projects = max_cached_projects
-        self._position_checkers: OrderedDict[str, tuple[int, PositionChecker]] = OrderedDict()
+        self._position_checkers: OrderedDict[str, tuple[tuple, PositionChecker]] = OrderedDict()
         self._checker_lock = RLock()
 
     def _position_checker(self, project: Project) -> PositionChecker:
-        version = project.geometry_version if project.geometry else 0
+        # Zone edits affect selected-area and growth checks even when the DXF
+        # geometry revision is unchanged. Never reuse an older zone boundary.
+        version = (project.geometry_version if project.geometry else 0,
+                   tuple(zone.model_dump_json() for zone in project.planting_zones))
         with self._checker_lock:
             cached = self._position_checkers.get(project.id)
             if cached is not None and cached[0] == version:
@@ -392,6 +395,10 @@ class ShapelyGeometryEngine:
         derived_features = [*constraint_features, *([allowed_feature] if allowed_feature is not None else []), *planting_zone_features]
         return GeometrySnapshot(
             feature_collection={"type": "FeatureCollection", "features": [*visible_features, *derived_features]},
+            # Regulatory calculation remains strictly 2D. Carry the source
+            # XYZ evidence through unchanged for the scene instead of
+            # flattening or attempting to derive terrain from it.
+            vertical_primitives=deepcopy(project.source_geometry.vertical_primitives),
             site_area_m2=round(full_site.area, 2) if full_site is not None else None,
             planning_area_m2=round(site.area, 2) if site is not None else None,
             allowed_area_m2=round(allowed.area, 2) if allowed is not None else None,
@@ -407,8 +414,22 @@ class ShapelyGeometryEngine:
     def position_violation(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree"):
         return self._position_checker(project).check(x, y, radius, plant_kind)  # type: ignore[arg-type]
 
-    def automatic_safe_geometry(self, project: Project, geometry: dict, radius: float, plant_kind: str = "tree") -> dict:
-        safe = self._position_checker(project).hard_safe_area(shape(geometry), radius, plant_kind)  # type: ignore[arg-type]
+    def automatic_safe_geometry(
+        self,
+        project: Project,
+        geometry: dict,
+        radius: float,
+        plant_kind: str = "tree",
+        growth_canopy_radius: float | None = None,
+        growth_root_radius: float | None = None,
+    ) -> dict:
+        safe = self._position_checker(project).automatic_safe_area(  # type: ignore[arg-type]
+            shape(geometry),
+            radius,
+            plant_kind,
+            growth_canopy_radius,
+            growth_root_radius,
+        )
         return mapping(safe)
 
     def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None:

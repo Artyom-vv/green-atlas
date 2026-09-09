@@ -1,0 +1,12 @@
+.editor-control-group { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--color-neutral-300); border-radius: 5px; background: var(--color-white); box-shadow: 0 2px 8px #18212b12; }
+.editor-control-group--vertical { flex-direction: column; }
+.editor-control-group .ui-icon-button { --control-height: 32px; flex: none; border: 0; border-radius: 3px; }
+.editor-control-group .ui-button { --control-height: 28px; min-width: 32px; padding: 3px 7px; font-size: 12px; border: 0; border-radius: 3px; }
+.editor-control-group .ui-divider { height: 20px; width: 1px; margin: 4px; background: var(--color-neutral-300); }
+.editor-control-group--vertical .ui-divider { height: 1px; width: 24px; }
+.editor-toolbar { padding: 4px; border-radius: 6px; max-height: calc(100dvh - 150px); overflow-y: auto; }
+.editor-toolbar .ui-icon-button { --control-height: 34px; }
+.editor-toolbar .ui-icon-button[aria-pressed=true] { color: var(--color-white); background: var(--color-blue-600); }
+.editor-map-mode { position: absolute; z-index: 40; top: 12px; right: 12px; }
+.editor-map-mode .ui-button[aria-pressed=true] { color: var(--color-blue-700); background: var(--color-blue-100); }
+@media (max-width: 600px) { .editor-toolbar { max-height: 360px; } }

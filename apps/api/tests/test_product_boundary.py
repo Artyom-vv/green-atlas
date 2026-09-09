@@ -3,11 +3,30 @@ from pathlib import Path
 from app.main import app
 
 
-def test_public_api_contains_only_the_manual_dxf_editor() -> None:
+def test_public_api_contains_only_the_editor_and_bounded_local_assistant() -> None:
     paths = set(app.openapi()["paths"])
 
     assert paths == {
         "/api/health",
+        "/api/planning-assistant/status",
+        "/api/planning-assistant/interpret",
+        "/api/project-assistant/chat",
+        "/api/projects/{project_id}/agent-runs",
+        "/api/projects/{project_id}/agent-runs/{run_id}",
+        "/api/projects/{project_id}/agent-runs/{run_id}/run",
+        "/api/projects/{project_id}/agent-runs/{run_id}/approve",
+        "/api/projects/{project_id}/agent-runs/{run_id}/answer",
+        "/api/projects/{project_id}/conversations",
+        "/api/projects/{project_id}/conversations/import",
+        "/api/projects/{project_id}/conversations/{conversation_id}",
+        "/api/projects/{project_id}/conversations/{conversation_id}/messages",
+        "/api/projects/{project_id}/conversations/{conversation_id}/interpret",
+        "/api/projects/{project_id}/conversations/{conversation_id}/prepare",
+        "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{record_id}/status",
+        "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{proposal_record_id}/decline",
+        "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{proposal_record_id}/confirm",
+        "/api/projects/{project_id}/building-screen/targets",
+        "/api/projects/{project_id}/building-screen/preview",
         "/api/species",
         "/api/projects",
         "/api/projects/{project_id}",
@@ -16,6 +35,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects/{project_id}/source-dxf/download",
         "/api/projects/{project_id}/layer-mappings",
         "/api/projects/{project_id}/planting-zones",
+        "/api/projects/{project_id}/planting-zones/preview",
         "/api/projects/{project_id}/map-features",
         "/api/projects/{project_id}/data-passport",
         "/api/projects/{project_id}/operations/geometry",

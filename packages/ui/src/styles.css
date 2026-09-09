@@ -155,9 +155,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   line-height: 18px;
   white-space: nowrap;
 }
-.ui-button { @apply px-3.5; }
+.ui-button { @apply px-3.5; height: auto; padding-block: 7px; min-width: 0; max-width: 100%; white-space: normal; text-align: center; }
+.ui-button, .ui-icon-button, summary, .ui-checkbox { user-select: none; }
 .ui-icon-button { @apply relative p-0; width: var(--control-height); }
-.ui-button > span { display: block; line-height: 18px; }
+.ui-button > span { display: block; min-width: 0; line-height: 18px; overflow-wrap: anywhere; }
 .ui-button svg, .ui-icon-button svg { @apply shrink-0; }
 .ui-button svg, .ui-icon-button svg { color: currentColor; stroke: currentColor; }
 .ui-button--primary, .ui-icon-button--primary { @apply border-blue-600 bg-blue-600 text-white; }
@@ -362,11 +363,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ui-table tr:last-child td { border-bottom: 0; }
 .ui-dialog-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; overflow-y: auto; overscroll-behavior: contain; background: rgba(24, 33, 43, .38); }
 .ui-dialog { width: min(520px, 100%); max-height: calc(100dvh - 48px); display: flex; flex-direction: column; border: 1px solid var(--border-strong); border-radius: var(--radius-panel); background: var(--surface); }
+.ui-dialog-backdrop[hidden] { display: none; }
+.ui-dialog--wide { width: min(960px, 100%); }
+.ui-dialog--form { width: min(620px, 100%); }
+.ui-dialog--stable { height: min(760px, calc(100dvh - 48px)); }
+.ui-dialog--stable > .ui-dialog__content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .ui-dialog > header, .ui-dialog > footer { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; }
 .ui-dialog > header { flex: none; border-bottom: 1px solid var(--border); }
-.ui-dialog > footer { flex: none; justify-content: flex-end; border-top: 1px solid var(--border); }
+.ui-dialog > footer { flex: none; flex-wrap: wrap; justify-content: flex-end; border-top: 1px solid var(--border); }
+.ui-dialog > footer > .ui-button { flex: 0 1 auto; }
 .ui-dialog h2 { margin: 0; font-size: 16px; }
-.ui-dialog__content { min-height: 0; padding: 20px; overflow-y: auto; overscroll-behavior-y: contain; }
+.ui-dialog__content { min-height: 0; padding: 20px; overflow-y: auto; overscroll-behavior-y: none; }
 
 @media (max-width: 720px) {
   .ui-action-bar { padding-inline: 16px; flex-wrap: wrap; }

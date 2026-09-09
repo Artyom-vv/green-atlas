@@ -9,12 +9,12 @@ describe('MapControlGroup', () => {
 
   it('exposes the horizontal map control contract', () => {
     render(<MapControlGroup><IconButton icon={Plus} label="Увеличить" /></MapControlGroup>);
-    expect(screen.getByRole('toolbar', { name: 'Управление картой' })).toHaveClass('map-control-group--horizontal');
+    expect(screen.getByRole('toolbar', { name: 'Управление картой' })).toHaveClass('editor-control-group--horizontal');
   });
 
   it('supports a vertical control stack without changing children', () => {
     render(<MapControlGroup orientation="vertical" label="Масштаб"><IconButton icon={Plus} label="Увеличить" /></MapControlGroup>);
-    expect(screen.getByRole('toolbar', { name: 'Масштаб' })).toHaveClass('map-control-group--vertical');
+    expect(screen.getByRole('toolbar', { name: 'Масштаб' })).toHaveClass('editor-control-group--vertical');
     expect(screen.getByRole('button', { name: 'Увеличить' })).toBeInTheDocument();
   });
 });

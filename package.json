@@ -15,7 +15,7 @@
     "check:api": "apps/api/.venv/bin/python apps/api/scripts/export_openapi.py && packages/api-client/node_modules/.bin/openapi-typescript apps/api/openapi.json -o packages/api-client/src/schema.d.ts && git diff --exit-code -- apps/api/openapi.json packages/api-client/src/schema.d.ts",
     "test:e2e": "pnpm --filter @green/web test:e2e",
     "test:e2e:headless": "E2E_BROWSER_CHANNEL=chrome pnpm --filter @green/web test:e2e",
-    "verify:headless": "apps/api/.venv/bin/pytest -q && pnpm --filter @green/web typecheck && pnpm --filter @green/web lint && pnpm --filter @green/web test -- --run && pnpm --filter @green/web build && exec env E2E_BROWSER_CHANNEL=chrome pnpm --filter @green/web exec playwright test --workers=1"
+    "verify:headless": "apps/api/.venv/bin/pytest -q apps/api/tests && pnpm --filter @green/web typecheck && pnpm --filter @green/web lint && pnpm --filter @green/web test -- --run && pnpm --filter @green/web build && exec env E2E_BROWSER_CHANNEL=chrome pnpm --filter @green/web exec playwright test --workers=1"
   },
   "devDependencies": {
     "geotiff": "3.0.5"

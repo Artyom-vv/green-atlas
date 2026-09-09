@@ -11,7 +11,7 @@ describe('PlacementScenarioPicker', () => {
 
     expect(screen.getAllByRole('radio')).toHaveLength(4);
     expect(screen.getByRole('radio', { name: 'Свободно' })).toBeChecked();
-    expect(screen.getByText('Сценарий только предлагает места. Отступы и ограничения проверяются для каждой позиции.')).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'Свободно' })).toHaveAccessibleDescription(/Естественно/);
 
     fireEvent.click(screen.getByRole('radio', { name: 'Куртины' }));
     expect(onChange).toHaveBeenCalledWith('cluster_groves');

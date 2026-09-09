@@ -10,7 +10,7 @@ describe('LayerInspector', () => {
 
     expect(screen.getByRole('heading', { name: 'Инженерные сети', level: 2 })).toBeInTheDocument();
     expect(screen.getByText('18 объектов на исходном чертеже.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Найти на карте' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'На карте' })).toBeEnabled();
     expect(screen.queryByText(/Исходный стиль|Типы DXF|Толщина/)).not.toBeInTheDocument();
   });
 
@@ -19,6 +19,6 @@ describe('LayerInspector', () => {
 
     expect(screen.getByText('Слой скрыт')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Показать слой' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Найти на карте' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'На карте' })).toBeDisabled();
   });
 });

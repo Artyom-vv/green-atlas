@@ -31,9 +31,9 @@ export function applySelection(current: string[], ids: string[], mode: Selection
 
 function reducer(state: EditorState, action: EditorAction): EditorState {
   if (action.type === 'reset') return { projectId: action.projectId, tool: 'select', selectedIds: [] };
-  if (action.type === 'tool') return { ...state, tool: action.tool, preview: undefined };
-  if (action.type === 'select') return { ...state, selectedIds: applySelection(state.selectedIds, action.ids, action.mode), preview: undefined };
-  if (action.type === 'clear-selection') return { ...state, selectedIds: [], preview: undefined };
+  if (action.type === 'tool') return action.tool === state.tool ? state : { ...state, tool: action.tool, preview: undefined };
+  if (action.type === 'select') return { ...state, selectedIds: applySelection(state.selectedIds, action.ids, action.mode) };
+  if (action.type === 'clear-selection') return { ...state, selectedIds: [] };
   return { ...state, preview: action.preview };
 }
 

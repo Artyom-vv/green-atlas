@@ -1,13 +1,14 @@
 import type { ScenePlantObject } from '@green/api-client';
 import * as THREE from 'three';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { SceneLod } from './sceneRenderContract';
 
 export type PlantPrototypePart = {
   geometry: THREE.BufferGeometry;
-  material: THREE.Material;
+  material: THREE.Material | THREE.Material[];
   castShadow: boolean;
+  billboard: boolean;
 };
 
 export type PlantPrototype = {
@@ -23,17 +24,41 @@ type PlantAssetManifest = {
   archetypes: Record<string, {
     nominalHeightM?: number;
     nominalRadiusM?: number;
-    lods: Array<{ lod: SceneLod; url: string; triangleCount?: number }>;
+    lods: Array<{
+      lod: SceneLod;
+      url: string;
+      ktx2Url?: string;
+      triangleCount?: number;
+      foliageRepresentation?: string;
+    }>;
   }>;
   speciesMap?: Record<string, string>;
+};
+
+export type PlantAssetLoadedEvent = {
+  assetKey: string;
+  lod: SceneLod;
+  format: 'glb';
+};
+
+export type PlantAssetLibraryLoadOptions = {
+  renderer?: THREE.WebGLRenderer;
+  preferKtx2?: boolean;
+  ktx2TranscoderPath?: string;
+  onPrototypeLoaded?: (event: PlantAssetLoadedEvent) => void;
+};
+
+export type PlantAssetLibraryLease = {
+  library: Promise<PlantAssetLibrary>;
+  release: () => void;
 };
 
 type ScenePlantWithAsset = ScenePlantObject & { asset_key?: string | null; species_key?: string | null };
 
 const FALLBACK_BY_SHAPE: Record<ScenePlantObject['crown_shape'], string> = {
-  columnar: 'broadleaf-columnar',
-  conical: 'conifer',
-  irregular: 'broadleaf-irregular',
+  columnar: 'broadleaf-oval',
+  conical: 'fir-natural',
+  irregular: 'broadleaf-spreading',
   oval: 'broadleaf-oval',
   placeholder: 'broadleaf-round',
   round: 'broadleaf-round',
@@ -42,27 +67,76 @@ const FALLBACK_BY_SHAPE: Record<ScenePlantObject['crown_shape'], string> = {
 
 function transformedGeometry(source: THREE.BufferGeometry, matrix: THREE.Matrix4) {
   const geometry = source.clone();
+  // Meshopt/KHR_mesh_quantization stores positions as normalized integers and
+  // keeps the real metre scale on the glTF node. BufferGeometry.applyMatrix4
+  // writes back through the integer attribute, clipping transformed values to
+  // [-1, 1] and turning every plant into a small cube. Dequantize the spatial
+  // attributes before baking the node transform into reusable instanced data.
+  for (const name of ['position', 'normal', 'tangent'] as const) {
+    const attribute = geometry.getAttribute(name);
+    if (!attribute) continue;
+    const values = new Float32Array(attribute.count * attribute.itemSize);
+    for (let index = 0; index < attribute.count; index += 1) {
+      values[index * attribute.itemSize] = attribute.getX(index);
+      if (attribute.itemSize > 1) values[index * attribute.itemSize + 1] = attribute.getY(index);
+      if (attribute.itemSize > 2) values[index * attribute.itemSize + 2] = attribute.getZ(index);
+      if (attribute.itemSize > 3) values[index * attribute.itemSize + 3] = attribute.getW(index);
+    }
+    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values, attribute.itemSize));
+  }
   geometry.applyMatrix4(matrix);
-  geometry.computeVertexNormals();
+  if (!geometry.attributes.normal) geometry.computeVertexNormals();
   return geometry;
 }
 
 function materialForRuntime(source: THREE.Material) {
+  if (source.name.startsWith('whole-tree ')) {
+    const standard = source as THREE.MeshStandardMaterial;
+    if (standard.map) standard.map.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({
+      name: source.name,
+      map: standard.map ?? null,
+      // The whole-tree texture is already a colour-managed Blender bake.
+      // Re-applying the foliage PBR tint or ACES tone mapping here crushed
+      // conifer greens to almost black in the actual workspace.
+      color: 0xffffff,
+      alphaTest: Math.max(0.48, standard.alphaTest),
+      // Alpha-to-coverage turns every sub-pixel leaf edge into a bright,
+      // temporally unstable fringe once hundreds of cutout cards overlap.
+      // A stable mask is deliberately preferable for the planning viewport.
+      alphaToCoverage: false,
+      depthWrite: true,
+      side: THREE.DoubleSide,
+      transparent: false,
+      toneMapped: false,
+    });
+  }
   const material = source.clone();
   if (material instanceof THREE.MeshStandardMaterial) {
     material.roughness = Math.max(0.58, material.roughness);
     material.metalness = 0;
     if (material.map) material.map.colorSpace = THREE.SRGBColorSpace;
-    if (material.transparent || material.alphaMap) {
+    if (material.transparent || material.alphaMap || material.alphaTest > 0) {
       material.transparent = false;
-      material.alphaTest = Math.max(material.alphaTest, 0.42);
+      // Keep partially transparent mip pixels out of the framebuffer. With
+      // alpha-to-coverage these pixels picked up the pale background and drew
+      // a white contour around every leaf card while the camera was moving.
+      material.alphaTest = Math.max(0.48, material.alphaTest);
+      material.alphaToCoverage = false;
       material.depthWrite = true;
+      material.side = THREE.DoubleSide;
     }
   }
   return material;
 }
 
-function extractPrototype(assetKey: string, lod: SceneLod, root: THREE.Object3D, nominalHeightM?: number, nominalRadiusM?: number): PlantPrototype | undefined {
+function extractPrototype(
+  assetKey: string,
+  lod: SceneLod,
+  root: THREE.Object3D,
+  nominalHeightM?: number,
+  nominalRadiusM?: number,
+): PlantPrototype | undefined {
   root.updateWorldMatrix(true, true);
   const parts: PlantPrototypePart[] = [];
   const bounds = new THREE.Box3();
@@ -72,13 +146,17 @@ function extractPrototype(assetKey: string, lod: SceneLod, root: THREE.Object3D,
     geometry.computeBoundingBox();
     if (geometry.boundingBox) bounds.union(geometry.boundingBox);
     const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
-    if (sourceMaterials.length === 1) {
-      parts.push({ geometry, material: materialForRuntime(sourceMaterials[0]), castShadow: true });
-      return;
-    }
-    // Multi-material meshes are kept as one primitive. Instancing preserves
-    // their groups without multiplying one plant into many React objects.
-    parts.push({ geometry, material: sourceMaterials.map(materialForRuntime) as unknown as THREE.Material, castShadow: true });
+    const billboard = lod !== 'near' && sourceMaterials.some((material) => (
+      material.name.startsWith('whole-tree ') || material.name.startsWith('source-derived foliage impostor')
+    ));
+    parts.push({
+      geometry,
+      material: sourceMaterials.length === 1
+        ? materialForRuntime(sourceMaterials[0])
+        : sourceMaterials.map((material) => materialForRuntime(material)),
+      castShadow: lod !== 'far' && !sourceMaterials.some((material) => material.name.startsWith('whole-tree ')),
+      billboard,
+    });
   });
   if (!parts.length || bounds.isEmpty()) return undefined;
   const size = bounds.getSize(new THREE.Vector3());
@@ -91,123 +169,109 @@ function extractPrototype(assetKey: string, lod: SceneLod, root: THREE.Object3D,
   };
 }
 
-function merge(parts: THREE.BufferGeometry[]) {
-  const geometry = mergeGeometries(parts, false);
-  parts.forEach((part) => part.dispose());
-  if (!geometry) throw new Error('Не удалось собрать резервную модель растения');
-  geometry.computeVertexNormals();
-  return geometry;
+function defaultAssetKey(object: ScenePlantWithAsset) {
+  if (object.kind === 'shrub') return 'shrub-natural';
+  if (object.crown_shape === 'conical') return 'fir-natural';
+  return FALLBACK_BY_SHAPE[object.crown_shape];
 }
 
-function branch(radius: number, length: number, origin: THREE.Vector3, direction: THREE.Vector3, radialSegments: number) {
-  const geometry = new THREE.CylinderGeometry(radius * 0.72, radius, length, radialSegments, 1, false);
-  const up = new THREE.Vector3(0, 1, 0);
-  const normalized = direction.clone().normalize();
-  const quaternion = new THREE.Quaternion().setFromUnitVectors(up, normalized);
-  const center = origin.clone().addScaledVector(normalized, length / 2);
-  geometry.applyQuaternion(quaternion);
-  geometry.translate(center.x, center.y, center.z);
-  return geometry;
-}
-
-function fallbackPrototype(assetKey: string, lod: SceneLod): PlantPrototype {
-  const shrub = assetKey.startsWith('shrub');
-  const conifer = assetKey === 'conifer';
-  const spreading = assetKey.endsWith('spreading');
-  const columnar = assetKey.endsWith('columnar');
-  const irregular = assetKey.endsWith('irregular');
-  const detail = lod === 'near' ? 10 : lod === 'mid' ? 7 : 5;
-  const nominalHeightM = shrub ? 1.4 : conifer ? 10 : 8;
-  const nominalRadiusM = shrub ? 1 : spreading ? 3.8 : columnar ? 1.8 : 3;
-  const bark = new THREE.MeshStandardMaterial({ color: shrub ? 0x6a7354 : 0x66503b, roughness: 0.96, metalness: 0 });
-  const foliage = new THREE.MeshStandardMaterial({
-    color: conifer ? 0x1f6045 : shrub ? 0x557a50 : 0x357452,
-    roughness: 0.9,
-    metalness: 0,
-    flatShading: lod === 'far',
-  });
-
-  if (shrub) {
-    const clusters = lod === 'near' ? 7 : lod === 'mid' ? 3 : 1;
-    const geometries = Array.from({ length: clusters }, (_, index) => {
-      const angle = (index / Math.max(1, clusters - 1)) * Math.PI * 2;
-      const radius = clusters === 1 ? 0 : 0.38;
-      const geometry = new THREE.IcosahedronGeometry(clusters === 1 ? 1 : 0.62, lod === 'near' ? 2 : 1);
-      geometry.scale(1, 0.68, 1);
-      geometry.translate(Math.cos(angle) * radius, 0.6 + (index % 2) * 0.14, Math.sin(angle) * radius);
-      return geometry;
-    });
-    return { assetKey, lod, nominalHeightM, nominalRadiusM, parts: [{ geometry: merge(geometries), material: foliage, castShadow: lod !== 'far' }] };
+function materialTextures(material: THREE.Material) {
+  const textures: THREE.Texture[] = [];
+  for (const value of Object.values(material)) {
+    if (value instanceof THREE.Texture) textures.push(value);
   }
-
-  const trunkParts = [new THREE.CylinderGeometry(0.16, 0.3, conifer ? 5.4 : 4, detail, 2, false)];
-  trunkParts[0].translate(0, conifer ? 2.7 : 2, 0);
-  if (lod !== 'far') {
-    const branchCount = lod === 'near' ? 8 : 4;
-    for (let index = 0; index < branchCount; index += 1) {
-      const angle = index * 2.39996;
-      const origin = new THREE.Vector3(0, 2.9 + (index % 3) * 0.42, 0);
-      const length = conifer ? 1.6 + (index % 2) * 0.35 : 1.2 + (index % 3) * 0.28;
-      trunkParts.push(branch(0.08, length, origin, new THREE.Vector3(Math.cos(angle), conifer ? 0.06 : 0.35, Math.sin(angle)), detail));
-    }
-  }
-
-  const foliageParts: THREE.BufferGeometry[] = [];
-  if (conifer) {
-    const tiers = lod === 'near' ? 6 : lod === 'mid' ? 3 : 1;
-    for (let index = 0; index < tiers; index += 1) {
-      const geometry = new THREE.ConeGeometry(2.35 - index * 0.24, 3.25, detail * 2, 2);
-      geometry.translate(0, 4.8 + index * 0.72, 0);
-      foliageParts.push(geometry);
-    }
-  } else {
-    const clusterCount = lod === 'near' ? 9 : lod === 'mid' ? 4 : 1;
-    for (let index = 0; index < clusterCount; index += 1) {
-      const angle = index * 2.39996;
-      const radial = clusterCount === 1 ? 0 : (spreading ? 1.55 : columnar ? 0.62 : 1.05) * (0.55 + (index % 3) * 0.2);
-      const geometry = new THREE.IcosahedronGeometry(clusterCount === 1 ? 2.5 : 1.25 + (index % 2) * 0.18, lod === 'near' ? 2 : 1);
-      geometry.scale(spreading ? 1.35 : columnar ? 0.72 : 1, columnar ? 1.42 : spreading ? 0.72 : 1, irregular && index % 2 ? 0.72 : 1);
-      geometry.translate(Math.cos(angle) * radial, 5.2 + (index % 3) * 0.62, Math.sin(angle) * radial);
-      foliageParts.push(geometry);
-    }
-  }
-  return {
-    assetKey,
-    lod,
-    nominalHeightM,
-    nominalRadiusM,
-    parts: [
-      { geometry: merge(trunkParts), material: bark, castShadow: lod !== 'far' },
-      { geometry: merge(foliageParts), material: foliage, castShadow: lod !== 'far' },
-    ],
-  };
+  return textures;
 }
 
 export class PlantAssetLibrary {
   private readonly prototypes = new Map<string, PlantPrototype>();
   private readonly speciesMap = new Map<string, string>();
-  private readonly fallbackKeys = new Set<string>();
+  private readonly failedUrls = new Set<string>();
+  private readonly listeners = new Set<(event: PlantAssetLoadedEvent) => void>();
+  private upgradesPromise: Promise<void> = Promise.resolve();
+  private upgradeTimer?: ReturnType<typeof setTimeout>;
+  private resolveUpgrades?: () => void;
+  private disposed = false;
 
-  static async load(manifestUrl = '/assets/plant-models/manifest.json') {
+  static async load(
+    manifestUrl = '/assets/plant-models/manifest.json',
+    options: PlantAssetLibraryLoadOptions = {},
+  ) {
     const library = new PlantAssetLibrary();
+    if (options.onPrototypeLoaded) library.listeners.add(options.onPrototypeLoaded);
     try {
       const response = await fetch(manifestUrl, { headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error(`manifest ${response.status}`);
       const manifest = await response.json() as PlantAssetManifest;
       Object.entries(manifest.speciesMap ?? {}).forEach(([species, archetype]) => library.speciesMap.set(species, archetype));
-      const loader = new GLTFLoader();
-      await Promise.all(Object.entries(manifest.archetypes).flatMap(([assetKey, entry]) => entry.lods.map(async (lod) => {
-        try {
-          const gltf = await loader.loadAsync(lod.url);
-          const prototype = extractPrototype(assetKey, lod.lod, gltf.scene, entry.nominalHeightM, entry.nominalRadiusM);
-          if (prototype) library.prototypes.set(`${assetKey}:${lod.lod}`, prototype);
-        } catch {
-          // A missing optional model should degrade to the documented local
-          // archetype, never make the entire project scene unavailable.
-        }
-      })));
+      const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+      const entries = Object.entries(manifest.archetypes);
+      const loadTier = async (tier: SceneLod) => {
+        await Promise.all(entries.map(async ([assetKey, entry]) => {
+          const lod = entry.lods.find((candidate) => candidate.lod === tier);
+          if (!lod) return;
+          const url = lod.url;
+          try {
+            const gltf = await loader.loadAsync(url);
+            const prototype = extractPrototype(
+              assetKey,
+              lod.lod,
+              gltf.scene,
+              entry.nominalHeightM,
+              entry.nominalRadiusM,
+            );
+            gltf.scene.traverse((object) => {
+              if (!(object instanceof THREE.Mesh)) return;
+              object.geometry.dispose();
+              const materials = Array.isArray(object.material) ? object.material : [object.material];
+              materials.forEach((material) => material.dispose());
+            });
+            if (!prototype) return;
+            if (library.disposed) {
+              library.disposePrototype(prototype);
+              return;
+            }
+            const key = `${assetKey}:${lod.lod}`;
+            const previous = library.prototypes.get(key);
+            if (previous) library.disposePrototype(previous);
+            library.prototypes.set(key, prototype);
+            library.notify({ assetKey, lod: lod.lod, format: 'glb' });
+          } catch {
+            library.failedUrls.add(url);
+          }
+        }));
+      };
+      // A small, complete far tier is the first usable scene. Mid and near
+      // geometry stream afterwards and notify the controller to rebucket.
+      await loadTier('far');
+      // Do not start 3.4 MiB of detail work for a transient 3D mount (quick
+      // 2D↔3D switch, route transition, React development probe). Besides
+      // saving bandwidth this makes disposal real: GLTFLoader has no fetch
+      // AbortSignal and otherwise retains decoded buffers until every pending
+      // upgrade settles.
+      library.upgradesPromise = new Promise((resolve) => {
+        library.resolveUpgrades = resolve;
+        library.upgradeTimer = setTimeout(() => {
+          library.upgradeTimer = undefined;
+          if (library.disposed) {
+            library.resolveUpgrades = undefined;
+            resolve();
+            return;
+          }
+          void (async () => {
+            // A focused/selected tree is more important than completing every
+            // intermediate overview asset first. Start both tiers together so
+            // a cold near view is not guaranteed to display the far fallback
+            // for an additional full mid-tier download.
+            await Promise.all([loadTier('near'), loadTier('mid')]);
+          })().finally(() => {
+            library.resolveUpgrades = undefined;
+            resolve();
+          });
+        }, 1_200);
+      });
     } catch {
-      // The fallback library is intentionally usable offline.
+      library.failedUrls.add(manifestUrl);
     }
     return library;
   }
@@ -219,44 +283,121 @@ export class PlantAssetLibrary {
     if (scientificName && this.speciesMap.has(scientificName)) return this.speciesMap.get(scientificName)!;
     const speciesId = object.species_id?.trim();
     if (speciesId && this.speciesMap.has(speciesId)) return this.speciesMap.get(speciesId)!;
-    if (explicit && this.prototypes.has(`${explicit}:near`)) return explicit;
     const revision = object.species_revision_id?.trim();
-    if (revision) return this.speciesMap.get(revision) ?? revision;
-    if (object.kind === 'shrub') return object.crown_shape === 'spreading' ? 'shrub-spreading' : 'shrub-round';
-    return FALLBACK_BY_SHAPE[object.crown_shape];
+    if (revision && this.speciesMap.has(revision)) return this.speciesMap.get(revision)!;
+    if (explicit && this.prototypes.has(`${explicit}:near`)) return explicit;
+    return defaultAssetKey(object);
   }
 
   get(object: ScenePlantWithAsset, lod: SceneLod) {
     let assetKey = this.assetKey(object);
     let prototype = this.prototypes.get(`${assetKey}:${lod}`);
-    if (!prototype && object.species_revision_id) {
-      assetKey = object.kind === 'shrub'
-        ? object.crown_shape === 'spreading' ? 'shrub-spreading' : 'shrub-round'
-        : FALLBACK_BY_SHAPE[object.crown_shape];
+    if (!prototype) {
+      assetKey = defaultAssetKey(object);
       prototype = this.prototypes.get(`${assetKey}:${lod}`);
     }
     if (!prototype) {
-      const key = `${assetKey}:${lod}`;
-      prototype = fallbackPrototype(assetKey, lod);
-      this.prototypes.set(key, prototype);
-      this.fallbackKeys.add(key);
+      const fallbackOrder: SceneLod[] = lod === 'near'
+        ? ['mid', 'far']
+        : lod === 'mid'
+          ? ['far', 'near']
+          : ['mid', 'near'];
+      prototype = fallbackOrder
+        .map((fallbackLod) => this.prototypes.get(`${assetKey}:${fallbackLod}`))
+        .find((candidate): candidate is PlantPrototype => Boolean(candidate));
     }
+    // A missing broadleaf must never silently become a conifer or shrub just
+    // because another archetype happened to finish downloading first.
+    if (!prototype) return { assetKey: 'missing-artist-asset', lod, nominalHeightM: 1, nominalRadiusM: 1, parts: [] };
     return prototype;
   }
 
   loadedModelCount() {
-    return this.prototypes.size - this.fallbackKeys.size;
+    return this.prototypes.size;
+  }
+
+  failedModelCount() {
+    return this.failedUrls.size;
+  }
+
+  subscribe(listener: (event: PlantAssetLoadedEvent) => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  whenReady() {
+    return this.upgradesPromise;
+  }
+
+  private notify(event: PlantAssetLoadedEvent) {
+    this.listeners.forEach((listener) => listener(event));
+  }
+
+  private disposePrototype(prototype: PlantPrototype) {
+    const textures = new Set<THREE.Texture>();
+    const materials = new Set<THREE.Material>();
+    for (const part of prototype.parts) {
+      part.geometry.dispose();
+      const partMaterials = Array.isArray(part.material) ? part.material : [part.material];
+      for (const material of partMaterials) {
+        materials.add(material);
+        materialTextures(material).forEach((texture) => textures.add(texture));
+      }
+    }
+    textures.forEach((texture) => {
+      const source = texture.source?.data as unknown;
+      if (source && typeof source === 'object' && 'close' in source && typeof source.close === 'function') source.close();
+      texture.dispose();
+    });
+    materials.forEach((material) => material.dispose());
   }
 
   dispose() {
-    for (const prototype of this.prototypes.values()) {
-      for (const part of prototype.parts) {
-        part.geometry.dispose();
-        if (Array.isArray(part.material)) part.material.forEach((material) => material.dispose());
-        else part.material.dispose();
-      }
-    }
+    this.disposed = true;
+    if (this.upgradeTimer) clearTimeout(this.upgradeTimer);
+    this.upgradeTimer = undefined;
+    this.resolveUpgrades?.();
+    this.resolveUpgrades = undefined;
+    for (const prototype of this.prototypes.values()) this.disposePrototype(prototype);
     this.prototypes.clear();
-    this.fallbackKeys.clear();
+    this.failedUrls.clear();
+    this.listeners.clear();
   }
+}
+
+// Decoded GLB geometry and textures are application assets, not view state.
+// Keep one bounded cache across quick 2D↔3D switches so a toggle does not
+// re-fetch and re-parse the same four models or create a saw-tooth heap. The
+// delayed release still frees the cache after the user leaves 3D for good.
+const sharedAssetCacheTtlMs = 30_000;
+let sharedAssetPromise: Promise<PlantAssetLibrary> | undefined;
+let sharedAssetReferences = 0;
+let sharedAssetDisposalTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function acquirePlantAssetLibrary(
+  manifestUrl = '/assets/plant-models/manifest.json',
+  options: PlantAssetLibraryLoadOptions = {},
+): PlantAssetLibraryLease {
+  sharedAssetReferences += 1;
+  if (sharedAssetDisposalTimer) clearTimeout(sharedAssetDisposalTimer);
+  sharedAssetDisposalTimer = undefined;
+  sharedAssetPromise ??= PlantAssetLibrary.load(manifestUrl, options);
+  const library = sharedAssetPromise;
+  let released = false;
+
+  return {
+    library,
+    release() {
+      if (released) return;
+      released = true;
+      sharedAssetReferences = Math.max(0, sharedAssetReferences - 1);
+      if (sharedAssetReferences || sharedAssetDisposalTimer) return;
+      sharedAssetDisposalTimer = setTimeout(() => {
+        sharedAssetDisposalTimer = undefined;
+        if (sharedAssetReferences || sharedAssetPromise !== library) return;
+        sharedAssetPromise = undefined;
+        void library.then((assets) => assets.dispose());
+      }, sharedAssetCacheTtlMs);
+    },
+  };
 }

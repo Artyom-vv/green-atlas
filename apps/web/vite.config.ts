@@ -4,6 +4,12 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // The reproducible asset pipeline keeps large source packages and the
+    // pinned KTX toolchain here. Rebuilding assets must not trigger thousands
+    // of dev-page reloads while the cache is populated.
+    watch: { ignored: ['**/.cache/plant-assets/**'] },
+  },
   test: { environment: 'jsdom', setupFiles: './src/test/setup.ts', css: true, exclude: ['e2e/**', 'node_modules/**'] },
 });

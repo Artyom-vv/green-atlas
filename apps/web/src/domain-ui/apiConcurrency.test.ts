@@ -14,6 +14,19 @@ const projectPayload = (id: string, version: number) => ({
 
 describe('API project concurrency headers', () => {
   afterEach(() => vi.unstubAllGlobals());
+  it('does not turn building screening into a write or adopt a concurrent project revision', async () => {
+    const projectId = 'building-screen-read-only';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload(projectId, 6)), { headers: { 'X-Project-State-Version': '6' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { headers: { 'X-Project-State-Version': '7' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([])));
+    vi.stubGlobal('fetch', fetchMock);
+    await api.getProject(projectId, false);
+    await api.previewBuildingScreen(projectId, { base_plan_version: 1, zone_ids: ['west'], screen_side: 'perimeter' });
+    await api.createExport(projectId);
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('If-Match')).toBeNull();
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get('If-Match')).toBe('"6"');
+  });
 
   it('sends the last project version and advances it after a successful mutation', async () => {
     const projectId = 'if-match-project';

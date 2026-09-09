@@ -650,6 +650,71 @@
         }
       }
     },
+    "/api/projects/{project_id}/planting-zones/preview": {
+      "post": {
+        "summary": "Preview Planting Zone",
+        "operationId": "preview_planting_zone_api_projects__project_id__planting_zones_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlantingZoneAssignment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantingZonePreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/map-features": {
       "get": {
         "summary": "Get Map Features",
@@ -1437,6 +1502,138 @@
                     "$ref": "#/components/schemas/PlacementMaskPreset"
                   },
                   "title": "Response Get Plan Placement Masks Api Projects  Project Id  Plan Placement Masks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/building-screen/targets": {
+      "get": {
+        "summary": "Building Screen Targets",
+        "operationId": "building_screen_targets_api_projects__project_id__building_screen_targets_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "zone_ids",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Zone Ids"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildingScreenTargets"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/building-screen/preview": {
+      "post": {
+        "summary": "Preview Building Screen",
+        "operationId": "preview_building_screen_api_projects__project_id__building_screen_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildingScreenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationPreview"
                 }
               }
             }
@@ -2405,10 +2602,1440 @@
           }
         }
       }
+    },
+    "/api/planning-assistant/status": {
+      "get": {
+        "tags": [
+          "Planning assistant"
+        ],
+        "summary": "Assistant Status",
+        "operationId": "assistant_status_api_planning_assistant_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/planning-assistant/interpret": {
+      "post": {
+        "tags": [
+          "Planning assistant"
+        ],
+        "summary": "Interpret",
+        "operationId": "interpret_api_planning_assistant_interpret_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningBriefInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningBrief"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/project-assistant/chat": {
+      "post": {
+        "tags": [
+          "Project assistant"
+        ],
+        "summary": "Chat",
+        "operationId": "chat_api_project_assistant_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectChatInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectChatReply"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations": {
+      "get": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Conversations",
+        "operationId": "conversations_api_projects__project_id__conversations_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSummary"
+                  },
+                  "title": "Response Conversations Api Projects  Project Id  Conversations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_projects__project_id__conversations_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/import": {
+      "post": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Import Legacy",
+        "operationId": "import_legacy_api_projects__project_id__conversations_import_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegacyImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/{conversation_id}": {
+      "get": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Conversation",
+        "operationId": "conversation_api_projects__project_id__conversations__conversation_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/{conversation_id}/messages": {
+      "post": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Append Message",
+        "operationId": "append_message_api_projects__project_id__conversations__conversation_id__messages_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserMessage"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/{conversation_id}/interpret": {
+      "post": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Interpret Message",
+        "operationId": "interpret_message_api_projects__project_id__conversations__conversation_id__interpret_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserMessage"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/{conversation_id}/prepare": {
+      "post": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Prepare Task",
+        "operationId": "prepare_task_api_projects__project_id__conversations__conversation_id__prepare_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrepareTask"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{record_id}/status": {
+      "get": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Proposal Status",
+        "operationId": "proposal_status_api_projects__project_id__conversations__conversation_id__proposals__record_id__status_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Record Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{proposal_record_id}/decline": {
+      "post": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Decline Proposal",
+        "operationId": "decline_proposal_api_projects__project_id__conversations__conversation_id__proposals__proposal_record_id__decline_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "proposal_record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Record Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrepareTask"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{proposal_record_id}/confirm": {
+      "post": {
+        "tags": [
+          "Project conversations"
+        ],
+        "summary": "Confirm Proposal",
+        "operationId": "confirm_proposal_api_projects__project_id__conversations__conversation_id__proposals__proposal_record_id__confirm_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "proposal_record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Record Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmProposal"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanMutationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs": {
+      "post": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Create Run",
+        "operationId": "create_run_api_projects__project_id__agent_runs_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Get Run",
+        "operationId": "get_run_api_projects__project_id__agent_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/approve": {
+      "post": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Approve Run",
+        "operationId": "approve_run_api_projects__project_id__agent_runs__run_id__approve_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunApproval"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/answer": {
+      "post": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Answer Run",
+        "description": "Add one user answer and resume the same durable autonomous run.",
+        "operationId": "answer_run_api_projects__project_id__agent_runs__run_id__answer_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunAnswer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/run": {
+      "post": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Run Agent",
+        "operationId": "run_agent_api_projects__project_id__agent_runs__run_id__run_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AgentIntent": {
+        "properties": {
+          "raw_text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Raw Text"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/Goal"
+          },
+          "scope_mode": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "selection",
+              "delegated",
+              "project"
+            ],
+            "title": "Scope Mode",
+            "default": "explicit"
+          },
+          "explicit_zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Explicit Zone Ids"
+          },
+          "explicit_object_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Explicit Object Ids"
+          },
+          "hard_constraints": {
+            "items": {
+              "$ref": "#/components/schemas/HardConstraint"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Hard Constraints"
+          },
+          "unresolved_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Unresolved Requirements"
+          },
+          "preferences": {
+            "items": {
+              "$ref": "#/components/schemas/Preference"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Preferences"
+          },
+          "delegations": {
+            "items": {
+              "$ref": "#/components/schemas/Delegation"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Delegations"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/IntentEvidence"
+          },
+          "arrangement": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrangement"
+          },
+          "plant_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "shrub",
+                  "mixed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plant Kind"
+          },
+          "species_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Species Ids"
+          },
+          "post_action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "focus_map"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Action"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "raw_text",
+          "goal"
+        ],
+        "title": "AgentIntent",
+        "description": "Immutable user intent atoms plus explicit delegations.\n\n``constraints`` contains only requirements, while subjective words such as\n«плотно» belong in ``preferences``.  Normative policy is represented by a\npolicy-owned HardConstraint and is never generated as user text."
+      },
+      "AgentRunAnswer": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 800,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "AgentRunAnswer"
+      },
+      "AgentRunApproval": {
+        "properties": {
+          "preview_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Ref"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AgentRunApproval"
+      },
+      "AgentRunCreate": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 5,
+            "title": "Text"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "AgentRunCreate"
+      },
+      "AgentRunEvent": {
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Sequence"
+          },
+          "kind": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Kind"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sequence",
+          "kind",
+          "created_at"
+        ],
+        "title": "AgentRunEvent"
+      },
+      "AgentRunRecord": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/AgentRunState"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRunEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentRunRecord"
+      },
+      "AgentRunState": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "project_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "waiting_question",
+              "waiting_approval",
+              "waiting_job",
+              "finished",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "default": "queued"
+          },
+          "intent": {
+            "$ref": "#/components/schemas/AgentIntent"
+          },
+          "resolved_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResolvedScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidate_zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Candidate Zone Ids"
+          },
+          "snapshot_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Snapshot Version"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Step",
+            "default": 0
+          },
+          "tool_calls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Tool Calls"
+          },
+          "tool_fingerprints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Tool Fingerprints"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Evidence Refs"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_question": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Question"
+          },
+          "pending_approval": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Approval"
+          },
+          "outcome_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Ref"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_steps": {
+            "type": "integer",
+            "maximum": 512.0,
+            "minimum": 1.0,
+            "title": "Max Steps",
+            "default": 64
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "project_id",
+          "intent",
+          "snapshot_version"
+        ],
+        "title": "AgentRunState",
+        "description": "Durable state restored after a process crash or human interruption."
+      },
+      "AssistantStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "local": {
+            "type": "boolean",
+            "const": true,
+            "title": "Local",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "AssistantStatus"
+      },
       "Body_upload_dxf_api_projects__project_id__source_dxf_post": {
         "properties": {
           "file": {
@@ -2577,6 +4204,38 @@
             "minimum": 1.0,
             "title": "Max Sites",
             "default": 500
+          },
+          "tree_species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tree Species Revision Id"
+          },
+          "shrub_species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shrub Species Revision Id"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "standard"
           }
         },
         "type": "object",
@@ -2609,6 +4268,130 @@
           "geometry"
         ],
         "title": "BrushStroke"
+      },
+      "BuildingScreenRequest": {
+        "properties": {
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Zone Ids"
+          },
+          "screen_side": {
+            "type": "string",
+            "enum": [
+              "perimeter",
+              "roads"
+            ],
+            "title": "Screen Side",
+            "default": "perimeter"
+          },
+          "max_sites": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 500.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sites"
+          },
+          "arrangement": {
+            "type": "string",
+            "enum": [
+              "groves",
+              "contour"
+            ],
+            "title": "Arrangement",
+            "default": "groves"
+          },
+          "species_revision_id": {
+            "type": "string",
+            "title": "Species Revision Id",
+            "default": "tilia-cordata@2026-08-28.1"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "unspecified",
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "standard"
+          },
+          "spacing_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.5,
+            "title": "Spacing M",
+            "default": 7
+          },
+          "spacing_policy": {
+            "type": "string",
+            "enum": [
+              "open",
+              "balanced",
+              "canopy"
+            ],
+            "title": "Spacing Policy",
+            "default": "balanced"
+          },
+          "building_offset_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 60.0,
+                "minimum": 0.5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Offset M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_plan_version",
+          "zone_ids"
+        ],
+        "title": "BuildingScreenRequest"
+      },
+      "BuildingScreenTargets": {
+        "properties": {
+          "geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "has_roads": {
+            "type": "boolean",
+            "title": "Has Roads",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "BuildingScreenTargets"
       },
       "CandidateReasonSummary": {
         "properties": {
@@ -2879,6 +4662,228 @@
         ],
         "title": "ChangeSetPreview"
       },
+      "ChatMessage": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatMessage"
+      },
+      "ChatZone": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Label"
+          },
+          "planting_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Planting Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "planting_count"
+        ],
+        "title": "ChatZone"
+      },
+      "ConfirmProposal": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ConfirmProposal"
+      },
+      "Conversation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskState"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationRecord"
+            },
+            "type": "array",
+            "title": "Records"
+          },
+          "can_prepare": {
+            "type": "boolean",
+            "title": "Can Prepare",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "revision",
+          "created_at",
+          "updated_at",
+          "project_id",
+          "task",
+          "records",
+          "can_prepare"
+        ],
+        "title": "Conversation"
+      },
+      "ConversationCreate": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "default": "Новый диалог"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConversationCreate"
+      },
+      "ConversationRecord": {
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "title": "Record Id"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "message",
+              "tool_event",
+              "annotation"
+            ],
+            "title": "Kind"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "record_id",
+          "sequence",
+          "kind",
+          "payload",
+          "created_at"
+        ],
+        "title": "ConversationRecord"
+      },
+      "ConversationSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationSummary"
+      },
       "CoordinateReference": {
         "properties": {
           "status": {
@@ -2919,6 +4924,7 @@
             "enum": [
               "none",
               "dxf_geodata",
+              "dxf_custom_georeference",
               "user_declared",
               "control_points"
             ],
@@ -2939,6 +4945,57 @@
               }
             ],
             "title": "Axis Order"
+          },
+          "origin_wgs84": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Wgs84"
+          },
+          "local_projection": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "local_equirectangular_wgs84"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Projection"
+          },
+          "earth_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earth Radius M"
+          },
+          "horizontal_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizontal Source"
           },
           "control_points_count": {
             "type": "integer",
@@ -3216,6 +5273,247 @@
         "title": "DataPassportEntry",
         "description": "One source-data class and its role in the current calculation.\n\nThe passport is deliberately a compact audit contract.  It reports what\nthe importer can prove from the DXF and never treats an absent layer as an\nempty physical area."
       },
+      "Delegation": {
+        "properties": {
+          "slot": {
+            "type": "string",
+            "enum": [
+              "scope",
+              "species",
+              "arrangement",
+              "quantity",
+              "presentation"
+            ],
+            "title": "Slot"
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "policy",
+              "best_evidence"
+            ],
+            "title": "Strategy"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot",
+          "strategy"
+        ],
+        "title": "Delegation"
+      },
+      "DxfVerticalPrimitive": {
+        "properties": {
+          "primitive_id": {
+            "type": "string",
+            "title": "Primitive Id"
+          },
+          "primitive_type": {
+            "type": "string",
+            "enum": [
+              "point",
+              "polyline",
+              "surface_mesh"
+            ],
+            "title": "Primitive Type"
+          },
+          "vertices_m": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Vertices M"
+          },
+          "faces": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Faces"
+          },
+          "source_layer": {
+            "type": "string",
+            "title": "Source Layer"
+          },
+          "source_entity_type": {
+            "type": "string",
+            "title": "Source Entity Type"
+          },
+          "source_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Handle"
+          },
+          "source_file_units": {
+            "type": "string",
+            "title": "Source File Units"
+          },
+          "unit_scale_to_m": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Unit Scale To M"
+          },
+          "source_space": {
+            "type": "string",
+            "const": "dxf_wcs",
+            "title": "Source Space",
+            "default": "dxf_wcs"
+          },
+          "vertical_evidence": {
+            "type": "string",
+            "enum": [
+              "explicit_xyz",
+              "explicit_elevation",
+              "explicit_extrusion"
+            ],
+            "title": "Vertical Evidence"
+          },
+          "extrusion_vector_m": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extrusion Vector M"
+          },
+          "terrain_mapping_status": {
+            "type": "string",
+            "enum": [
+              "unmapped",
+              "confirmed"
+            ],
+            "title": "Terrain Mapping Status",
+            "default": "unmapped"
+          },
+          "terrain_mapping_basis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "dxf_document_metadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Mapping Basis"
+          },
+          "terrain_confidence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "surveyed",
+                  "estimated"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Confidence"
+          },
+          "source_dataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Dataset"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "source_attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Attribution"
+          },
+          "vertical_datum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Datum"
+          },
+          "vertical_datum_offset_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Datum Offset M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "primitive_id",
+          "primitive_type",
+          "source_layer",
+          "source_entity_type",
+          "source_file_units",
+          "unit_scale_to_m",
+          "vertical_evidence"
+        ],
+        "title": "DxfVerticalPrimitive"
+      },
       "EffectEstimate": {
         "properties": {
           "effect": {
@@ -3451,6 +5749,15 @@
             "title": "Target Count",
             "default": 40
           },
+          "zone_distribution": {
+            "type": "string",
+            "enum": [
+              "available",
+              "equal"
+            ],
+            "title": "Zone Distribution",
+            "default": "available"
+          },
           "layout": {
             "type": "string",
             "enum": [
@@ -3571,6 +5878,13 @@
             "type": "object",
             "title": "Feature Collection"
           },
+          "vertical_primitives": {
+            "items": {
+              "$ref": "#/components/schemas/DxfVerticalPrimitive"
+            },
+            "type": "array",
+            "title": "Vertical Primitives"
+          },
           "site_area_m2": {
             "anyOf": [
               {
@@ -3613,6 +5927,49 @@
           "feature_collection"
         ],
         "title": "GeometrySnapshot"
+      },
+      "Goal": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "place",
+              "edit",
+              "delete",
+              "inspect",
+              "zones",
+              "release"
+            ],
+            "title": "Operation"
+          },
+          "target_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Count"
+          },
+          "acceptance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Acceptance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "title": "Goal"
       },
       "GrowthEnvelopeForecast": {
         "properties": {
@@ -3672,6 +6029,39 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HardConstraint": {
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Rule Id"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          },
+          "policy_owned": {
+            "type": "boolean",
+            "title": "Policy Owned",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule_id"
+        ],
+        "title": "HardConstraint"
+      },
       "ImportEditability": {
         "type": "string",
         "enum": [
@@ -3719,6 +6109,54 @@
         },
         "type": "object",
         "title": "ImportStatus"
+      },
+      "IntentEvidence": {
+        "properties": {
+          "operation": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Operation"
+          },
+          "plant_kind": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Plant Kind"
+          },
+          "arrangement": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Arrangement"
+          },
+          "delegations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Delegations"
+          },
+          "corrections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Corrections"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "IntentEvidence",
+        "description": "Typed, user-visible semantic anchors used to audit compilation.\n\nThese are server-derived concept matches, not model reasoning.  They make\na correction explainable when a local model confuses a destructive action\nwith a placement request or drops one side of a mixed composition."
       },
       "Layer": {
         "properties": {
@@ -3852,6 +6290,133 @@
         ],
         "title": "LayerMappingRequest"
       },
+      "LegacyImport": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Source Id"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/LegacyMessage"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Messages"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_id",
+          "messages"
+        ],
+        "title": "LegacyImport"
+      },
+      "LegacyMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "text"
+        ],
+        "title": "LegacyMessage"
+      },
+      "MapContext": {
+        "properties": {
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Zone Ids"
+          },
+          "object_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Object Ids"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state_version"
+        ],
+        "title": "MapContext"
+      },
       "OperationError": {
         "properties": {
           "code": {
@@ -3912,7 +6477,9 @@
                 "enum": [
                   "road_edges",
                   "regular_grid",
-                  "cluster_groves"
+                  "cluster_groves",
+                  "building_screen",
+                  "building_contour"
                 ]
               },
               {
@@ -3960,6 +6527,13 @@
               }
             ],
             "title": "Effective Spacing M"
+          },
+          "zone_allocations": {
+            "items": {
+              "$ref": "#/components/schemas/PatternZoneAllocation"
+            },
+            "type": "array",
+            "title": "Zone Allocations"
           },
           "skipped": {
             "items": {
@@ -4144,6 +6718,37 @@
         ],
         "title": "PatternSkippedCandidate"
       },
+      "PatternZoneAllocation": {
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "title": "Zone Id"
+          },
+          "requested_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Count"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Accepted Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "zone_id",
+          "accepted_count"
+        ],
+        "title": "PatternZoneAllocation"
+      },
       "PlacementCheck": {
         "properties": {
           "allowed": {
@@ -4315,9 +6920,33 @@
             "enum": [
               "road_edges",
               "regular_grid",
-              "cluster_groves"
+              "cluster_groves",
+              "building_screen",
+              "building_contour"
             ],
             "title": "Mask Id"
+          },
+          "building_offset_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 60.0,
+                "minimum": 0.5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Offset M"
+          },
+          "screen_side": {
+            "type": "string",
+            "enum": [
+              "perimeter",
+              "roads"
+            ],
+            "title": "Screen Side",
+            "default": "perimeter"
           },
           "base_plan_version": {
             "type": "integer",
@@ -4380,6 +7009,15 @@
             "minimum": 1.0,
             "title": "Target Count",
             "default": 40
+          },
+          "zone_distribution": {
+            "type": "string",
+            "enum": [
+              "available",
+              "equal"
+            ],
+            "title": "Zone Distribution",
+            "default": "available"
           },
           "spacing_m": {
             "type": "number",
@@ -5241,6 +7879,90 @@
         ],
         "title": "PlanObjectsDeleteRequest"
       },
+      "PlanningBrief": {
+        "properties": {
+          "arrangement": {
+            "type": "string",
+            "enum": [
+              "area",
+              "building_screen"
+            ],
+            "title": "Arrangement",
+            "default": "area"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "balanced",
+                  "shade",
+                  "continuity",
+                  "low_future_conflict"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "max_sites": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 500.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sites"
+          },
+          "unsupported": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "title": "Unsupported"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Questions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "max_sites",
+          "unsupported",
+          "questions"
+        ],
+        "title": "PlanningBrief"
+      },
+      "PlanningBriefInput": {
+        "properties": {
+          "task": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 5,
+            "title": "Task"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "title": "PlanningBriefInput"
+      },
       "PlantingZoneAssignment": {
         "properties": {
           "id": {
@@ -5266,6 +7988,71 @@
         ],
         "title": "PlantingZoneAssignment"
       },
+      "PlantingZoneOverlap": {
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "title": "Zone Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "area_m2": {
+            "type": "number",
+            "title": "Area M2"
+          },
+          "geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geometry"
+          }
+        },
+        "type": "object",
+        "required": [
+          "zone_id",
+          "label",
+          "area_m2",
+          "geometry"
+        ],
+        "title": "PlantingZoneOverlap"
+      },
+      "PlantingZonePreview": {
+        "properties": {
+          "can_save": {
+            "type": "boolean",
+            "title": "Can Save"
+          },
+          "area_m2": {
+            "type": "number",
+            "title": "Area M2"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "overlaps": {
+            "items": {
+              "$ref": "#/components/schemas/PlantingZoneOverlap"
+            },
+            "type": "array",
+            "title": "Overlaps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "can_save",
+          "area_m2"
+        ],
+        "title": "PlantingZonePreview"
+      },
       "PlantingZonesRequest": {
         "properties": {
           "zones": {
@@ -5283,6 +8070,80 @@
           "zones"
         ],
         "title": "PlantingZonesRequest"
+      },
+      "Preference": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "density",
+              "balance",
+              "visual",
+              "coverage",
+              "proximity",
+              "composition"
+            ],
+            "title": "Key"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Value"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "Preference"
+      },
+      "PrepareTask": {
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Record Id"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "record_id",
+          "expected_revision"
+        ],
+        "title": "PrepareTask"
       },
       "Project": {
         "properties": {
@@ -5425,6 +8286,162 @@
           "name"
         ],
         "title": "Project"
+      },
+      "ProjectChatInput": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "History"
+          },
+          "project_name": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Project Name"
+          },
+          "planting_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Planting Count"
+          },
+          "selected_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Selected Count"
+          },
+          "zones": {
+            "items": {
+              "$ref": "#/components/schemas/ChatZone"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Zones"
+          },
+          "data_gaps": {
+            "items": {
+              "type": "string",
+              "maxLength": 600
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Data Gaps"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message",
+          "project_name",
+          "planting_count",
+          "selected_count"
+        ],
+        "title": "ProjectChatInput"
+      },
+      "ProjectChatReply": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "reply",
+              "delete",
+              "recommend",
+              "building_screen",
+              "growth"
+            ],
+            "title": "Action"
+          },
+          "reply": {
+            "type": "string",
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Reply"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "project",
+              "selection",
+              "zone",
+              "ask"
+            ],
+            "title": "Scope",
+            "default": "ask"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "max_sites": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 500.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sites"
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "balanced",
+              "shade",
+              "continuity",
+              "low_future_conflict"
+            ],
+            "title": "Profile",
+            "default": "balanced"
+          },
+          "screen_side": {
+            "type": "string",
+            "enum": [
+              "perimeter",
+              "roads"
+            ],
+            "title": "Screen Side",
+            "default": "perimeter"
+          },
+          "horizon": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 40.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizon"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "reply"
+        ],
+        "title": "ProjectChatReply"
       },
       "ProjectCreate": {
         "properties": {
@@ -5689,6 +8706,40 @@
         ],
         "title": "ProjectSummary"
       },
+      "ProposalStatus": {
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "title": "Record Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "blocked",
+              "expired",
+              "stale",
+              "applied",
+              "undone",
+              "declined",
+              "unavailable",
+              "superseded"
+            ],
+            "title": "Status"
+          },
+          "can_apply": {
+            "type": "boolean",
+            "title": "Can Apply"
+          }
+        },
+        "type": "object",
+        "required": [
+          "record_id",
+          "status",
+          "can_apply"
+        ],
+        "title": "ProposalStatus"
+      },
       "RecommendationExplanation": {
         "properties": {
           "object_id": {
@@ -5731,6 +8782,27 @@
       },
       "RecommendationPreview": {
         "properties": {
+          "arrangement": {
+            "type": "string",
+            "enum": [
+              "area",
+              "building_screen"
+            ],
+            "title": "Arrangement",
+            "default": "area"
+          },
+          "target_geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Geometry"
+          },
           "profile": {
             "type": "string",
             "enum": [
@@ -6038,6 +9110,72 @@
         ],
         "title": "ReleasePackage"
       },
+      "ResolvedScope": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Zone Ids"
+          },
+          "object_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Object Ids"
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "user",
+              "selection",
+              "agent",
+              "policy"
+            ],
+            "title": "Basis"
+          },
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Criteria"
+          },
+          "source_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Revision"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Evidence Refs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "basis",
+          "source_revision"
+        ],
+        "title": "ResolvedScope",
+        "description": "One authoritative scope chosen from explicit input or tool evidence."
+      },
       "RowPatternRequest": {
         "properties": {
           "type": {
@@ -6253,6 +9391,30 @@
             ],
             "title": "Base Elevation M"
           },
+          "base_elevation_status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "missing"
+            ],
+            "title": "Base Elevation Status",
+            "default": "missing"
+          },
+          "base_elevation_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dxf_elevation",
+                  "copernicus_dem_glo90"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Elevation Source"
+          },
           "height_m": {
             "anyOf": [
               {
@@ -6287,7 +9449,9 @@
                 "type": "string",
                 "enum": [
                   "dxf_extrusion",
-                  "dxf_attribute"
+                  "dxf_attribute",
+                  "osm_height",
+                  "osm_levels"
                 ]
               },
               {
@@ -6305,6 +9469,51 @@
         ],
         "title": "SceneContextFeature",
         "description": "A lightweight, honest DXF footprint used as the 3D ground reference."
+      },
+      "SceneEvidence": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "estimated",
+              "missing"
+            ],
+            "title": "Status",
+            "default": "missing"
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "full",
+              "partial",
+              "none"
+            ],
+            "title": "Coverage",
+            "default": "none"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "title": "SceneEvidence",
+        "description": "Provenance and coverage are separate from whether a value exists."
       },
       "ScenePlantObject": {
         "properties": {
@@ -6607,6 +9816,16 @@
             "title": "Georeference Status",
             "default": "missing"
           },
+          "georeference_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "geometry_source": {
             "type": "string",
             "enum": [
@@ -6655,6 +9874,16 @@
             ],
             "title": "Terrain Elevation M"
           },
+          "terrain_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "building_heights_status": {
             "type": "string",
             "enum": [
@@ -6664,6 +9893,16 @@
             ],
             "title": "Building Heights Status",
             "default": "missing"
+          },
+          "building_height_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "building_feature_count": {
             "type": "integer",
@@ -6701,6 +9940,13 @@
             },
             "type": "array",
             "title": "Context Features"
+          },
+          "vertical_primitives": {
+            "items": {
+              "$ref": "#/components/schemas/SceneVerticalPrimitive"
+            },
+            "type": "array",
+            "title": "Vertical Primitives"
           }
         },
         "type": "object",
@@ -6711,6 +9957,205 @@
           "note"
         ],
         "title": "SceneSnapshot"
+      },
+      "SceneVerticalPrimitive": {
+        "properties": {
+          "primitive_id": {
+            "type": "string",
+            "title": "Primitive Id"
+          },
+          "primitive_type": {
+            "type": "string",
+            "enum": [
+              "point",
+              "polyline",
+              "surface_mesh"
+            ],
+            "title": "Primitive Type"
+          },
+          "vertices": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Vertices"
+          },
+          "faces": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Faces"
+          },
+          "source_layer": {
+            "type": "string",
+            "title": "Source Layer"
+          },
+          "source_entity_type": {
+            "type": "string",
+            "title": "Source Entity Type"
+          },
+          "source_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Handle"
+          },
+          "source_file_units": {
+            "type": "string",
+            "title": "Source File Units"
+          },
+          "unit_scale_to_m": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Unit Scale To M"
+          },
+          "source_space": {
+            "type": "string",
+            "const": "dxf_wcs",
+            "title": "Source Space",
+            "default": "dxf_wcs"
+          },
+          "vertical_evidence": {
+            "type": "string",
+            "enum": [
+              "explicit_xyz",
+              "explicit_elevation",
+              "explicit_extrusion"
+            ],
+            "title": "Vertical Evidence"
+          },
+          "extrusion_vector_m": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extrusion Vector M"
+          },
+          "terrain_mapping_status": {
+            "type": "string",
+            "enum": [
+              "unmapped",
+              "confirmed"
+            ],
+            "title": "Terrain Mapping Status",
+            "default": "unmapped"
+          },
+          "terrain_mapping_basis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "dxf_document_metadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Mapping Basis"
+          },
+          "terrain_confidence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "surveyed",
+                  "estimated"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Confidence"
+          },
+          "source_dataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Dataset"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "source_attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Attribution"
+          },
+          "vertical_datum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Datum"
+          },
+          "vertical_datum_offset_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Datum Offset M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "primitive_id",
+          "primitive_type",
+          "source_layer",
+          "source_entity_type",
+          "source_file_units",
+          "unit_scale_to_m",
+          "vertical_evidence"
+        ],
+        "title": "SceneVerticalPrimitive",
+        "description": "Source-proven XYZ translated only in XY into the scene frame."
       },
       "SourceFile": {
         "properties": {
@@ -7056,6 +10501,500 @@
         "type": "object",
         "title": "SpeciesShortlistRequest"
       },
+      "TaskPatch": {
+        "properties": {
+          "operation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "place",
+                  "edit",
+                  "delete",
+                  "inspect",
+                  "zones",
+                  "release"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "zones",
+                  "objects",
+                  "selection"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "zone_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Ids"
+          },
+          "object_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Ids"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "quantity_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "target",
+                  "maximum",
+                  "fill_available"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Mode"
+          },
+          "spacing_policy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "balanced",
+                  "canopy"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spacing Policy"
+          },
+          "arrangement": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "area",
+                  "row",
+                  "building_contour",
+                  "building_groves",
+                  "road_edges",
+                  "grid",
+                  "groves",
+                  "brush",
+                  "individual"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrangement"
+          },
+          "spatial_anchor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "edge"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spatial Anchor"
+          },
+          "alignment_target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "road",
+                  "building"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment Target"
+          },
+          "plant_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "shrub",
+                  "mixed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plant Kind"
+          },
+          "species_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "automatic",
+                  "specified"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Mode"
+          },
+          "species_revision_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Revision Ids"
+          },
+          "constraints": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constraints"
+          },
+          "exclusions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusions"
+          },
+          "desired_result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desired Result"
+          },
+          "post_action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "focus_map"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Action"
+          },
+          "edit_action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "species",
+                  "move",
+                  "lock",
+                  "unlock"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Action"
+          },
+          "move_dx_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Dx M"
+          },
+          "move_dy_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Dy M"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskPatch"
+      },
+      "TaskState": {
+        "properties": {
+          "values": {
+            "$ref": "#/components/schemas/TaskPatch"
+          },
+          "provenance": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Provenance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskState"
+      },
+      "ToolError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 800,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable",
+            "default": false
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ToolError"
+      },
+      "ToolResult": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Call Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "partial",
+              "blocked",
+              "stale",
+              "cancelled",
+              "failed",
+              "in_progress"
+            ],
+            "title": "Status"
+          },
+          "data": {
+            "title": "Data"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Evidence Refs"
+          },
+          "resource_versions": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "object",
+            "maxProperties": 20,
+            "title": "Resource Versions"
+          },
+          "effects": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Effects"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "call_id",
+          "name",
+          "status"
+        ],
+        "title": "ToolResult"
+      },
+      "UserMessage": {
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Record Id"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "map_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MapContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "record_id",
+          "expected_revision",
+          "text"
+        ],
+        "title": "UserMessage"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -7232,6 +11171,46 @@
           "description"
         ],
         "title": "ValidationIssue"
+      },
+      "VerificationSummary": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "not_applicable",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Checks"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "VerificationSummary",
+        "description": "Typed evidence that a preview is safe to present for approval."
       }
     }
   }

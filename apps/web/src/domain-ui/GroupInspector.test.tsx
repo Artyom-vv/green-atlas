@@ -28,16 +28,25 @@ const renderInspector = (props: Partial<React.ComponentProps<typeof GroupInspect
 />);
 
 describe('GroupInspector', () => {
+  it('can unlock a partially locked selection in one action', () => {
+    const onLock = vi.fn();
+    renderInspector({ objects: [{ ...objects[0], locked: true }, objects[1]], onLock });
+    fireEvent.click(screen.getByRole('button', { name: 'Открепить 1' }));
+    expect(onLock).toHaveBeenCalledWith(false);
+    expect(screen.getByRole('button', { name: 'Назначить виды' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Удалить' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Копировать' })).toBeEnabled();
+  });
   it('keeps delete as a full bordered grid action and removes the drag artifact', () => {
     renderInspector();
 
-    expect(screen.getByRole('heading', { name: 'Выбрано посадок', level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Выделение', level: 2 })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Свернуть боковую панель' })).not.toBeInTheDocument();
-    const deleteButton = screen.getByRole('button', { name: 'Удалить выбранные' });
+    const deleteButton = screen.getByRole('button', { name: 'Удалить' });
     expect(deleteButton).toHaveClass('ui-button--danger');
     expect(deleteButton).not.toHaveClass('ui-button--ghost');
-    expect(deleteButton.closest('.group-selection-actions')).toBeInTheDocument();
-    expect(deleteButton.closest('.inspector-body')).toBeInTheDocument();
+    expect(deleteButton.closest('.editor-actions--grid')).toBeInTheDocument();
+    expect(deleteButton.closest('.editor-panel__content')).toBeInTheDocument();
     expect(screen.queryByText('Перетащите группу прямо на карте')).not.toBeInTheDocument();
   });
 

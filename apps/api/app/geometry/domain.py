@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import OrderedDict
+from threading import RLock
 from typing import Literal
 
-from shapely.geometry import Point, shape
+from shapely.geometry import Point, box, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.prepared import prep
@@ -83,6 +85,8 @@ class PositionChecker:
         self.prepared_selected_area = None
         self.constraints: dict[str, BaseGeometry] = {}
         self.feature_geometries: dict[str, list[tuple[dict, BaseGeometry]]] = {}
+        self._safe_areas: OrderedDict[tuple, BaseGeometry] = OrderedDict()
+        self._safe_area_lock = RLock()
         if project.geometry is None:
             return
         self.features = project.geometry.feature_collection.get("features", [])
@@ -178,6 +182,88 @@ class PositionChecker:
                 nearby = geometry.intersection(safe.buffer(radius))
                 if not nearby.is_empty:
                     safe = safe.difference(nearby.buffer(radius))
+        return safe
+
+    def automatic_safe_area(
+        self,
+        area: BaseGeometry,
+        radius: float,
+        plant_kind: Literal["tree", "shrub"],
+        growth_canopy_radius: float | None = None,
+        growth_root_radius: float | None = None,
+    ) -> BaseGeometry:
+        # Immutable Shapely geometries are safe to reuse. The checker belongs
+        # to one geometry/zone revision; plan-object collisions are deliberately
+        # not cached here and remain part of each candidate's final validation.
+        key = (area.wkb, radius, plant_kind, growth_canopy_radius, growth_root_radius)
+        with self._safe_area_lock:
+            cached = self._safe_areas.get(key)
+            if cached is not None:
+                self._safe_areas.move_to_end(key)
+                return cached
+            result = self._calculate_automatic_safe_area(
+                area, radius, plant_kind, growth_canopy_radius, growth_root_radius,
+            )
+            self._safe_areas[key] = result
+            while len(self._safe_areas) > 32:
+                self._safe_areas.popitem(last=False)
+            return result
+
+    def _calculate_automatic_safe_area(
+        self,
+        area: BaseGeometry,
+        radius: float,
+        plant_kind: Literal["tree", "shrub"],
+        growth_canopy_radius: float | None = None,
+        growth_root_radius: float | None = None,
+    ) -> BaseGeometry:
+        """Return positions that will remain clear through the growth horizon.
+
+        Bulk placement must not create a valid-looking plan and delegate its
+        own biological conflicts to the later validation screen. The current
+        footprint still follows the strict spatial rules above; when growth
+        data is available, the same future-envelope checks used by
+        ``growth_advisory`` are applied here as a generation filter.
+        """
+        safe = self.hard_safe_area(area, radius, plant_kind)
+        if safe.is_empty or growth_canopy_radius is None or growth_root_radius is None:
+            return safe
+
+        full_envelope = max(growth_canopy_radius, growth_root_radius)
+        if self.selected_area is not None:
+            safe = safe.intersection(self.selected_area.buffer(-full_envelope))
+        if self.site is not None:
+            safe = safe.intersection(self.site.buffer(-full_envelope))
+        if safe.is_empty:
+            return safe
+
+        future_buffers = {
+            "utility": growth_root_radius,
+            "building": growth_canopy_radius,
+            "road": growth_canopy_radius,
+            "existing_green": full_envelope,
+            "water": full_envelope,
+            "restricted": full_envelope,
+        }
+        for kind, distance in future_buffers.items():
+            geometry = self._constraint(kind)
+            if geometry is not None:
+                # Only obstacles within this distance can affect the current
+                # safe area. Use an expanded rectangle (not a rounded buffer)
+                # so corner neighbours are never lost to buffer approximation.
+                # Clip before buffering: a city-wide road union can otherwise
+                # dominate even a small planting preview. Final point/growth
+                # validation remains independent and authoritative.
+                min_x, min_y, max_x, max_y = safe.bounds
+                nearby = geometry.intersection(box(
+                    min_x - distance, min_y - distance,
+                    max_x + distance, max_y + distance,
+                ))
+                if nearby.is_empty:
+                    continue
+                safe = safe.difference(nearby.buffer(distance))
+                if safe.is_empty:
+                    return safe
         return safe
 
     def _evidence(self, kind: str, center: Point, distance: float) -> tuple[str | None, tuple[str, ...]]:

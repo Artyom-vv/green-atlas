@@ -20,6 +20,10 @@ const object = {
 } as PlanObject;
 
 describe('growth overlay forecasts', () => {
+  it('shows the whole plan at a future horizon when nothing is selected', () => {
+    expect(growthOverlayForecasts([object], [], 20)).toHaveLength(1);
+    expect(growthOverlayForecasts([object], [], 0)).toEqual([]);
+  });
   it('uses the same interpolated forecast as the inspector at year 23', () => {
     const overlays = growthOverlayForecasts([object], ['tree-1'], 23);
 

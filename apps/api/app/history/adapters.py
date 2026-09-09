@@ -152,6 +152,20 @@ class SqliteProjectHistory:
             self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_plan_changes_project ON plan_changes (project_id, ordinal)"
             )
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS plan_change_receipts (
+                    project_id TEXT NOT NULL, change_set_id TEXT NOT NULL,
+                    payload TEXT NOT NULL, status TEXT NOT NULL,
+                    PRIMARY KEY(project_id, change_set_id)
+                )
+            """)
+
+    def receipt(self, project_id: str, change_set_id: str) -> dict | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload, status FROM plan_change_receipts WHERE project_id=? AND change_set_id=?",
+                (project_id, change_set_id)).fetchone()
+            return {**json.loads(row["payload"]), "status": row["status"]} if row else None
 
     @staticmethod
     def _snapshot_payload(project: Project) -> str:
@@ -212,6 +226,7 @@ class SqliteProjectHistory:
         before: Project,
         label: str,
         change_set_id: str | None = None,
+        receipt: dict | None = None,
     ) -> Project:
         original_version = project.state_version
         original_updated_at = project.updated_at
@@ -223,6 +238,15 @@ class SqliteProjectHistory:
                     (project.id, cursor),
                 )
                 saved = self._save_project(project)
+                if receipt is not None:
+                    if not change_set_id:
+                        raise ValueError("A receipt requires a change set id")
+                    payload = {**receipt, "state_version": saved.state_version,
+                               "plan_version": saved.plan.version if saved.plan else None,
+                               "committed_at": datetime.now(UTC).isoformat()}
+                    self._connection.execute(
+                        "INSERT INTO plan_change_receipts VALUES (?, ?, ?, 'applied')",
+                        (project.id, change_set_id, json.dumps(payload, ensure_ascii=False, allow_nan=False)))
                 ordinal = cursor + 1
                 self._connection.execute(
                     """
@@ -345,6 +369,9 @@ class SqliteProjectHistory:
                 self._restore(project, str(row["before_payload"]))
                 saved = self._save_project(project)
                 self._connection.execute(
+                    "UPDATE plan_change_receipts SET status='undone' WHERE project_id=? AND change_set_id IN (SELECT change_set_id FROM plan_changes WHERE project_id=? AND ordinal=?)",
+                    (project.id, project.id, cursor))
+                self._connection.execute(
                     "UPDATE plan_history_cursors SET cursor = ? WHERE project_id = ?",
                     (cursor - 1, project.id),
                 )
@@ -369,6 +396,9 @@ class SqliteProjectHistory:
                     raise ValueError("Нет изменений для повтора")
                 self._restore(project, str(row["after_payload"]))
                 saved = self._save_project(project)
+                self._connection.execute(
+                    "UPDATE plan_change_receipts SET status='applied' WHERE project_id=? AND change_set_id IN (SELECT change_set_id FROM plan_changes WHERE project_id=? AND ordinal=?)",
+                    (project.id, project.id, cursor + 1))
                 self._connection.execute(
                     "UPDATE plan_history_cursors SET cursor = ? WHERE project_id = ?",
                     (cursor + 1, project.id),

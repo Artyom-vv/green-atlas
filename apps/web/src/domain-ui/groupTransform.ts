@@ -25,7 +25,7 @@ export function groupTransformDraft(planVersion: number, objects: PlanObject[], 
   return {
     base_plan_version: planVersion,
     source: 'group',
-    label: mode === 'move' ? `Перемещение группы (${objects.length})` : `Копирование группы (${objects.length})`,
+    label: objects.length === 1 ? mode === 'move' ? 'Перемещение посадки' : 'Копирование посадки' : mode === 'move' ? `Перемещение группы (${objects.length})` : `Копирование группы (${objects.length})`,
     policy: 'all_or_nothing',
     operations,
   };

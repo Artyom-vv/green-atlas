@@ -17,14 +17,20 @@ const shortlist = [{
 }];
 
 describe('SpeciesAssignmentPanel', () => {
+  it('offers an actionable kind choice for mixed selections', () => {
+    const onSelectKind = vi.fn();
+    render(<SpeciesAssignmentPanel objects={[object, { ...object, id: 'shrub-1', kind: 'shrub' }]} onSelectKind={onSelectKind} onAssign={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Кустарникам (1)' }));
+    expect(onSelectKind).toHaveBeenCalledWith('shrub');
+    expect(screen.queryByRole('button', { name: 'Проверить замену' })).not.toBeInTheDocument();
+  });
   it('assigns one revision and size class through a preview action', () => {
     const onAssign = vi.fn();
     render(<SpeciesAssignmentPanel objects={[object]} shortlist={shortlist} onAssign={onAssign} onCancel={vi.fn()} />);
-    const combobox = screen.getByRole('combobox', { name: /Порода/ });
-    fireEvent.focus(combobox);
-    fireEvent.click(screen.getByRole('option', { name: /Липа мелколистная/ }));
-    expect(screen.getByText('Прогноз кроны и корней — диапазон для проверки, не нормативная зона.')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /^Показать$/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать: Липа мелколистная' }));
+    expect(screen.queryByLabelText('Поиск в каталоге пород')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Выбрать другую породу' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить замену' }));
     expect(onAssign).toHaveBeenCalledWith('tilia@1', 'standard');
   });
 });

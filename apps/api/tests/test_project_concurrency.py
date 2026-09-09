@@ -351,6 +351,28 @@ def test_project_reads_legacy_recommendation_issue_as_warning() -> None:
     assert project.plan.issues[0].severity == "warning"
 
 
+def test_project_reads_legacy_generic_crown_notice_without_orange_state() -> None:
+    legacy = {
+        "name": "Старый план с кроной",
+        "plan": {
+            "objects": [{"id": "tree-1", "kind": "tree", "x": 20, "y": 20, "radius": 1.6, "status": "warning"}],
+            "issues": [{
+                "severity": "warning",
+                "code": "CROWN_SETBACK_REVIEW",
+                "title": "Нужна проверка широкой кроны",
+                "description": "Устаревшее общее замечание.",
+                "object_id": "tree-1",
+            }],
+        },
+    }
+
+    project = Project.model_validate(legacy)
+
+    assert project.plan is not None
+    assert project.plan.issues == []
+    assert project.plan.objects[0].status == "valid"
+
+
 def test_placement_preview_reuses_and_invalidates_its_plan_spacing_index() -> None:
     project = create_manual_project("Кэш расстояний")
     project_id = project["id"]

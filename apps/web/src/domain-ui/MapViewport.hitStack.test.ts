@@ -135,7 +135,7 @@ describe('map hit stack', () => {
       pixel: [120, 80],
       items: [expect.objectContaining({
         kind: 'change-preview',
-        detail: 'Недостаточный отступ от дороги · PP743_CLEARANCE',
+        detail: 'Недостаточный отступ от дороги',
         preview: expect.objectContaining({ objectId: 'tree-1', status: 'blocked' }),
       })],
     });

@@ -15,7 +15,7 @@ from ezdxf.path import from_hatch, make_path
 from shapely import STRtree
 from shapely.geometry import LineString as ShapelyLineString, Polygon as ShapelyPolygon
 
-from app.contracts import CoordinateReference, DxfImportResult, GeometrySnapshot, Layer, LayerKind
+from app.contracts import CoordinateReference, DxfImportResult, DxfVerticalPrimitive, GeometrySnapshot, Layer, LayerKind
 from app.dxf_import.encoding import decode_text_dxf
 from app.dxf_import.units import DXF_UNIT_FACTORS
 
@@ -168,6 +168,9 @@ def _read_document(content: bytes | bytearray) -> Any:
 
 def _kind_for_layer(name: str) -> LayerKind:
     value = name.lower().replace("ё", "е")
+    if value == "green_atlas_terrain_cop90":
+        # The mesh is scene evidence, not an existing-green planning polygon.
+        return LayerKind.IGNORE
     if any(word in value for word in ("site", "border", "boundary", "parcel", "границ", "участ")):
         return LayerKind.SITE_BORDER
     if any(word in value for word in ("build", "house", "structure", "здан", "сооруж")):
@@ -187,6 +190,189 @@ def _kind_for_layer(name: str) -> LayerKind:
 
 def _point(value: Any, factor: float) -> list[float]:
     return [round(float(value[0]) * factor, 6), round(float(value[1]) * factor, 6)]
+
+
+def _point3(value: Any, factor: float) -> list[float]:
+    """Convert a DXF WCS coordinate to metres without flattening Z."""
+    point = Vec3(value)
+    return [
+        round(float(point.x) * factor, 6),
+        round(float(point.y) * factor, 6),
+        round(float(point.z) * factor, 6),
+    ]
+
+
+def _terrain_document_evidence(document: Any) -> dict[str, Any] | None:
+    """Read the explicit terrain declaration written by our fixture pipeline.
+
+    A layer name alone is not evidence: CAD authors routinely reuse names.
+    Requiring the complete document declaration prevents an unrelated DXF
+    from silently upgrading arbitrary faces to confirmed terrain.
+    """
+    custom = document.header.custom_vars
+    values = {
+        "layer": custom.get("GREEN_ATLAS_TERRAIN_LAYER"),
+        "dataset": custom.get("GREEN_ATLAS_TERRAIN_DATASET"),
+        "url": custom.get("GREEN_ATLAS_TERRAIN_SOURCE_URL"),
+        "attribution": custom.get("GREEN_ATLAS_TERRAIN_ATTRIBUTION"),
+        "confidence": custom.get("GREEN_ATLAS_TERRAIN_CONFIDENCE"),
+        "datum": custom.get("GREEN_ATLAS_VERTICAL_DATUM"),
+        "datum_offset": custom.get("GREEN_ATLAS_VERTICAL_DATUM_OFFSET_M_ASL"),
+    }
+    if not all(values[key] for key in ("layer", "dataset", "url", "attribution", "confidence", "datum", "datum_offset")):
+        return None
+    if values["confidence"] not in {"surveyed", "estimated"}:
+        return None
+    try:
+        offset = float(values["datum_offset"])
+    except (TypeError, ValueError):
+        return None
+    if not isfinite(offset):
+        return None
+    return {**values, "datum_offset": offset}
+
+
+def _vertical_primitive(
+    entity: Any,
+    factor: float,
+    source_units: str,
+    primitive_id: str,
+    terrain_evidence: dict[str, Any] | None = None,
+) -> DxfVerticalPrimitive | None:
+    """Extract explicit WCS XYZ evidence independently of the 2D projection.
+
+    This is intentionally structural, not semantic: a MESH or 3DFACE is a
+    proven CAD surface, but it is *not* terrain until a user/source mapping
+    says so. Consequently every imported primitive starts as ``unmapped``.
+    """
+    entity_type = entity.dxftype()
+    vertices: list[list[float]] = []
+    faces: list[list[int]] = []
+    primitive_type = "polyline"
+    evidence = "explicit_xyz"
+    try:
+        if entity_type == "3DFACE":
+            for name in ("vtx0", "vtx1", "vtx2", "vtx3"):
+                value = entity.dxf.get(name)
+                if value is not None:
+                    point = _point3(value, factor)
+                    if not vertices or point != vertices[-1]:
+                        vertices.append(point)
+            if len(vertices) < 3:
+                return None
+            faces = [list(range(len(vertices)))]
+            primitive_type = "surface_mesh"
+        elif entity_type == "MESH":
+            data = entity.get_data()
+            vertices = [_point3(point, factor) for point in data.vertices]
+            faces = [
+                [int(index) for index in face if 0 <= int(index) < len(vertices)]
+                for face in data.faces
+            ]
+            faces = [face for face in faces if len(face) >= 3]
+            primitive_type = "surface_mesh"
+        elif entity_type == "POLYLINE" and entity.is_poly_face_mesh:
+            vertex_index: dict[int, int] = {}
+            for vertex in entity.vertices:
+                if int(vertex.dxf.get("flags", 0) or 0) == 128:
+                    continue
+                vertex_index[id(vertex)] = len(vertices)
+                vertices.append(_point3(vertex.dxf.location, factor))
+            for face in entity.faces():
+                indices = [vertex_index[id(vertex)] for vertex in face if id(vertex) in vertex_index]
+                if len(indices) >= 3:
+                    faces.append(indices)
+            primitive_type = "surface_mesh"
+        elif entity_type == "POLYLINE" and entity.is_polygon_mesh:
+            m_count, n_count = int(entity.dxf.m_count), int(entity.dxf.n_count)
+            for m_index in range(m_count):
+                for n_index in range(n_count):
+                    vertices.append(_point3(entity.get_mesh_vertex((m_index, n_index)).dxf.location, factor))
+            m_range = range(m_count if entity.is_m_closed else max(0, m_count - 1))
+            n_range = range(n_count if entity.is_n_closed else max(0, n_count - 1))
+            for m_index in m_range:
+                for n_index in n_range:
+                    faces.append([
+                        m_index * n_count + n_index,
+                        ((m_index + 1) % m_count) * n_count + n_index,
+                        ((m_index + 1) % m_count) * n_count + ((n_index + 1) % n_count),
+                        m_index * n_count + ((n_index + 1) % n_count),
+                    ])
+            primitive_type = "surface_mesh"
+        elif entity_type == "POLYLINE" and entity.is_3d_polyline:
+            vertices = [_point3(vertex.dxf.location, factor) for vertex in entity.vertices]
+            if entity.is_closed and vertices and vertices[-1] != vertices[0]:
+                vertices.append(vertices[0])
+        elif entity_type == "LINE":
+            vertices = [_point3(entity.dxf.start, factor), _point3(entity.dxf.end, factor)]
+        elif entity_type == "POINT":
+            vertices = [_point3(entity.dxf.location, factor)]
+            primitive_type = "point"
+        else:
+            # Planar entities can still carry an explicit elevation and/or a
+            # thickness along their OCS normal. Preserve that evidence using
+            # their already-normalised WCS anchor; the 2D geometry remains the
+            # authoritative footprint.
+            vertical = _source_vertical_properties(entity, factor)
+            if "source_base_elevation_m" not in vertical and "source_extrusion_height_m" not in vertical:
+                return None
+            anchor = None
+            for attribute in ("insert", "center", "start"):
+                if entity.dxf.hasattr(attribute):
+                    anchor = entity.dxf.get(attribute)
+                    break
+            if anchor is None and entity_type == "LWPOLYLINE":
+                first = next(iter(entity.get_points("xy")), None)
+                if first is not None:
+                    elevation = float(entity.dxf.get("elevation", 0) or 0)
+                    anchor = entity.ocs().to_wcs(Vec3(first[0], first[1], elevation))
+            if anchor is None:
+                return None
+            vertices = [_point3(anchor, factor)]
+            primitive_type = "point"
+            evidence = "explicit_extrusion" if "source_extrusion_height_m" in vertical else "explicit_elevation"
+        if not vertices or any(not all(isfinite(value) for value in point) for point in vertices):
+            return None
+        extrusion_vector_m = None
+        vertical = _source_vertical_properties(entity, factor)
+        if height := vertical.get("source_extrusion_height_m"):
+            normal = Vec3(entity.dxf.get("extrusion", (0, 0, 1))).normalize()
+            signed_height = float(entity.dxf.get("thickness", height)) * factor
+            extrusion_vector_m = [
+                round(float(normal.x) * signed_height, 6),
+                round(float(normal.y) * signed_height, 6),
+                round(float(normal.z) * signed_height, 6),
+            ]
+            evidence = "explicit_extrusion"
+        source_layer = str(entity.dxf.layer)
+        is_declared_terrain = bool(
+            terrain_evidence
+            and source_layer == terrain_evidence["layer"]
+            and primitive_type == "surface_mesh"
+        )
+        return DxfVerticalPrimitive(
+            primitive_id=primitive_id,
+            primitive_type=primitive_type,
+            vertices_m=vertices,
+            faces=faces,
+            source_layer=source_layer,
+            source_entity_type=entity_type,
+            source_handle=str(entity.dxf.get("handle", "")) or None,
+            source_file_units=source_units,
+            unit_scale_to_m=factor,
+            vertical_evidence=evidence,
+            extrusion_vector_m=extrusion_vector_m,
+            terrain_mapping_status="confirmed" if is_declared_terrain else "unmapped",
+            terrain_mapping_basis="dxf_document_metadata" if is_declared_terrain else None,
+            terrain_confidence=str(terrain_evidence["confidence"]) if is_declared_terrain else None,
+            source_dataset=str(terrain_evidence["dataset"]) if is_declared_terrain else None,
+            source_url=str(terrain_evidence["url"]) if is_declared_terrain else None,
+            source_attribution=str(terrain_evidence["attribution"]) if is_declared_terrain else None,
+            vertical_datum=str(terrain_evidence["datum"]) if is_declared_terrain else None,
+            vertical_datum_offset_m=float(terrain_evidence["datum_offset"]) if is_declared_terrain else None,
+        )
+    except Exception:
+        return None
 
 
 def _ocs_point(entity: Any, value: Any, factor: float) -> list[float]:
@@ -977,25 +1163,69 @@ def _has_polygon(geometry: dict[str, Any]) -> bool:
 
 def _coordinate_reference(document: Any) -> CoordinateReference:
     geodata = document.modelspace().get_geodata()
-    if geodata is None:
+    if geodata is not None:
+        try:
+            epsg, xy_ordering = geodata.get_crs()
+            return CoordinateReference(
+                status="declared",
+                crs_id=f"EPSG:{epsg}",
+                name=f"Система координат EPSG:{epsg}",
+                source="dxf_geodata",
+                axis_order="xy" if xy_ordering else "yx",
+                evidence="Идентификатор прочитан из DXF GEODATA; требуется сверка с контрольной точкой городской основы.",
+            )
+        except Exception:
+            definition_present = bool(str(getattr(geodata, "coordinate_system_definition", "")).strip())
+            return CoordinateReference(
+                status="local",
+                source="dxf_geodata",
+                evidence="В DXF есть GEODATA, но CRS не распознан по EPSG." if definition_present else "В DXF есть локальная привязка без машиночитаемого определения CRS.",
+            )
+
+    # Green Atlas fixtures use a documented local tangent approximation, not
+    # a projected CRS. Accept it only as an atomic declaration: exposing a
+    # half-parsed origin would make downstream enrichment appear more certain
+    # than the source permits.
+    custom = document.header.custom_vars
+    values = {
+        "source": custom.get("GREEN_ATLAS_HORIZONTAL_SOURCE"),
+        "origin": custom.get("GREEN_ATLAS_ORIGIN_WGS84"),
+        "projection": custom.get("GREEN_ATLAS_LOCAL_PROJECTION"),
+        "earth_radius": custom.get("GREEN_ATLAS_EARTH_RADIUS_M"),
+    }
+    if not any(values.values()):
         return CoordinateReference()
+    if not all(values.values()):
+        return CoordinateReference(evidence="Локальная WGS84-привязка DXF неполна и не используется.")
     try:
-        epsg, xy_ordering = geodata.get_crs()
-        return CoordinateReference(
-            status="declared",
-            crs_id=f"EPSG:{epsg}",
-            name=f"Система координат EPSG:{epsg}",
-            source="dxf_geodata",
-            axis_order="xy" if xy_ordering else "yx",
-            evidence="Идентификатор прочитан из DXF GEODATA; требуется сверка с контрольной точкой городской основы.",
-        )
-    except Exception:
-        definition_present = bool(str(getattr(geodata, "coordinate_system_definition", "")).strip())
-        return CoordinateReference(
-            status="local",
-            source="dxf_geodata",
-            evidence="В DXF есть GEODATA, но CRS не распознан по EPSG." if definition_present else "В DXF есть локальная привязка без машиночитаемого определения CRS.",
-        )
+        origin_parts = [float(part.strip()) for part in str(values["origin"]).split(",")]
+        earth_radius = float(values["earth_radius"])
+    except (TypeError, ValueError):
+        return CoordinateReference(evidence="Локальная WGS84-привязка DXF повреждена и не используется.")
+    if (
+        len(origin_parts) != 2
+        or not all(isfinite(value) for value in origin_parts)
+        or not -90 <= origin_parts[0] <= 90
+        or not -180 <= origin_parts[1] <= 180
+        or str(values["projection"]) != "local_equirectangular_wgs84"
+        or not isfinite(earth_radius)
+        or not 6_000_000 <= earth_radius <= 7_000_000
+    ):
+        return CoordinateReference(evidence="Локальная WGS84-привязка DXF повреждена и не используется.")
+    return CoordinateReference(
+        status="declared",
+        name="Локальная эквиректангулярная аппроксимация WGS84",
+        source="dxf_custom_georeference",
+        axis_order="xy",
+        origin_wgs84=origin_parts,
+        local_projection="local_equirectangular_wgs84",
+        earth_radius_m=earth_radius,
+        horizontal_source=str(values["source"]),
+        evidence=(
+            "Из DXF прочитана объявленная локальная WGS84-привязка; "
+            "преобразование воспроизводимо, но не сверено по контрольным точкам и не является EPSG/GEODATA."
+        ),
+    )
 
 
 class EzdxfReader:
@@ -1015,6 +1245,20 @@ class EzdxfReader:
         units_assumed = unit_code not in DXF_UNIT_FACTORS
         units, factor = DXF_UNIT_FACTORS.get(unit_code, ("м (принято)", 1.0))
         entities = list(document.modelspace())
+        terrain_document_evidence = _terrain_document_evidence(document)
+        vertical_primitives = [
+            primitive
+            for index, entity in enumerate(entities)
+            if (
+                primitive := _vertical_primitive(
+                    entity,
+                    factor,
+                    units,
+                    f"dxf-vertical-{index}",
+                    terrain_document_evidence,
+                )
+            ) is not None
+        ]
         paper_entity_count = 0
         for layout in document.layouts:
             if str(layout.name).lower() == "model":
@@ -1513,7 +1757,10 @@ class EzdxfReader:
 
         return DxfImportResult(
             layers=layers,
-            geometry=GeometrySnapshot(feature_collection={"type": "FeatureCollection", "features": features}),
+            geometry=GeometrySnapshot(
+                feature_collection={"type": "FeatureCollection", "features": features},
+                vertical_primitives=vertical_primitives,
+            ),
             dxf_version=document.dxfversion,
             units=units,
             units_assumed=units_assumed,

@@ -138,9 +138,10 @@ export function Select({ className, children, controlSize, ...props }: SelectHTM
   </span>;
 }
 
-export function Combobox({ value, options, placeholder = 'Выберите', emptyLabel = 'Ничего не найдено', disabled = false, controlSize, onChange, className }: {
+export function Combobox({ value, options, placeholder = 'Выберите', emptyLabel = 'Ничего не найдено', disabled = false, controlSize, onChange, className, 'aria-label': ariaLabel }: {
   value?: string;
   options: Array<{ value: string; label: string; description?: string }>;
+  'aria-label'?: string;
   placeholder?: string;
   emptyLabel?: string;
   disabled?: boolean;
@@ -158,7 +159,7 @@ export function Combobox({ value, options, placeholder = 'Выберите', emp
   useEffect(() => { if (!open) setQuery(selected?.label ?? ''); }, [open, selected?.label]);
   const choose = (next: string) => { onChange(next); setOpen(false); };
   return <div className={cx('ui-combobox', controlSizeClass(controlSize), className)} data-size={controlSize ?? 'default'}>
-    <input role="combobox" aria-expanded={open} aria-controls={listboxId} aria-autocomplete="list" disabled={disabled} value={query} placeholder={placeholder} onFocus={(event) => { setOpen(true); setActive(0); event.currentTarget.select(); }} onBlur={() => window.setTimeout(() => setOpen(false), 120)} onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(0); }} onKeyDown={(event) => {
+    <input role="combobox" aria-label={ariaLabel} aria-expanded={open} aria-controls={listboxId} aria-autocomplete="list" disabled={disabled} value={query} placeholder={placeholder} onFocus={(event) => { setOpen(true); setActive(0); event.currentTarget.select(); }} onBlur={() => window.setTimeout(() => setOpen(false), 120)} onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(0); }} onKeyDown={(event) => {
       if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); setActive((current) => Math.min(filtered.length - 1, current + 1)); }
       if (event.key === 'ArrowUp') { event.preventDefault(); setActive((current) => Math.max(0, current - 1)); }
       if (event.key === 'Enter' && open && filtered[active]) { event.preventDefault(); choose(filtered[active].value); }
@@ -308,7 +309,8 @@ export function DataTable({ children, className }: { children: ReactNode; classN
   return <div className="ui-table-wrap"><table className={cx('ui-table', className)}>{children}</table></div>;
 }
 
-export function Dialog({ open, title, children, footer, onClose }: { open: boolean; title: ReactNode; children: ReactNode; footer?: ReactNode; onClose: () => void }) {
+const openDialogs: HTMLDivElement[] = [];
+export function Dialog({ open, title, children, footer, onClose, size = 'default', keepMounted = false, stableHeight = false }: { open: boolean; title: ReactNode; children: ReactNode; footer?: ReactNode; onClose: () => void; size?: 'default' | 'form' | 'wide'; keepMounted?: boolean; stableHeight?: boolean }) {
   const titleId = useId();
   const dialog = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -316,21 +318,24 @@ export function Dialog({ open, title, children, footer, onClose }: { open: boole
   useEffect(() => {
     if (!open) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusable = () => [...dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? []];
-    requestAnimationFrame(() => (focusable()[0] ?? dialog.current)?.focus());
+    const currentDialog = dialog.current!;
+    openDialogs.push(currentDialog);
+    const focusable = () => [...dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? []].filter(element => !element.closest('[hidden], [inert]'));
+    const focusFrame = requestAnimationFrame(() => { if (openDialogs.at(-1) === currentDialog) currentDialog.focus({ preventScroll: true }); });
     const handleKey = (event: KeyboardEvent) => {
+      if (openDialogs.at(-1) !== currentDialog) return;
       if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); return; }
       if (event.key !== 'Tab') return;
       const controls = focusable();
       if (!controls.length) { event.preventDefault(); dialog.current?.focus(); return; }
       const first = controls[0];
       const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', handleKey);
-    return () => { document.removeEventListener('keydown', handleKey); previousFocus?.focus(); };
+    return () => { cancelAnimationFrame(focusFrame); document.removeEventListener('keydown', handleKey); const index = openDialogs.indexOf(currentDialog); if (index >= 0) openDialogs.splice(index, 1); previousFocus?.focus(); };
   }, [open]);
-  if (!open) return null;
-  return <div className="ui-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div ref={dialog} className="ui-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}><header><h2 id={titleId}>{title}</h2><IconButton icon={X} label="Закрыть" variant="ghost" onClick={onClose} /></header><div className="ui-dialog__content">{children}</div>{footer ? <footer>{footer}</footer> : null}</div></div>;
+  if (!open && !keepMounted) return null;
+  return <div className="ui-dialog-backdrop" hidden={!open} inert={!open} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div ref={dialog} className={cx('ui-dialog', size !== 'default' && `ui-dialog--${size}`, stableHeight && 'ui-dialog--stable')} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}><header><h2 id={titleId}>{title}</h2><IconButton icon={X} label="Закрыть" variant="ghost" onClick={onClose} /></header><div className="ui-dialog__content">{children}</div>{footer ? <footer>{footer}</footer> : null}</div></div>;
 }

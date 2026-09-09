@@ -58,9 +58,12 @@ from app.contracts import (
     ReleaseArtifact,
     ReleaseCreateRequest,
     ReleasePackage,
+    RowPatternRequest,
     ScenePlantObject,
     SceneContextFeature,
+    SceneEvidence,
     SceneSnapshot,
+    SceneVerticalPrimitive,
     SourceFile,
     SpeciesRevision,
     SpeciesShortlistItem,
@@ -75,6 +78,7 @@ from app.history.ports import ProjectHistoryPort
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
 from app.planning.domain import PlanVersionConflict, PlantSpacingIndex, required_spacing
+from app.planning.allocation import equal_zone_targets, spread_indices
 from app.planning.ports import CandidateGeneratorPort
 from app.projects.concurrency import ProjectVersionConflict, reset_expected_project_version, set_expected_project_version
 from app.projects.ports import ProjectRepository
@@ -192,7 +196,7 @@ def _translate_geojson(geometry: dict, origin_x: float, origin_y: float) -> dict
     return {**geometry, "coordinates": translate(geometry.get("coordinates", []))}
 
 
-def _confirmed_context_height(properties: dict) -> tuple[float | None, str | None]:
+def _context_height(properties: dict) -> tuple[float | None, str | None, str | None]:
     """Read only height evidence normalised by the DXF adapter.
 
     Deliberately do not recognise generic keys such as ``height``: imported
@@ -200,14 +204,19 @@ def _confirmed_context_height(properties: dict) -> tuple[float | None, str | Non
     accepted keys have explicit metre semantics and retain their provenance.
     """
 
+    source_layer = str(properties.get("source_layer", "")).upper()
     for key, source in (
         ("source_extrusion_height_m", "dxf_extrusion"),
         ("source_attribute_height_m", "dxf_attribute"),
     ):
         value = properties.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value)) and float(value) > 0:
-            return round(float(value), 6), source
-    return None, None
+            if source_layer == "GREEN_ATLAS_BUILDING_OSM_HEIGHT":
+                return round(float(value), 6), "confirmed", "osm_height"
+            if source_layer == "GREEN_ATLAS_BUILDING_OSM_LEVELS":
+                return round(float(value), 6), "estimated", "osm_levels"
+            return round(float(value), 6), "confirmed", source
+    return None, None, None
 
 
 def _context_base_elevation(properties: dict) -> float | None:
@@ -215,6 +224,21 @@ def _context_base_elevation(properties: dict) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value)):
         return round(float(value), 6)
     return None
+
+
+def _context_base_elevation_source(properties: dict) -> str | None:
+    if _context_base_elevation(properties) is None:
+        return None
+    source_layer = str(properties.get("source_layer", "")).upper()
+    # Only the enriched fixture layers are explicitly tied to the DEM
+    # declared in document metadata. A generic OSM_* layer may carry a DXF
+    # elevation from any author/source and must not be relabelled Copernicus.
+    if source_layer in {
+        "GREEN_ATLAS_BUILDING_OSM_HEIGHT",
+        "GREEN_ATLAS_BUILDING_OSM_LEVELS",
+    }:
+        return "copernicus_dem_glo90"
+    return "dxf_elevation"
 
 
 def _scene_growth_stage(
@@ -459,10 +483,11 @@ class ProjectApplication:
         before: Project,
         label: str,
         change_set_id: str | None = None,
+        receipt: dict | None = None,
     ) -> Project:
         commit = getattr(self.history, "commit", None)
         if callable(commit):
-            return commit(project, before, label, change_set_id)
+            return commit(project, before, label, change_set_id, **({"receipt": receipt} if receipt is not None else {}))
         saved = self.repository.save(project)
         self.history.record(before, label)
         return saved
@@ -629,7 +654,7 @@ class ProjectApplication:
         exported_layer_names = {
             layer.source_name.upper()
             for layer in imported.layers
-            if layer.source_name.upper().startswith("GREEN_ATLAS_")
+            if layer.source_name.upper() in {"GREEN_ATLAS_TREES", "GREEN_ATLAS_SHRUBS"}
         }
         plain_fallback = bool(exported_layer_names)
         import_status = ImportStatus(
@@ -803,8 +828,9 @@ class ProjectApplication:
             self._discard_spatial_indexes(project.id)
         return saved
 
-    def save_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> Project:
-        project = self.get(project_id)
+
+    @staticmethod
+    def _validate_planting_zones(project: Project, zones: list[PlantingZoneAssignment]) -> None:
         if project.geometry is None:
             raise ValueError("Сначала подготовьте карту и ограничения")
         if not zones:
@@ -849,6 +875,36 @@ class ProjectApplication:
                 if overlap.area > 0.5 and not nested:
                     raise ValueError(f"Участки «{other_label}» и «{zone.label}» пересекаются")
             parsed_zones.append((zone.label, parsed))
+
+    def preview_planting_zone(self, project_id: str, zone: PlantingZoneAssignment) -> dict[str, object]:
+        """Read-only preflight. Saving revalidates against the current project."""
+        project = self.get(project_id)
+        zones = [item for item in project.planting_zones if item.id != zone.id] + [zone]
+        error = None
+        try:
+            self._validate_planting_zones(project, zones)
+        except ValueError as problem:
+            error = str(problem)
+        try:
+            parsed = shape(zone.geometry)
+            if not parsed.is_valid:
+                return {"can_save": False, "area_m2": 0, "error": error, "overlaps": []}
+        except Exception:
+            return {"can_save": False, "area_m2": 0, "error": error, "overlaps": []}
+        overlaps = []
+        for other in project.planting_zones:
+            if other.id == zone.id:
+                continue
+            geometry = shape(other.geometry)
+            intersection = parsed.intersection(geometry)
+            nested = parsed.covers(geometry) or geometry.covers(parsed)
+            if intersection.area > .5 and not nested:
+                overlaps.append({"zone_id": other.id, "label": other.label, "area_m2": round(intersection.area, 2), "geometry": intersection.__geo_interface__})
+        return {"can_save": error is None, "area_m2": round(parsed.area, 2), "error": error, "overlaps": overlaps}
+
+    def save_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> Project:
+        project = self.get(project_id)
+        self._validate_planting_zones(project, zones)
         project.planting_zones = [zone.model_copy(deep=True) for zone in zones]
         if project.geometry is not None:
             self._attach_planting_zone_features(project)
@@ -1019,6 +1075,7 @@ class ProjectApplication:
         plant_kind: str,
         layout_radius_m: float | None,
         zone_ids: set[str] | None = None,
+        growth_radii: tuple[float, float] | None = None,
     ) -> list[PlantingZoneAssignment]:
         kind = "shrub" if plant_kind == "shrub" else "tree"
         radius = layout_radius_m or self._default_layout_radius(kind)
@@ -1026,12 +1083,48 @@ class ProjectApplication:
         for zone in project.planting_zones:
             if zone_ids is not None and zone.id not in zone_ids:
                 continue
-            geometry = self.geometry.automatic_safe_geometry(project, zone.geometry, radius, kind)
+            geometry = self.geometry.automatic_safe_geometry(
+                project,
+                zone.geometry,
+                radius,
+                kind,
+                growth_canopy_radius=growth_radii[0] if growth_radii else None,
+                growth_root_radius=growth_radii[1] if growth_radii else None,
+            )
             result.append(zone.model_copy(update={"geometry": geometry}))
         return result
 
     @staticmethod
+    def _growth_radii(revision_ids: list[str | None], size_class: str) -> tuple[float, float] | None:
+        canopy_radii: list[float] = []
+        root_radii: list[float] = []
+        for revision_id in revision_ids:
+            if not revision_id:
+                continue
+            revision = get_species(revision_id)
+            canopy, roots = growth_forecasts(revision, size_class)
+            canopy_20 = next((item for item in canopy if item.horizon_year == 20), None)
+            roots_20 = next((item for item in roots if item.horizon_year == 20), None)
+            if canopy_20 and roots_20:
+                canopy_radii.append(canopy_20.radius_max_m)
+                root_radii.append(roots_20.radius_max_m)
+        return (max(canopy_radii), max(root_radii)) if canopy_radii and root_radii else None
+
+    @classmethod
+    def _pattern_growth_radii(cls, request: PatternPreviewRequest) -> tuple[float, float] | None:
+        if isinstance(request, RowPatternRequest):
+            revision_ids = [request.species_revision_id]
+        elif request.composition == "mixed":
+            revision_ids = [request.tree_species_revision_id, request.shrub_species_revision_id]
+        else:
+            revision_ids = [request.species_revision_id]
+        return cls._growth_radii(revision_ids, request.size_class)
+
+    @staticmethod
     def _mask_guide_geometries(project: Project, request: PlacementMaskRequest) -> list[dict]:
+        if request.mask_id in {"building_screen", "building_contour"} and project.geometry is not None:
+            from app.building_screen import generation_features
+            return generation_features(project, request)
         if request.mask_id != "road_edges" or project.geometry is None:
             return []
         return [
@@ -1170,6 +1263,12 @@ class ProjectApplication:
             raise ValueError("Не указаны изменения объекта")
         if current.locked and not (set(updates) == {"locked"} and updates["locked"] is False):
             raise ValueError("Сначала снимите закрепление объекта")
+        if set(updates) == {"locked"}:
+            if not isinstance(updates["locked"], bool):
+                raise ValueError("Укажите состояние закрепления")
+            # A protection toggle changes no geometry. Existing placement
+            # issues must not prevent unlocking an object to repair it.
+            return current.model_copy(update={"locked": updates["locked"]}), None
         radius_value = updates.get("layout_radius_m", updates.get("radius", current.layout_radius_m or current.radius))
         if radius_value is None:
             radius_value = current.radius
@@ -1228,6 +1327,17 @@ class ProjectApplication:
 
     def preview_change_set(self, project_id: str, draft: PlanChangeSetDraft) -> ChangeSetPreview:
         project = self.get(project_id)
+        return self._preview_change_set_for_project(project, draft)
+
+    def _preview_change_set_for_project(
+        self, project: Project, draft: PlanChangeSetDraft, *, cache_preview: bool = True,
+    ) -> ChangeSetPreview:
+        """Evaluate one immutable project snapshot; only final previews are durable.
+
+        Automatic tools first filter candidate operations. That internal pass
+        must not rebuild the entire plan's forecasts or retain an unusable
+        preview. The final pass keeps the normal validation/digest/apply contract.
+        """
         if project.plan is None:
             raise ValueError("План ещё не создан")
         if project.plan.version != draft.base_plan_version:
@@ -1302,7 +1412,8 @@ class ProjectApplication:
             item.status == "allowed" or (manual_single_review and item.status in {"unknown", "soft_conflict"})
             for item in results
         )
-        self._refresh_plan(project, working, increment_version=True)
+        if cache_preview:
+            self._refresh_plan(project, working, increment_version=True)
         digest = self._change_set_digest(draft, additions, updates, deletion_ids)
         preview = ChangeSetPreview(
             digest=digest,
@@ -1316,6 +1427,8 @@ class ProjectApplication:
             candidate_results=results,
             expires_at=(datetime.now(UTC) + timedelta(minutes=15)).isoformat(),
         )
+        if not cache_preview:
+            return preview
         with self._change_set_preview_lock:
             now = datetime.now(UTC)
             expired = [key for key, cached in self._change_set_previews.items() if datetime.fromisoformat(cached.preview.expires_at) <= now]
@@ -1418,8 +1531,27 @@ class ProjectApplication:
             raise ValueError("Один из выбранных участков больше не существует")
 
         requested_target = request.target_count if request.placement_mode == "count" else None
-        effective_spacing = self._effective_pattern_spacing(request)
-        generation_request = request.model_copy(update={"spacing_m": effective_spacing})
+        selected_zone_ids = [zone.id for zone in project.planting_zones if zone.id in requested_zone_ids]
+        zone_targets = equal_zone_targets(selected_zone_ids, requested_target) if (
+            requested_target is not None and getattr(request, "zone_distribution", "available") == "equal"
+        ) else {}
+        # Road-edge placement must be generated outside the mature canopy
+        # envelope as well as the statutory carriageway setback. The UI preset
+        # starts at a small visual offset, but a species with a wider forecast
+        # crown would otherwise produce zero candidates before the final
+        # validator ever gets a chance to assess them.
+        planning_request = request
+        if isinstance(request, PlacementMaskRequest) and request.mask_id == "road_edges":
+            growth_radii = self._pattern_growth_radii(request)
+            if growth_radii:
+                planning_request = request.model_copy(update={
+                    "road_offset_m": min(30, max(
+                        request.road_offset_m,
+                        growth_radii[0] + request.edge_offset_m + 0.1,
+                    )),
+                })
+        effective_spacing = self._effective_pattern_spacing(planning_request)
+        generation_request = planning_request.model_copy(update={"spacing_m": effective_spacing})
         if requested_target is not None and request.type in {"fill", "mask"}:
             # Generate alternatives as well as the requested positions. Hard
             # constraints are project-specific and are applied below; a
@@ -1427,16 +1559,40 @@ class ProjectApplication:
             generation_request = generation_request.model_copy(update={
                 "target_count": min(5000, max(requested_target, requested_target * 8)),
             })
-        generation_zones = self._automatic_generation_zones(
+        # A row is sampled along its axis; its generator never consumes safe
+        # polygon masks. Per-candidate zone, spacing and growth validation
+        # below remains authoritative. Avoid eroding every selected polygon
+        # merely to draw a line, especially on a cold, large DXF project.
+        generation_zones = [zone for zone in project.planting_zones if zone.id in requested_zone_ids] if request.type == "row" else self._automatic_generation_zones(
             project,
             request.plant_kind,
             request.layout_radius_m,
             requested_zone_ids,
+            growth_radii=self._pattern_growth_radii(request),
         )
         guide_geometries = self._mask_guide_geometries(project, request) if isinstance(request, PlacementMaskRequest) else None
         if isinstance(request, PlacementMaskRequest) and request.mask_id == "road_edges" and not guide_geometries:
             raise ValueError("В DXF нет слоёв, распознанных как дороги")
-        generated_candidates = self.candidate_generator.generate(generation_request, generation_zones, guide_geometries) if isinstance(request, PlacementMaskRequest) else self.candidate_generator.generate(generation_request, generation_zones)
+        if zone_targets:
+            # Give each requested quota its own alternatives. Sampling the
+            # union first can starve small/distant zones before validation.
+            budget = generation_request.target_count
+            remaining_extra = budget - sum(zone_targets.values())
+            extra_targets = equal_zone_targets(
+                [zone_id for zone_id, target in zone_targets.items() if target], remaining_extra,
+            )
+            generated_candidates = []
+            for zone in generation_zones:
+                target = zone_targets[zone.id]
+                if not target:
+                    continue
+                local = generation_request.model_copy(update={
+                    "zone_ids": [zone.id], "target_count": target + extra_targets.get(zone.id, 0),
+                })
+                points = self.candidate_generator.generate(local, [zone], guide_geometries) if isinstance(request, PlacementMaskRequest) else self.candidate_generator.generate(local, [zone])
+                generated_candidates.extend(points)
+        else:
+            generated_candidates = self.candidate_generator.generate(generation_request, generation_zones, guide_geometries) if isinstance(request, PlacementMaskRequest) else self.candidate_generator.generate(generation_request, generation_zones)
         layout_radius = request.layout_radius_m or self._default_layout_radius(request.plant_kind)
         compiled_zones = self._compiled_planting_zones(project)
         candidates = []
@@ -1464,6 +1620,8 @@ class ProjectApplication:
                 "road_edges": "Аллеи вдоль проездов",
                 "regular_grid": "Регулярная сетка",
                 "cluster_groves": "Куртины",
+                "building_screen": "Группы вдоль зданий",
+                "building_contour": "Посадки вдоль контуров зданий",
             }[request.mask_id]
         else:
             label = "Ряд посадок" if request.type == "row" else "Заполнение участков"
@@ -1484,8 +1642,8 @@ class ProjectApplication:
                     "layout_radius_m": request.layout_radius_m,
                     "size_class": request.size_class,
                     "species_revision_id": species_revision_id,
-                    "pattern_id": pattern_id,
-                    "group_ids": [pattern_id],
+                    "pattern_id": f"{pattern_id}-{candidate.group_key}" if isinstance(request, PlacementMaskRequest) and request.mask_id == "building_screen" and candidate.group_key else pattern_id,
+                    "group_ids": [f"{pattern_id}-{candidate.group_key}" if isinstance(request, PlacementMaskRequest) and request.mask_id == "building_screen" and candidate.group_key else pattern_id],
                     "spacing_policy": request.spacing_policy,
                 },
             })
@@ -1500,6 +1658,7 @@ class ProjectApplication:
                 rejected_count=min(len(skipped), requested_target or len(skipped)),
                 capacity_shortfall=max(0, (requested_target or 0) - len(skipped)),
                 effective_spacing_m=effective_spacing,
+                zone_allocations=[{"zone_id": zone_id, "requested_count": zone_targets.get(zone_id), "accepted_count": 0} for zone_id in selected_zone_ids],
                 skipped=skipped,
                 reason_summary=_reason_summary(skipped),
                 unverified_data=unverified_data,
@@ -1507,13 +1666,14 @@ class ProjectApplication:
                 data_confidence_reasons=list(passport.gaps),
             )
 
-        initial = self.preview_change_set(project_id, PlanChangeSetDraft(
+        initial = self._preview_change_set_for_project(project, PlanChangeSetDraft(
             base_plan_version=request.base_plan_version,
             source="pattern",
             label=label,
             operations=operations,
-        ))
+        ), cache_preview=False)
         allowed_indices: list[int] = []
+        allowed_by_zone: dict[str, list[int]] = {zone_id: [] for zone_id in selected_zone_ids}
         for item in initial.candidate_results:
             # Automatic placement is conservative: unresolved evidence is a
             # reason to skip a candidate, not permission to silently include
@@ -1521,6 +1681,8 @@ class ProjectApplication:
             # explicitly reviewed warning later.
             if item.status == "allowed":
                 allowed_indices.append(item.operation_index)
+                if item.zone_id in allowed_by_zone:
+                    allowed_by_zone[item.zone_id].append(item.operation_index)
                 continue
             candidate = candidates[item.operation_index]
             skipped.append(PatternSkippedCandidate(
@@ -1538,24 +1700,29 @@ class ProjectApplication:
                 suggested_action=item.suggested_action,
                 zone_id=item.zone_id,
             ))
-        if requested_target is not None and len(allowed_indices) > requested_target:
-            # The validator sees an oversampled field so blocked candidates do
-            # not turn the requested amount into an arbitrary attempt limit.
-            # Select the final amount evenly across all safe results instead
-            # of taking the first map strip produced by an ordered grid.
-            if requested_target == 1:
-                accepted_indices = [allowed_indices[len(allowed_indices) // 2]]
-            else:
-                accepted_indices = [
-                    allowed_indices[round(index * (len(allowed_indices) - 1) / (requested_target - 1))]
-                    for index in range(requested_target)
-                ]
+        if zone_targets:
+            accepted_indices = [
+                index for zone_id, target in zone_targets.items()
+                for index in spread_indices(allowed_by_zone[zone_id], target)
+            ]
+        elif requested_target is not None:
+            accepted_indices = spread_indices(allowed_indices, requested_target)
         else:
             accepted_indices = allowed_indices
+        if isinstance(request, PlacementMaskRequest) and request.mask_id == 'building_screen':
+            # Never label an isolated surviving tree as a group. Preserve
+            # complete accepted groves when enforcing an optional user cap.
+            groves: dict[str, list[int]] = {}
+            for index in allowed_indices:
+                groves.setdefault(operations[index]['object']['pattern_id'], []).append(index)
+            accepted_indices = []
+            for indices in groves.values():
+                if len(indices) >= 2 and (requested_target is None or len(accepted_indices) + len(indices) <= requested_target):
+                    accepted_indices.extend(indices)
         accepted_operations = [operations[index] for index in accepted_indices]
         change_set = None
         if accepted_operations:
-            change_set = self.preview_change_set(project_id, PlanChangeSetDraft(
+            change_set = self._preview_change_set_for_project(project, PlanChangeSetDraft(
                 base_plan_version=request.base_plan_version,
                 source="pattern",
                 label=f"{label}: {len(accepted_operations)}",
@@ -1573,6 +1740,7 @@ class ProjectApplication:
         requested_total = requested_target if requested_target is not None else len(candidates)
         rejected_count = min(len(skipped), max(0, requested_total - len(accepted_operations)))
         capacity_shortfall = max(0, requested_total - len(accepted_operations) - rejected_count)
+        accepted_index_set = set(accepted_indices)
         return PatternPreview(
             pattern_id=pattern_id,
             type=request.type,
@@ -1583,6 +1751,11 @@ class ProjectApplication:
             rejected_count=rejected_count,
             capacity_shortfall=capacity_shortfall,
             effective_spacing_m=effective_spacing,
+            zone_allocations=[{
+                "zone_id": zone_id,
+                "requested_count": zone_targets.get(zone_id),
+                "accepted_count": sum(index in accepted_index_set for index in allowed_by_zone[zone_id]),
+            } for zone_id in selected_zone_ids],
             skipped=skipped,
             reason_summary=reason_summary,
             unverified_data=unverified_data,
@@ -1656,7 +1829,13 @@ class ProjectApplication:
         )
         candidates = self.candidate_generator.generate(
             fill,
-            self._automatic_generation_zones(project, fill.plant_kind, fill.layout_radius_m, set(request.zone_ids)),
+            self._automatic_generation_zones(
+                project,
+                fill.plant_kind,
+                fill.layout_radius_m,
+                set(request.zone_ids),
+                growth_radii=self._growth_radii([revision.id], fill.size_class),
+            ),
         )
         digest = sha256(json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         recommendation_id = f"recommendation-{digest[:16]}"
@@ -1733,13 +1912,6 @@ class ProjectApplication:
             EffectEstimate(effect="stormwater", status="unknown", reason="Нет данных о почве, рельефе и водоотводе"),
             EffectEstimate(effect="comfort", status="unknown", reason="Нет сценариев использования территории и потоков людей"),
         ]
-        risks: list[str] = []
-        if "broad_crown" in revision.risk_flags:
-            risks.append("Широкая взрослая крона: проектный отступ проверяет дендролог")
-        if "shallow_roots" in revision.risk_flags:
-            risks.append("Поверхностная корневая система: нужны подтверждённые трассы сетей")
-        if revision.territory_policy == "specialist_review":
-            risks.append("Порода требует согласования специалистом для конкретной территории")
         explanations = [
             RecommendationExplanation(
                 object_id=object_.id,
@@ -1748,8 +1920,8 @@ class ProjectApplication:
                     "Внутри выбранной рабочей области",
                     "Не пересекает распознанные запретные зоны DXF",
                     "Соблюдает шаг относительно текущих и закреплённых посадок",
+                    "Проверяет прогноз кроны и корней на 20 лет",
                 ],
-                biological_risks=risks,
                 effects=[item.model_copy(deep=True) for item in effects],
             )
             for index, object_ in enumerate(change_set.additions if change_set else [], start=1)
@@ -1817,9 +1989,12 @@ class ProjectApplication:
                 operations.append({"type": "delete", "object_id": object_.id})
                 operation_points.append((object_.x, object_.y))
         brush_kind = "shrub" if request.composition == "shrubs" else "tree"
+        for expected_kind, revision_id in (("tree", request.tree_species_revision_id), ("shrub", request.shrub_species_revision_id)):
+            if revision_id and get_species(revision_id).kind != expected_kind:
+                raise ValueError("Порода не соответствует составу кисти")
         candidates = self.candidate_generator.generate(
             request,
-            self._automatic_generation_zones(project, brush_kind, None, set(request.zone_ids)),
+            self._automatic_generation_zones(project, brush_kind, None, set(request.zone_ids), growth_radii=self._growth_radii([request.tree_species_revision_id, request.shrub_species_revision_id], request.size_class)),
         )
         for candidate in candidates:
             kind = candidate.kind or "tree"
@@ -1829,7 +2004,8 @@ class ProjectApplication:
                     "kind": kind,
                     "x": candidate.x,
                     "y": candidate.y,
-                    "size_class": "unspecified",
+                    "size_class": request.size_class if (request.tree_species_revision_id if kind == "tree" else request.shrub_species_revision_id) else "unspecified",
+                    "species_revision_id": request.tree_species_revision_id if kind == "tree" else request.shrub_species_revision_id,
                     "pattern_id": brush_id,
                     "group_ids": [brush_id],
                 },
@@ -1847,12 +2023,12 @@ class ProjectApplication:
                 reason_summary=_reason_summary(skipped),
             )
 
-        initial = self.preview_change_set(project_id, PlanChangeSetDraft(
+        initial = self._preview_change_set_for_project(project, PlanChangeSetDraft(
             base_plan_version=request.base_plan_version,
             source="brush",
             label="Проверка мазка",
             operations=operations,
-        ))
+        ), cache_preview=False)
         accepted_operations: list[dict[str, object]] = []
         accepted_additions = 0
         accepted_removals = 0
@@ -1884,7 +2060,7 @@ class ProjectApplication:
 
         change_set = None
         if accepted_operations:
-            change_set = self.preview_change_set(project_id, PlanChangeSetDraft(
+            change_set = self._preview_change_set_for_project(project, PlanChangeSetDraft(
                 base_plan_version=request.base_plan_version,
                 source="brush",
                 label=f"Кисть: +{accepted_additions}, −{accepted_removals}",
@@ -1908,15 +2084,17 @@ class ProjectApplication:
         # snapshot. The lightweight projection omits it and made 3D a floating
         # toy detached from the imported drawing.
         project = self.get(project_id)
-        if project.plan is None:
-            raise ValueError("План ещё не создан")
-        if project.plan.objects:
-            min_x = min(item.x for item in project.plan.objects)
-            max_x = max(item.x for item in project.plan.objects)
-            min_y = min(item.y for item in project.plan.objects)
-            max_y = max(item.y for item in project.plan.objects)
+        plan_objects = project.plan.objects if project.plan else []
+        if plan_objects:
+            min_x = min(item.x for item in plan_objects)
+            max_x = max(item.x for item in plan_objects)
+            min_y = min(item.y for item in plan_objects)
+            max_y = max(item.y for item in plan_objects)
             origin_x = (min_x + max_x) / 2
             origin_y = (min_y + max_y) / 2
+        elif project.source_file and project.source_file.bounds:
+            origin_x = (project.source_file.bounds[0] + project.source_file.bounds[2]) / 2
+            origin_y = (project.source_file.bounds[1] + project.source_file.bounds[3]) / 2
         else:
             origin_x = origin_y = 0.0
 
@@ -1934,7 +2112,7 @@ class ProjectApplication:
             "large": (4.5, 7.0),
         }
         scene_objects: list[ScenePlantObject] = []
-        for object_ in project.plan.objects:
+        for object_ in plan_objects:
             revision = get_species(object_.species_revision_id) if object_.species_revision_id else None
             canopy = forecast_at(object_.canopy_forecast, horizon_year)
             roots = forecast_at(object_.root_forecast, horizon_year)
@@ -2007,6 +2185,7 @@ class ProjectApplication:
                 locked=object_.locked,
             ))
         context_features: list[SceneContextFeature] = []
+        vertical_primitives: list[SceneVerticalPrimitive] = []
         context_snapshot = project.geometry or project.source_geometry
         geometry_source = (
             "prepared_geometry"
@@ -2017,19 +2196,50 @@ class ProjectApplication:
         )
         building_feature_count = 0
         building_height_confirmed_count = 0
+        building_height_estimated_count = 0
+        building_height_sources: set[str] = set()
         if context_snapshot is not None:
-            # Keep the scene responsive and focused on the plan. This is a
-            # visual reference only: no missing terrain, utility depth or
-            # building height is inferred here.
-            context_kinds = {"site_border", "building", "road", "water", "existing_green", "utility", "restricted", "allowed"}
-            if project.plan.objects:
-                # Clip in the same (source-DXF) coordinate system as the
-                # geometry, then translate the result into scene-local space.
-                # Using ScenePlantObject.local_* here shifts the context a
-                # second time whenever the planting centroid is not (0, 0).
-                context_extent = unary_union([Point(item.x, item.y).buffer(90) for item in project.plan.objects]).envelope
-            else:
-                context_extent = None
+            for primitive in context_snapshot.vertical_primitives:
+                # Planar DXF entities already expose elevation/extrusion on
+                # their scene context feature. Repeating each one as a point
+                # primitive turns dense municipal drawings into megabytes of
+                # duplicate payload without adding renderable geometry.
+                if primitive.primitive_type == "point" and primitive.source_entity_type in {"LWPOLYLINE", "CIRCLE"}:
+                    continue
+                vertical_primitives.append(SceneVerticalPrimitive(
+                    primitive_id=primitive.primitive_id,
+                    primitive_type=primitive.primitive_type,
+                    vertices=[
+                        [round(vertex[0] - origin_x, 6), round(vertex[1] - origin_y, 6), vertex[2]]
+                        for vertex in primitive.vertices_m
+                    ],
+                    faces=primitive.faces,
+                    source_layer=primitive.source_layer,
+                    source_entity_type=primitive.source_entity_type,
+                    source_handle=primitive.source_handle,
+                    source_file_units=primitive.source_file_units,
+                    unit_scale_to_m=primitive.unit_scale_to_m,
+                    source_space=primitive.source_space,
+                    vertical_evidence=primitive.vertical_evidence,
+                    extrusion_vector_m=primitive.extrusion_vector_m,
+                    terrain_mapping_status=primitive.terrain_mapping_status,
+                    terrain_mapping_basis=primitive.terrain_mapping_basis,
+                    terrain_confidence=primitive.terrain_confidence,
+                    source_dataset=primitive.source_dataset,
+                    source_url=primitive.source_url,
+                    source_attribution=primitive.source_attribution,
+                    vertical_datum=primitive.vertical_datum,
+                    vertical_datum_offset_m=primitive.vertical_datum_offset_m,
+                ))
+            # Keep every relevant feature from the requested source extent.
+            # The browser batches linework and surfaces by semantic kind, so
+            # an arbitrary entity-count cutoff only produced a visibly torn
+            # city model without reducing draw calls. No missing terrain,
+            # utility depth or building height is inferred here.
+            context_kinds = {"site_border", "building", "road", "water", "existing_green", "utility", "restricted", "allowed", "planting_area"}
+            # The scene is the same source map as 2D, not a crop of populated
+            # plant groups. A specialist must also inspect empty work areas
+            # and pan to another part of the drawing before planting there.
             for index, feature in enumerate(context_snapshot.feature_collection.get("features", [])):
                 properties = feature.get("properties", {})
                 kind = str(properties.get("kind", ""))
@@ -2037,19 +2247,22 @@ class ProjectApplication:
                     continue
                 try:
                     geometry = shape(feature["geometry"])
-                    if context_extent is not None:
-                        geometry = geometry.intersection(context_extent)
                     if geometry.is_empty:
                         continue
                     geometry = geometry.simplify(0.15, preserve_topology=True)
                     translated = mapping(geometry)
                 except Exception:
                     continue
-                height_m, height_source = _confirmed_context_height(properties) if kind == "building" else (None, None)
+                height_m, height_status, height_source = _context_height(properties) if kind == "building" else (None, None, None)
                 if kind == "building":
                     building_feature_count += 1
-                    if height_m is not None:
+                    if height_status == "confirmed":
                         building_height_confirmed_count += 1
+                    elif height_status == "estimated":
+                        building_height_estimated_count += 1
+                    if height_source is not None:
+                        building_height_sources.add(height_source)
+                base_elevation_m = _context_base_elevation(properties)
                 context_features.append(SceneContextFeature(
                     feature_id=str(feature.get("id") or properties.get("source_handle") or f"context-{index}"),
                     kind=kind,
@@ -2058,24 +2271,42 @@ class ProjectApplication:
                     source_layer=str(properties.get("source_layer")) if properties.get("source_layer") else None,
                     source_entity_type=str(properties.get("entity_type")) if properties.get("entity_type") else None,
                     source_handle=str(properties.get("source_handle")) if properties.get("source_handle") else None,
-                    base_elevation_m=_context_base_elevation(properties),
+                    base_elevation_m=base_elevation_m,
+                    base_elevation_status="confirmed" if base_elevation_m is not None else "missing",
+                    base_elevation_source=_context_base_elevation_source(properties),
                     height_m=height_m,
-                    height_status=("confirmed" if height_m is not None else "missing") if kind == "building" else None,
+                    height_status=(height_status or "missing") if kind == "building" else None,
                     height_source=height_source,
                 ))
-                if len(context_features) >= 2500:
-                    break
         building_heights_status = (
             "confirmed"
             if building_feature_count > 0 and building_height_confirmed_count == building_feature_count
+            else "estimated"
+            if building_height_confirmed_count + building_height_estimated_count > 0
             else "missing"
         )
-        data_gaps = ["Рельеф", "Точные модели пород", "Инсоляция"]
-        if building_feature_count == 0 or building_height_confirmed_count == 0:
+        known_building_height_count = building_height_confirmed_count + building_height_estimated_count
+        confirmed_terrain = [
+            primitive for primitive in vertical_primitives
+            if primitive.terrain_mapping_status == "confirmed" and primitive.primitive_type == "surface_mesh"
+        ]
+        # ``confirmed`` above means only that the DXF document explicitly
+        # mapped these faces to terrain. Measurement confidence is separate
+        # and must come from the source declaration, never its display name.
+        terrain_is_estimated = any(
+            primitive.terrain_confidence == "estimated"
+            for primitive in confirmed_terrain
+        )
+        data_gaps = ["Точные модели пород", "Инсоляция"]
+        if not confirmed_terrain:
+            data_gaps.insert(0, "Рельеф")
+        elif terrain_is_estimated:
+            data_gaps.insert(0, "Инженерные отметки рельефа")
+        if building_feature_count == 0 or known_building_height_count == 0:
             data_gaps.append("Высоты зданий")
-        elif building_height_confirmed_count < building_feature_count:
+        elif known_building_height_count < building_feature_count:
             data_gaps.append(
-                f"Высоты зданий: подтверждено {building_height_confirmed_count} из {building_feature_count} видимых объектов"
+                f"Высоты зданий: известно {known_building_height_count} из {building_feature_count} видимых объектов"
             )
         georeference_status = {
             "verified": "confirmed",
@@ -2083,27 +2314,86 @@ class ProjectApplication:
             "local": "local",
             "unknown": "missing",
         }[project.coordinate_reference.status]
+        georeference_evidence = SceneEvidence(
+            status=(
+                "confirmed"
+                if project.coordinate_reference.status == "verified"
+                else "estimated"
+                if project.coordinate_reference.status == "declared"
+                else "missing"
+            ),
+            coverage=(
+                "full"
+                if project.coordinate_reference.status in {"verified", "declared"}
+                else "none"
+            ),
+            source=(
+                project.coordinate_reference.source
+                if project.coordinate_reference.source != "none"
+                else None
+            ),
+            note=project.coordinate_reference.evidence,
+        )
+        terrain_evidence = SceneEvidence(
+            status="estimated" if terrain_is_estimated else "confirmed" if confirmed_terrain else "missing",
+            coverage="partial" if confirmed_terrain else "none",
+            source=confirmed_terrain[0].source_dataset if confirmed_terrain else None,
+            note=(
+                f"Поверхностей DXF с доказанным назначением рельефа: {len(confirmed_terrain)}; "
+                + (
+                    "Copernicus GLO-90 — DSM с шагом около 90 м, поэтому поверхность пригодна для визуального контекста, но не для инженерных отметок; "
+                    if terrain_is_estimated else ""
+                )
+                + f"вертикальный datum: {confirmed_terrain[0].vertical_datum}, "
+                f"смещение {confirmed_terrain[0].vertical_datum_offset_m} м над уровнем моря."
+                if confirmed_terrain
+                else "DXF XYZ сохранён как пространственный контекст, но ни одна поверхность явно не назначена рельефом."
+            ),
+        )
+        if known_building_height_count == 0:
+            building_height_evidence = SceneEvidence(
+                status="missing",
+                coverage="none",
+                source=None,
+                note="В видимых контурах зданий нет явной вертикальной экструзии или атрибута высоты в метрах.",
+            )
+        else:
+            building_height_evidence = SceneEvidence(
+                status="confirmed" if building_height_estimated_count == 0 else "estimated",
+                coverage="full" if known_building_height_count == building_feature_count else "partial",
+                source="+".join(sorted(building_height_sources)) or None,
+                note=(
+                    f"Высота подтверждена у {building_height_confirmed_count}, оценена по этажности у "
+                    f"{building_height_estimated_count} из {building_feature_count} видимых контуров; "
+                    "остальные остаются плоскими."
+                ),
+            )
         return SceneSnapshot(
-            plan_version=project.plan.version,
+            plan_version=project.plan.version if project.plan else 1,
             horizon_year=horizon_year,
             coordinate_origin=[round(origin_x, 6), round(origin_y, 6)],
             coordinate_reference=project.coordinate_reference,
             georeference_status=georeference_status,
+            georeference_evidence=georeference_evidence,
             geometry_source=geometry_source,
             geometry_source_file_name=project.source_file.name if project.source_file else None,
-            terrain_status="missing",
+            terrain_status="estimated" if terrain_is_estimated else "confirmed" if confirmed_terrain else "missing",
             terrain_elevation_m=None,
+            terrain_evidence=terrain_evidence,
             building_heights_status=building_heights_status,
+            building_height_evidence=building_height_evidence,
             building_feature_count=building_feature_count,
             building_height_confirmed_count=building_height_confirmed_count,
             note=(
                 "Сцена собрана из плана и геометрии DXF. "
-                "Рельеф не известен; неподтверждённые высоты зданий не экструдируются. "
+                + ("Рельеф показан по оценочной DSM-поверхности; " if terrain_is_estimated else "Рельеф не известен; " if not confirmed_terrain else "Рельеф подтверждён DXF; ")
+                + "неподтверждённые высоты зданий не экструдируются. "
                 "Размеры посадок — сценарный прогноз, а не геодезическое измерение."
             ),
             data_gaps=data_gaps,
             objects=scene_objects,
             context_features=context_features,
+            vertical_primitives=vertical_primitives,
         )
 
     @staticmethod
@@ -2119,14 +2409,50 @@ class ProjectApplication:
             max(item.y + item.radius for item in objects),
         ]
 
+    def change_set_status(self, project_id: str, preview_id: str, digest: str) -> str:
+        """Read availability without recreating or applying a proposal.
+
+        Confirmation must still use apply_change_set's authoritative checks.
+        A durable chat record does not imply its ephemeral preview still exists.
+        """
+        with self._manual_edit_lock:
+            project = self.get(project_id, lightweight=True)
+            lookup = getattr(self.history, "receipt", None)
+            receipt = lookup(project_id, preview_id) if callable(lookup) else None
+            if receipt is not None:
+                return receipt["status"] if receipt["digest"] == digest else "unavailable"
+            with self._change_set_preview_lock:
+                if (project_id, preview_id) in self._applied_change_sets:
+                    return "applied"
+                cached = self._change_set_previews.get(preview_id)
+                if cached is None or cached.project_id != project_id:
+                    return "unavailable"
+                preview = cached.preview
+                if preview.digest != digest:
+                    return "unavailable"
+                if datetime.fromisoformat(preview.expires_at) <= datetime.now(UTC):
+                    return "expired"
+                if (project.plan is None or project.plan.version != preview.base_plan_version or
+                        project.state_version != cached.state_version or project.geometry_version != cached.geometry_version):
+                    return "stale"
+                return "ready" if preview.can_apply else "blocked"
+
     def apply_change_set(self, project_id: str, payload: PlanChangeSetApplyRequest) -> PlanMutationResult:
         with self._manual_edit_lock:
             applied_key = (project_id, payload.preview_id)
+            lookup = getattr(self.history, "receipt", None)
+            receipt = lookup(project_id, payload.preview_id) if callable(lookup) else None
+            if receipt is not None and (receipt["digest"] != payload.digest or receipt["base_plan_version"] != payload.base_plan_version):
+                raise ValueError("Подтверждение не соответствует сохранённой операции")
+            if receipt is not None and receipt["status"] == "undone":
+                raise ValueError("Эти изменения уже были применены и затем отменены")
             with self._change_set_preview_lock:
                 applied = self._applied_change_sets.get(applied_key)
                 if applied is not None:
                     return applied.model_copy(deep=True)
                 cached = self._change_set_previews.get(payload.preview_id)
+            if receipt is not None:
+                raise ValueError("Эти изменения уже применены. Обновите проект, чтобы увидеть результат")
             if cached is None or datetime.fromisoformat(cached.preview.expires_at) <= datetime.now(UTC):
                 raise ValueError("Предпросмотр устарел. Рассчитайте изменения ещё раз")
             if cached.project_id != project_id:
@@ -2149,7 +2475,10 @@ class ProjectApplication:
             before_plan = project.plan.model_copy(deep=True)
             project.plan = cached.plan.model_copy(deep=True)
             project.status = ProjectStatus.EDITING
-            saved = self._commit_plan_change(project, before, preview.label, preview.id)
+            saved = self._commit_plan_change(project, before, preview.label, preview.id,
+                receipt={"digest": preview.digest, "base_plan_version": preview.base_plan_version,
+                         "added_ids": [item.id for item in preview.additions],
+                         "updated_ids": [item.id for item in preview.updates], "deleted_ids": preview.deletion_ids})
             self._discard_plan_spacing_index(project.id)
             result = PlanMutationResult(
                 change_set_id=preview.id,

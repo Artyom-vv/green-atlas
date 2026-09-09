@@ -1,93 +1,56 @@
 import type { DataPassport, DataPassportEntry } from '@green/api-client';
-import { AlertTriangle, Check, CircleHelp } from 'lucide-react';
-import { DataTable, Icon, InlineMessage, StatusIndicator } from '@green/ui';
+import { ChevronRight } from 'lucide-react';
+import { DataTable } from '@green/ui';
+import './data-passport.css';
 
 const statusLabels: Record<DataPassportEntry['status'], string> = {
-  verified: 'Подтверждено',
-  partial: 'Неполно',
-  missing: 'Не найдено',
-  excluded: 'Исключено',
+  verified: 'Распознано', partial: 'Неполные данные', missing: 'Нет данных', excluded: 'Исключено',
 };
 
-const statusTone: Record<DataPassportEntry['status'], 'success' | 'warning' | 'error' | 'neutral'> = {
-  verified: 'success',
-  partial: 'warning',
-  missing: 'error',
-  excluded: 'neutral',
-};
-
-const decisionLabels: Record<DataPassportEntry['decision_level'], string> = {
-  stop: 'Блокирует',
-  warning: 'Нужна проверка',
-  advisory: 'Справочно',
-};
-
-function PassportEntry({ entry }: { entry: DataPassportEntry }) {
-  const status = entry.status;
-  const layerNames = entry.layer_names ?? [];
-  return (
-    <tr data-status={status}>
-      <td>
-        <span className="data-passport__class">
-          <StatusIndicator tone={statusTone[status]} label={entry.label} />
-          <small>{layerNames.length ? layerNames.join(', ') : 'Слой не найден'}</small>
-        </span>
-      </td>
-      <td className="mono-cell">{entry.object_count}</td>
-      <td>
-        <span className={`data-passport__usage data-passport__usage--${entry.used_in_calculation ? 'used' : 'not-used'}`}>
-          {entry.used_in_calculation ? <Icon icon={Check} size={14} /> : <Icon icon={CircleHelp} size={14} />}
-          {entry.used_in_calculation ? 'Участвует' : 'Не участвует'}
-        </span>
-      </td>
-      <td><span className="data-passport__status">{statusLabels[status]}</span></td>
-      <td><span className="data-passport__status">{decisionLabels[entry.decision_level ?? 'advisory']}</span></td>
-      <td>
-        <span className="data-passport__provenance-cell">
-          <small>{entry.source_file_name ?? 'Источник не указан'}</small>
-          <small>{entry.source_imported_at ? new Date(entry.source_imported_at).toLocaleDateString('ru-RU') : 'Дата не указана'}</small>
-          <small>{entry.source_owner ?? 'Владелец не указан'}</small>
-        </span>
-      </td>
-    </tr>
-  );
+function EntryDetails({ entry, passport }: { entry: DataPassportEntry; passport: DataPassport }) {
+  return <details className="source-details passport-entry-details">
+    <summary><ChevronRight size={14} aria-hidden="true" />Подробности<span className="sr-only">: {entry.label}</span></summary>
+    <p>Объектов: {entry.object_count.toLocaleString('ru-RU')}. В расчёте: {entry.used_object_count ?? 0}.</p>
+    {(entry.layer_names ?? []).length ? <ul aria-label={`Слои: ${entry.label}`}>{entry.layer_names!.map(name => <li key={name}><code>{name}</code></li>)}</ul> : <p>Слои этого класса не найдены</p>}
+    {entry.note ? <p>{entry.note}</p> : null}
+    {entry.source_file_name && entry.source_file_name !== passport.source_file_name ? <p>Источник: {entry.source_file_name}</p> : null}
+    {entry.source_owner && entry.source_owner !== passport.source_owner ? <p>Владелец: {entry.source_owner}</p> : null}
+    {entry.source_imported_at && entry.source_imported_at !== passport.source_imported_at ? <p>Импорт: {new Date(entry.source_imported_at).toLocaleDateString('ru-RU')}</p> : null}
+  </details>;
 }
 
 export function DataPassportPanel({ passport }: { passport: DataPassport }) {
-  const isLimited = passport.mass_placement_status === 'limited';
-  const isBlocked = passport.mass_placement_status === 'blocked';
-  const messageTone = isBlocked ? 'info' : 'warning';
-  return (
-    <section className="data-passport" aria-labelledby="data-passport-title">
-      <header className="data-passport__header">
-        <div>
-          <h2 id="data-passport-title">Паспорт исходных данных</h2>
-          <p>{passport.summary}</p>
-        </div>
-        <StatusIndicator
-          tone={isBlocked ? 'neutral' : isLimited ? 'warning' : 'success'}
-          label={isBlocked ? 'Не готово' : isLimited ? 'Ограниченная проверка' : 'Проверено'}
-        />
-      </header>
-      <dl className="data-passport__provenance">
-        <div><dt>Источник</dt><dd>{passport.source_file_name ?? 'Не указан'}</dd></div>
-        <div><dt>Дата импорта</dt><dd>{passport.source_imported_at ? new Date(passport.source_imported_at).toLocaleDateString('ru-RU') : 'Не указана'}</dd></div>
-        <div><dt>Владелец данных</dt><dd>{passport.source_owner ?? 'Не указан'}</dd></div>
-        <div><dt>Система координат</dt><dd>{passport.coordinate_reference?.crs_id ?? 'Не подтверждена'}</dd></div>
-        <div><dt>Контрольные точки</dt><dd>{passport.coordinate_reference?.control_points_count ?? 0}</dd></div>
-      </dl>
-      <DataTable className="data-passport__table">
-        <thead><tr><th>Класс</th><th>Объектов</th><th>В расчёте</th><th>Состояние</th><th>Решение</th><th>Происхождение</th></tr></thead>
-        <tbody>{(passport.entries ?? []).map((entry) => <PassportEntry key={entry.kind} entry={entry} />)}</tbody>
+  const blocked = passport.mass_placement_status === 'blocked';
+  const limited = passport.mass_placement_status === 'limited' || blocked;
+  const entries = passport.entries ?? [];
+  const attention = entries.filter(entry => !entry.used_in_calculation || entry.status !== 'verified');
+  const included = entries.filter(entry => entry.used_in_calculation && entry.status === 'verified');
+  return <section className="data-passport" aria-labelledby="data-passport-title">
+    <header className="data-passport__header"><h2 id="data-passport-title">Паспорт исходных данных</h2></header>
+    <dl className="passport-source">
+      <div><dt>Файл</dt><dd>{passport.source_file_name ?? 'Не указан'}</dd></div>
+      <div><dt>Импортирован</dt><dd>{passport.source_imported_at ? new Date(passport.source_imported_at).toLocaleDateString('ru-RU') : 'Дата не указана'}</dd></div>
+    </dl>
+    {limited ? <section className="passport-coverage" aria-label="Границы проверки">
+      <h3>{blocked ? 'Карта не готова к расчёту' : 'Проверка ограничена исходными данными'}</h3>
+      <p>{blocked ? 'Недостающие исходные данные перечислены ниже.' : 'Результат проверяется по загруженным ограничениям. Отсутствующие данные не означают отсутствие ограничений на территории.'}</p>
+    </section> : <p className="passport-footnote">Проверка учитывает только загруженные слои</p>}
+    {attention.length ? <section aria-label="Данные, требующие внимания">
+      <h3>Что не учтено полностью</h3>
+      <ul className="passport-attention">{attention.map(entry => <li key={entry.kind}>
+        <div className="passport-attention__heading"><strong>{entry.label}</strong><span>{statusLabels[entry.status]}</span></div>
+        <p>{entry.used_in_calculation ? 'Участвует в расчёте частично' : 'Не участвует в расчёте'}{entry.decision_level === 'stop' ? '. Блокирует расчёт' : ''}</p>
+        <EntryDetails entry={entry} passport={passport} />
+      </li>)}</ul>
+    </section> : null}
+    {(passport.gaps ?? []).length ? <details className="source-details passport-gaps"><summary><ChevronRight size={14} aria-hidden="true" />Основания ограничений ({passport.gaps!.length})</summary><ul>{passport.gaps!.map(gap => <li key={gap}>{gap}</li>)}</ul></details> : null}
+    {included.length ? <section aria-label="Данные в расчёте"><h3>Учтено в расчёте</h3>
+      <DataTable className="passport-table"><thead><tr><th>Данные</th><th>Объектов</th><th><span className="sr-only">Подробности</span></th></tr></thead>
+        <tbody>{included.map(entry => <tr key={entry.kind}><td>{entry.label}</td><td>{entry.object_count.toLocaleString('ru-RU')}</td><td><EntryDetails entry={entry} passport={passport} /></td></tr>)}</tbody>
       </DataTable>
-      {(passport.gaps ?? []).length ? (
-        <InlineMessage tone={messageTone} title={isBlocked ? 'Подготовьте карту' : 'Массовая посадка требует проверки'}>
-          <span className="data-passport__gaps">{(passport.gaps ?? []).join('; ')}</span>
-        </InlineMessage>
-      ) : null}
-      {!(passport.gaps ?? []).length && (passport.used_in_calculation ?? []).length ? (
-        <p className="data-passport__footnote"><AlertTriangle size={14} /> Использованы только подтверждённые слои</p>
-      ) : null}
-    </section>
-  );
+    </section> : null}
+    <details className="source-details passport-provenance"><summary><ChevronRight size={14} aria-hidden="true" />Координаты и происхождение</summary>
+      <dl className="passport-source"><div><dt>Владелец данных</dt><dd>{passport.source_owner ?? 'Не указан'}</dd></div><div><dt>Система координат</dt><dd>{passport.coordinate_reference?.crs_id ?? 'Не подтверждена'}</dd></div><div><dt>Контрольные точки</dt><dd>{passport.coordinate_reference?.control_points_count ?? 0}</dd></div></dl>
+    </details>
+  </section>;
 }

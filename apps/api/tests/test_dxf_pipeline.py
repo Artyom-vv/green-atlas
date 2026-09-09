@@ -1,3 +1,4 @@
+from collections import Counter
 from io import BytesIO, StringIO
 from pathlib import Path
 from time import perf_counter
@@ -17,7 +18,9 @@ from app.projects.adapters import SqliteProjectRepository
 
 SITE_DXF = Path(__file__).parents[3] / "fixtures" / "site.dxf"
 LARGE_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "vdnkh-large.dxf"
+VDNKH_3D_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "vdnkh-3d.dxf"
 KITAY_GOROD_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "kitay-gorod" / "kitay-gorod-large.dxf"
+KITAY_GOROD_3D_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "kitay-gorod" / "kitay-gorod-3d.dxf"
 
 
 def imported_project(source: bytes | None = None) -> Project:
@@ -40,6 +43,75 @@ def test_reader_accepts_binary_dxf_and_keeps_boundary_kind() -> None:
     assert imported.entity_count == 1
     assert imported.bounds == [0.0, 0.0, 20.0, 20.0]
     assert imported.layers[0].suggested_kind == LayerKind.SITE_BORDER
+
+
+def _dxf_with_custom_georeference(properties: dict[str, str]) -> bytes:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.M
+    document.modelspace().add_line((0, 0), (1, 1))
+    for tag, value in properties.items():
+        document.header.custom_vars.append(tag, value)
+    stream = StringIO()
+    document.write(stream)
+    return stream.getvalue().encode()
+
+
+def test_reader_accepts_complete_local_wgs84_declaration_without_claiming_epsg() -> None:
+    imported = EzdxfReader().read("local.dxf", _dxf_with_custom_georeference({
+        "GREEN_ATLAS_HORIZONTAL_SOURCE": "OpenStreetMap snapshot: fixture.osm.json",
+        "GREEN_ATLAS_ORIGIN_WGS84": "55.7522500,37.6235000",
+        "GREEN_ATLAS_LOCAL_PROJECTION": "local_equirectangular_wgs84",
+        "GREEN_ATLAS_EARTH_RADIUS_M": "6378137.000",
+    }))
+
+    reference = imported.coordinate_reference
+    assert reference.status == "declared"
+    assert reference.source == "dxf_custom_georeference"
+    assert reference.crs_id is None
+    assert reference.name == "Локальная эквиректангулярная аппроксимация WGS84"
+    assert reference.axis_order == "xy"
+    assert reference.origin_wgs84 == [55.75225, 37.6235]
+    assert reference.local_projection == "local_equirectangular_wgs84"
+    assert reference.earth_radius_m == 6_378_137
+    assert reference.horizontal_source == "OpenStreetMap snapshot: fixture.osm.json"
+
+
+def test_reader_rejects_incomplete_local_wgs84_declaration_atomically() -> None:
+    imported = EzdxfReader().read("incomplete-local.dxf", _dxf_with_custom_georeference({
+        "GREEN_ATLAS_HORIZONTAL_SOURCE": "OpenStreetMap snapshot: fixture.osm.json",
+        "GREEN_ATLAS_ORIGIN_WGS84": "55.7522500,37.6235000",
+    }))
+
+    reference = imported.coordinate_reference
+    assert reference.status == "unknown"
+    assert reference.source == "none"
+    assert reference.origin_wgs84 is None
+    assert "неполна" in reference.evidence
+
+
+def test_reader_rejects_malformed_local_wgs84_declaration_atomically() -> None:
+    imported = EzdxfReader().read("broken-local.dxf", _dxf_with_custom_georeference({
+        "GREEN_ATLAS_HORIZONTAL_SOURCE": "OpenStreetMap snapshot: fixture.osm.json",
+        "GREEN_ATLAS_ORIGIN_WGS84": "north,far-away",
+        "GREEN_ATLAS_LOCAL_PROJECTION": "EPSG:3857",
+        "GREEN_ATLAS_EARTH_RADIUS_M": "not-a-radius",
+    }))
+
+    reference = imported.coordinate_reference
+    assert reference.status == "unknown"
+    assert reference.source == "none"
+    assert reference.origin_wgs84 is None
+    assert reference.crs_id is None
+    assert "повреждена" in reference.evidence
+
+
+def test_enriched_source_layers_are_not_mistaken_for_exported_plan_layers() -> None:
+    imported = EzdxfReader().read("kitay-gorod-3d.dxf", KITAY_GOROD_3D_DXF.read_bytes())
+    layer_names = {layer.source_name for layer in imported.layers}
+
+    assert "GREEN_ATLAS_TERRAIN_COP90" in layer_names
+    assert "GREEN_ATLAS_BUILDING_OSM_LEVELS" in layer_names
+    assert not ({"GREEN_ATLAS_TREES", "GREEN_ATLAS_SHRUBS"} & layer_names)
 
 
 def test_round_trip_keeps_a_binary_dxf_binary() -> None:
@@ -593,6 +665,67 @@ def test_reader_preserves_only_explicit_vertical_building_evidence() -> None:
     )
 
 
+def test_reader_preserves_metric_xyz_primitives_without_promoting_them_to_terrain() -> None:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.MM
+    document.layers.add("SURVEY_3D", color=3)
+    modelspace = document.modelspace()
+    modelspace.add_3dface(
+        [(1000, 2000, 3500), (2000, 2000, 3600), (2000, 3000, 3700), (1000, 3000, 3550)],
+        dxfattribs={"layer": "SURVEY_3D"},
+    )
+    polyline3d = modelspace.add_polyline3d(
+        [(4000, 5000, 6100), (4500, 5500, 6400)],
+        dxfattribs={"layer": "SURVEY_3D"},
+    )
+    modelspace.add_line((7000, 8000, 9000), (7100, 8200, 9300), dxfattribs={"layer": "SURVEY_3D"})
+    modelspace.add_point((11000, 12000, 13000), dxfattribs={"layer": "SURVEY_3D"})
+    mesh = modelspace.add_mesh(dxfattribs={"layer": "SURVEY_3D"})
+    with mesh.edit_data() as data:
+        data.vertices = [(14000, 15000, 16000), (15000, 15000, 16100), (14000, 16000, 16200)]
+        data.faces = [(0, 1, 2)]
+    polyface = modelspace.add_polyface(dxfattribs={"layer": "SURVEY_3D"})
+    polyface.append_faces([[(17000, 18000, 19000), (18000, 18000, 19100), (17000, 19000, 19200)]])
+    polygon_mesh = modelspace.add_polymesh((2, 2), dxfattribs={"layer": "SURVEY_3D"})
+    polygon_mesh.set_mesh_vertex((0, 0), (20000, 21000, 22000))
+    polygon_mesh.set_mesh_vertex((0, 1), (21000, 21000, 22100))
+    polygon_mesh.set_mesh_vertex((1, 0), (20000, 22000, 22200))
+    polygon_mesh.set_mesh_vertex((1, 1), (21000, 22000, 22300))
+    elevated = modelspace.add_lwpolyline(
+        [(23000, 24000), (24000, 24000)],
+        dxfattribs={"layer": "SURVEY_3D", "elevation": 25000, "thickness": -500},
+    )
+    stream = StringIO()
+    document.write(stream)
+
+    imported = EzdxfReader().read("survey-mm.dxf", stream.getvalue().encode())
+    primitives = imported.geometry.vertical_primitives
+    by_type = {item.source_entity_type: item for item in primitives if item.source_entity_type != "POLYLINE"}
+    by_handle = {item.source_handle: item for item in primitives}
+
+    assert by_type["3DFACE"].vertices_m[0] == pytest.approx([1.0, 2.0, 3.5], abs=0.001)
+    assert by_type["3DFACE"].faces == [[0, 1, 2, 3]]
+    assert by_handle[str(polyline3d.dxf.handle)].vertices_m[-1] == pytest.approx([4.5, 5.5, 6.4], abs=0.001)
+    assert by_type["LINE"].vertices_m[-1] == pytest.approx([7.1, 8.2, 9.3], abs=0.001)
+    assert by_type["POINT"].vertices_m[0] == pytest.approx([11.0, 12.0, 13.0], abs=0.001)
+    assert by_type["MESH"].vertices_m[-1] == pytest.approx([14.0, 16.0, 16.2], abs=0.001)
+    assert by_type["MESH"].faces == [[0, 1, 2]]
+    assert by_handle[str(polyface.dxf.handle)].primitive_type == "surface_mesh"
+    assert by_handle[str(polyface.dxf.handle)].vertices_m[-1] == pytest.approx([17.0, 19.0, 19.2], abs=0.001)
+    assert by_handle[str(polygon_mesh.dxf.handle)].faces == [[0, 2, 3, 1]]
+    assert by_handle[str(polygon_mesh.dxf.handle)].vertices_m[-1] == pytest.approx([21.0, 22.0, 22.3], abs=0.001)
+    assert by_handle[str(elevated.dxf.handle)].vertices_m[0] == pytest.approx([23.0, 24.0, 25.0], abs=0.001)
+    assert by_handle[str(elevated.dxf.handle)].vertical_evidence == "explicit_extrusion"
+    assert by_handle[str(elevated.dxf.handle)].extrusion_vector_m == pytest.approx([0.0, 0.0, -0.5], abs=0.001)
+    assert all(item.unit_scale_to_m == 0.001 for item in primitives)
+    assert all(item.source_file_units == "мм" for item in primitives)
+    assert all(item.terrain_mapping_status == "unmapped" for item in primitives)
+
+    project = Project(name="XYZ round-trip", layers=imported.layers, source_geometry=imported.geometry)
+    project.geometry = ShapelyGeometryEngine().calculate(project)
+    assert project.geometry.vertical_primitives == primitives
+
+
 def test_invalid_mapped_polygon_blocks_calculation_instead_of_crashing_geos() -> None:
     document = ezdxf.new("R2013", setup=True)
     document.units = ezdxf.units.M
@@ -858,6 +991,80 @@ def test_dense_moscow_dxf_keeps_pedestrian_technical_and_existing_green_context(
         "OSM_BARRIER",
         "OSM_ROAD_LOCAL",
     } <= source_layers
+
+
+def test_dense_moscow_3d_fixture_preserves_dem_and_auditable_building_extrusions() -> None:
+    imported = EzdxfReader().read(KITAY_GOROD_3D_DXF.name, KITAY_GOROD_3D_DXF.read_bytes())
+    terrain = [item for item in imported.geometry.vertical_primitives if item.terrain_mapping_status == "confirmed"]
+    extrusions = [item for item in imported.geometry.vertical_primitives if item.vertical_evidence == "explicit_extrusion"]
+    source_layers = {item.source_layer for item in extrusions}
+
+    assert imported.entity_count == 9_340
+    assert imported.coordinate_reference.status == "declared"
+    assert imported.coordinate_reference.source == "dxf_custom_georeference"
+    assert imported.coordinate_reference.crs_id is None
+    assert imported.coordinate_reference.origin_wgs84 == [55.75225, 37.6235]
+    assert imported.coordinate_reference.local_projection == "local_equirectangular_wgs84"
+    assert len(terrain) == 320
+    assert all(item.primitive_type == "surface_mesh" for item in terrain)
+    assert all(item.terrain_mapping_basis == "dxf_document_metadata" for item in terrain)
+    assert {item.source_dataset for item in terrain} == {"Copernicus DEM 2021 GLO-90 via Open-Meteo Elevation API"}
+    assert {item.source_url for item in terrain} == {"https://open-meteo.com/en/docs/elevation-api"}
+    assert {item.terrain_confidence for item in terrain} == {"estimated"}
+    assert all("Copernicus WorldDEM-90" in (item.source_attribution or "") for item in terrain)
+    assert {item.vertical_datum for item in terrain} == {"local_zero_at_dem_minimum"}
+    assert {item.vertical_datum_offset_m for item in terrain} == {120.0}
+    assert {"GREEN_ATLAS_BUILDING_OSM_HEIGHT", "GREEN_ATLAS_BUILDING_OSM_LEVELS"} <= source_layers
+    assert max(vertex[2] for item in terrain for vertex in item.vertices_m) - min(
+        vertex[2] for item in terrain for vertex in item.vertices_m
+    ) >= 40
+
+
+def test_vdnkh_3d_fixture_has_strict_dem_provenance_and_split_building_heights() -> None:
+    imported = EzdxfReader().read(VDNKH_3D_DXF.name, VDNKH_3D_DXF.read_bytes())
+    terrain = [item for item in imported.geometry.vertical_primitives if item.terrain_mapping_status == "confirmed"]
+    extrusions = [item for item in imported.geometry.vertical_primitives if item.vertical_evidence == "explicit_extrusion"]
+
+    assert imported.entity_count == 5_190
+    assert imported.coordinate_reference.status == "declared"
+    assert imported.coordinate_reference.source == "dxf_custom_georeference"
+    assert imported.coordinate_reference.crs_id is None
+    assert imported.coordinate_reference.origin_wgs84 == [55.8295, 37.6355]
+    assert imported.coordinate_reference.local_projection == "local_equirectangular_wgs84"
+    assert imported.bounds == pytest.approx([-906.59, -946.216, 906.59, 946.216], abs=0.001)
+    assert len(terrain) == 320
+    assert {item.terrain_mapping_basis for item in terrain} == {"dxf_document_metadata"}
+    assert {item.source_dataset for item in terrain} == {"Copernicus DEM 2021 GLO-90 via Open-Meteo Elevation API"}
+    assert {item.source_url for item in terrain} == {"https://open-meteo.com/en/docs/elevation-api"}
+    assert {item.terrain_confidence for item in terrain} == {"estimated"}
+    assert all("Copernicus WorldDEM-90" in (item.source_attribution or "") for item in terrain)
+    assert {item.vertical_datum for item in terrain} == {"local_zero_at_dem_minimum"}
+    assert {item.vertical_datum_offset_m for item in terrain} == {134.0}
+    assert max(vertex[2] for item in terrain for vertex in item.vertices_m) == 37.0
+    by_layer = Counter(item.source_layer for item in extrusions)
+    assert by_layer["GREEN_ATLAS_BUILDING_OSM_HEIGHT"] == 23
+    assert by_layer["GREEN_ATLAS_BUILDING_OSM_LEVELS"] == 409
+
+
+def test_terrain_layer_name_without_document_evidence_cannot_confirm_terrain() -> None:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.M
+    document.layers.add("GREEN_ATLAS_TERRAIN_COP90", color=3)
+    document.modelspace().add_3dface(
+        [(0, 0, 1), (10, 0, 2), (10, 10, 3), (0, 10, 2)],
+        dxfattribs={"layer": "GREEN_ATLAS_TERRAIN_COP90"},
+    )
+    stream = StringIO()
+    document.write(stream)
+
+    imported = EzdxfReader().read("spoofed-terrain-layer.dxf", stream.getvalue().encode())
+    primitive = imported.geometry.vertical_primitives[0]
+
+    assert primitive.primitive_type == "surface_mesh"
+    assert primitive.terrain_mapping_status == "unmapped"
+    assert primitive.terrain_mapping_basis is None
+    assert primitive.terrain_confidence is None
+    assert primitive.source_dataset is None
 
 
 def test_viewport_index_is_reused_after_non_geometry_project_changes() -> None:

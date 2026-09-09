@@ -1,11 +1,12 @@
 import type { PlanObject, ValidationIssue } from '@green/api-client';
-import { Copy, Leaf, Lock, Trash2, Unlock } from 'lucide-react';
+import { Copy, Crosshair, Leaf, Lock, Move, Trash2, Unlock } from 'lucide-react';
 import { Button, HelpDisclosure } from '@green/ui';
-import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
-import { InspectorHeader } from './InspectorHeader';
-import { InspectorBody } from './InspectorLayout';
+import { type GrowthHorizon } from './GrowthHorizonControl';
+import { EditorActions, EditorPanel } from './EditorPanel';
+import { EditorGrowth } from './EditorGrowth';
 
 type GroupInspectorProps = {
+  mapMode?: '2d' | '3d';
   objects: PlanObject[];
   issues?: ValidationIssue[];
   disabled?: boolean;
@@ -13,6 +14,8 @@ type GroupInspectorProps = {
   onGrowthHorizon: (value: GrowthHorizon) => void;
   onSpecies: () => void;
   onCopy: () => void;
+  onMove?: () => void;
+  onFit?: () => void;
   onLock: (locked: boolean) => void;
   onDelete: () => void;
 };
@@ -29,7 +32,7 @@ const issueMeta = (issue: ValidationIssue) => issue.actual !== null && issue.act
   ? `${issue.actual} / ${issue.required ?? '—'}${issue.unit ? ` ${issue.unit}` : ''}`
   : undefined;
 
-export function GroupInspector({ objects, issues, disabled, growthHorizon, onGrowthHorizon, onSpecies, onCopy, onLock, onDelete }: GroupInspectorProps) {
+export function GroupInspector({ objects, issues, disabled, growthHorizon, onGrowthHorizon, onSpecies, onCopy, onMove, onFit, onLock, onDelete, mapMode = '2d' }: GroupInspectorProps) {
   const locked = objects.filter((object) => object.locked).length;
   const trees = objects.filter((object) => object.kind === 'tree').length;
   const shrubs = objects.length - trees;
@@ -55,36 +58,26 @@ export function GroupInspector({ objects, issues, disabled, growthHorizon, onGro
     } satisfies SelectionProblem]);
   const errorCount = problems.filter((problem) => problem.severity === 'error').length;
   const warningCount = problems.length - errorCount;
-  return <div className="project-inspector multi-selection-inspector">
-    <InspectorHeader title="Выбрано посадок" meta={`${objects.length} объектов`} />
-    <InspectorBody>
-      <section className="group-selection-summary">
-        <h3>Состав группы</h3>
-        <dl><dt>Деревья</dt><dd>{trees}</dd><dt>Кустарники</dt><dd>{shrubs}</dd>{locked ? <><dt>Закреплено</dt><dd>{locked}</dd></> : null}</dl>
-      </section>
-      {problems.length ? <section className="group-selection-validation" aria-label="Проблемы выбранных объектов">
-        <div className="group-selection-validation__counts" role="status" aria-label={`Ошибки: ${errorCount}. Замечания: ${warningCount}.`}>
-          {errorCount ? <span className="is-error"><i />Ошибки <b>{errorCount}</b></span> : null}
-          {warningCount ? <span className="is-warning"><i />Замечания <b>{warningCount}</b></span> : null}
-        </div>
-        <HelpDisclosure title={`Что требует внимания (${problems.length})`}>
-          <ul className="group-selection-validation__list">
-            {problems.map((problem) => <li key={problem.key} className={`is-${problem.severity}`}>
-              <i aria-hidden="true" />
-              <span><strong>{problem.title}</strong><small>{problem.description}</small></span>
-              {problem.meta ? <code title={problem.meta}>{problem.meta}</code> : null}
-            </li>)}
-          </ul>
-          <p>Полные причины и поиск объектов на карте — во вкладке «Проверка».</p>
-        </HelpDisclosure>
-      </section> : null}
-      <section className="group-selection-actions">
-        <Button variant="secondary" icon={Leaf} disabled={disabled || locked > 0} onClick={onSpecies}>Назначить породу</Button>
-        <Button variant="secondary" icon={Copy} disabled={disabled} onClick={onCopy}>Копировать</Button>
-        <Button variant="secondary" icon={locked === objects.length ? Unlock : Lock} disabled={disabled} onClick={() => onLock(locked !== objects.length)}>{locked === objects.length ? 'Открепить' : 'Закрепить'}</Button>
-        <Button variant="danger" icon={Trash2} disabled={disabled || locked > 0} onClick={onDelete}>Удалить выбранные</Button>
-      </section>
-      {objects.some((object) => object.canopy_forecast?.length) ? <GrowthHorizonControl value={growthHorizon} forecasts={objects} onChange={onGrowthHorizon} /> : null}
-    </InspectorBody>
-  </div>;
+  const assigned = objects.filter(object => object.species_revision_id).length;
+  return <EditorPanel title="Выделение">
+    {onFit ? <EditorActions><Button variant="secondary" controlSize="compact" icon={Crosshair} onClick={onFit}>К выделению</Button></EditorActions> : null}
+    <section className="editor-panel__section">
+      <h3>Выбрано {objects.length}</h3>
+      <div className="editor-panel__summary"><span>Деревья {trees}</span><span>Кустарники {shrubs}</span></div>
+      <dl className="editor-panel__metrics"><dt>Виды назначены</dt><dd>{assigned} из {objects.length}</dd><dt>Закреплены</dt><dd>{locked}</dd></dl>
+      <EditorActions grid>
+        <Button className="editor-action-wide" variant="secondary" controlSize="compact" icon={Leaf} disabled={disabled || locked > 0} onClick={onSpecies}>Назначить виды</Button>
+        {onMove ? <Button className={mapMode === '3d' ? 'editor-action-wide' : undefined} variant="secondary" controlSize="compact" icon={Move} disabled={disabled || locked > 0} onClick={onMove}>{mapMode === '3d' ? 'Переместить в 2D' : 'Переместить'}</Button> : null}
+        <Button className={mapMode === '3d' ? 'editor-action-wide' : undefined} variant="secondary" controlSize="compact" icon={Copy} disabled={disabled} onClick={onCopy}>{mapMode === '3d' ? 'Копировать в 2D' : 'Копировать'}</Button>
+        <Button variant="secondary" controlSize="compact" icon={locked ? Unlock : Lock} disabled={disabled} onClick={() => onLock(!locked)}>{locked ? locked < objects.length ? `Открепить ${locked}` : 'Открепить' : 'Закрепить'}</Button>
+        <Button variant="danger" controlSize="compact" icon={Trash2} disabled={disabled || locked > 0} onClick={onDelete}>Удалить</Button>
+      </EditorActions>
+      {locked > 0 ? <p className="editor-panel__hint">Для изменения посадок снимите закрепление.</p> : null}
+    </section>
+    <section className="editor-panel__section"><EditorGrowth objects={objects} value={growthHorizon} onChange={onGrowthHorizon} showControl={mapMode === '2d'} /></section>
+    {problems.length ? <section className="editor-panel__section" aria-label="Проблемы выбранных объектов">
+      <div role="status" aria-label={`Ошибки: ${errorCount}. Замечания: ${warningCount}.`} className="editor-panel__summary">{errorCount ? <span>Ошибки {errorCount}</span> : null}{warningCount ? <span>Замечания {warningCount}</span> : null}</div>
+      <HelpDisclosure title={`Что требует внимания (${problems.length})`}><ul className="editor-problem-list">{problems.map(problem => <li key={problem.key}><strong>{problem.title}</strong><small>{problem.description}</small>{problem.meta ? <small>{problem.meta}</small> : null}</li>)}</ul></HelpDisclosure>
+    </section> : null}
+  </EditorPanel>;
 }

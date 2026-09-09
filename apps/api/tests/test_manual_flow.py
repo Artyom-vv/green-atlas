@@ -19,6 +19,7 @@ from starlette.datastructures import UploadFile
 from app import api as api_module
 from app import application as application_module
 from app.application import ProjectApplication
+from app.application import _context_base_elevation_source
 from app.contracts import CoordinateReference, FillPatternRequest, GrowthEnvelopeForecast, LayerMapping, PlanObject, PlanObjectCreate, PlantingZoneAssignment
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
@@ -38,6 +39,24 @@ from app.validation.adapters import RuleBasedPlanValidator
 client = TestClient(app)
 SITE_DXF = Path(__file__).parents[3] / "fixtures" / "site.dxf"
 LARGE_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "vdnkh-large.dxf"
+KITAY_GOROD_3D_DXF = (
+    Path(__file__).parents[3]
+    / "fixtures"
+    / "large-map"
+    / "kitay-gorod"
+    / "kitay-gorod-3d.dxf"
+)
+
+
+def test_generic_osm_layer_elevation_is_not_mislabelled_as_copernicus() -> None:
+    assert _context_base_elevation_source({
+        "source_layer": "OSM_BUILDING",
+        "source_base_elevation_m": 12.5,
+    }) == "dxf_elevation"
+    assert _context_base_elevation_source({
+        "source_layer": "GREEN_ATLAS_BUILDING_OSM_LEVELS",
+        "source_base_elevation_m": 12.5,
+    }) == "copernicus_dem_glo90"
 
 
 def site_content() -> bytes:
@@ -265,6 +284,58 @@ def test_real_large_dxf_survives_http_import_geometry_viewport_and_source_recove
     recovered = client.get(f"/api/projects/{project_id}/source-dxf/download")
     assert recovered.status_code == 200
     assert recovered.content == source
+
+
+def test_real_moscow_3d_dxf_keeps_georeference_and_estimated_dem_through_public_scene_api() -> None:
+    """Prove the production HTTP path, not just the parser's internal model."""
+    source = KITAY_GOROD_3D_DXF.read_bytes()
+    project_id = client.post("/api/projects", json={"name": "Китай-город 3D через API"}).json()["id"]
+
+    uploaded = client.post(
+        f"/api/projects/{project_id}/source-dxf",
+        files={"file": (KITAY_GOROD_3D_DXF.name, source, "application/dxf")},
+    )
+    assert uploaded.status_code == 200, uploaded.json()
+    assert uploaded.json()["coordinate_reference"]["status"] == "declared"
+    assert uploaded.json()["coordinate_reference"]["origin_wgs84"] == [55.75225, 37.6235]
+    mappings = [
+        {"layer_id": layer["id"], "kind": layer["suggested_kind"], "visible": True}
+        for layer in uploaded.json()["layers"]
+    ]
+    assert client.put(
+        f"/api/projects/{project_id}/layer-mappings",
+        json={"mappings": mappings},
+    ).status_code == 200
+    prepare_map(project_id)
+
+    project = api_module.application.get(project_id)
+    site_geometry = next(
+        feature["geometry"]
+        for feature in project.geometry.feature_collection["features"]
+        if feature["properties"].get("kind") == "site_border"
+    )
+    select_areas(project_id, [{"id": "whole-map", "label": "Китай-город", "geometry": site_geometry}])
+    opened = client.post(f"/api/projects/{project_id}/plan/manual")
+    assert opened.status_code == 200, opened.json()
+
+    response = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
+    assert response.status_code == 200, response.json()
+    scene = response.json()
+    assert scene["coordinate_reference"]["status"] == "declared"
+    assert scene["georeference_status"] == "declared"
+    assert scene["terrain_status"] == "estimated"
+    assert scene["terrain_evidence"]["status"] == "estimated"
+    assert "90 м" in scene["terrain_evidence"]["note"]
+    terrain = [
+        primitive
+        for primitive in scene["vertical_primitives"]
+        if primitive["terrain_mapping_status"] == "confirmed"
+    ]
+    assert len(terrain) == 320
+    assert {primitive["terrain_confidence"] for primitive in terrain} == {"estimated"}
+    assert all("Copernicus WorldDEM-90" in primitive["source_attribution"] for primitive in terrain)
+    assert scene["building_feature_count"] > 0
+    assert scene["building_height_confirmed_count"] > 0
 
 
 def test_large_dxf_manual_plan_survives_repository_reopen_and_exports_from_source(tmp_path: Path) -> None:
@@ -1278,12 +1349,16 @@ def test_change_set_preview_cannot_be_applied_to_another_project() -> None:
     assert client.get(f"/api/projects/{target_id}").json()["plan"]["objects"] == []
 
 
-def test_row_pattern_creates_many_sites_as_one_undoable_revision() -> None:
+def test_row_pattern_creates_many_sites_as_one_undoable_revision(monkeypatch) -> None:
     project_id = prepare_project("Ряд посадок")
     select_areas(project_id, [area("row-zone", "Линейный участок", [[12, 12], [65, 12], [65, 30], [12, 30]])])
     opened = client.post(f"/api/projects/{project_id}/plan/manual").json()
     base_version = opened["plan"]["version"]
 
+    def unused_area_masks(*args, **kwargs):
+        raise AssertionError("Row sampling must not construct unused safe-area masks")
+
+    monkeypatch.setattr(api_module.application, "_automatic_generation_zones", unused_area_masks)
     pattern = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
         "type": "row",
         "base_plan_version": base_version,
@@ -1805,6 +1880,7 @@ def test_recommendation_is_one_explainable_atomic_draft_and_preserves_locked_sit
     assert len(proposal["explanations"]) == len(preview["additions"])
     assert proposal["evidence"]["sunlight"] == "missing"
     assert proposal["evidence"]["soil"] == "missing"
+    assert all(not explanation["biological_risks"] for explanation in proposal["explanations"])
     assert all(
         effect["status"] == "unknown" and effect["value"] is None
         for explanation in proposal["explanations"]
@@ -1819,6 +1895,9 @@ def test_recommendation_is_one_explainable_atomic_draft_and_preserves_locked_sit
     })
     assert applied.status_code == 200, applied.json()
     assert applied.json()["plan_version"] == locked_plan["version"] + 1
+    added_ids = {item["id"] for item in preview["additions"]}
+    assert not {item["object_id"] for item in applied.json()["plan"]["issues"]} & added_ids
+    assert all(item["status"] == "valid" for item in applied.json()["plan"]["objects"] if item["id"] in added_ids)
     preserved = next(item for item in applied.json()["plan"]["objects"] if item["id"] == locked_id)
     assert preserved["locked"] is True
     undone = client.post(f"/api/projects/{project_id}/plan/history/undo").json()
@@ -1931,7 +2010,19 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     unproven = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
     assert unproven.status_code == 200
     assert unproven.json()["georeference_status"] == "missing"
+    assert unproven.json()["georeference_evidence"] == {
+        "status": "missing",
+        "coverage": "none",
+        "source": None,
+        "note": "Система координат не указана",
+    }
+    assert unproven.json()["terrain_evidence"]["status"] == "missing"
+    assert unproven.json()["terrain_evidence"]["coverage"] == "none"
+    assert unproven.json()["terrain_evidence"]["source"] is None
     assert unproven.json()["building_heights_status"] == "missing"
+    assert unproven.json()["building_height_evidence"]["status"] == "missing"
+    assert unproven.json()["building_height_evidence"]["coverage"] == "none"
+    assert unproven.json()["building_height_evidence"]["source"] is None
     assert all(
         item["height_m"] is None and item["height_status"] == "missing"
         for item in unproven.json()["context_features"]
@@ -1969,13 +2060,27 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     assert current_scene["terrain_elevation_m"] is None
     assert current_scene["coordinate_reference"]["crs_id"] == "EPSG:32637"
     assert current_scene["georeference_status"] == "confirmed"
+    assert current_scene["georeference_evidence"] == {
+        "status": "confirmed",
+        "coverage": "full",
+        "source": "control_points",
+        "note": "Сверено по трём контрольным точкам.",
+    }
     assert current_scene["geometry_source"] == "prepared_geometry"
     assert current_scene["geometry_source_file_name"] == "site.dxf"
     assert current_scene["building_heights_status"] == "confirmed"
+    assert current_scene["building_height_evidence"]["status"] == "confirmed"
+    assert current_scene["building_height_evidence"]["coverage"] == "full"
+    assert current_scene["building_height_evidence"]["source"] == "dxf_extrusion"
     assert current_scene["building_feature_count"] > 0
     assert current_scene["building_height_confirmed_count"] == current_scene["building_feature_count"]
     assert isinstance(current_scene["context_features"], list)
     assert {item["kind"] for item in current_scene["context_features"]}.intersection({"building", "road", "site_border"})
+    assert all(
+        item["base_elevation_status"] == ("confirmed" if item["base_elevation_m"] is not None else "missing")
+        and item["base_elevation_source"] == ("dxf_elevation" if item["base_elevation_m"] is not None else None)
+        for item in current_scene["context_features"]
+    )
     assert {item["object_id"] for item in current_scene["objects"]} == {item["id"] for item in applied.json()["plan"]["objects"]}
     current_tree = next(item for item in current_scene["objects"] if item["object_id"] == tree_id)
     early_tree = next(item for item in early_scene["objects"] if item["object_id"] == tree_id)
@@ -2001,7 +2106,59 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
     assert client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 41}).status_code == 422
 
 
-def test_scene_clips_dxf_context_before_translating_to_local_coordinates() -> None:
+def test_scene_api_exposes_source_xyz_without_claiming_unmapped_mesh_is_terrain() -> None:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.CM
+    document.layers.add("SITE_BORDER", color=1)
+    document.layers.add("SURVEY_SURFACE", color=3)
+    modelspace = document.modelspace()
+    modelspace.add_lwpolyline(
+        [(0, 0), (10_000, 0), (10_000, 10_000), (0, 10_000)],
+        close=True,
+        dxfattribs={"layer": "SITE_BORDER"},
+    )
+    face = modelspace.add_3dface(
+        [(1000, 2000, 310), (2000, 2000, 320), (2000, 3000, 360), (1000, 3000, 350)],
+        dxfattribs={"layer": "SURVEY_SURFACE"},
+    )
+    stream = StringIO()
+    document.write(stream)
+
+    created = client.post("/api/projects", json={"name": "XYZ API"})
+    project_id = created.json()["id"]
+    imported = client.post(
+        f"/api/projects/{project_id}/source-dxf",
+        files={"file": ("survey-cm.dxf", stream.getvalue().encode(), "application/dxf")},
+    )
+    assert imported.status_code == 200
+    mappings = [
+        {"layer_id": layer["id"], "kind": layer["suggested_kind"], "visible": True}
+        for layer in imported.json()["layers"]
+    ]
+    assert client.put(f"/api/projects/{project_id}/layer-mappings", json={"mappings": mappings}).status_code == 200
+    prepare_map(project_id)
+    select_areas(project_id, [area("work", "Рабочая область", [[5, 5], [80, 5], [80, 80], [5, 80]])])
+    assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
+    assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
+
+    response = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
+    assert response.status_code == 200
+    scene = response.json()
+    primitive = next(item for item in scene["vertical_primitives"] if item["source_handle"] == str(face.dxf.handle))
+
+    # XY is translated to the scene origin, while source Z remains metric.
+    assert primitive["vertices"][0] == pytest.approx([-10.0, 0.0, 3.1], abs=0.001)
+    assert primitive["vertices"][2] == pytest.approx([0.0, 10.0, 3.6], abs=0.001)
+    assert primitive["source_file_units"] == "см"
+    assert primitive["unit_scale_to_m"] == 0.01
+    assert primitive["vertical_evidence"] == "explicit_xyz"
+    assert primitive["terrain_mapping_status"] == "unmapped"
+    assert scene["terrain_status"] == "missing"
+    assert scene["terrain_evidence"]["status"] == "missing"
+    assert scene["terrain_evidence"]["source"] is None
+
+
+def test_scene_preserves_dxf_context_before_translating_to_local_coordinates() -> None:
     project_id = prepare_project("Смещённая сцена")
     select_areas(project_id, [area("work", "Рабочая область", [[12, 12], [72, 12], [72, 58], [12, 58]])])
     client.post(f"/api/projects/{project_id}/plan/manual")
@@ -2039,3 +2196,23 @@ def test_scene_clips_dxf_context_before_translating_to_local_coordinates() -> No
         any(context.covers(Point(item["local_x"], item["local_y"])) for context in site_context)
         for item in scene["objects"]
     )
+
+
+def test_scene_keeps_empty_work_areas_and_distant_source_context() -> None:
+    project_id = prepare_project("Вся территория в 3D")
+    select_areas(project_id, [
+        area("work", "С посадками", [[12, 12], [72, 12], [72, 58], [12, 58]]),
+        area("empty", "Без посадок", [[80, 10], [100, 10], [100, 40], [80, 40]]),
+    ])
+    client.post(f"/api/projects/{project_id}/plan/manual")
+    client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20})
+    project = api_module.application.get(project_id)
+    assert project.geometry is not None
+    remote = {"type": "Feature", "id": "far-building", "geometry": {"type": "Polygon", "coordinates": [[[1000, 1000], [1020, 1000], [1020, 1020], [1000, 1000]]]}, "properties": {"kind": "building"}}
+    project.geometry.feature_collection["features"].append(remote)
+    api_module.application.repository.save(project)
+    scene = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0}).json()
+    context = scene["context_features"]
+    assert sum(item["kind"] == "planting_area" for item in context) == 2
+    building = next(item for item in context if item["feature_id"] == "far-building")
+    assert shape(building["geometry"]).bounds == (980, 980, 1000, 1000)

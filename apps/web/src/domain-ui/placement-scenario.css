@@ -1,0 +1,9 @@
+.editor-scenarios { min-width: 0; border: 0; padding: 0; margin: 12px 0; }
+.editor-scenarios legend { padding: 0 0 8px; color: var(--color-neutral-600); font-size: 12px; }
+.editor-scenarios__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.editor-scenario { position: relative; display: flex; gap: 6px; align-items: center; min-height: 34px; padding: 6px 7px; border: 1px solid #758394; border-radius: 4px; font-size: 11px; cursor: pointer; }
+.editor-scenario > svg { flex: none; }
+.editor-scenario input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.editor-scenario[data-selected] { border-color: var(--color-blue-600); color: var(--color-blue-700); background: var(--color-blue-100); }
+.editor-scenario:focus-within { outline: 2px solid var(--color-blue-600); outline-offset: 2px; }
+.editor-scenario[data-unavailable] { color: var(--color-neutral-600); border-color: var(--color-neutral-300); background: var(--color-neutral-100); cursor: default; }

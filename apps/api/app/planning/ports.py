@@ -11,6 +11,7 @@ class PatternCandidate:
     x: float
     y: float
     kind: str | None = None
+    group_key: str | None = None
 
 
 class CandidateGeneratorPort(Protocol):

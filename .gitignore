@@ -1,4 +1,5 @@
 node_modules/
+/backups/
 .pnpm-store/
 dist/
 storybook-static/
@@ -17,6 +18,7 @@ __pycache__/
 
 # Local runtime state
 apps/api/data/
+apps/web/.cache/plant-assets/
 
 # Raw research captures are retained locally. Transcripts, reports and small
 # structured fixtures remain versioned, while recordings and generated

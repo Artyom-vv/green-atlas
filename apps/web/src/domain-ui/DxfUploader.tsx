@@ -10,7 +10,7 @@ export function DxfUploader({ onUpload, loading, error }: { onUpload: (file: Fil
 
   const accept = (files: FileList | null) => {
     const file = files?.[0];
-    if (!file) return;
+    if (!file || loading) return;
     const validationError = validateDxfUpload(file);
     if (validationError) {
       setClientError(validationError);
@@ -29,13 +29,13 @@ export function DxfUploader({ onUpload, loading, error }: { onUpload: (file: Fil
   return (
     <div className="dxf-uploader">
       <Surface className={`dxf-dropzone ${dragging ? 'is-dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
-        <input ref={inputRef} type="file" accept=".dxf,.zip,application/dxf,application/zip" hidden onChange={(event) => accept(event.target.files)} />
+        <input ref={inputRef} type="file" accept=".dxf,.zip,application/dxf,application/zip" hidden onChange={(event) => { accept(event.target.files); event.target.value = ''; }} />
         <strong>Перетащите DXF или ZIP-пакет сюда</strong>
         <span>или выберите файл на компьютере: DXF до 50 МБ, ZIP до 120 МБ</span>
-        <Button variant="primary" icon={Upload} aria-label="Выбрать DXF" disabled={loading} onClick={() => inputRef.current?.click()}>Выбрать файл</Button>
+        <Button variant="primary" icon={Upload} aria-label="Выбрать DXF или ZIP" disabled={loading} onClick={() => inputRef.current?.click()}>Выбрать файл</Button>
       </Surface>
-      {loading ? <Progress label="Проверяем DXF" /> : null}
-      {clientError || error ? <InlineMessage tone="error" title="Ошибка DXF">{clientError ?? error}</InlineMessage> : null}
+      {loading ? <Progress label="Загружаем файл" /> : null}
+      {clientError || error ? <InlineMessage tone="error" title="Не удалось загрузить файл">{clientError ?? error}</InlineMessage> : null}
     </div>
   );
 }

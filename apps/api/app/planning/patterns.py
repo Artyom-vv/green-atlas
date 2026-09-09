@@ -6,7 +6,7 @@ from random import Random
 from shapely.affinity import rotate
 from shapely.geometry import LineString, Point, shape
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import unary_union
+from shapely.ops import unary_union, nearest_points
 
 from app.contracts import BrushPreviewRequest, FillPatternRequest, PlacementMaskRequest, PlantingZoneAssignment, RowPatternRequest
 from app.planning.ports import PatternCandidate
@@ -82,11 +82,14 @@ def generate_row(request: RowPatternRequest) -> list[PatternCandidate]:
     distances: list[float] = []
     last = axis.length - request.end_offset_m
     if request.placement_mode == "count":
-        if request.target_count == 2:
-            distances = [request.start_offset_m, last]
+        # Quantity is the total across both sides, not an implicit per-side
+        # count later truncated by the application to half of the line.
+        stations = (request.target_count + 1) // 2 if request.side == "both" else request.target_count
+        if stations == 1:
+            distances = [request.start_offset_m + usable_length / 2]
         else:
-            step = usable_length / (request.target_count - 1)
-            distances = [request.start_offset_m + step * index for index in range(request.target_count)]
+            step = usable_length / (stations - 1)
+            distances = [request.start_offset_m + step * index for index in range(stations)]
     else:
         distance = request.start_offset_m
         while distance <= last + 1e-9:
@@ -110,6 +113,8 @@ def generate_row(request: RowPatternRequest) -> list[PatternCandidate]:
             continue
         normal_x, normal_y = -dy / length, dx / length
         for side in sides:
+            if request.placement_mode == "count" and len(candidates) >= request.target_count:
+                break
             candidates.append(PatternCandidate(
                 x=round(center.x + normal_x * request.lateral_offset_m * side, 6),
                 y=round(center.y + normal_y * request.lateral_offset_m * side, 6),
@@ -254,7 +259,7 @@ def _generate_cluster_mask(request: PlacementMaskRequest, geometry: BaseGeometry
             if key in seen or not geometry.covers(Point(*key)):
                 continue
             seen.add(key)
-            candidates.append(PatternCandidate(*key))
+            candidates.append(PatternCandidate(*key, group_key=f"grove-{grove_index}"))
             if len(candidates) >= target:
                 return candidates
     return _bounded(candidates)
@@ -334,6 +339,10 @@ def generate_mask(
 ) -> list[PatternCandidate]:
     """Generate candidates for a named spatial intent, never final placements."""
     geometry = _mask_geometry(request, zones)
+    if request.mask_id == "building_contour":
+        return generate_building_contour(request, geometry, guide_geometries or [])
+    if request.mask_id == "building_screen":
+        return generate_building_screen(request, geometry, guide_geometries or [])
     if request.mask_id == "regular_grid":
         return generate_fill(FillPatternRequest(
             base_plan_version=request.base_plan_version,
@@ -354,6 +363,97 @@ def generate_mask(
     if request.mask_id == "cluster_groves":
         return _generate_cluster_mask(request, geometry)
     return _generate_road_edge_mask(request, geometry, guide_geometries or [])
+
+
+def generate_building_contour(request: PlacementMaskRequest, usable: BaseGeometry, guides: list[dict]) -> list[PatternCandidate]:
+    """Sample parallel facade contours, never scatter over a broad area band.
+
+    The caller supplies the domain-computed safe area (including species growth).
+    Automatic offset follows its nearest usable distance; explicit offsets are
+    not silently enlarged. Final spacing/geometry checks remain authoritative.
+    """
+    if usable.is_empty:
+        return []
+    buildings = [shape(f['geometry']) for f in guides if f.get('properties', {}).get('kind') == 'building']
+    if not buildings:
+        return []
+    if request.screen_side != 'perimeter':
+        raise ValueError('Для ряда по контуру используйте периметр здания; ряд вдоль дороги задаётся отдельно.')
+    occupied = [shape(f['geometry']) for f in guides if f.get('properties', {}).get('kind') == 'planned_plant_clearance']
+    available = usable.difference(unary_union(occupied)) if occupied else usable
+    if available.is_empty:
+        return []
+    footprint = unary_union(buildings)
+    components = list(footprint.geoms) if hasattr(footprint, 'geoms') else [footprint]
+    accepted = []
+    def lines(geometry):
+        if geometry.geom_type in {'LineString', 'LinearRing'}:
+            yield geometry
+        elif hasattr(geometry, 'geoms'):
+            for part in geometry.geoms:
+                yield from lines(part)
+    for index, building in enumerate(components):
+        if building.geom_type != 'Polygon':
+            continue
+        offset = request.building_offset_m if request.building_offset_m is not None else max(0.5, building.distance(usable) + .05)
+        if offset > 60:
+            continue
+        contour = building.buffer(offset, quad_segs=32).boundary.intersection(available)
+        for line in lines(contour):
+            if line.length < .01:
+                continue
+            count = max(1, floor(line.length / request.spacing_m))
+            for number in range(count):
+                point = line.interpolate((number + .5) * line.length / count)
+                accepted.append(PatternCandidate(round(point.x, 6), round(point.y, 6), group_key=f'facade-{index}'))
+                if len(accepted) > MAX_PATTERN_CANDIDATES:
+                    return _bounded(accepted)
+    return _bounded(accepted)
+
+
+def generate_building_screen(request: PlacementMaskRequest, usable: BaseGeometry, guides: list[dict]) -> list[PatternCandidate]:
+    """Groups in an exterior band, not arbitrary filling of the whole site.
+
+    All coordinates stay downstream of the ordinary safety/spacing validator.
+    Road-facing is a geometric placement criterion, not a visibility score.
+    """
+    buildings = [shape(f['geometry']) for f in guides if f.get('properties', {}).get('kind') == 'building']
+    roads = [shape(f['geometry']) for f in guides if f.get('properties', {}).get('kind') == 'road']
+    if usable.is_empty or not buildings:
+        return []
+    buildings = unary_union(buildings)
+    band = buildings.buffer(max(24, request.spacing_m * 3)).difference(buildings).intersection(usable)
+    occupied = [shape(f['geometry']) for f in guides if f.get('properties', {}).get('kind') == 'planned_plant_clearance']
+    if occupied:
+        band = band.difference(unary_union(occupied))
+    if request.screen_side == 'roads' and not roads:
+        raise ValueError('В чертеже не найдены проезды. Выберите размещение по периметру.')
+    roads = unary_union(roads) if roads else None
+    def fits(point):
+        if not band.covers(point):
+            return False
+        if request.screen_side == 'perimeter':
+            return True
+        wall, _ = nearest_points(buildings, point)
+        _, road = nearest_points(point, roads)
+        toward_road = (point.x-wall.x)*(road.x-wall.x) + (point.y-wall.y)*(road.y-wall.y) > 0
+        return toward_road and point.distance(roads) < wall.distance(roads) and not LineString([point, road]).crosses(buildings)
+
+    # Try several orientations before giving up a grove in a narrow strip.
+    # Each full grove is generated first; road-facing then filters it so the
+    # two views stay comparable rather than jumping to unrelated positions.
+    centres = _poisson_candidates(band, max(request.cluster_gap_m, request.spacing_m * 3), MAX_PATTERN_CANDIDATES, request.seed)
+    accepted = []
+    for index, centre in enumerate(centres):
+        variants = []
+        for turn in range(12):
+            points = [Point(round(centre.x + x, 6), round(centre.y + y, 6))
+                      for x, y in _cluster_offsets(request.spacing_m, request.cluster_size, turn * pi / 6)]
+            variants.append([p for p in points if band.covers(p)])
+        points = [p for p in max(variants, key=len) if fits(p)]
+        if len(points) >= 2:
+            accepted.extend(PatternCandidate(p.x, p.y, group_key=f'grove-{index}') for p in points)
+    return _bounded(accepted)
 
 
 def generate_brush(request: BrushPreviewRequest, zones: list[PlantingZoneAssignment]) -> list[PatternCandidate]:

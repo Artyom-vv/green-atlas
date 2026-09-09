@@ -4,3 +4,6 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # Required by the pinned glTF optimization pipeline for deterministic
+  # texture resizing/compression. Sharp is a direct, audited dev dependency.
+  sharp: true

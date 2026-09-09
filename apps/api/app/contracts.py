@@ -193,8 +193,12 @@ class CoordinateReference(BaseModel):
     status: Literal["unknown", "local", "declared", "verified"] = "unknown"
     crs_id: str | None = None
     name: str | None = None
-    source: Literal["none", "dxf_geodata", "user_declared", "control_points"] = "none"
+    source: Literal["none", "dxf_geodata", "dxf_custom_georeference", "user_declared", "control_points"] = "none"
     axis_order: Literal["xy", "yx"] | None = None
+    origin_wgs84: list[float] | None = Field(default=None, min_length=2, max_length=2)
+    local_projection: Literal["local_equirectangular_wgs84"] | None = None
+    earth_radius_m: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    horizontal_source: str | None = None
     control_points_count: int = Field(default=0, ge=0)
     evidence: str = "Система координат не указана"
     updated_at: str | None = None
@@ -202,9 +206,36 @@ class CoordinateReference(BaseModel):
 
 class GeometrySnapshot(BaseModel):
     feature_collection: dict[str, Any]
+    # Metric XYZ evidence is deliberately stored beside, rather than inside,
+    # the 2D GeoJSON projection. GeoJSON consumers may continue to reason in
+    # XY while the scene can reproduce genuine CAD elevations and surfaces.
+    vertical_primitives: list["DxfVerticalPrimitive"] = Field(default_factory=list)
     site_area_m2: float | None = Field(default=None, ge=0)
     planning_area_m2: float | None = Field(default=None, ge=0)
     allowed_area_m2: float | None = Field(default=None, ge=0)
+
+
+class DxfVerticalPrimitive(BaseModel):
+    primitive_id: str
+    primitive_type: Literal["point", "polyline", "surface_mesh"]
+    vertices_m: list[list[float]] = Field(default_factory=list)
+    faces: list[list[int]] = Field(default_factory=list)
+    source_layer: str
+    source_entity_type: str
+    source_handle: str | None = None
+    source_file_units: str
+    unit_scale_to_m: float = Field(gt=0, allow_inf_nan=False)
+    source_space: Literal["dxf_wcs"] = "dxf_wcs"
+    vertical_evidence: Literal["explicit_xyz", "explicit_elevation", "explicit_extrusion"]
+    extrusion_vector_m: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    terrain_mapping_status: Literal["unmapped", "confirmed"] = "unmapped"
+    terrain_mapping_basis: Literal["dxf_document_metadata"] | None = None
+    terrain_confidence: Literal["surveyed", "estimated"] | None = None
+    source_dataset: str | None = None
+    source_url: str | None = None
+    source_attribution: str | None = None
+    vertical_datum: str | None = None
+    vertical_datum_offset_m: float | None = Field(default=None, allow_inf_nan=False)
 
 
 class DxfImportResult(BaseModel):
@@ -298,6 +329,30 @@ class Plan(BaseModel):
     objects: list[PlanObject] = Field(default_factory=list)
     issues: list[ValidationIssue] = Field(default_factory=list)
     version: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def remove_obsolete_crown_advice(self) -> "Plan":
+        """Migrate persisted false-positive crown notices on read.
+
+        Older plans stored a generic warning for every mature crown wider
+        than five metres. It was not a concrete conflict and the current
+        generator already uses the forecast envelope when choosing points.
+        Drop that legacy notice, including its orange object state, while
+        preserving any independent issue attached to the same object.
+        """
+        obsolete_object_ids = {
+            issue.object_id
+            for issue in self.issues
+            if issue.code == "CROWN_SETBACK_REVIEW" and issue.object_id
+        }
+        if not obsolete_object_ids:
+            return self
+        self.issues = [issue for issue in self.issues if issue.code != "CROWN_SETBACK_REVIEW"]
+        issue_object_ids = {issue.object_id for issue in self.issues if issue.object_id}
+        for object_ in self.objects:
+            if object_.id in obsolete_object_ids and object_.id not in issue_object_ids:
+                object_.status = "valid"
+        return self
 
 
 class PlacementCheckRequest(BaseModel):
@@ -399,6 +454,20 @@ class LayerMappingRequest(BaseModel):
 
 class PlantingZonesRequest(BaseModel):
     zones: list[PlantingZoneAssignment] = Field(min_length=1, max_length=40)
+
+
+class PlantingZoneOverlap(BaseModel):
+    zone_id: str
+    label: str
+    area_m2: float
+    geometry: dict[str, Any]
+
+
+class PlantingZonePreview(BaseModel):
+    can_save: bool
+    area_m2: float
+    error: str | None = None
+    overlaps: list[PlantingZoneOverlap] = Field(default_factory=list)
 
 
 class PlanObjectCreate(BaseModel):
@@ -529,6 +598,7 @@ class FillPatternRequest(BaseModel):
     zone_ids: list[str] = Field(min_length=1, max_length=40)
     placement_mode: Literal["count", "spacing"] = "spacing"
     target_count: int = Field(default=40, ge=1, le=5000)
+    zone_distribution: Literal["available", "equal"] = "available"
     layout: Literal["regular", "staggered", "natural"] = "staggered"
     spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
     edge_offset_m: float = Field(default=1, ge=0, le=100, allow_inf_nan=False)
@@ -563,7 +633,9 @@ class PlacementMaskRequest(BaseModel):
     """
 
     type: Literal["mask"] = "mask"
-    mask_id: Literal["road_edges", "regular_grid", "cluster_groves"]
+    mask_id: Literal["road_edges", "regular_grid", "cluster_groves", "building_screen", "building_contour"]
+    building_offset_m: float | None = Field(default=None, ge=0.5, le=60, allow_inf_nan=False)
+    screen_side: Literal["perimeter", "roads"] = "perimeter"
     base_plan_version: int = Field(ge=1)
     plant_kind: Literal["tree", "shrub"] = "tree"
     composition: Literal["trees", "shrubs", "mixed"] | None = None
@@ -571,6 +643,7 @@ class PlacementMaskRequest(BaseModel):
     zone_ids: list[str] = Field(min_length=1, max_length=40)
     placement_mode: Literal["count", "spacing"] = "count"
     target_count: int = Field(default=40, ge=1, le=5000)
+    zone_distribution: Literal["available", "equal"] = "available"
     spacing_m: float = Field(default=6, ge=0.5, le=100, allow_inf_nan=False)
     edge_offset_m: float = Field(default=1, ge=0, le=100, allow_inf_nan=False)
     angle_deg: float = Field(default=0, ge=-180, le=180, allow_inf_nan=False)
@@ -635,16 +708,23 @@ class CandidateReasonSummary(BaseModel):
     message: str
 
 
+class PatternZoneAllocation(BaseModel):
+    zone_id: str
+    requested_count: int | None = Field(default=None, ge=0)
+    accepted_count: int = Field(ge=0)
+
+
 class PatternPreview(BaseModel):
     pattern_id: str
     type: Literal["row", "fill", "mask"]
-    mask_id: Literal["road_edges", "regular_grid", "cluster_groves"] | None = None
+    mask_id: Literal["road_edges", "regular_grid", "cluster_groves", "building_screen", "building_contour"] | None = None
     requested_count: int = Field(ge=0)
     generated_count: int = Field(default=0, ge=0)
     accepted_count: int = Field(ge=0)
     rejected_count: int = Field(default=0, ge=0)
     capacity_shortfall: int = Field(default=0, ge=0)
     effective_spacing_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    zone_allocations: list[PatternZoneAllocation] = Field(default_factory=list)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
     reason_summary: list[CandidateReasonSummary] = Field(default_factory=list)
     unverified_data: list[str] = Field(default_factory=list)
@@ -669,6 +749,9 @@ class BrushPreviewRequest(BaseModel):
     tree_share: float = Field(default=0.7, ge=0, le=1, allow_inf_nan=False)
     seed: int = Field(default=47, ge=0, le=2_147_483_647)
     max_sites: int = Field(default=500, ge=1, le=500)
+    tree_species_revision_id: str | None = None
+    shrub_species_revision_id: str | None = None
+    size_class: Literal["sapling", "standard", "large"] = "standard"
 
 
 class BrushPreview(BaseModel):
@@ -762,12 +845,32 @@ class RecommendationExplanation(BaseModel):
 
 
 class RecommendationPreview(BaseModel):
+    arrangement: Literal["area", "building_screen"] = "area"
+    target_geometry: dict[str, Any] | None = None
     profile: Literal["balanced", "shade", "continuity", "low_future_conflict"]
     evidence: EvidenceAssessment
     change_set: ChangeSetPreview | None = None
     explanations: list[RecommendationExplanation] = Field(default_factory=list)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
     data_gaps: list[str] = Field(default_factory=list)
+
+
+class BuildingScreenRequest(BaseModel):
+    base_plan_version: int = Field(ge=1)
+    zone_ids: list[str] = Field(min_length=1, max_length=40)
+    screen_side: Literal["perimeter", "roads"] = "perimeter"
+    max_sites: int | None = Field(default=None, ge=1, le=500)
+    arrangement: Literal["groves", "contour"] = "groves"
+    species_revision_id: str = "tilia-cordata@2026-08-28.1"
+    size_class: Literal["unspecified", "sapling", "standard", "large"] = "standard"
+    spacing_m: float = Field(default=7, ge=0.5, le=100, allow_inf_nan=False)
+    spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
+    building_offset_m: float | None = Field(default=None, ge=0.5, le=60, allow_inf_nan=False)
+
+
+class BuildingScreenTargets(BaseModel):
+    geometry: dict[str, Any] | None = None
+    has_roads: bool = False
 
 
 class ScenePlantObject(BaseModel):
@@ -811,9 +914,45 @@ class SceneContextFeature(BaseModel):
     source_entity_type: str | None = None
     source_handle: str | None = None
     base_elevation_m: float | None = Field(default=None, allow_inf_nan=False)
+    base_elevation_status: Literal["confirmed", "missing"] = "missing"
+    base_elevation_source: Literal["dxf_elevation", "copernicus_dem_glo90"] | None = None
     height_m: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     height_status: Literal["confirmed", "estimated", "missing"] | None = None
-    height_source: Literal["dxf_extrusion", "dxf_attribute"] | None = None
+    height_source: Literal["dxf_extrusion", "dxf_attribute", "osm_height", "osm_levels"] | None = None
+
+
+class SceneVerticalPrimitive(BaseModel):
+    """Source-proven XYZ translated only in XY into the scene frame."""
+
+    primitive_id: str
+    primitive_type: Literal["point", "polyline", "surface_mesh"]
+    vertices: list[list[float]] = Field(default_factory=list)
+    faces: list[list[int]] = Field(default_factory=list)
+    source_layer: str
+    source_entity_type: str
+    source_handle: str | None = None
+    source_file_units: str
+    unit_scale_to_m: float = Field(gt=0, allow_inf_nan=False)
+    source_space: Literal["dxf_wcs"] = "dxf_wcs"
+    vertical_evidence: Literal["explicit_xyz", "explicit_elevation", "explicit_extrusion"]
+    extrusion_vector_m: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    terrain_mapping_status: Literal["unmapped", "confirmed"] = "unmapped"
+    terrain_mapping_basis: Literal["dxf_document_metadata"] | None = None
+    terrain_confidence: Literal["surveyed", "estimated"] | None = None
+    source_dataset: str | None = None
+    source_url: str | None = None
+    source_attribution: str | None = None
+    vertical_datum: str | None = None
+    vertical_datum_offset_m: float | None = Field(default=None, allow_inf_nan=False)
+
+
+class SceneEvidence(BaseModel):
+    """Provenance and coverage are separate from whether a value exists."""
+
+    status: Literal["confirmed", "estimated", "missing"] = "missing"
+    coverage: Literal["full", "partial", "none"] = "none"
+    source: str | None = None
+    note: str
 
 
 class SceneSnapshot(BaseModel):
@@ -822,18 +961,22 @@ class SceneSnapshot(BaseModel):
     coordinate_origin: list[float] = Field(min_length=2, max_length=2)
     coordinate_reference: CoordinateReference = Field(default_factory=CoordinateReference)
     georeference_status: Literal["confirmed", "declared", "local", "missing"] = "missing"
+    georeference_evidence: SceneEvidence | None = None
     geometry_source: Literal["prepared_geometry", "source_geometry", "missing"] = "missing"
     geometry_source_file_name: str | None = None
     completeness: Literal["partial"] = "partial"
     terrain_status: Literal["confirmed", "estimated", "missing"] = "missing"
     terrain_elevation_m: float | None = Field(default=None, allow_inf_nan=False)
+    terrain_evidence: SceneEvidence | None = None
     building_heights_status: Literal["confirmed", "estimated", "missing"] = "missing"
+    building_height_evidence: SceneEvidence | None = None
     building_feature_count: int = Field(default=0, ge=0)
     building_height_confirmed_count: int = Field(default=0, ge=0)
     note: str
     data_gaps: list[str] = Field(default_factory=list)
     objects: list[ScenePlantObject] = Field(default_factory=list)
     context_features: list[SceneContextFeature] = Field(default_factory=list)
+    vertical_primitives: list[SceneVerticalPrimitive] = Field(default_factory=list)
 
 
 class PlanMutationResult(BaseModel):

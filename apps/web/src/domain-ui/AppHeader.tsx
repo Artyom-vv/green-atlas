@@ -26,8 +26,8 @@ export function AppHeader({ projectName, workspace = false, onReview, onHistory,
     return (
       <header className="app-header app-header--flow">
         <div className="app-header__side"><Link className="header-link" to="/projects">Проекты</Link></div>
-        <strong className="app-header__project">Новый проект озеленения</strong>
-        <div className="app-header__side app-header__side--end"><span className="app-header__draft">Черновик</span></div>
+        <strong className="app-header__project">{projectName ?? 'Новый проект озеленения'}</strong>
+        <div className="app-header__side app-header__side--end">{endActions}</div>
       </header>
     );
   }

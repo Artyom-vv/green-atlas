@@ -1,12 +1,15 @@
 CC0 1.0 Universal
 
-To the extent possible under law, the Green Atlas contributors have waived all
-copyright and related or neighboring rights to the original procedural plant
-geometry in this directory.
+The source plant models in this directory are published by Quaternius under the
+CC0 1.0 Universal Public Domain Dedication:
 
+https://quaternius.com/packs/stylizednaturemegakit.html
 https://creativecommons.org/publicdomain/zero/1.0/
 
-This dedication covers only generated files under public/assets/plant-models/models.
-It does not change the license of application source code or future third-party
-assets. Third-party assets must carry their own source and license records in
-manifest.json.
+The processed files derive from the Stylized Nature MegaKit Standard models
+recorded by exact file name and locked archive SHA-256 in `manifest.json`.
+
+Attribution is not required by CC0, but source provenance and authorship are
+retained here and in manifest.json for auditability. This notice covers only
+the plant model and texture artifacts; it does not change the license of the
+application source code.

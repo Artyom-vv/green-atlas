@@ -82,6 +82,7 @@ def test_release_bundle_restores_editable_plan_and_source_layers() -> None:
     source_plan = client.get(f"/api/projects/{project_id}").json()["plan"]
     release = client.post(f"/api/projects/{project_id}/releases", json={"mode": "draft", "scene_horizon": 20})
     assert release.status_code == 200, release.json()
+    assert "Основания ПП-616 и ПП-1160 в этом черновике не указаны." in release.json()["warnings"]
     bundle_artifact = next(item for item in release.json()["artifacts"] if item["kind"] == "bundle")
     bundle = client.get(bundle_artifact["download_url"]).content
 
@@ -160,3 +161,26 @@ def test_plain_exported_dxf_is_explicitly_read_only_fallback() -> None:
     assert status["mode"] == "plain_dxf_fallback"
     assert status["editability"] == "read_only"
     assert "полный ZIP-пакет" in status["message"]
+
+
+def test_provenance_layers_keep_an_enriched_source_editable() -> None:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.M
+    for layer in ("SITE_BORDER", "GREEN_ATLAS_TERRAIN_COP90", "GREEN_ATLAS_BUILDING_OSM_LEVELS"):
+        document.layers.add(layer)
+    modelspace = document.modelspace()
+    modelspace.add_lwpolyline([(0, 0), (40, 0), (40, 40), (0, 40)], close=True, dxfattribs={"layer": "SITE_BORDER"})
+    modelspace.add_3dface([(0, 0, 0), (40, 0, 1), (40, 40, 2), (0, 40, 1)], dxfattribs={"layer": "GREEN_ATLAS_TERRAIN_COP90"})
+    modelspace.add_lwpolyline([(10, 10), (20, 10), (20, 20), (10, 20)], close=True, dxfattribs={"layer": "GREEN_ATLAS_BUILDING_OSM_LEVELS", "elevation": 0.5, "thickness": 12})
+    stream = StringIO()
+    document.write(stream)
+
+    target = client.post("/api/projects", json={"name": "Обогащённый исходник"}).json()["id"]
+    imported = client.post(
+        f"/api/projects/{target}/source-dxf",
+        files={"file": ("enriched-source.dxf", stream.getvalue().encode(), "application/dxf")},
+    )
+
+    assert imported.status_code == 200, imported.json()
+    assert imported.json()["import_status"]["mode"] == "source_dxf"
+    assert imported.json()["import_status"]["editability"] == "editable"

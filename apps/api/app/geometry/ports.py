@@ -12,7 +12,15 @@ class GeometryEnginePort(Protocol):
 
     def position_violation(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree") -> PositionViolation | None: ...
 
-    def automatic_safe_geometry(self, project: Project, geometry: dict, radius: float, plant_kind: str = "tree") -> dict: ...
+    def automatic_safe_geometry(
+        self,
+        project: Project,
+        geometry: dict,
+        radius: float,
+        plant_kind: str = "tree",
+        growth_canopy_radius: float | None = None,
+        growth_root_radius: float | None = None,
+    ) -> dict: ...
 
     def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None: ...
 

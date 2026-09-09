@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { ProjectAssistantProvider } from '../features/assistant/ProjectAssistantProvider';
 
 const ImportPage = lazy(async () => ({ default: (await import('../pages/ImportPage')).ImportPage }));
 const SetupPage = lazy(async () => ({ default: (await import('../pages/SetupPage')).SetupPage }));
@@ -8,7 +9,7 @@ const ProjectsPage = lazy(async () => ({ default: (await import('../pages/Projec
 
 export function App() {
   return (
-    <Suspense fallback={<main className="app-loading" aria-live="polite">Открываем рабочее пространство</main>}>
+    <ProjectAssistantProvider><Suspense fallback={<main className="app-loading" aria-live="polite">Открываем рабочее пространство</main>}>
       <Routes>
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/new/import" element={<ImportPage />} />
@@ -17,6 +18,6 @@ export function App() {
         <Route path="/projects/:projectId/workspace" element={<WorkspacePage />} />
         <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>
-    </Suspense>
+    </Suspense></ProjectAssistantProvider>
   );
 }

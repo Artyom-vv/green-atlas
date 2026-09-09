@@ -2,7 +2,7 @@ import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
 import Polygon from 'ol/geom/Polygon';
 import { describe, expect, it } from 'vitest';
-import { geometryStyle } from './MapViewport';
+import { geometryStyle, isTechnical3dMapFeature } from './MapViewport';
 
 describe('geometryStyle', () => {
   it('reuses expensive per-feature CAD text styles between render frames', () => {
@@ -46,5 +46,28 @@ describe('geometryStyle', () => {
 
     expect(geometryStyle(buffer, 0.5)).toBeUndefined();
     expect(geometryStyle(mappedRestriction, 0.5)).toBeDefined();
+  });
+
+  it('keeps terrain mesh cells out of the 2D plan without hiding real user areas', () => {
+    const terrainFace = new Feature({
+      geometry: new Polygon([[[0, 0], [20, 0], [20, 20], [0, 20], [0, 0]]]),
+      kind: 'ignore',
+      entity_type: '3DFACE',
+      source_layer: 'GREEN_ATLAS_TERRAIN_COP90',
+    });
+    const plantingArea = new Feature({
+      geometry: terrainFace.getGeometry(),
+      kind: 'planting_area',
+    });
+    const architecturalFace = new Feature({
+      geometry: terrainFace.getGeometry(),
+      kind: 'building',
+      entity_type: '3DFACE',
+      source_layer: 'BUILDING_FACADE',
+    });
+
+    expect(isTechnical3dMapFeature(terrainFace)).toBe(true);
+    expect(isTechnical3dMapFeature(plantingArea)).toBe(false);
+    expect(isTechnical3dMapFeature(architecturalFace)).toBe(false);
   });
 });

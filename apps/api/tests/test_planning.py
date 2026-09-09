@@ -2,10 +2,12 @@ from math import hypot
 
 from shapely.geometry import Point, shape
 
-from app.contracts import BrushPreviewRequest, FillPatternRequest, GeometrySnapshot, GrowthEnvelopeForecast, PlacementMaskRequest, PlanObject, PlantingZoneAssignment, Project
+from app.contracts import BrushPreviewRequest, FillPatternRequest, GeometrySnapshot, GrowthEnvelopeForecast, PlacementMaskRequest, Plan, PlanObject, PlantingZoneAssignment, Project
 from app.geometry.domain import PositionChecker
 from app.planning.domain import PlantSpacingIndex
 from app.planning.patterns import generate_brush, generate_fill, generate_mask
+from app.species.catalog import get_species, growth_forecasts
+from app.validation.adapters import RuleBasedPlanValidator
 
 
 def test_spacing_index_never_misses_large_crowns_across_several_grid_cells() -> None:
@@ -67,6 +69,60 @@ def test_growth_envelope_keeps_automatic_layout_inside_the_selected_area() -> No
 
     assert advisory is not None
     assert advisory.code == "GROWTH_PLANTING_ZONE"
+
+
+def test_automatic_safe_area_uses_the_same_growth_envelope_as_validation() -> None:
+    area = {"type": "Polygon", "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}
+    project = Project(
+        name="Будущая безопасная область",
+        geometry=GeometrySnapshot(feature_collection={
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"kind": "site_border"},
+                "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]]},
+            }],
+        }),
+        planting_zones=[PlantingZoneAssignment(id="work", label="Участок", geometry=area)],
+    )
+    checker = PositionChecker(project)
+    safe = checker.automatic_safe_area(shape(area), radius=1.6, plant_kind="tree", growth_canopy_radius=6, growth_root_radius=7)
+
+    assert safe.covers(Point(50, 50))
+    assert not safe.covers(Point(14, 50))
+    assert checker.growth_advisory(50, 50, canopy_radius=6, root_radius=7) is None
+
+
+def test_wide_crown_is_not_a_validation_issue_without_a_real_conflict() -> None:
+    area = {"type": "Polygon", "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}
+    project = Project(
+        name="Широкая крона без конфликта",
+        geometry=GeometrySnapshot(feature_collection={
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"kind": "site_border"},
+                "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]]},
+            }],
+        }),
+        planting_zones=[PlantingZoneAssignment(id="work", label="Участок", geometry=area)],
+    )
+    revision = get_species("tilia-cordata@2026-08-28.1")
+    canopy, roots = growth_forecasts(revision, "standard")
+    plan = Plan(objects=[PlanObject(
+        kind="tree",
+        x=50,
+        y=50,
+        radius=1.6,
+        species_revision_id=revision.id,
+        canopy_forecast=canopy,
+        root_forecast=roots,
+    )])
+
+    issues = RuleBasedPlanValidator().validate_plan(project, plan)
+
+    assert plan.objects[0].status == "valid"
+    assert all(issue.code != "CROWN_SETBACK_REVIEW" for issue in issues)
 
 
 def test_hard_safe_area_removes_boundaries_infrastructure_and_existing_green() -> None:

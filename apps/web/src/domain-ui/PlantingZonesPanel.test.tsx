@@ -22,7 +22,7 @@ describe('PlantingZonesPanel', () => {
     const onSave = vi.fn();
     render(<Harness onSave={onSave} />);
 
-    expect(screen.getByText('Выбрано', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('Выбрано 1', { exact: true })).toBeInTheDocument();
     expect(screen.getByText('Контур DXF: газон')).toBeInTheDocument();
     expect(screen.queryByText('Посадки добавляются на карте.')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Открыть редактор' }));
@@ -32,7 +32,7 @@ describe('PlantingZonesPanel', () => {
   it('removes a selected area without opening another step', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: /Убрать Контур DXF: газон/ }));
-    expect(screen.getByText('Выберите область')).toBeInTheDocument();
+    expect(screen.getByText('Кликните контур на карте или нарисуйте участок.')).toBeInTheDocument();
   });
 
   it('starts manual geometry from one explicit action', () => {

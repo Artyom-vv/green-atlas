@@ -8,7 +8,7 @@ describe('MapToolbar', () => {
 
   it('keeps the editing surface to placement actions', () => {
     render(<MapToolbar {...props} />);
-    expect(screen.getByRole('toolbar', { name: 'Инструменты карты' })).toHaveClass('map-control-group--horizontal');
+    expect(screen.getByRole('toolbar', { name: 'Инструменты карты' })).toHaveClass('editor-control-group--vertical');
     expect(screen.getByRole('button', { name: 'Выбрать. Shift — добавить к выбору' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Разместить посадки' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /Измерить|Нарисовать участок/ })).not.toBeInTheDocument();

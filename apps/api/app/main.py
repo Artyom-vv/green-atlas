@@ -6,6 +6,10 @@ from fastapi.responses import JSONResponse
 from app.api import application, router
 from app.contracts import ApiError
 from app.projects.concurrency import ProjectVersionConflict
+from app.planning_assistant import router as planning_assistant_router
+from app.project_assistant import router as project_assistant_router
+from app.agent_conversations import router as agent_conversations_router
+from app.agent_runtime.routes import router as agent_runtime_router
 
 
 app = FastAPI(
@@ -59,3 +63,7 @@ async def validation_error(_: Request, error: RequestValidationError) -> JSONRes
 
 
 app.include_router(router)
+app.include_router(planning_assistant_router)
+app.include_router(project_assistant_router)
+app.include_router(agent_conversations_router)
+app.include_router(agent_runtime_router)

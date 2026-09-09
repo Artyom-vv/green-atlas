@@ -1,0 +1,45 @@
+.workspace-explorer { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--color-white); }
+.explorer-tabs { display: flex; align-items: center; gap: 4px; padding: 8px; border-bottom: 1px solid var(--color-neutral-200); }
+.explorer-tabs > button:not(.ui-icon-button) { padding: 6px 10px; border: 0; border-radius: 4px; background: transparent; font-size: 12px; cursor: pointer; }
+.explorer-tabs > button[aria-pressed=true] { background: var(--color-blue-100); color: var(--color-blue-700); }
+.explorer-tabs > .ui-icon-button { margin-left: auto; --control-height: 30px; }
+.explorer-content, .explorer-layer-content { min-height: 0; overflow: auto; flex: 1; }
+.explorer-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 4px; font-size: 12px; }
+.explorer-heading > strong { padding: 4px 0; font: inherit; font-weight: 500; }
+.explorer-heading > span { color: var(--color-neutral-600); }
+.explorer-heading .ui-icon-button { --control-height: 28px; }
+.explorer-rows { padding: 0 6px 8px; }
+.explorer-row { width: 100%; min-width: 0; min-height: 35px; display: flex; align-items: center; gap: 7px; padding: 7px 8px; border: 0; border-radius: 4px; color: var(--color-neutral-800); background: transparent; text-align: left; font-size: 12px; cursor: pointer; }
+.explorer-row svg { flex: none; }
+.explorer-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.explorer-row small { display: block; color: var(--color-neutral-600); font-size: 11px; font-variant-numeric: tabular-nums; }
+.explorer-row > small { margin-left: auto; }
+.explorer-row:hover { background: var(--color-neutral-100); }
+.explorer-row[aria-pressed=true] { background: var(--color-blue-100); color: var(--color-blue-700); }
+.explorer-group-row { display: flex; align-items: center; }
+.explorer-composition { min-height: 28px; padding: 5px 8px; border: 0; color: var(--color-blue-700); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
+.explorer-composition:hover { text-decoration: underline; text-underline-offset: 3px; }
+.explorer-objects { padding: 2px 0 8px 8px; }
+.explorer-source { margin-top: auto; padding: 2px 14px; flex: none; border-top: 1px solid var(--color-neutral-200); color: var(--color-neutral-600); font-size: 11px; }
+.explorer-zone { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 3px 6px; border-radius: 4px; }
+.explorer-zone.is-selected { background: var(--color-blue-100); }
+.explorer-zone .ui-checkbox { flex: 1; min-width: 0; font-size: 12px; }
+.explorer-zone .ui-checkbox span { overflow-wrap: anywhere; }
+.explorer-zone small { color: var(--color-neutral-600); font-size: 11px; }
+.explorer-zone .ui-icon-button { --control-height: 28px; flex: none; }
+.explorer-source strong { font-weight: 500; overflow-wrap: anywhere; }
+.explorer-source button { display: flex; align-items: center; gap: 6px; align-self: flex-start; padding: 6px 0; border: 0; background: transparent; color: var(--color-blue-700); font-size: 12px; cursor: pointer; }
+.planting-schedule table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.planting-schedule th, .planting-schedule td { padding: 7px 6px; border-bottom: 1px solid var(--color-neutral-200); text-align: left; font-weight: 400; }
+.planting-schedule th { color: var(--color-neutral-600); }
+.planting-schedule button { border: 0; padding: 4px; background: transparent; color: var(--color-blue-700); cursor: pointer; }
+.workspace-check-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--color-neutral-200); }
+.workspace-check-row > div:first-child { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.workspace-check-row strong { font-weight: 500; }
+.workspace-check-row span { color: var(--color-neutral-600); font-size: 11px; }
+.workspace-check-actions { display: flex; align-items: center; gap: 6px; }
+.workspace-check-group details { padding: 6px 0; font-size: 12px; }
+.workspace-check-group summary { cursor: pointer; color: var(--color-blue-700); display: flex; align-items: center; gap: 6px; list-style: none; }
+.workspace-check-group summary::-webkit-details-marker { display: none; }
+.workspace-check-group details[open] summary svg { transform: rotate(90deg); }
+.workspace-check-detail { padding: 4px 0; border-bottom: 1px solid var(--color-neutral-200); }

@@ -20,6 +20,7 @@ describe('PlantingZoneManager', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Показать участок 1: Северный участок' }));
     fireEvent.click(screen.getByRole('button', { name: 'Перерисовать участок 1: Северный участок' }));
     fireEvent.click(screen.getByRole('button', { name: 'Удалить участок 1: Северный участок' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Переименовать участок 1: Северный участок' }));
     const name = screen.getByRole('textbox', { name: 'Название участка 1: Северный участок' });
     fireEvent.change(name, { target: { value: 'Главная аллея' } });
     fireEvent.blur(name);

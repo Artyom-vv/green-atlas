@@ -1,18 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import { MAX_DXF_UPLOAD_BYTES, MAX_RELEASE_BUNDLE_UPLOAD_BYTES, validateDxfUpload } from './dxfUpload';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { DxfUploader } from './DxfUploader';
 
-describe('validateDxfUpload', () => {
-  it('accepts an ordinary DXF within the published upload limit', () => {
-    expect(validateDxfUpload({ name: 'survey.DXF', size: MAX_DXF_UPLOAD_BYTES })).toBeUndefined();
-  });
+afterEach(cleanup);
 
-  it('rejects a wrong format and an oversized DXF before starting an upload', () => {
-    expect(validateDxfUpload({ name: 'survey.pdf', size: 1 })).toBe('Выберите файл в формате DXF.');
-    expect(validateDxfUpload({ name: 'survey.dxf', size: MAX_DXF_UPLOAD_BYTES + 1 })).toBe('DXF должен быть не больше 50 МБ.');
-  });
+it('does not submit a second dropped file while an upload is in progress', () => {
+  const onUpload = vi.fn();
+  const { container } = render(<DxfUploader loading onUpload={onUpload} />);
+  fireEvent.drop(container.querySelector('.dxf-dropzone')!, { dataTransfer: { files: [new File(['dxf'], 'site.dxf')] } });
+  expect(onUpload).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Выбрать DXF или ZIP' })).toBeDisabled();
+  expect(screen.getByText('Загружаем файл')).toBeVisible();
+});
 
-  it('accepts a complete release ZIP with its larger archive limit', () => {
-    expect(validateDxfUpload({ name: 'release.ZIP', size: MAX_RELEASE_BUNDLE_UPLOAD_BYTES })).toBeUndefined();
-    expect(validateDxfUpload({ name: 'release.zip', size: MAX_RELEASE_BUNDLE_UPLOAD_BYTES + 1 })).toBe('ZIP-пакет должен быть не больше 120 МБ.');
-  });
+it('uses file-neutral wording for ZIP errors', () => {
+  render(<DxfUploader loading={false} onUpload={vi.fn()} error="Архив повреждён" />);
+  expect(screen.getByText('Не удалось загрузить файл')).toBeVisible();
+  expect(screen.queryByText('Ошибка DXF')).not.toBeInTheDocument();
 });

@@ -1,0 +1,15 @@
+.change-review { display: grid; gap: 14px; font-size: 13px; line-height: 1.5; }
+.change-review p { margin: 0; }
+.change-review__label { font-weight: 500; }
+.change-review__metrics { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; margin: 0; }
+.change-review__metrics dt { color: var(--color-neutral-600); }
+.change-review__metrics dd { margin: 0; font-variant-numeric: tabular-nums; }
+.change-review ul { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.change-review__note { color: var(--color-neutral-600); font-size: 12px; }
+.change-review__error { color: #a72720; }
+.change-review__problem-count { margin-bottom: 12px !important; font-weight: 500; }
+.change-review li small { display: block; margin-top: 4px; color: var(--color-neutral-600); }
+.change-review li strong { display: block; margin-bottom: 4px; font-weight: 500; }
+.editor-change-prompt { position: absolute; z-index: 42; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; max-width: calc(100% - 10rem); padding: 10px 12px; background: var(--color-white); border: 1px solid var(--color-neutral-300); border-radius: 6px; box-shadow: 0 2px 8px #18212b12; font-size: 12px; }
+.editor-change-prompt > span { flex: 1; white-space: nowrap; }
+.editor-change-prompt .ui-button { font-size: 12px; }

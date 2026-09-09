@@ -6,6 +6,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPExcep
 from fastapi.responses import Response
 
 from app.application import ProjectApplication
+from app.contracts import BuildingScreenRequest, BuildingScreenTargets
+from app import building_screen
 from app.contracts import (
     ApiError,
     BrushPreview,
@@ -30,6 +32,8 @@ from app.contracts import (
     PlacementCheck,
     PlacementCheckRequest,
     PlantingZonesRequest,
+    PlantingZoneAssignment,
+    PlantingZonePreview,
     Project,
     ProjectCreate,
     ProjectOperation,
@@ -249,6 +253,14 @@ def save_planting_zones(project_id: str, payload: PlantingZonesRequest) -> Proje
         raise handle(error) from error
 
 
+@router.post("/projects/{project_id}/planting-zones/preview", response_model=PlantingZonePreview)
+def preview_planting_zone(project_id: str, payload: PlantingZoneAssignment) -> dict[str, object]:
+    try:
+        return application.preview_planting_zone(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
 @router.get("/projects/{project_id}/map-features", response_model=GeometrySnapshot)
 def get_map_features(
     project_id: str,
@@ -351,6 +363,22 @@ def preview_plan_pattern(project_id: str, payload: PatternPreviewRequest) -> Pat
 def get_plan_placement_masks(project_id: str) -> list[PlacementMaskPreset]:
     try:
         return application.placement_masks(project_id)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/building-screen/targets", response_model=BuildingScreenTargets)
+def building_screen_targets(project_id: str, zone_ids: list[str] = Query()):
+    try:
+        return building_screen.targets(application.get(project_id), zone_ids)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/building-screen/preview", response_model=RecommendationPreview)
+def preview_building_screen(project_id: str, payload: BuildingScreenRequest):
+    try:
+        return building_screen.preview(application, project_id, payload)
     except Exception as error:
         raise handle(error) from error
 

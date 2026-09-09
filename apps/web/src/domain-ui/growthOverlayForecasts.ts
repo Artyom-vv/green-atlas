@@ -22,8 +22,9 @@ export function growthOverlayForecasts(
   if (year === undefined) return [];
   const selected = new Set(selectedIds);
   const candidates = new globalThis.Map<string, PlanObject>();
+  const wholePlan = selected.size === 0 && year > 0;
   for (const object of objects) {
-    if (object.id && selected.has(object.id)) candidates.set(object.id, object);
+    if (object.id && (wholePlan || selected.has(object.id))) candidates.set(object.id, object);
   }
   for (const object of previewObjects) {
     if (object.id) candidates.set(object.id, object);

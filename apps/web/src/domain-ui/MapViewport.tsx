@@ -1,5 +1,9 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef } from 'react';
-import type { BrushStroke, ChangeSetPreview, PlanObject, PlantingZoneAssignment } from '@green/api-client';
+import { rowSketchFeatures } from './rowSketchLayer';
+import type { RowAxis, RowSketchSettings } from './rowSketch';
+import { liveBrushSites, type LiveBrushSettings } from './liveBrushGeometry';
+import { validPlanViewState, writePlanViewStateAttributes, type PlanViewState } from './planViewState';
+import type { BrushStroke, ChangeSetPreview, PlanChangeSetDraft, PlanObject, PlantingZoneAssignment } from '@green/api-client';
 import Collection from 'ol/Collection';
 import Feature from 'ol/Feature';
 import GeoJSON from 'ol/format/GeoJSON';
@@ -44,6 +48,7 @@ const MAX_CACHED_GEOMETRY_STYLES = 512;
 const MAX_CACHED_BLOCK_LABEL_STYLES = 320;
 const EMPTY_DRAFT_PLANTING_ZONES: PlantingZoneAssignment[] = [];
 const EMPTY_BRUSH_STROKES: readonly BrushStroke[] = [];
+const DEFAULT_LIVE_BRUSH_SETTINGS: LiveBrushSettings = { composition: 'trees', density: 'balanced', treeShare: .7, spacing: 6 };
 
 const colors: Record<string, string> = {
   site_border: '#163A5F', building: '#A7B0BC', road: '#7A8795', utility: '#4E78B8', existing_green: '#2E9C67', water: '#4E91B8', restricted: '#9A6700', allowed: '#91CFAE', forbidden: '#C76B00',
@@ -138,7 +143,7 @@ export function previewHoverTargetFromFeature(feature: FeatureLike, pixel: [numb
       id: `change-preview-${objectId}`,
       kind: 'change-preview',
       label,
-      detail: `${reason} · ${code}`,
+      detail: reason,
       preview: { objectId, status, code, reason, suggestedAction: typeof suggestedAction === 'string' ? suggestedAction : undefined },
     }],
   };
@@ -148,6 +153,20 @@ export function previewHoverTargetFromFeature(feature: FeatureLike, pixel: [numb
 export function plantingZoneIsShadowedByDraft(feature: FeatureLike, draftIds: ReadonlySet<string>): boolean {
   const plantingZoneId = feature.get('planting_zone_id');
   return feature.get('kind') === 'planting_area' && typeof plantingZoneId === 'string' && draftIds.has(plantingZoneId);
+}
+
+/**
+ * Terrain faces are evidence for the 3D surface, not drawing content. Showing
+ * every DEM cell in the plan produces a large coloured square grid which
+ * obscures the actual DXF. Keep the source snapshot intact for SceneReview,
+ * but never add these technical faces to the interactive 2D sources.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure visibility policy is exported for deterministic map rendering tests.
+export function isTechnical3dMapFeature(feature: FeatureLike): boolean {
+  const sourceLayer = String(feature.get('source_layer') ?? '').toUpperCase();
+  const entityType = String(feature.get('entity_type') ?? '').toUpperCase();
+  return sourceLayer.startsWith('GREEN_ATLAS_TERRAIN_')
+    && ['3DFACE', 'MESH', 'POLYFACE'].includes(entityType);
 }
 
 function mapFeatureCopy(feature: FeatureLike) {
@@ -283,12 +302,12 @@ function plantGlyph(kind: string, color: string, outline: string): string {
 function plantMarkerMetrics(kind: string) {
   const tree = kind === 'tree';
   return {
-    overviewRadius: tree ? 10 : 8,
-    overviewBackdropRadius: tree ? 12 : 10,
-    overviewSelectionRadius: tree ? 14 : 12,
-    detailHaloRadius: tree ? 10 : 8.5,
-    detailSelectionRadius: tree ? 13 : 11.5,
-    glyphSize: tree ? 20 : 17,
+    overviewRadius: tree ? 4.5 : 3.5,
+    overviewBackdropRadius: tree ? 5.5 : 4.5,
+    overviewSelectionRadius: tree ? 8 : 7,
+    detailHaloRadius: tree ? 7 : 6,
+    detailSelectionRadius: tree ? 10 : 9,
+    glyphSize: tree ? 14 : 12,
   };
 }
 
@@ -299,11 +318,17 @@ export function changePreviewStyle(feature: FeatureLike, resolution = 1): Style[
   const status = String(feature.get('candidateStatus') ?? 'allowed');
   const role = String(feature.get('previewRole') ?? 'candidate');
   const semanticColor = status === 'blocked' ? '#D92D20' : status === 'unknown' || status === 'soft_conflict' ? '#B76400' : '#168A5B';
-  const overview = resolution > 0.9;
+  const overview = resolution > 0.45;
   const marker = plantMarkerMetrics(kind);
   const key = `${kind}:${status}:${role}:${overview}`;
   const cached = changePreviewStyles.get(key);
   if (cached) return cached;
+  if (role === 'delete') {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#C83B32" stroke="white" stroke-width="2"/><path d="m8 8 8 8m0-8-8 8" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
+    const styles = [new Style({ image: new Icon({ src: `data:image/svg+xml,${encodeURIComponent(svg)}`, width: overview ? 18 : 24, height: overview ? 18 : 24 }) })];
+    changePreviewStyles.set(key, styles);
+    return styles;
+  }
   if (role === 'move-path') {
     const styles = [
       new Style({ stroke: new Stroke({ color: 'rgba(255,255,255,.94)', width: 5 }) }),
@@ -333,8 +358,8 @@ export function changePreviewStyle(feature: FeatureLike, resolution = 1): Style[
       new Style({ geometry, image: new CircleStyle({ radius: marker.overviewRadius, fill: new Fill({ color: semanticColor }), stroke: new Stroke({ color: semanticColor, width: 1 }) }) }),
     ]
     : [
-      new Style({ geometry, image: new CircleStyle({ radius: kind === 'tree' ? 11 : 9, fill: new Fill({ color: '#FFFFFF' }), stroke: new Stroke({ color: semanticColor, width: 2 }) }) }),
-      new Style({ geometry, image: new Icon({ src: plantGlyph(kind, semanticColor, '#FFFFFF'), width: kind === 'tree' ? 20 : 18, height: kind === 'tree' ? 20 : 18 }) }),
+      new Style({ geometry, image: new CircleStyle({ radius: marker.detailHaloRadius, fill: new Fill({ color: '#FFFFFF' }), stroke: new Stroke({ color: semanticColor, width: 1.5 }) }) }),
+      new Style({ geometry, image: new Icon({ src: plantGlyph(kind, semanticColor, '#FFFFFF'), width: marker.glyphSize, height: marker.glyphSize }) }),
     ];
   changePreviewStyles.set(key, styles);
   return styles;
@@ -382,12 +407,12 @@ function contextualMapHoverStyle(feature: FeatureLike) {
 
 const plantingZoneDraftStyle = new Style({
   fill: new Fill({ color: 'rgba(34,92,255,.01)' }),
-  stroke: new Stroke({ color: 'rgba(34,92,255,.48)', width: 1.25, lineDash: [7, 5] }),
+  stroke: new Stroke({ color: '#84948c', width: 1 }),
 });
 
 const plantingZoneFocusStyle = new Style({
-  fill: new Fill({ color: 'rgba(34,92,255,.025)' }),
-  stroke: new Stroke({ color: '#225CFF', width: 2 }),
+  fill: new Fill({ color: 'rgba(34,92,255,.012)' }),
+  stroke: new Stroke({ color: '#225CFF', width: 1.75 }),
 });
 
 // These caches live at module scope so style instances are reused while the
@@ -459,6 +484,30 @@ const sourceLineDash = (linetype: string) => {
 };
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure style factory is exported solely for deterministic map rendering tests.
+export function designGeometryStyle(feature: FeatureLike, resolution: number): Style | Style[] | undefined {
+  const kind = String(feature.get('kind') ?? 'ignore');
+  if (kind === 'allowed' && !feature.get('source_layer')) return undefined;
+  if (kind === 'forbidden' && feature.get('rule_id') && !feature.get('source_layer')) return undefined;
+  const entity = String(feature.get('entity_type') ?? '');
+  if (entity === 'TEXT' || entity === 'MTEXT') {
+    if (resolution > .7) return undefined;
+    return cachedFeatureGeometryStyle(feature, `design-text:${String(feature.get('source_text'))}`, () => new Style({ text: new TextStyle({ text: String(feature.get('source_text') ?? ''), font: '400 11px Onest', fill: new Fill({ color: '#596675' }), stroke: new Stroke({ color: '#f4f6f8', width: 3 }), rotation: -Number(feature.get('source_rotation') ?? 0) * Math.PI / 180 }) }));
+  }
+  const palette: Record<string, [string, string]> = {
+    building: ['#e0e4e8', '#85919e'], road: ['#fafbfc', '#c7ced6'], existing_green: ['#d1eadc', '#7daa90'],
+    water: ['#cad8ff', '#9db6ff'], planting_area: ['rgba(0,0,0,0)', '#84948c'], site_border: ['rgba(0,0,0,0)', '#35414e'],
+    allowed: ['rgba(25,135,84,.025)', 'rgba(25,135,84,.13)'], utility: ['rgba(0,0,0,0)', '#8a4b00'], restricted: ['rgba(183,100,0,.05)', '#8a4b00'],
+  };
+  const [fill, stroke] = palette[kind] ?? ['rgba(0,0,0,0)', '#cdd4dc'];
+  const key = `design:${kind}:${entity}:${resolution > 2 ? 'overview' : 'detail'}`;
+  const style = cachedGeometryStyle(key, () => new Style({
+    fill: new Fill({ color: fill }), stroke: new Stroke({ color: stroke, width: ['planting_area', 'site_border'].includes(kind) ? 1.6 : kind === 'road' ? 1.2 : .8, lineDash: ['utility', 'restricted'].includes(kind) ? [5, 3] : undefined }),
+    image: new CircleStyle({ radius: kind === 'existing_green' ? 2 : 2.5, fill: new Fill({ color: fill }), stroke: new Stroke({ color: stroke, width: 1 }) }),
+  }));
+  return feature.get('_mapHover') ? [style, mapHoverStyle] : style;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- CAD rendering is independently contract-tested.
 export function geometryStyle(feature: FeatureLike, resolution: number) {
   const kind = String(feature.get('kind') ?? 'default');
   const sourceLayer = String(feature.get('source_layer') ?? '').toLowerCase();
@@ -558,12 +607,12 @@ export function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string>
   const kind = String(feature.get('kind') ?? 'tree');
   const status = String(feature.get('status') ?? 'valid');
   const liveStatus = feature.get('_liveCandidateStatus');
-  const visualStatus = typeof liveStatus === 'string' ? liveStatus : status;
+  const visualStatus = feature.get('_localIntersection') ? 'blocked' : typeof liveStatus === 'string' ? liveStatus : feature.get('_metadataOnly') && status !== 'error' ? 'unassigned' : status;
   const selected = selectedIds?.has(String(feature.get('objectId'))) ?? false;
   // A selected object remains actionable even when a zone filter is active.
   // Muting it used to erase both selection and validation status.
   const zoneMuted = Boolean(feature.get('_zoneMuted')) && !selected;
-  const overview = resolution > 0.9;
+  const overview = resolution > 0.45;
   const marker = plantMarkerMetrics(kind);
   const key = `${kind}:${visualStatus}:${selected}:${overview}:${zoneMuted}`;
   const cached = planStyles.get(key);
@@ -572,7 +621,7 @@ export function planStyle(feature: FeatureLike, selectedIds: ReadonlySet<string>
     ? '#D92D20'
     : visualStatus === 'warning' || visualStatus === 'soft_conflict' || visualStatus === 'unknown'
       ? '#B76400'
-      : visualStatus === 'checking' ? '#4E78B8' : '#168A5B';
+      : visualStatus === 'unassigned' ? '#596675' : visualStatus === 'checking' ? '#225CFF' : '#168A5B';
   const markerColor = zoneMuted ? '#91A0AE' : semanticColor;
   const fill = zoneMuted
     ? 'rgba(122,135,149,.08)'
@@ -654,13 +703,13 @@ export function syncPlanFeatures(source: VectorSource, objects: PlanObject[]): v
     if (!(marker instanceof Point) || marker.getCoordinates()[0] !== object.x || marker.getCoordinates()[1] !== object.y) {
       feature.set('markerGeometry', new Point([object.x, object.y]), true);
     }
-    feature.setProperties({ kind: object.kind, status: object.status, objectId: object.id, plantingZoneId: object.planting_zone_id }, true);
+    feature.setProperties({ kind: object.kind, status: object.status, objectId: object.id, plantingZoneId: object.planting_zone_id, locked: object.locked }, true);
     feature.changed();
   }
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- exported for deterministic move-preview tests.
-export function changePreviewFeatures(objects: readonly PlanObject[], preview: ChangeSetPreview): Feature[] {
+export function changePreviewFeatures(objects: readonly PlanObject[], preview: ChangeSetPreview, draft?: PlanChangeSetDraft): Feature[] {
   const currentById = new globalThis.Map(objects.flatMap((object) => object.id ? [[object.id, object] as const] : []));
   const resultByObjectId = new globalThis.Map(
     (preview.candidate_results ?? []).flatMap((result) => result.object_id ? [[result.object_id, result] as const] : []),
@@ -688,6 +737,36 @@ export function changePreviewFeatures(objects: readonly PlanObject[], preview: C
     candidate.setId(`change-preview-${object.id}`);
     return [candidate];
   });
+
+  // Rejected additions are deliberately absent from the server's additions.
+  // Draw their attempted positions separately; never add them to the saved
+  // preview or change can_apply. Match only a draft tied to this preview.
+  for (const result of preview.candidate_results ?? []) {
+    if (result.type !== 'add' || result.status !== 'blocked') continue;
+    if (result.object_id && candidates.some(feature => feature.get('objectId') === result.object_id)) continue;
+    const operation = draft?.operations[result.operation_index];
+    if (operation?.type !== 'add') continue;
+    const object = operation.object;
+    const radius = object.layout_radius_m ?? object.radius;
+    if (!radius) continue;
+    const objectId = result.object_id ?? `rejected-${preview.id}-${result.operation_index}`;
+    const candidate = new Feature({
+      geometry: new Circle([object.x, object.y], radius),
+      markerGeometry: new Point([object.x, object.y]),
+      objectId, kind: object.kind, candidateStatus: result.status,
+      candidateCode: result.code, candidateReason: result.reason,
+      candidateSuggestedAction: result.suggested_action, previewRole: 'candidate',
+    });
+    candidate.setId(`change-preview-${objectId}`);
+    candidates.push(candidate);
+  }
+  for (const id of preview.deletion_ids ?? []) {
+    const object = currentById.get(id);
+    if (!object) continue;
+    const marker = new Feature({ geometry: new Point([object.x, object.y]), objectId: id, kind: object.kind, previewRole: 'delete' });
+    marker.setId(`change-delete-${id}`);
+    candidates.push(marker);
+  }
   if (!moves.length) return candidates;
 
   // A group is translated rigidly. One centroid trail communicates the
@@ -711,13 +790,18 @@ export function changePreviewFeatures(objects: readonly PlanObject[], preview: C
 }
 
 export type MapViewportHandle = {
+  finishRowDrawing: () => void;
+  abortRowDrawing: () => void;
   fit: () => void;
   fitGeometry: (geometry: PlantingZoneAssignment['geometry']) => void;
   fitLayer: (sourceLayer: string) => void;
   fitSelection: (id: string) => void;
+  fitObjects: (ids: string[]) => void;
   fitPlan: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  getViewState: () => PlanViewState | undefined;
+  applyViewState: (state: PlanViewState) => void;
 };
 
 export type PlacementPreview = { coordinate: [number, number]; radius: number; status: 'allowed' | 'blocked' | 'unknown' };
@@ -795,7 +879,7 @@ const selectionMode = (event?: Event): SelectionMode => {
   return 'replace';
 };
 
-export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; liveMoveValidation?: MoveLiveValidation; tool: MapTool; brushStrokes?: readonly BrushStroke[]; brushEnabled?: boolean; brushWidthM?: number; brushOperation?: 'add' | 'subtract'; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMoveCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onMapInspect?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = EMPTY_DRAFT_PLANTING_ZONES, hiddenLayerNames, selectedIds, highlightedPlantingZoneId, focusGeometry, placementPreview, changePreview, liveMoveValidation, tool, brushStrokes = EMPTY_BRUSH_STROKES, brushEnabled = true, brushWidthM = 12, brushOperation = 'add', onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onMapInspect, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
+export const MapViewport = forwardRef<MapViewportHandle, { rowResultReady?: boolean; rowAxis?: RowAxis; rowSettings?: RowSketchSettings; rowInputMode?: 'pick' | 'draw' | 'ready'; onRowDrawingPoints?: (count: number) => void; metadataOnlyIds?: readonly string[]; editPending?: boolean; interactionDisabled?: boolean; renderMode?: 'design' | 'cad'; geometry?: Record<string, unknown>; geometryRevision?: number; initialExtent?: MapExtent; objects: PlanObject[]; growthHorizon?: number; draftPlantingZones?: PlantingZoneAssignment[]; hiddenLayerNames?: string[]; selectedIds?: string[]; highlightedPlantingZoneId?: string; highlightedPlantingZoneIds?: string[]; focusGeometry?: Record<string, unknown>; placementPreview?: PlacementPreview; changePreview?: ChangeSetPreview; changeDraft?: PlanChangeSetDraft; liveMoveValidation?: MoveLiveValidation; tool: MapTool; brushStrokes?: readonly BrushStroke[]; brushSettings?: LiveBrushSettings; brushZones?: PlantingZoneAssignment[]; onBrushGesture?: (active: boolean) => void; brushEnabled?: boolean; brushWidthM?: number; brushOperation?: 'add' | 'subtract'; onSelect: (id?: string, mode?: SelectionMode) => void; onSelectMany?: (ids: string[], mode: SelectionMode) => void; onCoordinate: (coordinate: [number, number]) => void; onDrawArea?: (geometry: { type: 'Polygon'; coordinates: number[][][] }) => void; onDrawAxis?: (geometry: { type: 'LineString'; coordinates: number[][] }, source?: { type: 'dxf' | 'manual'; label: string }) => void; onDrawBrush?: (stroke: BrushStroke, mode: BrushDrawMode) => void; onMapArea?: (target: MapAreaTarget, mode: SelectionMode) => void; onPointerCoordinate?: (coordinate?: [number, number]) => void; onMoveCoordinate?: (coordinate?: [number, number]) => void; onMapHover?: (target?: MapHoverTarget) => void; onMapInspect?: (target?: MapHoverTarget) => void; onExtentChange?: (extent: MapExtent, resolution: number) => void; onSelectionAnchor?: (pixel?: [number, number]) => void; onTranslateSelectionEnd?: (coordinate: [number, number]) => void }>(function MapViewport({ rowResultReady = false, rowAxis, rowSettings, rowInputMode = 'pick', onRowDrawingPoints, metadataOnlyIds, editPending = false, interactionDisabled = false, renderMode = 'design', geometry, geometryRevision, initialExtent, objects, growthHorizon, draftPlantingZones = EMPTY_DRAFT_PLANTING_ZONES, hiddenLayerNames, selectedIds, highlightedPlantingZoneId, highlightedPlantingZoneIds, focusGeometry, placementPreview, changePreview, changeDraft, liveMoveValidation, tool, brushStrokes = EMPTY_BRUSH_STROKES, brushSettings = DEFAULT_LIVE_BRUSH_SETTINGS, brushZones = EMPTY_DRAFT_PLANTING_ZONES, onBrushGesture, brushEnabled = true, brushWidthM = 12, brushOperation = 'add', onSelect, onSelectMany, onCoordinate, onDrawArea, onDrawAxis, onDrawBrush, onMapArea, onPointerCoordinate, onMoveCoordinate, onMapHover, onMapInspect, onExtentChange, onSelectionAnchor, onTranslateSelectionEnd }, ref) {
   const targetRef = useRef<HTMLDivElement>(null);
   const helpId = useId();
   const mapRef = useRef<Map | null>(null);
@@ -812,8 +896,46 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const planSourceRef = useRef(new VectorSource());
   const growthEnvelopeSourceRef = useRef(new VectorSource());
   const areaDrawingSourceRef = useRef(new VectorSource());
+  const rowSketchSourceRef = useRef(new VectorSource());
+  const rowDrawingAxisRef = useRef<RowAxis | undefined>(undefined);
+  const rowDrawingCountRef = useRef(0);
+  const rowInputRef = useRef({ axis: rowAxis, settings: rowSettings, mode: rowInputMode, onPoints: onRowDrawingPoints, zones: draftPlantingZones.filter(zone => highlightedPlantingZoneIds?.includes(zone.id!)), verified: rowResultReady || Boolean(changePreview) });
+  rowInputRef.current = { axis: rowAxis, settings: rowSettings, mode: rowInputMode, onPoints: onRowDrawingPoints, zones: draftPlantingZones.filter(zone => highlightedPlantingZoneIds?.includes(zone.id!)), verified: rowResultReady || Boolean(changePreview) };
+  const renderRowSketch = useCallback(() => {
+    const input = rowInputRef.current, source = rowSketchSourceRef.current;
+    source.clear();
+    const axis = rowDrawingAxisRef.current ?? input.axis;
+    if (toolRef.current !== 'pattern_row' || !axis || !input.settings) {
+      if (targetRef.current) { targetRef.current.dataset.rowSketchCount = '0'; targetRef.current.dataset.rowAxisVisible = 'false'; }
+      return;
+    }
+    const sketch = rowSketchFeatures(axis, input.settings, input.zones, !input.verified);
+    source.addFeatures(sketch.features);
+    if (targetRef.current) { targetRef.current.dataset.rowSketchCount = String(sketch.count); targetRef.current.dataset.rowSketchOutside = String(sketch.outside); targetRef.current.dataset.rowAxisVisible = 'true'; targetRef.current.dataset.rowAxis = JSON.stringify(axis.coordinates); }
+  }, []);
   const brushStrokeSourceRef = useRef(new VectorSource());
   const brushCursorSourceRef = useRef(new VectorSource());
+  const liveBrushSourceRef = useRef(new VectorSource());
+  const liveBrushFrameRef = useRef(0);
+  const liveStrokeRef = useRef<BrushStroke | undefined>(undefined);
+  const brushGestureRef = useRef(onBrushGesture);
+  const liveBrushInputsRef = useRef({ brushStrokes, brushSettings, brushZones, brushWidthM });
+  liveBrushInputsRef.current = { brushStrokes, brushSettings, brushZones, brushWidthM };
+  brushGestureRef.current = onBrushGesture;
+
+  const drawLiveBrush = useCallback(() => {
+    if (liveBrushFrameRef.current) return;
+    liveBrushFrameRef.current = requestAnimationFrame(() => {
+      liveBrushFrameRef.current = 0;
+      const input = liveBrushInputsRef.current;
+      const strokes = liveStrokeRef.current ? [...input.brushStrokes, liveStrokeRef.current] : input.brushStrokes;
+      const sites = liveBrushSites(strokes, input.brushZones, input.brushWidthM, input.brushSettings);
+      const source = liveBrushSourceRef.current;
+      source.clear();
+      source.addFeatures(sites.map(site => new Feature({ geometry: new Circle([site.x, site.y], site.kind === 'tree' ? 1.6 : .65), kind: site.kind })));
+      if (targetRef.current) { targetRef.current.dataset.liveBrushCount = String(sites.length); targetRef.current.dataset.liveBrushState = sites.length ? 'unverified' : 'empty'; }
+    });
+  }, []);
   const placementPreviewSourceRef = useRef(new VectorSource());
   const changePreviewSourceRef = useRef(new VectorSource());
   const selectionDraftSourceRef = useRef(new VectorSource());
@@ -826,6 +948,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const selectionInteractionRef = useRef<Draw | DragBox | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
   const translateInteractionRef = useRef<Translate | null>(null);
+  const pendingTranslationRef = useRef(false);
+  const physicalObstacleSourceRef = useRef(new VectorSource());
   const translatingSelectionRef = useRef(false);
   const hoveredMapFeatureRef = useRef<Feature | null>(null);
   const hoveredMapGeometryKeyRef = useRef<string | undefined>(undefined);
@@ -834,6 +958,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   const pendingPlanFitRef = useRef(false);
   const planFitFrameRef = useRef<number | undefined>(undefined);
   const toolRef = useRef(tool);
+  const renderModeRef = useRef(renderMode);
   const brushEnabledRef = useRef(brushEnabled);
   const brushWidthRef = useRef(brushWidthM);
   const brushOperationRef = useRef(brushOperation);
@@ -846,6 +971,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
   hiddenLayerNamesRef.current = new Set(hiddenLayerNames ?? []);
   draftPlantingZoneIdsRef.current = new Set(draftPlantingZones.flatMap((zone) => zone.id ? [zone.id] : []));
   toolRef.current = tool;
+  renderModeRef.current = renderMode;
   brushEnabledRef.current = brushEnabled;
   brushWidthRef.current = brushWidthM;
   brushOperationRef.current = brushOperation;
@@ -897,6 +1023,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     constraintSource.clear();
     const hidden = new Set(hiddenLayerNames ?? []);
     for (const feature of geometryCacheRef.current.values()) {
+      if (isTechnical3dMapFeature(feature)) continue;
       if (hidden.has(String(feature.get('source_layer')))) continue;
       if (plantingZoneIsShadowedByDraft(feature, draftPlantingZoneIdsRef.current)) continue;
       const kind = String(feature.get('kind'));
@@ -950,6 +1077,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
 
   useImperativeHandle(ref, () => ({
     fit,
+    finishRowDrawing: () => { if (rowDrawingCountRef.current >= 2) drawRef.current?.finishDrawing(); },
+    abortRowDrawing: () => drawRef.current?.abortDrawing(),
     fitGeometry: (geometry) => {
       const parsed = new GeoJSON().readGeometry(geometry, { dataProjection: projection, featureProjection: projection });
       const map = mapRef.current;
@@ -976,6 +1105,15 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const size = map?.getSize();
       if (feature && map && size) map.getView().fit(feature.getGeometry()!.getExtent(), { size, padding: [96, 96, 96, 96], maxZoom: 24, duration: 180 });
     },
+    fitObjects: (ids) => {
+      const extent = createEmpty();
+      for (const id of ids) {
+        const geometry = planSourceRef.current.getFeatureById(id)?.getGeometry();
+        if (geometry) extend(extent, geometry.getExtent());
+      }
+      const map = mapRef.current;
+      if (map && extent.every(Number.isFinite)) map.getView().fit(extent, { padding: [72, 72, 72, 72], maxZoom: 24, duration: 180 });
+    },
     fitPlan,
     zoomIn: () => {
       const view = mapRef.current?.getView();
@@ -984,6 +1122,34 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     zoomOut: () => {
       const view = mapRef.current?.getView();
       if (view) view.animate({ zoom: (view.getZoom() ?? 0) - 1, duration: 140 });
+    },
+    getViewState: () => {
+      const map = mapRef.current;
+      const center = map?.getView().getCenter();
+      const resolution = map?.getView().getResolution();
+      const size = map?.getSize();
+      if (!map || !center || !size?.[0] || !size[1] || !resolution) return undefined;
+      return { center: [center[0], center[1]], resolution, rotation: map.getView().getRotation(), viewport: [size[0], size[1]] };
+    },
+    applyViewState: (state) => {
+      if (!validPlanViewState(state)) return;
+      const apply = () => {
+        const map = mapRef.current;
+        if (!map) return;
+        map.updateSize();
+        const size = map.getSize();
+        if (!size?.[0] || !size[1]) { requestAnimationFrame(apply); return; }
+        const view = map.getView();
+        view.cancelAnimations();
+        view.setCenter(state.center);
+        view.setResolution(state.resolution);
+        view.setRotation(state.rotation);
+        writePlanViewStateAttributes(targetRef.current!, {
+          ...state,
+          viewport: [size[0], size[1]],
+        });
+      };
+      requestAnimationFrame(apply);
     },
   }));
 
@@ -994,9 +1160,10 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     // animation is in progress. The viewport cache bounds the amount of
     // primary DXF geometry, so rebuilding these batches continuously avoids
     // the clipped/empty edge that OpenLayers otherwise keeps until moveend.
-    const zoneLayer = new VectorImageLayer({ source: zoneSourceRef.current, style: geometryStyle, zIndex: 0, renderBuffer: 160, imageRatio: 1.5 });
-    const baseLayer = new VectorImageLayer({ source: baseSourceRef.current, style: geometryStyle, zIndex: 1, renderBuffer: 160, imageRatio: 1.5 });
-    const constraintLayer = new VectorImageLayer({ source: constraintSourceRef.current, style: geometryStyle, zIndex: 2, renderBuffer: 160, imageRatio: 1.5 });
+    const renderGeometry = (feature: FeatureLike, resolution: number) => renderModeRef.current === 'design' ? designGeometryStyle(feature, resolution) : geometryStyle(feature, resolution);
+    const zoneLayer = new VectorImageLayer({ source: zoneSourceRef.current, style: renderGeometry, zIndex: 0, renderBuffer: 160, imageRatio: 1.5 });
+    const baseLayer = new VectorImageLayer({ source: baseSourceRef.current, style: renderGeometry, zIndex: 1, renderBuffer: 160, imageRatio: 1.5 });
+    const constraintLayer = new VectorImageLayer({ source: constraintSourceRef.current, style: renderGeometry, zIndex: 2, renderBuffer: 160, imageRatio: 1.5 });
     const growthEnvelopeLayer = new VectorLayer({ source: growthEnvelopeSourceRef.current, style: growthEnvelopeStyle, zIndex: 2.5, renderBuffer: 80 });
     const planLayer = new VectorLayer({ source: planSourceRef.current, style: (feature, resolution) => planStyle(feature, selectedRef.current, resolution), zIndex: 3, renderBuffer: 80 });
     const draftPlantingZoneLayer = new VectorLayer({ source: draftPlantingZoneSourceRef.current, style: plantingZoneDraftStyle, zIndex: 4 });
@@ -1004,6 +1171,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const mapHoverLayer = new VectorLayer({ source: mapHoverSourceRef.current, style: contextualMapHoverStyle, zIndex: 6 });
     const brushCursorLayer = new VectorLayer({ source: brushCursorSourceRef.current, style: brushCursorStyle, zIndex: 6.75 });
     const brushStrokeLayer = new VectorLayer({ source: brushStrokeSourceRef.current, style: brushStrokeStyle, zIndex: 6.5 });
+    const rowSketchLayer = new VectorLayer({ source: rowSketchSourceRef.current, zIndex: 8.4 });
+    const liveBrushLayer = new VectorLayer({ source: liveBrushSourceRef.current, zIndex: 8.5, style: new Style({ fill: new Fill({ color: 'rgba(34,92,255,.12)' }), stroke: new Stroke({ color: '#225cff', width: 1.5, lineDash: [3, 2] }) }) });
     const areaDrawingLayer = new VectorLayer({ source: areaDrawingSourceRef.current, style: drawStyle, zIndex: 7 });
     const snapGuideLayer = new VectorLayer({ source: snapGuideSourceRef.current, style: snapGuideStyle, zIndex: 8 });
     const changePreviewLayer = new VectorLayer({ source: changePreviewSourceRef.current, style: changePreviewStyle, zIndex: 9, renderBuffer: 80 });
@@ -1014,11 +1183,11 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const mouseWheelZoom = new MouseWheelZoom();
     const temporaryPan = new DragPan({ condition: (event) => {
       const original = event.originalEvent as PointerEvent;
-      return spacePanRef.current || original.button === 1;
+      return spacePanRef.current || original.button === 1 || toolRef.current === 'pan';
     } });
     const map = new Map({
       target,
-      layers: [zoneLayer, baseLayer, constraintLayer, growthEnvelopeLayer, planLayer, draftPlantingZoneLayer, plantingZoneFocusLayer, mapHoverLayer, brushStrokeLayer, brushCursorLayer, areaDrawingLayer, snapGuideLayer, changePreviewLayer, selectionDraftLayer, placementPreviewLayer],
+      layers: [zoneLayer, baseLayer, constraintLayer, growthEnvelopeLayer, planLayer, draftPlantingZoneLayer, plantingZoneFocusLayer, mapHoverLayer, brushStrokeLayer, brushCursorLayer, areaDrawingLayer, snapGuideLayer, rowSketchLayer, liveBrushLayer, changePreviewLayer, selectionDraftLayer, placementPreviewLayer],
       controls: defaultControls({ zoom: true, rotate: false, attribution: false }),
       interactions: defaultInteractions({ mouseWheelZoom: false, shiftDragZoom: false }).extend([mouseWheelZoom, temporaryPan]),
       view,
@@ -1067,9 +1236,17 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       const size = map.getSize();
       if (!size?.[0] || !size?.[1]) return;
       const extent = view.calculateExtent(size);
+      const center = view.getCenter();
+      const resolution = view.getResolution();
       target.dataset.viewExtent = extent.map((value) => Number(value.toFixed(4))).join(',');
-      target.dataset.viewResolution = String(Number((view.getResolution() ?? 1).toFixed(6)));
-      callbackRef.current.onExtentChange?.([extent[0], extent[1], extent[2], extent[3]], view.getResolution() ?? 1);
+      target.dataset.viewResolution = String(Number((resolution ?? 1).toFixed(6)));
+      if (center && resolution) writePlanViewStateAttributes(target, {
+        center: [center[0], center[1]],
+        resolution,
+        rotation: view.getRotation(),
+        viewport: [size[0], size[1]],
+      });
+      callbackRef.current.onExtentChange?.([extent[0], extent[1], extent[2], extent[3]], resolution ?? 1);
     };
     let resizeFrame = 0;
     requestAnimationFrame(() => {
@@ -1092,7 +1269,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     });
     observer.observe(target);
     const selectRowAxisAtClick = (event: MapBrowserEvent) => {
-      if (toolRef.current === 'pattern_row' && !(event.originalEvent as PointerEvent).shiftKey) {
+      if (toolRef.current === 'pattern_row' && rowInputRef.current.mode === 'pick' && !(event.originalEvent as PointerEvent).shiftKey) {
         const maxDistance = (map.getView().getResolution() ?? 1) * 24;
         const clickCoordinate: [number, number] = [event.coordinate[0], event.coordinate[1]];
         const lineFeature = nearestLineFeature(
@@ -1204,6 +1381,21 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       }
       callbackRef.current.onMoveCoordinate?.(toolRef.current === 'move' ? coordinate : undefined);
       callbackRef.current.onPointerCoordinate?.(coordinate);
+      if (toolRef.current === 'pattern_row') {
+        mapHoverSourceRef.current.clear();
+        if (rowInputRef.current.mode === 'pick') {
+          const feature = nearestLineFeature([baseSourceRef.current, constraintSourceRef.current], coordinate, (map.getView().getResolution() ?? 1) * 12);
+          const axis = feature ? axisCoordinatesFromFeature(feature, coordinate) : undefined;
+          if (axis) {
+            const highlight = new Feature(new LineString(axis));
+            highlight.setStyle(new Style({ stroke: new Stroke({ color: '#225cff', width: 4 }) }));
+            mapHoverSourceRef.current.addFeature(highlight);
+          }
+          target.style.cursor = axis ? 'pointer' : 'crosshair';
+        } else target.style.cursor = rowInputRef.current.mode === 'draw' ? 'crosshair' : 'default';
+        callbackRef.current.onMapHover?.(undefined);
+        return;
+      }
       let hoveredFeature: Feature | undefined;
       let hoverItems: MapHoverItem[] = [];
       let hoverKind: MapHoverTarget['kind'] = 'area';
@@ -1352,8 +1544,9 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       if (fittedExtentKeyRef.current === extentKey) return;
       fittedExtentKeyRef.current = extentKey;
       fit();
+      if (planSourceRef.current.getFeatures().length) fitPlan();
     });
-  }, [fit, initialExtent]);
+  }, [fit, fitPlan, initialExtent]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1370,14 +1563,47 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const activeDrawStyle = tool === 'brush' ? (_feature: FeatureLike, resolution: number) => new Style({
       stroke: new Stroke({ color: brushOperation === 'subtract' ? 'rgba(217,45,32,.28)' : 'rgba(34,92,255,.24)', width: Math.max(8, brushWidthM / Math.max(resolution, 0.0001)), lineCap: 'round', lineJoin: 'round' }),
     }) : drawStyle;
-    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', freehandCondition: never, style: activeDrawStyle, stopClick: tool !== 'pattern_row', condition: (event) => {
+    const draw = new Draw({ source: areaDrawingSourceRef.current, type: tool === 'draw_area' ? 'Polygon' : 'LineString', freehand: tool === 'brush', freehandCondition: never, style: activeDrawStyle, stopClick: tool !== 'pattern_row' || rowInputMode === 'draw', condition: (event) => {
       const original = event.originalEvent as PointerEvent;
-      return !spacePanRef.current && original.button === 0 && (tool !== 'pattern_row' || original.shiftKey) && (tool !== 'brush' || brushEnabled);
+      return !spacePanRef.current && original.button === 0 && (tool !== 'pattern_row' || rowInputMode === 'draw' || rowInputMode === 'pick' && original.shiftKey) && (tool !== 'brush' || brushEnabled);
     } });
-    draw.on('drawstart', () => {
+    let detachLiveStroke: (() => void) | undefined;
+    draw.on('drawstart', (event) => {
+      detachLiveStroke?.();
       areaDrawingSourceRef.current.clear();
+      if (tool === 'pattern_row') {
+        const line = event.feature.getGeometry();
+        if (line instanceof LineString) {
+          const update = () => {
+            rowDrawingAxisRef.current = { type: 'LineString', coordinates: line.getCoordinates() };
+            rowDrawingCountRef.current = Math.max(0, line.getCoordinates().length - 1);
+            rowInputRef.current.onPoints?.(rowDrawingCountRef.current);
+            renderRowSketch();
+          };
+          line.on('change', update); update();
+          detachLiveStroke = () => { line.un('change', update); detachLiveStroke = undefined; };
+        }
+      }
+      if (tool === 'brush') {
+        brushGestureRef.current?.(true);
+        const line = event.feature.getGeometry();
+        if (line instanceof LineString) {
+          const update = () => {
+            let coordinates = line.getCoordinates();
+            if (coordinates.length < 2 || line.getLength() < .01) { const p = coordinates[0]; if (!p) return; coordinates = [[p[0] - .01, p[1]], [p[0] + .01, p[1]]]; }
+            liveStrokeRef.current = { mode: brushModeRef.current === 'subtract' ? 'subtract' : 'add', geometry: { type: 'LineString', coordinates } };
+            drawLiveBrush();
+          };
+          line.on('change', update);
+          update();
+          detachLiveStroke = () => { line.un('change', update); detachLiveStroke = undefined; };
+        }
+      }
     });
+    draw.on('drawabort', () => { detachLiveStroke?.(); rowDrawingAxisRef.current = undefined; rowDrawingCountRef.current = 0; rowInputRef.current.onPoints?.(0); renderRowSketch(); liveStrokeRef.current = undefined; brushGestureRef.current?.(false); drawLiveBrush(); });
     draw.on('drawend', (event) => {
+      detachLiveStroke?.();
+      rowDrawingAxisRef.current = undefined; rowDrawingCountRef.current = 0; rowInputRef.current.onPoints?.(0);
       const featureGeometry = event.feature.getGeometry();
       if (featureGeometry instanceof Polygon) {
         callbackRef.current.onDrawArea?.({ type: 'Polygon', coordinates: featureGeometry.getCoordinates() });
@@ -1397,7 +1623,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
           coordinates = [[point[0] - epsilon, point[1]], [point[0] + epsilon, point[1]]];
         }
         const geometry = { type: 'LineString' as const, coordinates };
-        if (tool === 'brush') callbackRef.current.onDrawBrush?.({ mode: brushModeRef.current === 'subtract' ? 'subtract' : 'add', geometry }, brushModeRef.current);
+        if (tool === 'brush') { callbackRef.current.onDrawBrush?.({ mode: brushModeRef.current === 'subtract' ? 'subtract' : 'add', geometry }, brushModeRef.current); liveStrokeRef.current = undefined; brushGestureRef.current?.(false); }
         else callbackRef.current.onDrawAxis?.(geometry, { type: 'manual', label: 'Нарисована вручную' });
         requestAnimationFrame(() => areaDrawingSourceRef.current.removeFeature(event.feature));
       }
@@ -1409,16 +1635,29 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       map.addInteraction(snapInteractionRef.current);
     }
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest('input, select, textarea, button')) return;
       if (event.key === 'Escape') draw.abortDrawing();
+      if (event.key === 'Enter' && tool === 'pattern_row' && rowDrawingCountRef.current >= 2) { event.preventDefault(); draw.finishDrawing(); }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
       target?.removeEventListener('pointerdown', rememberBrushMode, true);
+      detachLiveStroke?.();
       window.removeEventListener('keydown', onKeyDown);
       map.removeInteraction(draw);
       if (drawRef.current === draw) drawRef.current = null;
     };
-  }, [brushEnabled, brushOperation, brushWidthM, tool]);
+  }, [brushEnabled, brushOperation, brushWidthM, drawLiveBrush, renderRowSketch, rowInputMode, tool]);
+
+  useEffect(() => { if (tool !== 'pattern_row') rowDrawingAxisRef.current = undefined; renderRowSketch(); }, [rowResultReady, rowAxis, rowSettings, rowInputMode, draftPlantingZones, highlightedPlantingZoneIds, changePreview, renderRowSketch, tool]);
+
+  useEffect(() => {
+    cancelAnimationFrame(liveBrushFrameRef.current); liveBrushFrameRef.current = 0;
+    if (tool === 'brush' && !changePreview) drawLiveBrush();
+    else { liveStrokeRef.current = undefined; liveBrushSourceRef.current.clear(); if (targetRef.current) targetRef.current.dataset.liveBrushCount = '0'; }
+  }, [brushSettings, brushStrokes, brushWidthM, brushZones, changePreview, drawLiveBrush, tool]);
+
+  useEffect(() => () => cancelAnimationFrame(liveBrushFrameRef.current), []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1553,6 +1792,7 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
           // One malformed CAD entity should not block the rest of the viewport.
           continue;
         }
+        if (isTechnical3dMapFeature(feature)) continue;
         const featureGeometry = feature.getGeometry();
         if (featureGeometry) extend(extent, featureGeometry.getExtent());
         const existingId = feature.getId();
@@ -1582,6 +1822,14 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       }
       rebuildSnapTargets();
       if (target) {
+        // Visibility switches must not switch off collision feedback. This
+        // index uses the loaded geometry cache, including hidden source layers.
+        physicalObstacleSourceRef.current.clear();
+        physicalObstacleSourceRef.current.addFeatures([...geometryCacheRef.current.values()].filter(feature => {
+          const kind = feature.get('kind');
+          const shape = feature.getGeometry();
+          return ['building', 'water', 'restricted'].includes(kind) && (shape instanceof Polygon || shape instanceof MultiPolygon);
+        }));
         target.dataset.geometryReady = 'true';
         if (geometryRevision !== undefined) target.dataset.geometryRevision = String(geometryRevision);
       }
@@ -1593,6 +1841,8 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     };
   }, [fit, geometry, geometryRevision]);
 
+  useEffect(() => { mapRef.current?.getLayers().forEach(layer => layer.changed()); }, [renderMode]);
+
   useEffect(() => {
     const source = planSourceRef.current;
     syncPlanFeatures(source, objects);
@@ -1600,6 +1850,11 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     planLayerRef.current?.changed();
     if (pendingPlanFitRef.current && objects.length) schedulePlanFit();
   }, [objects, schedulePlanFit]);
+
+  useEffect(() => {
+    const missingSpecies = new Set(metadataOnlyIds);
+    for (const feature of planSourceRef.current.getFeatures()) feature.set('_metadataOnly', missingSpecies.has(String(feature.get('objectId'))));
+  }, [metadataOnlyIds, objects]);
 
   useEffect(() => {
     for (const feature of planSourceRef.current.getFeatures()) {
@@ -1637,9 +1892,9 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     if (!map) return;
     if (translateInteractionRef.current) map.removeInteraction(translateInteractionRef.current);
     translateInteractionRef.current = null;
-    if ((tool !== 'move' && tool !== 'select') || !selectedIds?.length) return;
+    if (interactionDisabled || changePreview || (tool !== 'move' && tool !== 'select') || !selectedIds?.length) return;
     const features = planSourceRef.current.getFeatures().filter((feature) => selectedRef.current.has(String(feature.get('objectId'))));
-    if (!features.length) return;
+    if (!features.length || features.some(feature => feature.get('locked'))) return;
     const selectedFeatures = new Collection(features);
     const draftSource = selectionDraftSourceRef.current;
     const translate = new Translate({
@@ -1680,20 +1935,40 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     const publishLiveSelection = () => {
       if (target) target.dataset.selectionDrag = JSON.stringify(selectedCenters());
     };
+    const updatePhysicalIntersections = () => {
+      const statuses: Record<string, string> = {};
+      for (const feature of features) {
+        const geometry = feature.getGeometry();
+        if (!(geometry instanceof Circle)) continue;
+        const [x, y] = geometry.getCenter();
+        // A definite physical intersection is immediate. Absence of a hit
+        // is NOT permission: offsets, networks and growth remain server checks.
+        const hit = physicalObstacleSourceRef.current.getFeaturesInExtent([x, y, x, y])
+          .some(obstacle => obstacle.getGeometry()?.intersectsCoordinate([x, y]));
+        feature.set('_localIntersection', hit);
+        feature.set('_liveCandidateStatus', 'checking');
+        statuses[String(feature.get('objectId'))] = hit ? 'blocked' : 'checking';
+      }
+      if (target) target.dataset.selectionDragStatus = JSON.stringify(statuses);
+    };
     const resetSelectionGeometry = () => {
       syncPlanFeatures(planSourceRef.current, objects);
+      features.forEach(feature => { feature.unset('_localIntersection'); feature.unset('_liveCandidateStatus'); });
+      pendingTranslationRef.current = false;
       planLayerRef.current?.changed();
-      if (target) delete target.dataset.selectionDrag;
+      if (target) { delete target.dataset.selectionDrag; delete target.dataset.selectionDragStatus; }
     };
     translate.on('translatestart', () => {
       translatingSelectionRef.current = true;
       startMoveTrail();
+      updatePhysicalIntersections();
       publishLiveSelection();
     });
     translate.on('translating', () => {
       const centers = selectedCenters().map((item) => item.coordinate);
       if (!centers.length) return;
       updateMoveTrail();
+      updatePhysicalIntersections();
       const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
       publishLiveSelection();
       const pixel = map.getPixelFromCoordinate(center);
@@ -1706,11 +1981,13 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       if (centers.length) {
         const center: [number, number] = [centers.reduce((sum, point) => sum + point[0], 0) / centers.length, centers.reduce((sum, point) => sum + point[1], 0) / centers.length];
         const moved = moveOrigin && Math.hypot(center[0] - moveOrigin[0], center[1] - moveOrigin[1]) > 1e-6;
-        if (moved) callbackRef.current.onTranslateSelectionEnd?.(center);
+        if (moved) {
+          pendingTranslationRef.current = true;
+          callbackRef.current.onTranslateSelectionEnd?.(center);
+        }
       }
       callbackRef.current.onMoveCoordinate?.(undefined);
-      draftSource.clear();
-      resetSelectionGeometry();
+      if (!pendingTranslationRef.current) { draftSource.clear(); resetSelectionGeometry(); }
     });
     const cancelDirectDrag = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !translatingSelectionRef.current) return;
@@ -1730,17 +2007,30 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
       translatingSelectionRef.current = false;
       map.removeInteraction(translate);
       if (translateInteractionRef.current === translate) translateInteractionRef.current = null;
-      draftSource.clear();
-      if (target) delete target.dataset.selectionDrag;
+      if (!pendingTranslationRef.current) {
+        draftSource.clear();
+        if (target) { delete target.dataset.selectionDrag; delete target.dataset.selectionDragStatus; }
+      }
     };
-  }, [objects, selectedIds, tool]);
+  }, [changePreview, interactionDisabled, objects, selectedIds, tool]);
+
+  useEffect(() => {
+    if (!pendingTranslationRef.current || editPending) return;
+    pendingTranslationRef.current = false;
+    syncPlanFeatures(planSourceRef.current, objects);
+    for (const feature of planSourceRef.current.getFeatures()) {
+      feature.unset('_localIntersection'); feature.unset('_liveCandidateStatus');
+    }
+    selectionDraftSourceRef.current.clear();
+    if (targetRef.current) { delete targetRef.current.dataset.selectionDrag; delete targetRef.current.dataset.selectionDragStatus; }
+  }, [changePreview, editPending, objects]);
 
   useEffect(() => {
     const source = changePreviewSourceRef.current;
     source.clear();
     if (!changePreview) return;
-    source.addFeatures(changePreviewFeatures(objects, changePreview));
-  }, [changePreview, objects]);
+    source.addFeatures(changePreviewFeatures(objects, changePreview, changeDraft));
+  }, [changeDraft, changePreview, objects]);
 
   useEffect(() => {
     const source = growthEnvelopeSourceRef.current;
@@ -1787,14 +2077,15 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
 
   useEffect(() => {
     for (const feature of planSourceRef.current.getFeatures()) {
-      const muted = Boolean(highlightedPlantingZoneId && feature.get('plantingZoneId') !== highlightedPlantingZoneId);
+      const scope = highlightedPlantingZoneIds ?? (highlightedPlantingZoneId ? [highlightedPlantingZoneId] : []);
+      const muted = scope.length > 0 && !scope.includes(feature.get('plantingZoneId'));
       if (Boolean(feature.get('_zoneMuted')) === muted) continue;
       if (muted) feature.set('_zoneMuted', true);
       else feature.unset('_zoneMuted');
       feature.changed();
     }
     planLayerRef.current?.changed();
-  }, [highlightedPlantingZoneId, objects]);
+  }, [highlightedPlantingZoneId, highlightedPlantingZoneIds, objects]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1840,5 +2131,5 @@ export const MapViewport = forwardRef<MapViewportHandle, { geometry?: Record<str
     planLayerRef.current?.changed();
   }, [selectedIds]);
 
-  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} data-geometry-ready="false" data-growth-horizon={growthHorizon ?? ''} data-growth-overlay={growthOverlaySummary} data-brush-stroke-count={brushStrokes.length}><span className="sr-only" aria-live="polite" aria-label="Прогнозный слой карты">{growthOverlaySummary ? `Слой прогноза: ${growthOverlaySummary}` : 'Прогнозный слой недоступен'}</span></div><span id={helpId} className="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб</span></>;
+  return <><div ref={targetRef} className={`map-viewport map-viewport--${tool}`} role="region" tabIndex={0} aria-label="Карта проекта озеленения" aria-describedby={helpId} data-geometry-ready="false" data-growth-horizon={growthHorizon ?? ''} data-growth-overlay={growthOverlaySummary} data-brush-stroke-count={brushStrokes.length}><span role="status" className="sr-only" aria-live="polite" aria-label="Прогнозный слой карты">{growthOverlaySummary ? `Прогноз посадок: ${growthHorizon ? `через ${growthHorizon} лет` : 'сейчас'}` : 'Прогнозный слой недоступен'}</span></div><span id={helpId} className="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб</span></>;
 });

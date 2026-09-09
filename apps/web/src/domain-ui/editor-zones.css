@@ -1,0 +1,7 @@
+.editor-zones__list { display: grid; gap: 10px; }
+.editor-zones__list article { padding: 8px; border-radius: 4px; background: var(--color-neutral-100); }
+.editor-zones__list article.is-active { background: var(--color-blue-100); }
+.editor-zones__actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 6px; }
+.editor-zones__actions .ui-icon-button { --control-height: 28px; }
+.editor-zones__actions > .ui-tooltip { display: inline-flex; }
+.editor-zone-draft { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }

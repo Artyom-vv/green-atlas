@@ -1,28 +1,30 @@
 import type { PlanObject } from '@green/api-client';
-import { Leaf, Trash2 } from 'lucide-react';
-import { Button, EmptyState } from '@green/ui';
-import { GrowthHorizonControl, type GrowthHorizon } from './GrowthHorizonControl';
-import { InspectorHeader } from './InspectorHeader';
-import { InspectorBody, InspectorFooter } from './InspectorLayout';
+import { Crosshair, Leaf, Lock, Move, Trash2, Unlock } from 'lucide-react';
+import { Button } from '@green/ui';
+import type { GrowthHorizon } from './GrowthHorizonControl';
+import { EditorActions, EditorPanel } from './EditorPanel';
+import { EditorGrowth } from './EditorGrowth';
 
-export function ObjectInspector({ object, speciesName, growthHorizon, onGrowthHorizon, onSpecies, onDelete, editable = true }: { object?: PlanObject; speciesName?: string; growthHorizon?: GrowthHorizon; onGrowthHorizon: (value: GrowthHorizon) => void; onSpecies: () => void; onDelete: () => void; editable?: boolean }) {
-  if (!object) return <div className="inspector-empty"><EmptyState title="Ничего не выбрано" description="Выберите объект на карте, чтобы увидеть параметры" /></div>;
-  const status = object.status === 'error'
-    ? { className: 'is-error', label: 'Есть нарушение', description: 'Позиция не проходит обязательную геометрическую проверку' }
-    : object.status === 'warning'
-      ? object.species_revision_id
-        ? { className: 'is-warning', label: 'Нужно уточнение', description: 'Проверьте замечания по исходным данным, кроне или корневой зоне' }
-        : { className: 'is-warning', label: 'Порода не назначена', description: 'Позиция проверена, но прогноз роста пока недоступен' }
-      : { className: 'is-valid', label: 'Размещение допустимо', description: 'Нарушений обязательных расстояний не обнаружено' };
-  return (
-    <div className="object-inspector">
-      <InspectorHeader title={object.kind === 'tree' ? 'Дерево' : 'Кустарник'} meta="Выбранная посадка" />
-      <InspectorBody>
-        <section className="inspector-status"><span>Проверка</span><strong className={status.className}><i />{status.label}</strong><p>{status.description}</p></section>
-        <section className="object-species"><h3>Порода</h3><strong>{speciesName ?? 'Не назначена'}</strong><span>{speciesName ? 'Прогноз роста доступен' : 'Назначьте для расчёта кроны и корней'}</span>{editable ? <Button variant="secondary" icon={Leaf} onClick={onSpecies}>{speciesName ? 'Изменить породу' : 'Назначить породу'}</Button> : null}</section>
-        {object.canopy_forecast?.length ? <GrowthHorizonControl value={growthHorizon} forecasts={[object]} onChange={onGrowthHorizon} /> : null}
-      </InspectorBody>
-      {editable ? <InspectorFooter><Button variant="danger" icon={Trash2} onClick={onDelete}>Удалить</Button></InspectorFooter> : null}
-    </div>
-  );
+export function ObjectInspector({ object, speciesName, growthHorizon, onGrowthHorizon, onSpecies, onDelete, onFit, onMove, onLock, editable = true, mapMode = '2d' }: {
+  object?: PlanObject; speciesName?: string; growthHorizon?: GrowthHorizon;
+  onGrowthHorizon: (value: GrowthHorizon) => void; onSpecies: () => void; onDelete: () => void;
+  onFit?: () => void; onMove?: () => void; onLock?: (locked: boolean) => void; editable?: boolean;
+  mapMode?: '2d' | '3d';
+}) {
+  if (!object) return <EditorPanel title="Выделение"><p className="editor-panel__hint">Ничего не выбрано</p></EditorPanel>;
+  const status = object.status === 'error' ? 'Есть нарушение' : object.status === 'warning' ? 'Есть замечания' : 'Размещение допустимо';
+  return <EditorPanel title="Выделение">
+    {onFit ? <EditorActions><Button variant="secondary" controlSize="compact" icon={Crosshair} onClick={onFit}>К выделению</Button></EditorActions> : null}
+    <section className="editor-panel__section">
+      <h3>{object.kind === 'tree' ? 'Дерево' : 'Кустарник'}</h3>
+      <dl className="editor-panel__metrics"><dt>Вид</dt><dd>{speciesName ?? 'Не назначен'}</dd><dt>Проверка</dt><dd>{status}</dd><dt>Закреплено</dt><dd>{object.locked ? 'Да' : 'Нет'}</dd></dl>
+      {editable ? <EditorActions grid>
+        <Button className="editor-action-wide" variant="secondary" controlSize="compact" icon={Leaf} onClick={onSpecies}>{speciesName ? 'Изменить вид' : 'Назначить вид'}</Button>
+        {onMove ? <Button className={mapMode === '3d' ? 'editor-action-wide' : undefined} variant="secondary" controlSize="compact" icon={Move} onClick={onMove}>{mapMode === '3d' ? 'Переместить в 2D' : 'Переместить'}</Button> : null}
+        <Button variant="danger" controlSize="compact" icon={Trash2} onClick={onDelete}>Удалить</Button>
+      </EditorActions> : null}
+      {onLock ? <EditorActions><Button variant="secondary" controlSize="compact" icon={object.locked ? Unlock : Lock} onClick={() => onLock(!object.locked)}>{object.locked ? 'Открепить' : 'Закрепить'}</Button></EditorActions> : null}
+    </section>
+    <section className="editor-panel__section"><EditorGrowth objects={[object]} value={growthHorizon} onChange={onGrowthHorizon} showControl={mapMode === '2d'} /></section>
+  </EditorPanel>;
 }

@@ -33,21 +33,22 @@ describe('DataPassportPanel', () => {
 
     expect(screen.getByRole('heading', { name: 'Паспорт исходных данных' })).toBeInTheDocument();
     expect(screen.getByText('Граница участка')).toBeInTheDocument();
-    expect(screen.getByText('Участвует')).toBeInTheDocument();
-    expect(screen.getAllByText('Не участвует')).not.toHaveLength(0);
-    expect(screen.getByText('Массовая посадка требует проверки')).toBeInTheDocument();
+    expect(screen.getByText('Учтено в расчёте')).toBeInTheDocument();
+    expect(screen.getAllByText('Не участвует в расчёте')).not.toHaveLength(0);
+    expect(screen.getByText('Проверка ограничена исходными данными')).toBeInTheDocument();
     expect(screen.getByText(/Дороги и проезды/)).toBeInTheDocument();
-    expect(screen.getAllByText('site.dxf')).toHaveLength(4);
-    expect(screen.getAllByText('Владелец не указан')).toHaveLength(3);
+    expect(screen.getAllByText('site.dxf')).toHaveLength(1);
+    expect(screen.queryByText('Владелец не указан')).not.toBeInTheDocument();
     expect(screen.getByText('EPSG:32637')).toBeInTheDocument();
     expect(screen.getByText('Контрольные точки')).toBeInTheDocument();
-    expect(screen.getByText('Нужна проверка')).toBeInTheDocument();
+    expect(screen.getByText('Что не учтено полностью')).toBeInTheDocument();
+    expect(screen.getAllByRole('columnheader')).toHaveLength(3);
   });
 
   it('does not render a warning when every reported class is verified', () => {
     render(<DataPassportPanel passport={{ ...passport, overall_status: 'verified', mass_placement_status: 'verified', gaps: [], used_in_calculation: ['SITE_BORDER'] }} />);
 
-    expect(screen.queryByText('Массовая посадка требует проверки')).not.toBeInTheDocument();
-    expect(screen.getByText('Использованы только подтверждённые слои')).toBeInTheDocument();
+    expect(screen.queryByText('Проверка ограничена исходными данными')).not.toBeInTheDocument();
+    expect(screen.getByText('Проверка учитывает только загруженные слои')).toBeInTheDocument();
   });
 });

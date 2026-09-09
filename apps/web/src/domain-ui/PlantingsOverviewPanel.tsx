@@ -1,30 +1,18 @@
 import type { PlanObject } from '@green/api-client';
-import { Crosshair } from 'lucide-react';
-import { Button, EmptyState } from '@green/ui';
-import { InspectorHeader } from './InspectorHeader';
+import { Crosshair, Grid3x3 } from 'lucide-react';
+import { Button } from '@green/ui';
+import { EditorActions, EditorPanel } from './EditorPanel';
 import { plantingCount } from './countLabel';
 
-export function PlantingsOverviewPanel({ objects, onPlace, onFit, onClose }: {
-  objects: PlanObject[];
-  onPlace: () => void;
-  onFit: () => void;
-  onClose: () => void;
+export function PlantingsOverviewPanel({ objects, onPlace, onFit, onClose, mapMode = '2d' }: {
+  objects: PlanObject[]; onPlace: () => void; onFit: () => void; onClose: () => void;
+  mapMode?: '2d' | '3d';
 }) {
-  return <div className="plantings-overview">
-    <InspectorHeader title="План озеленения" meta={plantingCount(objects.length)} onClose={onClose} />
-    {objects.length ? <div className="plantings-overview__body">
-      <section className="plantings-overview__primary">
-        <span className="plantings-overview__copy">
-          <strong>Выберите группу или участок</strong>
-          <span>Проверьте или измените посадки</span>
-        </span>
-        <Button variant="primary" onClick={onPlace}>Разместить посадки</Button>
-      </section>
-      <section className="plantings-overview__secondary">
-        <Button variant="secondary" icon={Crosshair} onClick={onFit}>Показать посадки</Button>
-      </section>
-    </div> : <div className="plantings-overview__empty">
-      <EmptyState title="Создайте первую схему" description={<>Сервис найдёт<br />допустимые места</>} action={<Button variant="primary" onClick={onPlace}>Разместить посадки</Button>} />
-    </div>}
-  </div>;
+  const trees = objects.filter(object => object.kind === 'tree').length;
+  return <EditorPanel title="План озеленения" onClose={onClose}>
+    <div className="editor-panel__summary">{plantingCount(objects.length)}</div>
+    {objects.length ? <><dl className="editor-panel__metrics"><dt>Деревья</dt><dd>{trees}</dd><dt>Кустарники</dt><dd>{objects.length - trees}</dd></dl><p className="editor-panel__hint">Выберите группу или участок</p></> : <p className="editor-panel__hint">Создайте первую схему</p>}
+    <EditorActions><Button variant="primary" controlSize="compact" icon={Grid3x3} onClick={onPlace}>{mapMode === '3d' ? 'Разместить посадки в 2D' : 'Разместить посадки'}</Button></EditorActions>
+    {objects.length ? <EditorActions><Button variant="secondary" controlSize="compact" icon={Crosshair} onClick={onFit}>Показать посадки</Button></EditorActions> : null}
+  </EditorPanel>;
 }

@@ -92,8 +92,8 @@ describe('Button', () => {
     const opener = screen.getByRole('button', { name: 'Открыть' });
     opener.focus();
     fireEvent.click(opener);
-    const close = await screen.findByRole('button', { name: 'Закрыть' });
-    await waitFor(() => expect(close).toHaveFocus());
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(dialog).toHaveFocus());
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     expect(screen.getByRole('button', { name: 'Подтвердить' })).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Escape' });
