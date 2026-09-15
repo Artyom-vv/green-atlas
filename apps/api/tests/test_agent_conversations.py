@@ -1,3 +1,4 @@
+from app.composition import get_runtime
 import pytest
 from fastapi.testclient import TestClient
 
@@ -116,7 +117,7 @@ def test_interpretation_freezes_map_selection_and_keeps_message_context(client, 
     from app import api
     from test_placement_allocation import application
     domain, project = application()
-    monkeypatch.setattr(api, "application", domain)
+    monkeypatch.setattr(get_runtime(), "application", domain)
     monkeypatch.setattr(routes.local, "configured_model", lambda: "local")
     contexts = []
     def interpret(text, task, records, context, model):
@@ -149,7 +150,7 @@ def test_prepare_existing_task_stores_preview_once_without_applying(client, monk
     from app import api
     from test_agent_planning import existing_application
     domain, project = existing_application()
-    monkeypatch.setattr(api, "application", domain)
+    monkeypatch.setattr(get_runtime(), "application", domain)
     monkeypatch.setattr(routes.local, "configured_model", lambda: "local")
     monkeypatch.setattr(routes, "interpret_task", lambda *args: (
         TaskPatch(operation="delete", scope="objects", object_ids=["one", "two"]), TaskInterpretation(intent="amend")))
@@ -167,6 +168,6 @@ def test_prepare_existing_task_stores_preview_once_without_applying(client, monk
     assert record["payload"]["content"]["event"] == "task_prepared"
     assert set(record["payload"]["content"]["preparation"]["change_set"]["deletion_ids"]) == {"one", "two"}
     assert client.post(f"{url}/prepare", json=request).json() == prepared
-    assert len(domain._change_set_previews) == 1
+    assert len(domain.changes._previews) == 1
     assert client.post(f"{url}/prepare", json={**request, "record_id": "stale"}).status_code == 409
     assert domain.get(project.id).model_dump_json() == before

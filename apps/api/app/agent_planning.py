@@ -3,6 +3,7 @@ from app.agent_memory import TaskState
 from app.agent_tools import execute_tool
 from app.agent_conditions import bind_placement_conditions
 from app.agent_perception import select_zone_by_spatial_intent
+from app.planning.errors import ExistingTargetSelectionRequired
 
 DELEGATED_LAYOUT_SAMPLE_LIMIT = 8
 EXPLICIT_LAYOUT_SAMPLE_LIMIT = 3
@@ -77,15 +78,15 @@ def prepare_existing(application, project_id: str, task: TaskState) -> dict:
         raise ValueError("Выберите посадки или укажите участок")
     if values.plant_kind in {"tree", "shrub"}:
         objects = [obj for obj in objects if obj["kind"] == values.plant_kind]
-    if values.operation == "delete" and values.species_revision_ids:
+    if values.species_revision_ids and (values.operation == "delete" or values.edit_action in {"move", "lock", "unlock"}):
         objects = [obj for obj in objects if obj["species_revision_id"] in values.species_revision_ids]
     if not objects:
-        raise ValueError("Подходящие посадки не найдены")
+        raise ExistingTargetSelectionRequired(values.quantity, 0)
     if len(objects) > 5000:
         raise ValueError("Выберите меньшую группу посадок для одного изменения")
     if values.quantity is not None and ((values.quantity_mode == "maximum" and len(objects) > values.quantity) or
                                         (values.quantity_mode != "maximum" and len(objects) != values.quantity)):
-        raise ValueError(f"Найдено {len(objects)} посадок. Выберите конкретные объекты для изменения {values.quantity} посадок")
+        raise ExistingTargetSelectionRequired(values.quantity, len(objects))
     species_id = None
     if values.operation == "delete":
         operations = [{"type": "delete", "object_id": obj["id"]} for obj in objects]

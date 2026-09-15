@@ -1,0 +1,20 @@
+# Generated API schema and generated output
+apps/api/openapi.json
+packages/api-client/src/schema.d.ts
+**/generated/
+**/*.generated.*
+
+# Binary and generated assets
+**/assets/
+**/*.dxf
+**/*.glb
+**/*.gltf
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.webp
+
+# Project evidence and runtime data
+docs/
+**/data/

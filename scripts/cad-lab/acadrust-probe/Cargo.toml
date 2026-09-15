@@ -1,0 +1,21 @@
+[package]
+name = "green-atlas-acadrust-probe"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+acadrust = { path = "../../../.runtime/cad-patch-lab/acadrust" }
+
+[[bin]]
+name = "cad-probe"
+path = "../acadrust_probe.rs"
+
+[[bin]]
+name = "acds-dump"
+path = "../acadrust_acds_dump.rs"
+
+[[bin]]
+name = "text-fixture"
+path = "../acadrust_text_fixture.rs"

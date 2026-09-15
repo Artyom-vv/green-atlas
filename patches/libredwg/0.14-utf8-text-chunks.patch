@@ -1,0 +1,63 @@
+--- a/src/out_dxf.c
++++ b/src/out_dxf.c
+@@ -1382,6 +1382,21 @@
+      \M+xxxxx => \U+XXXX (shift-jis)
+    split by intermediate UCS-2, convert all unicode to \\U+
+  */
++/* A DXF text continuation must not split a UTF-8 code point: readers decode
++   each group separately before joining MTEXT/embedded ATTRIB content. */
++enum { DXF_STRING_CHUNK_BYTES = 250 };
++static size_t
++dxf_utf8_chunk_length (const char *str, size_t remaining)
++{
++  size_t length = remaining < DXF_STRING_CHUNK_BYTES
++                      ? remaining : DXF_STRING_CHUNK_BYTES;
++  if (length < remaining)
++    while (length && (((unsigned char)str[length] & 0xc0) == 0x80))
++      length--;
++  /* Invalid runs of continuation bytes must not cause an infinite loop. */
++  return length ? length : DXF_STRING_CHUNK_BYTES;
++}
++
+ static void
+ dxf_fixup_string (Bit_Chain *restrict dat, char *restrict str, const int opts,
+                   const int dxf)
+@@ -1419,24 +1434,26 @@
+           cstr = ubuf = bit_embed_TU (wstr);
+           free (wstr);
+           len = (long)strlen (ubuf);
+-          while (len > 0)
+-            {
+-              fprintf (dat->fh, "%3d\r\n", len < 250 ? dxf : 3);
+-              fprintf (dat->fh, "%.*s\r\n", len > 250 ? 250 : (int)len, ubuf);
+-              len -= 250;
+-              ubuf += 250;
++            while (len > 0)
++              {
++                int chunk = (int)dxf_utf8_chunk_length (ubuf, (size_t)len);
++                fprintf (dat->fh, "%3d\r\n", len <= chunk ? dxf : 3);
++                fprintf (dat->fh, "%.*s\r\n", chunk, ubuf);
++                len -= chunk;
++                ubuf += chunk;
+             }
+           free (cstr);
+         }
+       else // TFF
+         {
+           long len = (long)strlen (str);
+-          while (len > 0)
+-            {
+-              fprintf (dat->fh, "%3d\r\n", len < 250 ? dxf : 3);
+-              fprintf (dat->fh, "%.*s\r\n", len > 250 ? 250 : (int)len, str);
+-              len -= 250;
+-              str += 250;
++            while (len > 0)
++              {
++                int chunk = (int)dxf_utf8_chunk_length (str, (size_t)len);
++                fprintf (dat->fh, "%3d\r\n", len <= chunk ? dxf : 3);
++                fprintf (dat->fh, "%.*s\r\n", chunk, str);
++                len -= chunk;
++                str += chunk;
+             }
+         }
+     }

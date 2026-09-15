@@ -23,17 +23,32 @@ describe('ProjectsPage recovery', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('retries a failed project request without reloading the page', async () => {
-    const listProjects = vi.spyOn(api, 'listProjects')
-      .mockRejectedValueOnce(new ApiClientError('UNAVAILABLE', 'Сервис временно недоступен'))
+    const listProjects = vi
+      .spyOn(api, 'listProjects')
+      .mockRejectedValueOnce(
+        new ApiClientError('UNAVAILABLE', 'Сервис временно недоступен'),
+      )
       .mockResolvedValueOnce([project]);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
 
-    render(<QueryClientProvider client={queryClient}><MemoryRouter><ProjectsPage /></MemoryRouter></QueryClientProvider>);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ProjectsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить проекты');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Не удалось загрузить проекты',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
 
-    expect(await screen.findByRole('link', { name: /^Проект после восстановления/ })).toBeVisible();
+    expect(
+      await screen.findByRole('link', { name: /^Проект после восстановления/ }),
+    ).toBeVisible();
     expect(listProjects).toHaveBeenCalledTimes(2);
   });
 });

@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from app.regulations.network_rules import NETWORK_RULE_PACK, NETWORK_RULES, SP42_TABLE_SOURCE
 
-REGISTRY_REVISION = "moscow-greening-registry@2026-09-01.1"
+
+REGISTRY_REVISION = "moscow-greening-registry@2026-09-15.2"
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,22 @@ RECORDS = (
         source_url="https://vestnikmoscow.mos.ru/wp-content/uploads/2026/04/zhurnal-vestnik-moskvy-%E2%84%96-24-1.pdf",
         release_gate_machine_checkable=True,
     ),
+)
+
+RECORDS += tuple(
+    RegulatoryRecord(
+        id=rule.id,
+        document_code="СП 42.13330.2016 / 743-ПП",
+        document_title=f"Базовый отступ: {rule.label}",
+        clause="§9.6, таблица 9.1, примечание 1 / §3.6.3, таблица 3.6.1",
+        revision=NETWORK_RULE_PACK,
+        coverage="partial",
+        machine_checkable=True,
+        machine_checkable_scope="Подтверждённая подземная сеть с площадным физическим контуром; базовая строка без уменьшений и без неизвестного увеличения для кроны >5 м",
+        scope="Профиль требований ЛЦТ со ссылкой на СП2016; не охранная зона сети и не полное соответствие текущей редакции",
+        source_url=SP42_TABLE_SOURCE,
+    )
+    for rule in NETWORK_RULES
 )
 
 BY_ID = {record.id: record for record in RECORDS}

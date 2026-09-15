@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections import OrderedDict
+from dataclasses import dataclass
 from threading import RLock
 from typing import Literal
 
@@ -10,7 +10,9 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.prepared import prep
 
-from app.contracts import Project
+from app.geometry.constraint_index import ConstraintIndex
+from app.geometry.network_constraints import NetworkConstraints
+from app.projects.contracts import Project
 
 
 @dataclass(frozen=True)
@@ -83,10 +85,11 @@ class PositionChecker:
         self.prepared_site = None
         self.selected_area: BaseGeometry | None = None
         self.prepared_selected_area = None
-        self.constraints: dict[str, BaseGeometry] = {}
+        self.constraint_indexes: dict[str, ConstraintIndex] = {}
         self.feature_geometries: dict[str, list[tuple[dict, BaseGeometry]]] = {}
         self._safe_areas: OrderedDict[tuple, BaseGeometry] = OrderedDict()
         self._safe_area_lock = RLock()
+        self._networks: NetworkConstraints | None = None
         if project.geometry is None:
             return
         self.features = project.geometry.feature_collection.get("features", [])
@@ -134,15 +137,34 @@ class PositionChecker:
         self.feature_geometries[kind] = result
         return result
 
-    def _constraint(self, kind: str) -> BaseGeometry | None:
-        if kind in self.constraints:
-            return self.constraints[kind]
-        geometries = [geometry for _, geometry in self._features_of_kind(kind)]
-        if not geometries:
+    def _constraint_index(self, kind: str) -> ConstraintIndex:
+        with self._safe_area_lock:
+            if kind not in self.constraint_indexes:
+                self.constraint_indexes[kind] = ConstraintIndex(self._features_of_kind(kind))
+            return self.constraint_indexes[kind]
+
+    def _constraint(self, kind: str, window: BaseGeometry) -> BaseGeometry | None:
+        return self._constraint_index(kind).union(window)
+
+    @property
+    def networks(self) -> NetworkConstraints:
+        with self._safe_area_lock:
+            if self._networks is None:
+                self._networks = NetworkConstraints(self.project, self._features_of_kind("utility"))
+            return self._networks
+
+    def _point_constraint(self, kind: str, center: Point, distance: float) -> BaseGeometry | None:
+        if not self._constraint_index(kind).features:
             return None
-        constraint = unary_union(geometries)
-        self.constraints[kind] = constraint
-        return constraint
+        return self._constraint(kind, self._point_window(center, distance))
+
+    @staticmethod
+    def _point_window(center: Point, distance: float) -> BaseGeometry:
+        # A square includes the full distance circle, including diagonal
+        # neighbours that a polygonal circle approximation could miss.
+        reach = distance + 1e-6
+        x, y = center.x, center.y
+        return box(x - reach, y - reach, x + reach, y + reach)
 
     def hard_safe_area(
         self,
@@ -162,9 +184,10 @@ class PositionChecker:
         if self.site is not None:
             safe = safe.intersection(self.site.buffer(-radius))
         for kind in CONSTRAINT_KINDS:
-            geometry = self._constraint(kind)
+            distance = rule_distance(kind, plant_kind)
+            window = safe.buffer(distance)
+            geometry = self._constraint(kind, window)
             if geometry is not None:
-                distance = rule_distance(kind, plant_kind)
                 # Municipal drawings may contain thousands of roads and
                 # buildings far outside the operator's current work frame.
                 # Buffering that complete union dominated every preview.
@@ -173,13 +196,23 @@ class PositionChecker:
                 # affect this result. Individual candidates are still passed
                 # through ``check`` afterwards, so this is only a safe spatial
                 # acceleration and never a weaker validation path.
-                nearby = geometry.intersection(safe.buffer(distance))
+                nearby = geometry.intersection(window)
                 if not nearby.is_empty:
                     safe = safe.difference(nearby.buffer(distance))
-        for kind in OCCUPIED_KINDS:
-            geometry = self._constraint(kind)
+        for group in self.networks.groups:
+            distance = group.distance(plant_kind)
+            if distance is None:
+                continue
+            distance += group.axis_radius_m
+            window = safe.buffer(distance)
+            geometry = group.index.union(window)
             if geometry is not None:
-                nearby = geometry.intersection(safe.buffer(radius))
+                safe = safe.difference(geometry.intersection(window).buffer(distance))
+        for kind in OCCUPIED_KINDS:
+            window = safe.buffer(radius)
+            geometry = self._constraint(kind, window)
+            if geometry is not None:
+                nearby = geometry.intersection(window)
                 if not nearby.is_empty:
                     safe = safe.difference(nearby.buffer(radius))
         return safe
@@ -246,7 +279,9 @@ class PositionChecker:
             "restricted": full_envelope,
         }
         for kind, distance in future_buffers.items():
-            geometry = self._constraint(kind)
+            min_x, min_y, max_x, max_y = safe.bounds
+            window = box(min_x - distance, min_y - distance, max_x + distance, max_y + distance)
+            geometry = self._constraint(kind, window)
             if geometry is not None:
                 # Only obstacles within this distance can affect the current
                 # safe area. Use an expanded rectangle (not a rounded buffer)
@@ -254,11 +289,7 @@ class PositionChecker:
                 # Clip before buffering: a city-wide road union can otherwise
                 # dominate even a small planting preview. Final point/growth
                 # validation remains independent and authoritative.
-                min_x, min_y, max_x, max_y = safe.bounds
-                nearby = geometry.intersection(box(
-                    min_x - distance, min_y - distance,
-                    max_x + distance, max_y + distance,
-                ))
+                nearby = geometry.intersection(window)
                 if nearby.is_empty:
                     continue
                 safe = safe.difference(nearby.buffer(distance))
@@ -269,7 +300,7 @@ class PositionChecker:
     def _evidence(self, kind: str, center: Point, distance: float) -> tuple[str | None, tuple[str, ...]]:
         layers: set[str] = set()
         identifiers: list[str] = []
-        for feature, geometry in self._features_of_kind(kind):
+        for feature, geometry in self._constraint_index(kind).nearby(self._point_window(center, distance)):
             if center.distance(geometry) > distance + 1e-6:
                 continue
             properties = feature.get("properties", {})
@@ -315,10 +346,10 @@ class PositionChecker:
             )
 
         for kind, (rule_id, label, _distances) in CONSTRAINT_KINDS.items():
-            geometry = self._constraint(kind)
+            required = rule_distance(kind, plant_kind)
+            geometry = self._point_constraint(kind, center, required)
             if geometry is None:
                 continue
-            required = rule_distance(kind, plant_kind)
             # ПП-743 measures the setback from the obstacle boundary to the
             # axis of a tree or shrub. ``radius`` describes the editable
             # planting symbol and must not silently increase that legal
@@ -337,8 +368,22 @@ class PositionChecker:
                     source_layer,
                     source_feature_ids,
                 )
+        network_violation = self.networks.first_violation(center, plant_kind)
+        if network_violation is not None:
+            group, actual, required = network_violation
+            assert group.rule is not None
+            sources = group.nearest(center)
+            labels = sorted({str(feature.get("properties", {}).get("source_layer", "")) for _, (feature, _) in sources})
+            ids = tuple(str(feature["id"]) for _, (feature, _) in sources[:20] if feature.get("id") is not None)
+            return PositionViolation(
+                "NETWORK_CLEARANCE_FAILED", f"Отступ: {group.rule.label}",
+                f"{group.rule.label}: фактический отступ {actual:.2f} м меньше базового требования {required:.2f} м.",
+                group.rule.id, round(actual, 2), required,
+                "Переместить посадку за пределы нормативного отступа сети",
+                ", ".join(labels) or None, ids,
+            )
         for kind, (code, label) in OCCUPIED_KINDS.items():
-            geometry = self._constraint(kind)
+            geometry = self._point_constraint(kind, center, radius)
             if geometry is None or not geometry.intersects(footprint):
                 continue
             actual = max(0.0, center.distance(geometry))
@@ -365,16 +410,22 @@ class PositionChecker:
         footprint touches it, the operator must obtain its subtype and the
         applicable rule before calling the position safe.
         """
-        utility = self._constraint("utility")
-        if utility is None:
+        center = Point(x, y)
+        uncertain_sources = [
+            feature
+            for group in self.networks.groups
+            if group.unavailable_reason is not None
+            for _, (feature, _) in group.index.within_distance(center, radius + group.axis_radius_m)
+        ]
+        if not uncertain_sources:
             return None
-        if not utility.intersects(Point(x, y).buffer(radius)):
-            return None
-        source_layer, source_feature_ids = self._evidence("utility", Point(x, y), radius)
+        labels = sorted({str(feature.get("properties", {}).get("source_layer", "")) for feature in uncertain_sources})
+        source_layer = ", ".join(labels) or None
+        source_feature_ids = tuple(str(feature["id"]) for feature in uncertain_sources[:20] if feature.get("id") is not None)
         return PositionAdvisory(
             code="UNTYPED_UTILITY_REVIEW",
             title="Требуется уточнение сети",
-            description="Посадка пересекает слой коммуникаций без типа сети. Нормативный отступ нельзя определить по имени слоя.",
+            description="Посадка пересекает сеть с неподтверждённым типом, происхождением или смыслом геометрии. Нормативный отступ нельзя определить по имени слоя.",
             suggested_action="Уточнить вид сети и применимое техническое условие",
             source_layer=source_layer,
             source_feature_ids=source_feature_ids,
@@ -403,7 +454,7 @@ class PositionChecker:
                 description=f"Крона или корневая зона радиусом до {full_envelope:.2f} м выходит за границу проектирования",
                 suggested_action="Сместить посадку внутрь территории",
             )
-        utility = self._constraint("utility")
+        utility = self._point_constraint("utility", center, root_radius)
         if utility is not None and center.distance(utility) + 1e-6 < root_radius:
             source_layer, source_feature_ids = self._evidence("utility", center, root_radius)
             return PositionAdvisory(
@@ -414,7 +465,7 @@ class PositionChecker:
                 source_layer=source_layer,
                 source_feature_ids=source_feature_ids,
             )
-        building = self._constraint("building")
+        building = self._point_constraint("building", center, canopy_radius)
         if building is not None and center.distance(building) + 1e-6 < canopy_radius:
             source_layer, source_feature_ids = self._evidence("building", center, canopy_radius)
             return PositionAdvisory(
@@ -425,7 +476,7 @@ class PositionChecker:
                 source_layer=source_layer,
                 source_feature_ids=source_feature_ids,
             )
-        road = self._constraint("road")
+        road = self._point_constraint("road", center, canopy_radius)
         if road is not None and center.distance(road) + 1e-6 < canopy_radius:
             source_layer, source_feature_ids = self._evidence("road", center, canopy_radius)
             return PositionAdvisory(
@@ -441,7 +492,7 @@ class PositionChecker:
             ("water", "GROWTH_WATER_REVIEW", "Прогнозная зона достигает воды", "водного объекта"),
             ("restricted", "GROWTH_RESTRICTED_REVIEW", "Прогнозная зона достигает препятствия", "технической или непригодной зоны"),
         ):
-            geometry = self._constraint(kind)
+            geometry = self._point_constraint(kind, center, full_envelope)
             if geometry is None or center.distance(geometry) + 1e-6 >= full_envelope:
                 continue
             source_layer, source_feature_ids = self._evidence(kind, center, full_envelope)

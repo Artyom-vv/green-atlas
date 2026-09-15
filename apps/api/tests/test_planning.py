@@ -121,7 +121,9 @@ def test_wide_crown_is_not_a_validation_issue_without_a_real_conflict() -> None:
 
     issues = RuleBasedPlanValidator().validate_plan(project, plan)
 
-    assert plan.objects[0].status == "valid"
+    # Missing engineering data limits verification independently of crown size.
+    assert plan.objects[0].status == "warning"
+    assert any(issue.code == "NO_NETWORK_FEATURES" for issue in issues)
     assert all(issue.code != "CROWN_SETBACK_REVIEW" for issue in issues)
 
 

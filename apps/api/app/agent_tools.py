@@ -13,6 +13,7 @@ from shapely.ops import unary_union
 
 from app import building_screen
 from app.agent_perception import select_zone_by_spatial_intent
+from app.agent_conditions import PositionRuleId, bind_placement_conditions
 from app.contracts import (BuildingScreenRequest, BrushPreviewRequest, FillPatternRequest,
                           PlacementCheckRequest, PlacementMaskRequest, PlantingZoneAssignment,
                           PlanChangeSetDraft, RecommendationRequest, RowPatternRequest,
@@ -116,6 +117,7 @@ class PlacementPrepareQuery(Empty):
     quantity_mode: Literal["target", "maximum", "fill_available"] = "target"
     spacing_policy: Literal["open", "balanced", "canopy"] = "balanced"
     species_revision_ids: list[str] = Field(default_factory=list, max_length=10)
+    condition_rule_ids: list[PositionRuleId] = Field(default_factory=list, max_length=2)
 
 
 class SpatialIntentQuery(Empty):
@@ -327,6 +329,7 @@ def _prepare_placement(app, project_id, query):
     """
     from app.agent_memory import TaskPatch, TaskState
     from app.agent_planning import prepare_task
+    from app.agent_runtime.placement import placement_outcome
 
     project = app.get(project_id, lightweight=True)
     if project.plan is None:
@@ -347,14 +350,29 @@ def _prepare_placement(app, project_id, query):
             species_mode="specified" if query.species_revision_ids else "automatic",
             species_revision_ids=query.species_revision_ids or None,
             post_action="focus_map",
+            constraints=["нормативные отступы"] if query.condition_rule_ids else None,
         ),
         provenance={"runtime": "agent-runtime"},
     )
     prepared = prepare_task(app, project_id, task, query.species_revision_ids or None)
+    if query.condition_rule_ids:
+        # Use the complete geometry for coverage evidence; lightweight project
+        # metadata intentionally omits source features.
+        prepared["condition_check"] = bind_placement_conditions(app.get(project_id), ["нормативные отступы"], [])
+    outcome = placement_outcome(prepared, requested=query.target_count)
+    requires_confirmation = outcome.status == "exact" and bool(prepared.get("requires_confirmation"))
+    prepared["requires_confirmation"] = requires_confirmation
     return {
         "base_plan_version": query.base_plan_version,
         "proposal": prepared,
-        "requires_confirmation": bool(prepared.get("requires_confirmation")),
+        "requires_confirmation": requires_confirmation,
+        "placement_outcome": outcome.model_dump(mode="json"),
+        "requested": outcome.requested,
+        "found": outcome.found,
+        "shortfall": outcome.shortfall,
+        "arrangement": query.arrangement,
+        "plant_kind": query.plant_kind,
+        "condition_rule_ids": list(query.condition_rule_ids),
     }
 
 

@@ -5,7 +5,8 @@ import ezdxf
 from ezdxf.document import Drawing
 from ezdxf.lldxf.tagger import binary_tags_loader
 
-from app.contracts import ExportArtifact, Project
+from app.exporting.contracts import ExportArtifact
+from app.projects.contracts import Project
 from app.dxf_import.encoding import decode_text_dxf
 from app.dxf_import.units import meters_per_dxf_unit
 
@@ -21,7 +22,9 @@ PLANTING_LAYER_BASES = {
 def _read_document(content: bytes) -> Any:
     if content.startswith(b"AutoCAD Binary DXF"):
         return Drawing.load(binary_tags_loader(content))
-    return ezdxf.read(StringIO(decode_text_dxf(content)))
+    # Read Windows/CAD line endings like a text file so source entities are
+    # retained when the original upload is reopened for export.
+    return ezdxf.read(StringIO(decode_text_dxf(content), newline=None))
 
 
 def _new_layer_name(document: Any, base_name: str) -> str:

@@ -3,14 +3,20 @@ from __future__ import annotations
 from math import ceil, cos, floor, hypot, pi, sin, sqrt
 from random import Random
 
-from shapely.affinity import rotate
 from shapely.geometry import LineString, Point, shape
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import unary_union, nearest_points
+from shapely.ops import nearest_points, unary_union
 
-from app.contracts import BrushPreviewRequest, FillPatternRequest, PlacementMaskRequest, PlantingZoneAssignment, RowPatternRequest
+from app.planning.pattern_contracts import (
+    BrushPreviewRequest,
+    FillPatternRequest,
+    PlacementMaskRequest,
+    RowPatternRequest,
+)
 from app.planning.ports import PatternCandidate
-
+from app.planning.regular_grid import RegularFillGrid
+from app.planning.sampling import sparse_area_sampler
+from app.planting_zones.contracts import PlantingZoneAssignment
 
 MAX_PATTERN_CANDIDATES = 5000
 
@@ -38,12 +44,17 @@ def _poisson_candidates(geometry, spacing: float, target: int, seed: int) -> lis
     accepted: list[PatternCandidate] = []
     random = Random(f"poisson:{seed}")
     max_attempts = max(4_000, target * 120)
+    sampler = sparse_area_sampler(geometry, target, max_attempts)
     attempts_without_acceptance = 0
     for _ in range(max_attempts):
-        x = min_x + random.random() * width
-        y = min_y + random.random() * height
+        if sampler is None:
+            component = geometry
+            x = min_x + random.random() * width
+            y = min_y + random.random() * height
+        else:
+            component, x, y = sampler.draw(random)
         point = Point(x, y)
-        if not geometry.covers(point):
+        if not component.covers(point):
             attempts_without_acceptance += 1
             continue
         bucket = (floor(x / cell), floor(y / cell))
@@ -149,36 +160,7 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
         target = request.target_count if request.placement_mode == "count" else MAX_PATTERN_CANDIDATES
         return _poisson_candidates(usable_geometry, request.spacing_m, target, request.seed)
 
-    def candidates_at(spacing: float, limit: int | None = None) -> list[PatternCandidate]:
-        candidates: list[PatternCandidate] = []
-        seen: set[tuple[float, float]] = set()
-        rotated = rotate(usable_geometry, -request.angle_deg, origin=(0, 0), use_radians=False)
-        min_x, min_y, max_x, max_y = rotated.bounds
-        first_x = floor(min_x / spacing) * spacing
-        first_y = floor(min_y / spacing) * spacing
-        row = 0
-        row_step = spacing * sqrt(3) / 2 if request.layout == "staggered" else spacing
-        y = first_y
-        while y <= max_y + 1e-9:
-            col = 0
-            x_offset = spacing / 2 if request.layout == "staggered" and row % 2 else 0
-            x = first_x + x_offset
-            while x <= max_x + 1e-9:
-                candidate_x, candidate_y = x, y
-                point = Point(candidate_x, candidate_y)
-                if rotated.covers(point):
-                    restored = rotate(point, request.angle_deg, origin=(0, 0), use_radians=False)
-                    key = (round(restored.x, 6), round(restored.y, 6))
-                    if key not in seen:
-                        seen.add(key)
-                        candidates.append(PatternCandidate(*key))
-                        if limit is not None and len(candidates) >= limit:
-                            return candidates
-                x += spacing
-                col += 1
-            y += row_step
-            row += 1
-        return candidates
+    grid = RegularFillGrid(usable_geometry, request.angle_deg, request.layout)
 
     if request.placement_mode == "count":
         target = request.target_count
@@ -190,12 +172,12 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
         # multi-hectare DXF never materialises an irrelevant full grid.
         for _ in range(16):
             middle = (low + high) / 2
-            count = len(candidates_at(middle, target))
+            count = grid.count(middle, target)
             if count >= target:
                 low = middle
             else:
                 high = middle
-        candidates = candidates_at(low)
+        candidates = grid.candidates(low)
         if len(candidates) > target:
             if target == 1:
                 return [candidates[len(candidates) // 2]]
@@ -203,7 +185,7 @@ def generate_fill(request: FillPatternRequest, zones: list[PlantingZoneAssignmen
             return [candidates[index] for index in indices]
         return candidates
 
-    candidates = candidates_at(request.spacing_m)
+    candidates = grid.candidates(request.spacing_m)
     return _bounded(candidates)
 
 

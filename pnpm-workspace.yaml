@@ -7,3 +7,9 @@ allowBuilds:
   # Required by the pinned glTF optimization pipeline for deterministic
   # texture resizing/compression. Sharp is a direct, audited dev dependency.
   sharp: true
+
+minimumReleaseAgeExclude:
+  - react-dropzone@20.1.2
+
+patchedDependencies:
+  dxf-viewer@1.0.44: patches/dxf-viewer@1.0.44.patch

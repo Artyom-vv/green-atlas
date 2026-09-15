@@ -1,8 +1,9 @@
 MAX_DXF_CONTENT_BYTES = 50 * 1024 * 1024
 
 
-def dxf_size_error(limit: int = MAX_DXF_CONTENT_BYTES) -> str:
-    return f"DXF должен быть не больше {limit // 1024 // 1024} МБ"
+def dxf_size_error(limit: int | None = None) -> str:
+    effective_limit = MAX_DXF_CONTENT_BYTES if limit is None else limit
+    return f"DXF должен быть не больше {effective_limit // 1024 // 1024} МБ"
 
 
 def dxf_filename_error() -> str:

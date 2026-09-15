@@ -1,0 +1,11 @@
+{
+  "schema": "green-atlas-portable-cad-fixture-v1",
+  "original_filename": "01-25-ДВ-ВАО-10001759-АПОТ.dwg",
+  "original_relative_path": "3. 3-я Парковая/Исходные данные/10001759_3-я Парковая ул/02_АПОТ/01-25-ДВ-ВАО-10001759-АПОТ.dwg",
+  "fixture": "parkovaya-apot-original.dwg",
+  "bytes": 26293408,
+  "sha256": "64a6628eb402566b1010657717f71b9e7c3a00e07be7efc381750475b39b1d47",
+  "byte_identical_to_official_source": true,
+  "external_references_included": false,
+  "purpose": "Исследование конвертации, MATERIAL, ACDSDATA и четырёх REGION. Не полный комплект улицы."
+}

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.composition import get_application
 
 from fastapi.testclient import TestClient
 
@@ -107,10 +108,10 @@ def test_data_passport_does_not_call_excluded_incomplete_layer_verified() -> Non
 
 
 def test_data_passport_is_exposed_as_a_compact_project_contract() -> None:
-    created = api_module.application.create_project("Паспорт через API")
+    created = get_application().create_project("Паспорт через API")
     created.layers = [_layer("UTIL_HEAT", LayerKind.UTILITY, count=3)]
     created.coordinate_reference = CoordinateReference(status="local", source="dxf_geodata")
-    saved = api_module.application.repository.save(created)
+    saved = get_application().repository.save(created)
 
     response = client.get(f"/api/projects/{saved.id}/data-passport")
 

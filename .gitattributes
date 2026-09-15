@@ -1,0 +1,4 @@
+# Preserve the official CAD fixture bytes on every platform.
+*.dwg binary
+# Downstream patches are portable text inputs, independent of core.autocrlf.
+*.patch text eol=lf

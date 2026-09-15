@@ -1,0 +1,32 @@
+{
+  "url": "https://green-atlas.130-49-146-234.sslip.io",
+  "checked_at": "2026-09-11T09:35:57.096820+00:00",
+  "checks": [
+    "unauthenticated website and API blocked",
+    "HTML, entry assets, health, intentionally disabled agent",
+    "HTTPS create, DXF upload, mappings, geometry, zone, planting, draft ZIP with valid CRC",
+    "five concurrent project reads (not heavy-import load certification)"
+  ],
+  "project_id": "8907d080-d0d5-44f2-bb7f-5592f2d6b800",
+  "bundle_members": [
+    "site-dendroplan.svg",
+    "site-manifest.json",
+    "site-planting-plan.dxf",
+    "site-planting-schedule.csv",
+    "site-scene-0y.json"
+  ],
+  "release_id": "release-516263e476535b3265d4",
+  "bundle_bytes": 37194,
+  "bundle_sha256": "1d02686c9f2abecb5524473fcf56bdbba7eecb95825acb0d9d7de6de9fd96398",
+  "project_sha256": "f1cb2ba767d327ccbedb606b96ed3c118c1d7a8aaef47291e8ecc4ee711d8f9f",
+  "state_version": 8,
+  "geometry_version": 3,
+  "plan_version": 2,
+  "status": "passed",
+  "after_restart": {
+    "checked_at": "2026-09-11T09:37:15.085637+00:00",
+    "project_unchanged": true,
+    "release_zip_unchanged": true
+  },
+  "static_files_verified": 69
+}

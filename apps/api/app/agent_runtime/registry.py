@@ -12,9 +12,25 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent_tools import REGISTRY
 from app.contracts import PlanChangeSetApplyRequest
+from app.agent_conditions import PositionRuleId, bind_placement_conditions
+from app.agent_runtime.zone_workflow import ZonePrepareRequest, bind_zone_intent, prepare_zone_change
+from app.planting_zone_changes import ZoneChangeCommit, get_zone_change_service
+from app.projects.concurrency import ProjectVersionConflict
 
 
 EffectClass = Literal["read", "preview", "write", "control"]
+
+
+class FocusZoneRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(min_length=1, max_length=200)
+
+
+def _focus_zone(application, project_id: str, request: FocusZoneRequest):
+    from app.agent_runtime.control_workflow import focus_zone_facts
+
+    return focus_zone_facts(application.get(project_id), request.zone_id)
 
 
 class CommitChangeSetRequest(BaseModel):
@@ -34,13 +50,14 @@ class ExistingChangePrepareQuery(BaseModel):
     operation: Literal["edit", "delete"]
     zone_ids: list[str] = Field(default_factory=list, max_length=80)
     object_ids: list[str] = Field(default_factory=list, max_length=5000)
-    plant_kind: Literal["tree", "shrub"] | None = None
+    plant_kind: Literal["tree", "shrub", "mixed"] | None = None
     species_revision_ids: list[str] = Field(default_factory=list, max_length=10)
     quantity: int | None = Field(default=None, ge=1, le=5000)
     quantity_mode: Literal["target", "maximum"] = "target"
     edit_action: Literal["species", "move", "lock", "unlock"] | None = None
     move_dx_m: float | None = Field(default=None, allow_inf_nan=False)
     move_dy_m: float | None = Field(default=None, allow_inf_nan=False)
+    condition_rule_ids: list[PositionRuleId] = Field(default_factory=list, max_length=2)
 
     @model_validator(mode="after")
     def validate_target_and_action(self):
@@ -63,6 +80,18 @@ def _commit_change_set(application, project_id: str, request: CommitChangeSetReq
         digest=request.digest,
         base_plan_version=request.base_plan_version,
     ))
+
+
+def _prepare_zone_change(application, project_id: str, request: ZonePrepareRequest):
+    project = application.get(project_id)
+    if project.state_version != request.base_state_version:
+        raise ProjectVersionConflict(project_id, request.base_state_version, project.state_version)
+    bound = bind_zone_intent(request.source_text, project, request.intent, source_turns=request.source_turns)
+    return prepare_zone_change(application, project_id, bound)
+
+
+def _commit_zone_change(application, project_id: str, request: ZoneChangeCommit):
+    return get_zone_change_service(application).commit(project_id, request)
 
 
 def _prepare_existing_change(application, project_id: str, request: ExistingChangePrepareQuery):
@@ -96,7 +125,19 @@ def _prepare_existing_change(application, project_id: str, request: ExistingChan
         provenance={"runtime": "agent-runtime"},
     )
     prepared = prepare_task(application, project_id, task)
+    targets = set(prepared.get("target_ids") or [])
+    prepared["target_before"] = [obj.model_dump(mode="json") for obj in getattr(project.plan, "objects", []) if obj.id in targets]
+    prepared["plant_kind"] = request.plant_kind
+    prepared["species_revision_ids"] = list(request.species_revision_ids)
     prepared["operation"] = request.operation
+    prepared["resolved_zone_ids"] = list(request.zone_ids)
+    prepared["resolved_object_ids"] = list(request.object_ids)
+    prepared["quantity_mode"] = request.quantity_mode
+    prepared["edit_action"] = request.edit_action
+    prepared["edit_parameters"] = {"action": request.edit_action, "move_dx_m": request.move_dx_m, "move_dy_m": request.move_dy_m}
+    prepared["condition_rule_ids"] = list(request.condition_rule_ids)
+    if request.condition_rule_ids:
+        prepared["condition_check"] = bind_placement_conditions(application.get(project_id), ["нормативные отступы"], [])
     prepared["requires_confirmation"] = bool(prepared.get("change_set", {}).get("can_apply"))
     return prepared
 
@@ -158,6 +199,27 @@ def _capabilities() -> tuple[Capability, ...]:
         for tool in REGISTRY.values()
     )
     return read_preview + (
+        Capability(
+            name="focus_zone",
+            description="Подготовить показ одного участка по полному контуру; выполнение требует отдельного подтверждения карты",
+            arguments=FocusZoneRequest,
+            effect="control", domain="project", approval_required=False, idempotent=True,
+            executor=_focus_zone,
+        ),
+        Capability(
+            name="prepare_zone_change",
+            description="Подготовить проверенное создание, изменение или удаление участка по исходному поручению",
+            arguments=ZonePrepareRequest,
+            effect="preview", domain="project", approval_required=True, idempotent=True,
+            executor=_prepare_zone_change,
+        ),
+        Capability(
+            name="commit_zone_change",
+            description="Применить сохранённое предложение участка после подтверждения пользователя",
+            arguments=ZoneChangeCommit,
+            effect="write", domain="project", approval_required=True, idempotent=True,
+            executor=_commit_zone_change,
+        ),
         Capability(
             name="prepare_existing_change",
             description="Подготовить проверяемое изменение или удаление существующих посадок",

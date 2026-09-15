@@ -1,0 +1,22 @@
+--- a/programs/getopt.c
++++ b/programs/getopt.c
+@@ -41,6 +41,10 @@
+ #define BADARG (int)':'
+ #define EMSG ""
+ 
++/* Persist parser state between calls, as getopt callers require. */
++int opterr = 1;
++int optind = 1;
++
+ /*
+  * getopt --
+  *      Parse argc/argv argument vector.
+@@ -50,8 +54,6 @@
+ {
+   static char *place = EMSG; /* option letter processing */
+   const char *oli;           /* option letter list index */
+-  opterr = 1;
+-  optind = 1;
+ 
+   if (optreset || !*place)
+     { /* update scanning pointer */

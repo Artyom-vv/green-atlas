@@ -1,0 +1,7 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Green Atlas — сравнение CAD SDK</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui;display:grid;grid-template-rows:auto minmax(0,1fr) 160px;height:100vh;background:#f4f5f7;color:#182330}
+header{display:flex;gap:12px;align-items:center;padding:12px;flex-wrap:wrap}button,select{font:inherit;padding:8px;cursor:pointer}#map{min-height:0;position:relative;overflow:hidden}pre{margin:0;padding:12px;overflow:auto;font-size:12px}button:disabled{cursor:default}
+</style>
+<header><b>Стенд CAD SDK • полный файл</b><select id="engine" aria-label="Движок"><option value="mlight">MLightCAD 1.7.0</option><option value="dxf">dxf-viewer 1.0.44</option></select><select id="fixture" aria-label="Файл"><option value="apot">АПОТ · 169 MB DXF</option><option value="native">АСУ ОДХ · 6.6 MB DXF</option></select><button id="open">Открыть полный файл</button><button id="fit" disabled>Весь чертёж</button><button id="zoom" disabled>Приблизить ×8</button><button id="measure" disabled>Замер навигации · 10 с</button></header>
+<div id="map"></div><pre id="report" role="status">Готов к проверке. Это отдельный стенд, не рабочий проект.</pre><script type="module" src="/main.js"></script></html>

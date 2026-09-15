@@ -1,0 +1,487 @@
+diff --git a/src/BatchingKey.js b/src/BatchingKey.js
+index ea879c3..bc4f1ac 100644
+--- a/src/BatchingKey.js
++++ b/src/BatchingKey.js
+@@ -11,12 +11,20 @@ export class BatchingKey {
+      * @param lineType {?number} Line type ID, null for non-lines. Zero is default type (solid
+      *  line).
+      */
+-    constructor(layerName, blockName, geometryType, color, lineType) {
++    constructor(layerName, blockName, geometryType, color, lineType, visibilityLayers = [], appearanceClass = "line") {
+         this.layerName = layerName ?? null
+         this.blockName = blockName ?? null
+         this.geometryType = geometryType ?? null
+         this.color = color
+         this.lineType = lineType ?? null
++        this.SetVisibilityLayers(visibilityLayers)
++        this.appearanceClass = appearanceClass
++    }
++
++    /** Preserve independent parent visibility when otherwise identical batches are merged. */
++    SetVisibilityLayers(layers) {
++        this.visibilityLayers = [...new Set(layers.filter(layer => layer !== null))].sort()
++        this.visibilityKey = JSON.stringify(this.visibilityLayers)
+     }
+ 
+     /** Comparator function. Fields lexical order corresponds to the constructor arguments order.
+@@ -39,7 +47,10 @@ export class BatchingKey {
+         if (c !== 0) {
+             return c
+         }
+-        return CompareValues(this.lineType, other.lineType)
++        c = CompareValues(this.lineType, other.lineType)
++        if (c !== 0) return c
++        c = CompareValues(this.visibilityKey, other.visibilityKey)
++        return c !== 0 ? c : CompareValues(this.appearanceClass, other.appearanceClass)
+     }
+ 
+     IsIndexed() {
+@@ -53,6 +64,8 @@ export class BatchingKey {
+     }
+ }
+ 
++BatchingKey.AppearanceClass = Object.freeze({ LINE: "line", FILL: "fill", TEXT: "text" })
++
+ BatchingKey.GeometryType = Object.freeze({
+     POINTS: 0,
+     LINES: 1,
+diff --git a/src/DxfScene.js b/src/DxfScene.js
+index 560a56b..6118f75 100644
+--- a/src/DxfScene.js
++++ b/src/DxfScene.js
+@@ -347,7 +347,10 @@ export class DxfScene {
+             console.log("Unhandled entity type: " + entity.type)
+             return
+         }
++        const appearanceClass = ["HATCH", "SOLID", "3DFACE"].includes(entity.type) ?
++            BatchingKey.AppearanceClass.FILL : BatchingKey.AppearanceClass.LINE
+         for (const renderEntity of renderEntities) {
++            renderEntity.appearanceClass ??= appearanceClass
+             this._ProcessEntity(renderEntity, blockCtx)
+         }
+     }
+@@ -635,7 +638,7 @@ export class DxfScene {
+             /* Shaped mark should be instanced. */
+             const key = new BatchingKey(layer, POINT_SHAPE_BLOCK_NAME,
+                                         BatchingKey.GeometryType.POINT_INSTANCE, color, 0)
+-            const batch = this._GetBatch(key)
++            const batch = this._GetBatch(key, blockCtx, entity.appearanceClass)
+             batch.PushVertex(this._TransformVertex(entity.position))
+             this._CreatePointShapeBlock()
+             return
+@@ -1531,7 +1534,8 @@ export class DxfScene {
+                 console.warn("Unresolved nested block reference: " + entity.name)
+                 return
+             }
+-            const nestedCtx = blockCtx.NestedBlockContext(block, entity)
++            const nestedCtx = blockCtx.NestedBlockContext(block, entity,
++                this._GetEntityLayer(entity, blockCtx), this._GetEntityColor(entity, blockCtx))
+             if (block.data.entities) {
+                 for (const entity of block.data.entities) {
+                     this._ProcessDxfEntity(entity, nestedCtx)
+@@ -1578,21 +1582,23 @@ export class DxfScene {
+ 
+     /** Flatten block definition batch. It is merged into suitable instant rendering batch. */
+     _FlattenBatch(blockBatch, layerName, blockColor, blockLineType, transform) {
+-        /* INSERT layer (if specified) takes precedence over layer specified in block definition.
+-         * Use layer from block definition only if no layer in INSERT.
+-         */
+-        layerName ??= blockBatch.key.layerName
++        const parentLayerName = layerName
++        /* Only layer 0 (represented by null in a definition) inherits INSERT's layer. */
++        layerName = blockBatch.key.layerName ?? parentLayerName
+         const layer = layerName ? this.layers.get(layerName) : null
+         let color, lineType = 0
+         if (blockBatch.key.color === ColorCode.BY_BLOCK) {
+             color = blockColor
++        } else if (blockBatch.key.color === ColorCode.BY_INSERT_LAYER) {
++            color = this.layers.get(parentLayerName)?.color ?? 0
+         } else if (blockBatch.key.color === ColorCode.BY_LAYER) {
+             color = layer?.color ?? 0
+         } else {
+             color = blockBatch.key.color
+         }
+         //XXX line type
+-        const key = new BatchingKey(layerName, null, blockBatch.key.geometryType, color, lineType)
++        const key = new BatchingKey(layerName, null, blockBatch.key.geometryType, color, lineType,
++            [...blockBatch.key.visibilityLayers, parentLayerName], blockBatch.key.appearanceClass)
+         const batch = this._GetBatch(key)
+         batch.Merge(blockBatch, transform)
+     }
+@@ -1989,7 +1995,7 @@ export class DxfScene {
+     _ProcessPoints(entity, blockCtx = null) {
+         const key = new BatchingKey(entity.layer, blockCtx?.name,
+                                     BatchingKey.GeometryType.POINTS, entity.color, 0)
+-        const batch = this._GetBatch(key)
++        const batch = this._GetBatch(key, blockCtx, entity.appearanceClass)
+         for (const v of entity.vertices) {
+             batch.PushVertex(this._TransformVertex(v, blockCtx))
+         }
+@@ -2005,7 +2011,7 @@ export class DxfScene {
+         }
+         const key = new BatchingKey(entity.layer, blockCtx?.name,
+                                     BatchingKey.GeometryType.LINES, entity.color, entity.lineType)
+-        const batch = this._GetBatch(key)
++        const batch = this._GetBatch(key, blockCtx, entity.appearanceClass)
+         for (const v of entity.vertices) {
+             batch.PushVertex(this._TransformVertex(v, blockCtx))
+         }
+@@ -2027,7 +2033,7 @@ export class DxfScene {
+             const key = new BatchingKey(entity.layer, blockCtx?.name,
+                                         BatchingKey.GeometryType.LINES, entity.color,
+                                         entity.lineType)
+-            const batch = this._GetBatch(key)
++            const batch = this._GetBatch(key, blockCtx, entity.appearanceClass)
+             let prev = null
+             for (const v of entity.vertices) {
+                 if (prev !== null) {
+@@ -2046,7 +2052,7 @@ export class DxfScene {
+         const key = new BatchingKey(entity.layer, blockCtx?.name,
+                                     BatchingKey.GeometryType.INDEXED_LINES,
+                                     entity.color, entity.lineType)
+-        const batch = this._GetBatch(key)
++        const batch = this._GetBatch(key, blockCtx, entity.appearanceClass)
+         /* Line may be split if exceeds chunk limit. */
+         for (const lineChunk of entity._IterateLineChunks()) {
+             const chunk = batch.PushChunk(lineChunk.verticesCount)
+@@ -2075,7 +2081,7 @@ export class DxfScene {
+         const key = new BatchingKey(entity.layer, blockCtx?.name,
+                                     BatchingKey.GeometryType.INDEXED_TRIANGLES,
+                                     entity.color, 0)
+-        const batch = this._GetBatch(key)
++        const batch = this._GetBatch(key, blockCtx, entity.appearanceClass)
+         //XXX splitting into chunks is not yet implemented.
+         const chunk = batch.PushChunk(entity.vertices.length)
+         for (const v of entity.vertices) {
+@@ -2095,55 +2101,23 @@ export class DxfScene {
+      *  which are resolved on block instantiation.
+      */
+     _GetEntityColor(entity, blockCtx = null) {
+-        let color = ColorCode.BY_LAYER
+         if (entity.colorIndex === 0) {
+-            color = ColorCode.BY_BLOCK
+-        } else if (entity.colorIndex === 256) {
+-            /* Resolve color instantly if the entity has layer assigned, otherwise the layer is
+-             * is taken from `INSERT` layer when rendering.
+-             */
+-            if (entity.hasOwnProperty("layer")) {
+-                const layer = this.layers.get(entity.layer)
+-                if (layer) {
+-                    return layer.color
+-                }
++            if (blockCtx) {
++                return blockCtx.inheritedColor
+             }
+-            color = ColorCode.BY_LAYER
+-        } else if (entity.hasOwnProperty("color") && entity.color != null) {
+-            /* Index is converted to color value by parser now. */
+-            color = entity.color
++        } else if (entity.colorIndex !== 256 && entity.color != null) {
++            /* Explicit ACI/true color, as represented by the existing parser. */
++            return entity.color
+         }
+-
+-        if (blockCtx) {
+-            return color
+-        }
+-        if (color === ColorCode.BY_BLOCK) {
+-            /* BY_BLOCK is not useful when not in block so replace it by layer as well. */
+-            color = ColorCode.BY_LAYER
+-        }
+-        if (color === ColorCode.BY_LAYER) {
+-            if (entity.hasOwnProperty("layer")) {
+-                const layer = this.layers.get(entity.layer)
+-                if (layer && layer.color != null) {
+-                    return layer.color
+-                }
+-            }
+-        } else {
+-            return color
+-        }
+-        /* Fallback to black. */
+-        return 0
++        const layerName = this._GetEntityLayer(entity, blockCtx)
++        /* A null effective layer remains dependent on the outer INSERT. */
++        return layerName === null ? ColorCode.BY_INSERT_LAYER : this.layers.get(layerName)?.color ?? 0
+     }
+ 
+     /** @return {?string} Layer name, null for block entity. */
+     _GetEntityLayer(entity, blockCtx = null) {
+-        if (entity.hasOwnProperty("layer") && entity.layer != null) {
+-            return entity.layer
+-        }
+-        /* For block definition missing layer means taking layer from corresponding `INSERT` entity,
+-         * for instant entities use layer "0" as fallback to match reference software behavior.
+-         */
+-        return blockCtx ? null : "0"
++        const layer = entity.layer ?? "0"
++        return layer === "0" && blockCtx ? blockCtx.inheritedLayer : layer
+     }
+ 
+     /** @returns {TextStyle | null}  */
+@@ -2171,7 +2145,11 @@ export class DxfScene {
+     }
+ 
+     /** @return {RenderBatch} */
+-    _GetBatch(key) {
++    _GetBatch(key, blockCtx = null, appearanceClass = key.appearanceClass) {
++        key.appearanceClass = appearanceClass ?? BatchingKey.AppearanceClass.LINE
++        if (blockCtx?.visibilityLayers.length) {
++            key.SetVisibilityLayers([...key.visibilityLayers, ...blockCtx.visibilityLayers])
++        }
+         let batch = this.batches.find({key})
+         if (batch !== null) {
+             return batch
+@@ -2545,6 +2523,10 @@ class BlockContext {
+         this.origin = this.block.data.position
+         /* Transform to apply for block definition entities not including block offset. */
+         this.transform = new Matrix3()
++        /* null and BY_BLOCK defer resolution to the eventual top-level INSERT. */
++        this.inheritedLayer = null
++        this.inheritedColor = ColorCode.BY_BLOCK
++        this.visibilityLayers = []
+     }
+ 
+     /** @return {string} Block name */
+@@ -2609,12 +2591,16 @@ class BlockContext {
+      * @param entity Raw DXF INSERT entity.
+      * @return {BlockContext} Context to use for nested block entities.
+      */
+-    NestedBlockContext(block, entity) {
++    NestedBlockContext(block, entity, layer, color) {
+         block.RegisterNestedUse(this.block)
+         const nestedCtx = new BlockContext(block, BlockContext.Type.NESTED_DEFINITION)
+         const nestedTransform = nestedCtx.GetInsertionTransform(entity)
+         const ctx = new BlockContext(this.block, BlockContext.Type.NESTED_DEFINITION)
+         ctx.transform = new Matrix3().multiplyMatrices(this.transform, nestedTransform)
++        ctx.inheritedLayer = layer
++        ctx.inheritedColor = color
++        ctx.visibilityLayers = [...new Set([...this.visibilityLayers, layer]
++            .filter(name => name !== null))]
+         return ctx
+     }
+ }
+@@ -2699,7 +2685,7 @@ export class Entity {
+      * @param lineType {?number}
+      * @param shape {Boolean} true if closed shape.
+      */
+-    constructor({type, vertices, indices = null, layer = null, color, lineType = 0, shape = false}) {
++    constructor({type, vertices, indices = null, layer = null, color, lineType = 0, shape = false, appearanceClass = null}) {
+         this.type = type
+         this.vertices = vertices
+         this.indices = indices
+@@ -2707,6 +2693,7 @@ export class Entity {
+         this.color = color
+         this.lineType = lineType
+         this.shape = shape
++        this.appearanceClass = appearanceClass
+     }
+ 
+     *_IterateVertices(startIndex, count) {
+@@ -2833,7 +2820,10 @@ const PdMode = Object.freeze({
+ /** Special color values, used for block entities. Regular entity color is resolved instantly. */
+ export const ColorCode = Object.freeze({
+     BY_LAYER: -1,
+-    BY_BLOCK: -2
++    BY_BLOCK: -2,
++    /* A nested BYBLOCK may inherit BYLAYER from an INSERT on layer 0 while its
++     * own leaf layer is explicit. Keep that dependency distinct from leaf BYLAYER. */
++    BY_INSERT_LAYER: -3
+ })
+ 
+ DxfScene.DefaultOptions = {
+diff --git a/src/DxfViewer.js b/src/DxfViewer.js
+index f1f869c..855c607 100644
+--- a/src/DxfViewer.js
++++ b/src/DxfViewer.js
+@@ -251,7 +251,7 @@ export class DxfViewer {
+     GetLayers(nonEmptyOnly = false) {
+         const result = []
+         for (const lyr of this.layers.values()) {
+-            if (nonEmptyOnly && lyr.objects.length == 0) {
++            if (nonEmptyOnly && lyr.affectedObjects.size === 0) {
+                 continue
+             }
+             result.push({
+@@ -264,13 +264,25 @@ export class DxfViewer {
+     }
+ 
+     ShowLayer(name, show) {
++        this.ShowLayers({[name]: show})
++    }
++
++    /** Set several layer gates atomically and draw the resulting scene once. */
++    ShowLayers(visibility) {
+         this._EnsureRenderer()
+-        const layer = this.layers.get(name)
+-        if (!layer) {
+-            return
++        const affected = new Set()
++        for (const [name, show] of Object.entries(visibility)) {
++            const layer = this.layers.get(name)
++            if (!layer) {
++                continue
++            }
++            layer.visible = show
++            for (const obj of layer.affectedObjects) {
++                affected.add(obj)
++            }
+         }
+-        for (const obj of layer.objects) {
+-            obj.visible = show
++        for (const obj of affected) {
++            obj.visible = obj._dxfViewerVisibilityLayers.every(gate => gate.visible)
+         }
+         this.Render()
+     }
+@@ -486,6 +498,13 @@ export class DxfViewer {
+             this.scene.add(obj)
+             const layer = obj._dxfViewerLayer ?? this.defaultLayer
+             layer.PushObject(obj)
++            obj.userData.dxfLayer = layer.name
++            obj._dxfViewerVisibilityLayers = [...new Set([
++                ...(obj._dxfViewerVisibilityLayers ?? []), layer])]
++            for (const gate of obj._dxfViewerVisibilityLayers) {
++                gate.affectedObjects.add(obj)
++            }
++            obj.visible = obj._dxfViewerVisibilityLayers.every(gate => gate.visible)
+         }
+     }
+ 
+@@ -507,6 +526,7 @@ export class DxfViewer {
+         const shaders = this._GenerateShaders(instanceType, false)
+         return new three.RawShaderMaterial({
+             uniforms: {
++                opacity: {value: 1.0},
+                 color: {
+                     value: new three.Color(0xff00ff)
+                 }
+@@ -550,6 +570,7 @@ export class DxfViewer {
+         const shaders = this._GenerateShaders(instanceType, true)
+         return new three.RawShaderMaterial({
+             uniforms: {
++                opacity: {value: 1.0},
+                 color: {
+                     value: new three.Color(0xff00ff)
+                 },
+@@ -630,10 +651,11 @@ export class DxfViewer {
+             precision highp float;
+             precision highp int;
+             uniform vec3 color;
++            uniform float opacity;
+             out vec4 fragColor;
+ 
+             void main() {
+-                fragColor = vec4(color, 1.0);
++                fragColor = vec4(color, opacity);
+             }
+             `
+         }
+@@ -833,8 +855,11 @@ class Batch {
+         const color = instanceBatch ?
+             instanceBatch._GetInstanceColor(this) : this.key.color
+ 
+-        /* INSERT layer (if specified) takes precedence over layer specified in block definition. */
+-        const layer = instanceBatch?.layer ?? this.layer
++        const layer = this.layer ?? instanceBatch?.layer
++        const visibilityLayers = [...new Set([
++            ...this.key.visibilityLayers, ...(instanceBatch?.key.visibilityLayers ?? []),
++            instanceBatch?.key.layerName])]
++            .map(name => this.viewer.layers.get(name)).filter(Boolean)
+ 
+         //XXX line type
+         const materialFactory =
+@@ -864,6 +889,7 @@ class Batch {
+             throw new Error("Unexpected geometry type:" + this.key.geometryType)
+         }
+ 
++        const appearanceClass = this.key.appearanceClass
+         function CreateObject(vertices, indices) {
+             const geometry = instanceBatch ?
+                 new three.InstancedBufferGeometry() : new three.BufferGeometry()
+@@ -876,6 +902,8 @@ class Batch {
+             obj.frustumCulled = false
+             obj.matrixAutoUpdate = false
+             obj._dxfViewerLayer = layer
++            obj.userData.dxfAppearanceClass = appearanceClass
++            obj._dxfViewerVisibilityLayers = visibilityLayers
+             return obj
+         }
+ 
+@@ -925,6 +953,8 @@ class Batch {
+         const defColor = blockBatch.key.color
+         if (defColor === ColorCode.BY_BLOCK) {
+             return this.key.color
++        } else if (defColor === ColorCode.BY_INSERT_LAYER) {
++            return this.layer?.color ?? 0
+         } else if (defColor === ColorCode.BY_LAYER) {
+             if (blockBatch.layer) {
+                 return blockBatch.layer.color
+@@ -941,6 +971,9 @@ class Layer {
+         this.displayName = displayName
+         this.color = color
+         this.objects = []
++        this.visible = true
++        /* A source object has one disposal owner but may depend on several layer gates. */
++        this.affectedObjects = new Set()
+     }
+ 
+     PushObject(obj) {
+@@ -952,6 +985,7 @@ class Layer {
+             obj.geometry.dispose()
+         }
+         this.objects = null
++        this.affectedObjects.clear()
+     }
+ }
+ 
+diff --git a/src/TextRenderer.js b/src/TextRenderer.js
+index aaa4389..856cb4a 100644
+--- a/src/TextRenderer.js
++++ b/src/TextRenderer.js
+@@ -1,4 +1,5 @@
+ import {Entity} from "./DxfScene.js"
++import {BatchingKey} from "./BatchingKey.js"
+ import {ShapePath} from "three/src/extras/core/ShapePath.js"
+ import {ShapeUtils} from "three/src/extras/ShapeUtils.js"
+ import {Matrix3, Vector2} from "three"
+@@ -1029,6 +1030,7 @@ class TextBlock {
+                 }
+                 yield new Entity({
+                    type: Entity.Type.TRIANGLES,
++                   appearanceClass: BatchingKey.AppearanceClass.TEXT,
+                    vertices: glyph.vertices,
+                    indices: glyph.shape.indices,
+                    layer, color
+diff --git a/src/index.d.ts b/src/index.d.ts
+index 115687f..307f38b 100644
+--- a/src/index.d.ts
++++ b/src/index.d.ts
+@@ -1,3 +1,11 @@
++export type DxfAppearanceClass = "line" | "fill" | "text"
++
++/** Metadata on every drawable returned by GetScene(). */
++export interface DxfSceneObjectMetadata {
++    dxfLayer: string
++    dxfAppearanceClass: DxfAppearanceClass
++}
++
+ /** See TextRenderer.DefaultOptions for default values and documentation. */
+ export type TextRendererOptions = {
+     curveSubdivision?: number,
+@@ -50,6 +58,7 @@ export type EventName = "loaded" | "cleared" | "destroyed" | "resized" | "pointe
+     "pointerup" | "viewChanged" | "message"
+ 
+ export declare class DxfViewer {
++    static DefaultOptions: DxfViewerOptions & { clearColor: THREE.Color }
+     constructor(domContainer: HTMLElement, options: DxfViewerOptions | null)
+     Clear(): void
+     Destroy(): void
+@@ -67,6 +76,7 @@ export declare class DxfViewer {
+     SetSize(width: number, height: number): void
+     SetView(center: THREE.Vector3, width: number, zoom: number): void
+     ShowLayer(name: string, show: boolean): void
++    ShowLayers(visibility: Record<string, boolean>): void
+     Subscribe(eventName: EventName, eventHandler: (event: any) => void): void
+     Unsubscribe(eventName: EventName, eventHandler: (event: any) => void): void
+ }

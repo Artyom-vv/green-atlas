@@ -1,3 +1,6 @@
+
+from application_factory import recompose_application
+from app.composition import get_runtime
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -20,8 +23,8 @@ from test_agent_planning import existing_application
 ])
 def test_durable_proposal_is_checked_against_live_availability(client, monkeypatch, condition, expected):
     domain, project = existing_application()
-    domain.history = InMemoryProjectHistory()
-    monkeypatch.setattr(api, "application", domain)
+    domain = recompose_application(domain, history=InMemoryProjectHistory())
+    monkeypatch.setattr(get_runtime(), "application", domain)
     store = app.dependency_overrides[project_store]()
     chat = store.create(project.id)
     chat = store.append(project.id, chat["id"], expected_revision=1, record_id="request", kind="message",
@@ -33,9 +36,9 @@ def test_durable_proposal_is_checked_against_live_availability(client, monkeypat
     chat = response.json()
     preview = chat["records"][-1]["payload"]["content"]["preparation"]["change_set"]
     if condition == "expired":
-        domain._change_set_previews[preview["id"]].preview.expires_at = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        domain.changes._previews[preview["id"]].preview.expires_at = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
     elif condition == "evicted":
-        domain._change_set_previews.clear()
+        domain.changes._previews.clear()
     elif condition == "changed_project":
         project.name = "Changed after calculation"
         domain.repository.save(project)
@@ -75,8 +78,8 @@ def test_durable_proposal_is_checked_against_live_availability(client, monkeypat
 
 def test_confirmation_serializes_with_concurrent_task_amendment(client, monkeypatch):
     domain, project = existing_application()
-    domain.history = InMemoryProjectHistory()
-    monkeypatch.setattr(api, "application", domain)
+    domain = recompose_application(domain, history=InMemoryProjectHistory())
+    monkeypatch.setattr(get_runtime(), "application", domain)
     store = app.dependency_overrides[project_store]()
     chat = store.create(project.id)
     chat = store.append(project.id, chat["id"], expected_revision=1, record_id="request", kind="message",

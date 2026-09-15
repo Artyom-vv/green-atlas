@@ -467,10 +467,10 @@
         }
       }
     },
-    "/api/projects/{project_id}/source-dxf/download": {
+    "/api/projects/{project_id}/source-dxf/asset": {
       "get": {
-        "summary": "Download Source",
-        "operationId": "download_source_api_projects__project_id__source_dxf_download_get",
+        "summary": "Native Dxf Asset",
+        "operationId": "native_dxf_asset_api_projects__project_id__source_dxf_asset_get",
         "parameters": [
           {
             "name": "project_id",
@@ -479,6 +479,110 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeDxfSourceAsset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-dxf/download": {
+      "get": {
+        "summary": "Source Dxf Download",
+        "operationId": "source_dxf_download_api_projects__project_id__source_dxf_download_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "expected_source_sha256",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Source Sha256"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Range"
+            }
+          },
+          {
+            "name": "If-Range",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Range"
             }
           },
           {
@@ -2603,6 +2707,436 @@
         }
       }
     },
+    "/api/cad/roots": {
+      "get": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Roots",
+        "operationId": "roots_api_cad_roots_get",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CadRoot"
+                  },
+                  "title": "Response Roots Api Cad Roots Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad/roots/{root_id}/entries": {
+      "get": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Entries",
+        "operationId": "entries_api_cad_roots__root_id__entries_get",
+        "parameters": [
+          {
+            "name": "root_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Root Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "default": ".",
+              "title": "Path"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CadDirectory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad/roots/{root_id}/fingerprint": {
+      "get": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Fingerprint",
+        "operationId": "fingerprint_api_cad_roots__root_id__fingerprint_get",
+        "parameters": [
+          {
+            "name": "root_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Root Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CadFingerprint"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/operations/cad-intake": {
+      "post": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Start",
+        "operationId": "start_api_projects__project_id__operations_cad_intake_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CadIntakeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/operations/cad-preview": {
+      "post": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Start Preview",
+        "operationId": "start_preview_api_projects__project_id__operations_cad_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CadPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/operations/{operation_id}/cad-asset": {
+      "get": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Cad Asset Metadata",
+        "operationId": "cad_asset_metadata_api_projects__project_id__operations__operation_id__cad_asset_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CadSourceAsset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/operations/{operation_id}/cad-asset/file": {
+      "get": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Cad Asset File",
+        "operationId": "cad_asset_file_api_projects__project_id__operations__operation_id__cad_asset_file_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/dxf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/planning-assistant/status": {
       "get": {
         "tags": [
@@ -3338,6 +3872,62 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "List Runs",
+        "operationId": "list_runs_api_projects__project_id__agent_runs_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunRecord"
+                  },
+                  "title": "Response List Runs Api Projects  Project Id  Agent Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/{project_id}/agent-runs/{run_id}": {
@@ -3347,6 +3937,240 @@
         ],
         "summary": "Get Run",
         "operationId": "get_run_api_projects__project_id__agent_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/control-command": {
+      "get": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Get Control Command",
+        "operationId": "get_control_command_api_projects__project_id__agent_runs__run_id__control_command_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "command_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Command Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlCommandGeometry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/control-result": {
+      "post": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Record Control Result",
+        "operationId": "record_control_result_api_projects__project_id__agent_runs__run_id__control_result_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlResult"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/cancel": {
+      "post": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Cancel Run",
+        "description": "Cancel a checkpointed run; no project write is implied by cancellation.",
+        "operationId": "cancel_run_api_projects__project_id__agent_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/resume": {
+      "post": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Resume Run",
+        "description": "Restart a failed/cancelled run from fresh facts and retain its audit log.",
+        "operationId": "resume_run_api_projects__project_id__agent_runs__run_id__resume_post",
         "parameters": [
           {
             "name": "project_id",
@@ -3564,6 +4388,130 @@
           }
         }
       }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/preview": {
+      "get": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Get Run Preview",
+        "operationId": "get_run_preview_api_projects__project_id__agent_runs__run_id__preview_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "preview_ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "title": "Preview Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/agent-runs/{run_id}/zone-preview": {
+      "get": {
+        "tags": [
+          "Autonomous agent"
+        ],
+        "summary": "Get Run Zone Preview",
+        "operationId": "get_run_zone_preview_api_projects__project_id__agent_runs__run_id__zone_preview_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "preview_ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "title": "Preview Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneChangePreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3572,9 +4520,17 @@
         "properties": {
           "raw_text": {
             "type": "string",
-            "maxLength": 2000,
+            "maxLength": 16000,
             "minLength": 1,
             "title": "Raw Text"
+          },
+          "source_turns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 128,
+            "title": "Source Turns"
           },
           "goal": {
             "$ref": "#/components/schemas/Goal"
@@ -3688,6 +4644,86 @@
               }
             ],
             "title": "Post Action"
+          },
+          "edit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EditIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "read": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundZoneIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selection_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectionContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selection_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectionReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selection_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectionBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selection_issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectionIssue"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3706,6 +4742,16 @@
             "maxLength": 800,
             "minLength": 1,
             "title": "Text"
+          },
+          "selection_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectionContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3753,6 +4799,16 @@
               }
             ],
             "title": "Conversation Id"
+          },
+          "selection_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectionContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3860,16 +4916,31 @@
             "type": "string",
             "enum": [
               "queued",
+              "scheduled",
               "running",
               "waiting_question",
               "waiting_approval",
               "waiting_job",
+              "waiting_ui",
               "finished",
               "failed",
               "cancelled"
             ],
             "title": "Status",
             "default": "queued"
+          },
+          "execution_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Attempt Id"
           },
           "intent": {
             "$ref": "#/components/schemas/AgentIntent"
@@ -3949,6 +5020,46 @@
               }
             ]
           },
+          "read_outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "control_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlCommand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "control_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "placement_retry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCall"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "pending_question": {
             "anyOf": [
               {
@@ -3966,16 +5077,12 @@
           "pending_approval": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
+                "$ref": "#/components/schemas/PendingApproval"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Pending Approval"
+            ]
           },
           "outcome_ref": {
             "anyOf": [
@@ -4036,6 +5143,73 @@
         ],
         "title": "AssistantStatus"
       },
+      "AxisDistanceEvidence": {
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/UtilityAxisBinding"
+          },
+          "axis_distance_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Axis Distance M"
+          },
+          "coordinate_precision_m": {
+            "type": "number",
+            "maximum": 1e-06,
+            "minimum": 1e-06,
+            "title": "Coordinate Precision M",
+            "default": 1e-06
+          }
+        },
+        "type": "object",
+        "required": [
+          "binding",
+          "axis_distance_m"
+        ],
+        "title": "AxisDistanceEvidence"
+      },
+      "AxisSourceReference": {
+        "properties": {
+          "content_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Sha256"
+          },
+          "feature_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Feature Id"
+          },
+          "source_handle": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Handle"
+          },
+          "insert_chain": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Insert Chain"
+          },
+          "geometry_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_sha256",
+          "feature_id",
+          "source_handle",
+          "insert_chain",
+          "geometry_sha256"
+        ],
+        "title": "AxisSourceReference"
+      },
       "Body_upload_dxf_api_projects__project_id__source_dxf_post": {
         "properties": {
           "file": {
@@ -4063,6 +5237,81 @@
           "file"
         ],
         "title": "Body_upload_release_bundle_api_projects__project_id__release_bundle_post"
+      },
+      "BoundZoneIntent": {
+        "properties": {
+          "source_text": {
+            "type": "string",
+            "maxLength": 16000,
+            "minLength": 1,
+            "title": "Source Text"
+          },
+          "source_turns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 128,
+            "title": "Source Turns"
+          },
+          "amendments": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneSourceAmendment"
+            },
+            "type": "array",
+            "maxItems": 384,
+            "title": "Amendments"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "intent": {
+            "$ref": "#/components/schemas/ZoneIntent"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/ZoneChangeDraft"
+          },
+          "base_geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Geometry Version"
+          },
+          "base_plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Plan Version"
+          },
+          "before_zones_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Before Zones Digest"
+          },
+          "planting_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Planting Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_text",
+          "project_id",
+          "intent",
+          "draft",
+          "base_geometry_version",
+          "before_zones_digest",
+          "planting_digest"
+        ],
+        "title": "BoundZoneIntent"
       },
       "BrushPreview": {
         "properties": {
@@ -4393,6 +5642,833 @@
         "type": "object",
         "title": "BuildingScreenTargets"
       },
+      "CadBoundarySelection": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "normalized_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Normalized Sha256"
+          },
+          "handle": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[A-Fa-f0-9]+$",
+            "title": "Handle"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "source_sha256",
+          "normalized_sha256",
+          "handle"
+        ],
+        "title": "CadBoundarySelection"
+      },
+      "CadDirectory": {
+        "properties": {
+          "root_id": {
+            "type": "string",
+            "title": "Root Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/CadDirectoryEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "root_id",
+          "path",
+          "entries"
+        ],
+        "title": "CadDirectory"
+      },
+      "CadDirectoryEntry": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "directory",
+              "drawing"
+            ],
+            "title": "Kind"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "name",
+          "kind"
+        ],
+        "title": "CadDirectoryEntry"
+      },
+      "CadDrawingPassport": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "source_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha256"
+          },
+          "source_bytes": {
+            "type": "integer",
+            "title": "Source Bytes"
+          },
+          "normalized_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Sha256"
+          },
+          "inspection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DrawingInspection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "readable",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "source_bytes",
+          "status"
+        ],
+        "title": "CadDrawingPassport"
+      },
+      "CadDrawingSelection": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "normalized_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Normalized Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "source_sha256",
+          "normalized_sha256"
+        ],
+        "title": "CadDrawingSelection"
+      },
+      "CadFingerprint": {
+        "properties": {
+          "root_id": {
+            "type": "string",
+            "title": "Root Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "root_id",
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "title": "CadFingerprint"
+      },
+      "CadIntakeRecord": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/CadIntakeRequest"
+          },
+          "passport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadPackagePassport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "request"
+        ],
+        "title": "CadIntakeRecord"
+      },
+      "CadIntakeRequest": {
+        "properties": {
+          "root_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Root Id"
+          },
+          "entry": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Entry"
+          },
+          "entry_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Entry Sha256"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/CadReferenceOverride"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Overrides"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "root_id",
+          "entry",
+          "entry_sha256"
+        ],
+        "title": "CadIntakeRequest"
+      },
+      "CadPackagePassport": {
+        "properties": {
+          "root_id": {
+            "type": "string",
+            "title": "Root Id"
+          },
+          "entry": {
+            "type": "string",
+            "title": "Entry"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "drawings": {
+            "items": {
+              "$ref": "#/components/schemas/CadDrawingPassport"
+            },
+            "type": "array",
+            "title": "Drawings"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/CadReferencePassport"
+            },
+            "type": "array",
+            "title": "References"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requires_review",
+              "blocked"
+            ],
+            "title": "Status"
+          },
+          "calculation_ready": {
+            "type": "boolean",
+            "const": false,
+            "title": "Calculation Ready",
+            "default": false
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "root_id",
+          "entry",
+          "manifest_sha256",
+          "drawings",
+          "references",
+          "status",
+          "blockers"
+        ],
+        "title": "CadPackagePassport"
+      },
+      "CadPreviewProvenance": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "green-atlas-cad-preview-v1",
+            "title": "Schema Version",
+            "default": "green-atlas-cad-preview-v1"
+          },
+          "status": {
+            "type": "string",
+            "const": "preview_only",
+            "title": "Status",
+            "default": "preview_only"
+          },
+          "calculation_ready": {
+            "type": "boolean",
+            "const": false,
+            "title": "Calculation Ready",
+            "default": false
+          },
+          "original_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Original Sha256"
+          },
+          "converted_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Converted Sha256"
+          },
+          "boundary_original_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Boundary Original Sha256"
+          },
+          "boundary_handle": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[A-Fa-f0-9]+$",
+            "title": "Boundary Handle"
+          },
+          "influence_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Influence Radius M"
+          },
+          "boundary_bounds_m": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boundary Bounds M"
+          },
+          "omitted_entity_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Omitted Entity Count",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "original_sha256",
+          "converted_sha256",
+          "boundary_original_sha256",
+          "boundary_handle"
+        ],
+        "title": "CadPreviewProvenance"
+      },
+      "CadPreviewRecord": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/CadPreviewRequest"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadPreviewResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "request"
+        ],
+        "title": "CadPreviewRecord"
+      },
+      "CadPreviewRequest": {
+        "properties": {
+          "intake_operation_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Intake Operation Id"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifest Sha256"
+          },
+          "source": {
+            "$ref": "#/components/schemas/CadDrawingSelection"
+          },
+          "boundary": {
+            "$ref": "#/components/schemas/CadBoundarySelection"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "intake_operation_id",
+          "manifest_sha256",
+          "source",
+          "boundary"
+        ],
+        "title": "CadPreviewRequest"
+      },
+      "CadPreviewResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "preview_only",
+            "title": "Status",
+            "default": "preview_only"
+          },
+          "calculation_ready": {
+            "type": "boolean",
+            "const": false,
+            "title": "Calculation Ready",
+            "default": false
+          },
+          "published_state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Published State Version"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Geometry Version"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "output_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Output Sha256"
+          },
+          "output_bytes": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Output Bytes"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifest Sha256"
+          },
+          "source_units": {
+            "type": "integer",
+            "title": "Source Units"
+          },
+          "boundary_mask_area_m2": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Boundary Mask Area M2"
+          },
+          "selected_entities": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Selected Entities"
+          },
+          "unknown_bounds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unknown Bounds"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Warnings"
+          },
+          "warning_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Warning Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "published_state_version",
+          "geometry_version",
+          "source_name",
+          "output_sha256",
+          "output_bytes",
+          "manifest_sha256",
+          "source_units",
+          "boundary_mask_area_m2",
+          "selected_entities",
+          "unknown_bounds",
+          "warning_count"
+        ],
+        "title": "CadPreviewResult"
+      },
+      "CadReferenceOverride": {
+        "properties": {
+          "owner": {
+            "type": "string",
+            "title": "Owner"
+          },
+          "block": {
+            "type": "string",
+            "title": "Block"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "expected_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Sha256"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner",
+          "block",
+          "target",
+          "expected_sha256",
+          "reason"
+        ],
+        "title": "CadReferenceOverride"
+      },
+      "CadReferencePassport": {
+        "properties": {
+          "owner": {
+            "type": "string",
+            "title": "Owner"
+          },
+          "block": {
+            "type": "string",
+            "title": "Block"
+          },
+          "requested_path": {
+            "type": "string",
+            "title": "Requested Path"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "missing",
+              "outside_package",
+              "ambiguous",
+              "cycle"
+            ],
+            "title": "Status"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "relative_path",
+              "explicit_override"
+            ],
+            "title": "Resolution"
+          },
+          "expected_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Sha256"
+          },
+          "resolution_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "owner",
+          "block",
+          "requested_path",
+          "status",
+          "resolution"
+        ],
+        "title": "CadReferencePassport"
+      },
+      "CadRoot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "CadRoot"
+      },
+      "CadSourceAsset": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "source_bytes": {
+            "type": "integer",
+            "title": "Source Bytes"
+          },
+          "source_units": {
+            "type": "integer",
+            "title": "Source Units"
+          },
+          "unit_scale_to_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Scale To M"
+          },
+          "asset_sha256": {
+            "type": "string",
+            "title": "Asset Sha256"
+          },
+          "asset_bytes": {
+            "type": "integer",
+            "title": "Asset Bytes"
+          },
+          "file_url": {
+            "type": "string",
+            "title": "File Url"
+          },
+          "format": {
+            "type": "string",
+            "const": "dxf_ascii",
+            "title": "Format",
+            "default": "dxf_ascii"
+          },
+          "scope": {
+            "type": "string",
+            "const": "entry_drawing",
+            "title": "Scope",
+            "default": "entry_drawing"
+          },
+          "external_references_loaded": {
+            "type": "boolean",
+            "const": false,
+            "title": "External References Loaded",
+            "default": false
+          },
+          "fidelity": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "requires_review"
+            ],
+            "title": "Fidelity",
+            "default": "unverified"
+          },
+          "calculation_ready": {
+            "type": "boolean",
+            "const": false,
+            "title": "Calculation Ready",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "operation_id",
+          "manifest_sha256",
+          "source_name",
+          "source_sha256",
+          "source_bytes",
+          "source_units",
+          "asset_sha256",
+          "asset_bytes",
+          "file_url"
+        ],
+        "title": "CadSourceAsset"
+      },
       "CandidateReasonSummary": {
         "properties": {
           "status": {
@@ -4570,6 +6646,16 @@
               }
             ],
             "title": "Zone Id"
+          },
+          "rule_trace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlantingRuleTrace"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -4728,6 +6814,249 @@
           "expected_revision"
         ],
         "title": "ConfirmProposal"
+      },
+      "ControlCommand": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "action": {
+            "type": "string",
+            "const": "focus_zone",
+            "title": "Action",
+            "default": "focus_zone"
+          },
+          "project_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "execution_attempt_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Execution Attempt Id"
+          },
+          "zone_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Zone Id"
+          },
+          "zone_label": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Zone Label"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Geometry Version"
+          },
+          "geometry_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Digest"
+          },
+          "bounds": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Bounds"
+          },
+          "issued_at": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Issued At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "run_id",
+          "execution_attempt_id",
+          "zone_id",
+          "zone_label",
+          "state_version",
+          "geometry_version",
+          "geometry_digest",
+          "bounds",
+          "issued_at"
+        ],
+        "title": "ControlCommand",
+        "description": "Immutable server instruction bound to one source and execution attempt."
+      },
+      "ControlCommandGeometry": {
+        "properties": {
+          "command": {
+            "$ref": "#/components/schemas/ControlCommand"
+          },
+          "geometry_json": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Geometry Json"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "command",
+          "geometry_json"
+        ],
+        "title": "ControlCommandGeometry"
+      },
+      "ControlIntent": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "focus_zone",
+            "title": "Action",
+            "default": "focus_zone"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "unsupported_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Unsupported Requirements"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ControlIntent"
+      },
+      "ControlResult": {
+        "properties": {
+          "command_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Command Id"
+          },
+          "project_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "execution_attempt_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Execution Attempt Id"
+          },
+          "zone_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Zone Id"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Geometry Version"
+          },
+          "geometry_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Digest"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "failed",
+              "cancelled",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MAP_NOT_READY",
+                  "MAP_UNAVAILABLE",
+                  "CONTROL_STALE",
+                  "FOCUS_INTERRUPTED",
+                  "CONTROL_OUTCOME_UNKNOWN"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 600
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "command_id",
+          "project_id",
+          "run_id",
+          "execution_attempt_id",
+          "zone_id",
+          "geometry_version",
+          "geometry_digest",
+          "status"
+        ],
+        "title": "ControlResult"
       },
       "Conversation": {
         "properties": {
@@ -5316,6 +7645,190 @@
         ],
         "title": "Delegation"
       },
+      "DrawingBoundaryCandidate": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer"
+          },
+          "entity_type": {
+            "type": "string",
+            "const": "LWPOLYLINE",
+            "title": "Entity Type",
+            "default": "LWPOLYLINE"
+          },
+          "vertex_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Vertex Count"
+          },
+          "has_bulges": {
+            "type": "boolean",
+            "title": "Has Bulges"
+          },
+          "bounds_m": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounds M"
+          },
+          "available_for_preview": {
+            "type": "boolean",
+            "title": "Available For Preview"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "handle",
+          "layer",
+          "vertex_count",
+          "has_bulges",
+          "available_for_preview"
+        ],
+        "title": "DrawingBoundaryCandidate"
+      },
+      "DrawingBoundaryCatalog": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "green-atlas-boundary-catalog-v1",
+            "title": "Schema Version",
+            "default": "green-atlas-boundary-catalog-v1"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/DrawingBoundaryCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "total_candidates": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Candidates"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_candidates"
+        ],
+        "title": "DrawingBoundaryCatalog"
+      },
+      "DrawingInspection": {
+        "properties": {
+          "dxf_version": {
+            "type": "string",
+            "title": "Dxf Version"
+          },
+          "units": {
+            "type": "integer",
+            "title": "Units"
+          },
+          "modelspace_entities": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Modelspace Entities"
+          },
+          "layer_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Layer Names"
+          },
+          "xrefs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Xrefs"
+          },
+          "boundary_catalog": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DrawingBoundaryCatalog"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "dxf_version",
+          "units",
+          "modelspace_entities",
+          "layer_names",
+          "xrefs"
+        ],
+        "title": "DrawingInspection"
+      },
+      "DxfTextEncoding": {
+        "type": "string",
+        "enum": [
+          "utf-8",
+          "windows-874",
+          "shift_jis",
+          "gbk",
+          "euc-kr",
+          "big5",
+          "windows-1250",
+          "windows-1251",
+          "windows-1252",
+          "windows-1253",
+          "windows-1254",
+          "windows-1255",
+          "windows-1256",
+          "windows-1257",
+          "windows-1258"
+        ],
+        "title": "DxfTextEncoding",
+        "description": "Browser TextDecoder labels for codecs supported by the DXF reader."
+      },
       "DxfVerticalPrimitive": {
         "properties": {
           "primitive_id": {
@@ -5513,6 +8026,48 @@
           "vertical_evidence"
         ],
         "title": "DxfVerticalPrimitive"
+      },
+      "EditIntent": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "species",
+              "move",
+              "lock",
+              "unlock"
+            ],
+            "title": "Action"
+          },
+          "move_dx_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Dx M"
+          },
+          "move_dy_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Dy M"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "EditIntent"
       },
       "EffectEstimate": {
         "properties": {
@@ -6075,7 +8630,8 @@
         "enum": [
           "source_dxf",
           "release_bundle",
-          "plain_dxf_fallback"
+          "plain_dxf_fallback",
+          "cad_preview"
         ],
         "title": "ImportMode",
         "description": "How the current project's source was opened.\n\nA plain DXF that contains Green Atlas planting layers is deliberately not\ntreated as an editable revision: without the release manifest those\ncircles are indistinguishable from existing vegetation.  A complete\nrelease bundle carries the source and plan semantics needed to continue\nediting safely."
@@ -6226,6 +8782,23 @@
             "type": "boolean",
             "title": "Visible",
             "default": true
+          },
+          "utility_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UtilityContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "utility_axis_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/UtilityAxisBinding"
+            },
+            "type": "array",
+            "title": "Utility Axis Bindings"
           }
         },
         "type": "object",
@@ -6265,6 +8838,23 @@
             "type": "boolean",
             "title": "Visible",
             "default": true
+          },
+          "utility_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UtilityContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "utility_axis_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/UtilityAxisBinding"
+            },
+            "type": "array",
+            "title": "Utility Axis Bindings"
           }
         },
         "type": "object",
@@ -6417,6 +9007,104 @@
         ],
         "title": "MapContext"
       },
+      "NativeDxfSourceAsset": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "source_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Source Bytes"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "file_encoding": {
+            "$ref": "#/components/schemas/DxfTextEncoding"
+          },
+          "unit_scale_to_m": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Unit Scale To M"
+          },
+          "units_assumed": {
+            "type": "boolean",
+            "title": "Units Assumed"
+          },
+          "scale_basis": {
+            "type": "string",
+            "enum": [
+              "imported_units",
+              "import_assumption"
+            ],
+            "title": "Scale Basis"
+          },
+          "bounds_m": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounds M"
+          },
+          "file_url": {
+            "type": "string",
+            "title": "File Url"
+          },
+          "format": {
+            "type": "string",
+            "const": "dxf_ascii",
+            "title": "Format",
+            "default": "dxf_ascii"
+          },
+          "scope": {
+            "type": "string",
+            "const": "uploaded_drawing",
+            "title": "Scope",
+            "default": "uploaded_drawing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "source_sha256",
+          "source_bytes",
+          "source_name",
+          "file_encoding",
+          "unit_scale_to_m",
+          "units_assumed",
+          "scale_basis",
+          "file_url"
+        ],
+        "title": "NativeDxfSourceAsset"
+      },
       "OperationError": {
         "properties": {
           "code": {
@@ -6438,7 +9126,9 @@
       "OperationKind": {
         "type": "string",
         "enum": [
-          "calculate_geometry"
+          "calculate_geometry",
+          "inspect_cad_package",
+          "prepare_cad_preview"
         ],
         "title": "OperationKind"
       },
@@ -6749,6 +9439,29 @@
         ],
         "title": "PatternZoneAllocation"
       },
+      "PendingApproval": {
+        "properties": {
+          "preview_ref": {
+            "type": "string",
+            "title": "Preview Ref"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "plantings",
+              "planting_zones"
+            ],
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PendingApproval"
+      },
       "PlacementCheck": {
         "properties": {
           "allowed": {
@@ -6809,6 +9522,122 @@
               }
             ],
             "title": "Zone Id"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "source_layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Layer"
+          },
+          "source_feature_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Feature Ids"
+          },
+          "actual_distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Distance M"
+          },
+          "required_distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Distance M"
+          },
+          "suggested_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Action"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "geometry_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Version"
+          },
+          "state_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Version"
+          },
+          "rule_trace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlantingRuleTrace"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -6853,6 +9682,111 @@
               }
             ],
             "title": "Radius"
+          },
+          "layout_radius_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 25.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout Radius M"
+          },
+          "size_class": {
+            "type": "string",
+            "enum": [
+              "unspecified",
+              "sapling",
+              "standard",
+              "large"
+            ],
+            "title": "Size Class",
+            "default": "unspecified"
+          },
+          "species_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Species Revision Id"
+          },
+          "pattern_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern Id"
+          },
+          "group_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Group Ids"
+          },
+          "spacing_policy": {
+            "type": "string",
+            "enum": [
+              "open",
+              "balanced",
+              "canopy"
+            ],
+            "title": "Spacing Policy",
+            "default": "balanced"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked",
+            "default": false
+          },
+          "base_plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Plan Version"
+          },
+          "geometry_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Version"
+          },
+          "state_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Version"
           }
         },
         "type": "object",
@@ -6861,7 +9795,8 @@
           "x",
           "y"
         ],
-        "title": "PlacementCheckRequest"
+        "title": "PlacementCheckRequest",
+        "description": "The same candidate as Add, optionally bound to the caller's snapshot."
       },
       "PlacementMaskPreset": {
         "properties": {
@@ -7170,6 +10105,16 @@
             "minimum": 1.0,
             "title": "Version",
             "default": 1
+          },
+          "validation_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanValidationBasis"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -7879,6 +10824,39 @@
         ],
         "title": "PlanObjectsDeleteRequest"
       },
+      "PlanValidationBasis": {
+        "properties": {
+          "plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Plan Version"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Geometry Version"
+          },
+          "validator_revision": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Validator Revision"
+          },
+          "objects_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Objects Digest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_version",
+          "geometry_version",
+          "validator_revision",
+          "objects_digest"
+        ],
+        "title": "PlanValidationBasis",
+        "description": "The inputs of derived issues; independent of the planting edit version."
+      },
       "PlanningBrief": {
         "properties": {
           "arrangement": {
@@ -7962,6 +10940,63 @@
           "task"
         ],
         "title": "PlanningBriefInput"
+      },
+      "PlantingRuleTrace": {
+        "properties": {
+          "basis": {
+            "$ref": "#/components/schemas/RuleTraceBasis"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "plant_kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub"
+            ],
+            "title": "Plant Kind"
+          },
+          "mature_crown_diameter_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mature Crown Diameter M"
+          },
+          "current_compliance": {
+            "type": "string",
+            "const": "not_established",
+            "title": "Current Compliance",
+            "default": "not_established"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/RuleTraceEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "basis",
+          "x",
+          "y",
+          "plant_kind",
+          "entries"
+        ],
+        "title": "PlantingRuleTrace"
       },
       "PlantingZoneAssignment": {
         "properties": {
@@ -8144,6 +11179,60 @@
           "expected_revision"
         ],
         "title": "PrepareTask"
+      },
+      "PreviewRefusal": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "blocked",
+            "title": "Status",
+            "default": "blocked"
+          },
+          "candidate_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Candidate Count"
+          },
+          "blocked_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Blocked Count"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Reason Codes"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Reasons"
+          },
+          "remedy": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Remedy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidate_count",
+          "blocked_count",
+          "reason_codes",
+          "reasons",
+          "remedy"
+        ],
+        "title": "PreviewRefusal"
       },
       "Project": {
         "properties": {
@@ -8594,6 +11683,26 @@
             "minimum": 1.0,
             "title": "Project State Version",
             "default": 1
+          },
+          "cad_intake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadIntakeRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cad_preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadPreviewRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -8739,6 +11848,291 @@
           "can_apply"
         ],
         "title": "ProposalStatus"
+      },
+      "ReadIntent": {
+        "properties": {
+          "capability": {
+            "type": "string",
+            "enum": [
+              "plan_issues",
+              "species_shortlist"
+            ],
+            "title": "Capability"
+          },
+          "unsupported_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Unsupported Requirements"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capability"
+        ],
+        "title": "ReadIntent"
+      },
+      "ReadOutcome": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "complete",
+            "title": "Status",
+            "default": "complete"
+          },
+          "capability": {
+            "type": "string",
+            "enum": [
+              "plan_issues",
+              "species_shortlist"
+            ],
+            "title": "Capability"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "saved_plan_validation",
+              "species_suitability"
+            ],
+            "title": "Source"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Pages"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Zone Ids"
+          },
+          "object_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Object Ids"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "shrub"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "snapshot_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Snapshot Version"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Evidence Refs"
+          },
+          "global_issues_excluded": {
+            "type": "boolean",
+            "title": "Global Issues Excluded",
+            "default": false
+          },
+          "caveat": {
+            "type": "string",
+            "maxLength": 800,
+            "minLength": 1,
+            "title": "Caveat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capability",
+          "source",
+          "total",
+          "pages",
+          "snapshot_version",
+          "evidence_refs",
+          "caveat"
+        ],
+        "title": "ReadOutcome"
+      },
+      "ReadPageEvidence": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "call_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Call Id"
+          },
+          "capability": {
+            "type": "string",
+            "enum": [
+              "plan_issues",
+              "species_shortlist"
+            ],
+            "title": "Capability"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "saved_plan_validation",
+              "species_suitability"
+            ],
+            "title": "Source"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Zone Ids"
+          },
+          "object_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Object Ids"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "shrub"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "snapshot_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Snapshot Version"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Offset"
+          },
+          "item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Item Ids"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "global_issues_excluded": {
+            "type": "boolean",
+            "title": "Global Issues Excluded",
+            "default": false
+          },
+          "caveat": {
+            "type": "string",
+            "maxLength": 800,
+            "minLength": 1,
+            "title": "Caveat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "call_id",
+          "capability",
+          "source",
+          "snapshot_version",
+          "total",
+          "offset",
+          "caveat"
+        ],
+        "title": "ReadPageEvidence"
       },
       "RecommendationExplanation": {
         "properties": {
@@ -9320,6 +12714,243 @@
           "axis"
         ],
         "title": "RowPatternRequest"
+      },
+      "RuleSourceFeature": {
+        "properties": {
+          "feature_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Id"
+          },
+          "source_layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Layer"
+          },
+          "source_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Source Index",
+            "description": "Index among parsed nonempty geometries of obstacle_kind in this geometry revision"
+          },
+          "actual_distance_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Actual Distance M"
+          },
+          "utility_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UtilityContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "axis_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AxisDistanceEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_index",
+          "actual_distance_m"
+        ],
+        "title": "RuleSourceFeature"
+      },
+      "RuleTraceBasis": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Geometry Version"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "requirement_profile": {
+            "type": "string",
+            "title": "Requirement Profile"
+          },
+          "registry_revision": {
+            "type": "string",
+            "title": "Registry Revision"
+          },
+          "network_rule_pack": {
+            "type": "string",
+            "title": "Network Rule Pack",
+            "default": "lct-sp42-2016-table9.1@2026-09-15.2"
+          },
+          "source_content_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Content Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "state_version",
+          "geometry_version",
+          "requirement_profile",
+          "registry_revision"
+        ],
+        "title": "RuleTraceBasis"
+      },
+      "RuleTraceEntry": {
+        "properties": {
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "document_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Code"
+          },
+          "clause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clause"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "obstacle_kind": {
+            "type": "string",
+            "title": "Obstacle Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not_checked",
+              "no_matching_obstacle"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "actual_distance_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Distance M"
+          },
+          "required_distance_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Distance M"
+          },
+          "nearest_features": {
+            "items": {
+              "$ref": "#/components/schemas/RuleSourceFeature"
+            },
+            "type": "array",
+            "title": "Nearest Features",
+            "description": "Up to 20 equidistant nearest source features in original order"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "obstacle_kind",
+          "status",
+          "code",
+          "note"
+        ],
+        "title": "RuleTraceEntry"
       },
       "SceneContextFeature": {
         "properties": {
@@ -10157,11 +13788,200 @@
         "title": "SceneVerticalPrimitive",
         "description": "Source-proven XYZ translated only in XY into the scene frame."
       },
+      "SelectionBinding": {
+        "properties": {
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Zone Ids"
+          },
+          "object_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Object Ids"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state_version",
+          "plan_version"
+        ],
+        "title": "SelectionBinding",
+        "description": "Source-selected subset and last explicitly accepted project revision."
+      },
+      "SelectionContext": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Version"
+          },
+          "zone_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Zone Ids"
+          },
+          "object_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Object Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "state_version",
+          "plan_version"
+        ],
+        "title": "SelectionContext",
+        "description": "UI snapshot, never an instruction to select or expand a scope."
+      },
+      "SelectionIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "SELECTION_MISSING",
+              "SELECTION_EMPTY",
+              "SELECTION_AMBIGUOUS",
+              "SELECTION_STALE",
+              "SELECTION_PROJECT_MISMATCH",
+              "SELECTION_UNKNOWN",
+              "SELECTION_CONFLICT"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 800,
+            "minLength": 1,
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "SelectionIssue"
+      },
+      "SelectionReference": {
+        "properties": {
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "zones",
+                  "objects"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "plant_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "shrub",
+                  "mixed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plant Kind"
+          },
+          "unsupported_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 600
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsupported Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SelectionReference"
+      },
       "SourceFile": {
         "properties": {
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
           },
           "size": {
             "type": "integer",
@@ -10219,6 +14039,16 @@
             },
             "type": "array",
             "title": "Warnings"
+          },
+          "preview_provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadPreviewProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -10824,6 +14654,33 @@
         "type": "object",
         "title": "TaskState"
       },
+      "ToolCall": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Call Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Arguments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ToolCall"
+      },
       "ToolError": {
         "properties": {
           "code": {
@@ -10945,6 +14802,26 @@
                 "type": "null"
               }
             ]
+          },
+          "read_page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadPageEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview_refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreviewRefusal"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -10994,6 +14871,141 @@
           "text"
         ],
         "title": "UserMessage"
+      },
+      "UtilityAxisBinding": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AxisSourceReference"
+          },
+          "context": {
+            "$ref": "#/components/schemas/UtilityContext"
+          },
+          "outside_diameter_m": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Outside Diameter M"
+          },
+          "surface_reference": {
+            "type": "string",
+            "enum": [
+              "outer_surface",
+              "protective_casing"
+            ],
+            "title": "Surface Reference"
+          },
+          "outside_size_reference": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Outside Size Reference"
+          },
+          "envelope_model": {
+            "type": "string",
+            "const": "circular_sweep",
+            "title": "Envelope Model"
+          },
+          "endpoint_model": {
+            "type": "string",
+            "const": "round_full_source_extent",
+            "title": "Endpoint Model"
+          },
+          "extent_reference": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Extent Reference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "context",
+          "outside_diameter_m",
+          "surface_reference",
+          "outside_size_reference",
+          "envelope_model",
+          "endpoint_model",
+          "extent_reference"
+        ],
+        "title": "UtilityAxisBinding"
+      },
+      "UtilityContext": {
+        "properties": {
+          "network_type": {
+            "$ref": "#/components/schemas/UtilityType",
+            "default": "unknown"
+          },
+          "geometry_reference": {
+            "$ref": "#/components/schemas/UtilityGeometryReference",
+            "default": "unknown"
+          },
+          "installation": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "underground",
+              "aboveground"
+            ],
+            "title": "Installation",
+            "default": "unknown"
+          },
+          "review_status": {
+            "type": "string",
+            "enum": [
+              "unconfirmed",
+              "confirmed"
+            ],
+            "title": "Review Status",
+            "default": "unconfirmed"
+          },
+          "source_reference": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Source Reference",
+            "default": ""
+          },
+          "confirmed_by": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Confirmed By",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "UtilityContext",
+        "description": "Explicit source interpretation; a layer-name guess is not confirmation."
+      },
+      "UtilityGeometryReference": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "axis",
+          "outer_surface",
+          "channel_wall",
+          "protective_casing"
+        ],
+        "title": "UtilityGeometryReference"
+      },
+      "UtilityType": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "gas",
+          "sewer",
+          "heat",
+          "water",
+          "drainage",
+          "power_cable",
+          "communication_cable"
+        ],
+        "title": "UtilityType"
       },
       "ValidationError": {
         "properties": {
@@ -11211,6 +15223,392 @@
         ],
         "title": "VerificationSummary",
         "description": "Typed evidence that a preview is safe to present for approval."
+      },
+      "ZoneChangeDraft": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ],
+            "title": "Operation"
+          },
+          "base_state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base State Version"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation",
+          "base_state_version"
+        ],
+        "title": "ZoneChangeDraft"
+      },
+      "ZoneChangePreview": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/ZoneChangeDraft"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ],
+            "title": "Operation"
+          },
+          "target_zone_id": {
+            "type": "string",
+            "title": "Target Zone Id"
+          },
+          "base_state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base State Version"
+          },
+          "base_geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Geometry Version"
+          },
+          "base_plan_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Plan Version"
+          },
+          "before_zones": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneSnapshot"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Before Zones"
+          },
+          "after_zones": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneSnapshot"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "After Zones"
+          },
+          "before_area_m2": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Area M2"
+          },
+          "after_area_m2": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Area M2"
+          },
+          "planting_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Planting Digest"
+          },
+          "can_apply": {
+            "type": "boolean",
+            "title": "Can Apply"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers",
+            "default": []
+          },
+          "affected_planting_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Planting Ids",
+            "default": []
+          },
+          "preflight": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlantingZonePreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "draft",
+          "operation",
+          "target_zone_id",
+          "base_state_version",
+          "base_geometry_version",
+          "before_zones",
+          "after_zones",
+          "before_area_m2",
+          "after_area_m2",
+          "planting_digest",
+          "can_apply",
+          "created_at",
+          "expires_at",
+          "digest"
+        ],
+        "title": "ZoneChangePreview"
+      },
+      "ZoneGeometryReference": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Geometry Version"
+          },
+          "feature_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Feature Id"
+          },
+          "geometry_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "state_version",
+          "geometry_version",
+          "feature_id",
+          "geometry_digest"
+        ],
+        "title": "ZoneGeometryReference"
+      },
+      "ZoneIntent": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ],
+            "title": "Operation"
+          },
+          "target_zone_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Zone Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "geometry_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZoneGeometryReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "title": "ZoneIntent"
+      },
+      "ZoneSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geometry"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "geometry"
+        ],
+        "title": "ZoneSnapshot"
+      },
+      "ZoneSourceAmendment": {
+        "properties": {
+          "turn_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Turn Index"
+          },
+          "slot": {
+            "type": "string",
+            "enum": [
+              "target_zone_id",
+              "label",
+              "geometry_reference"
+            ],
+            "title": "Slot"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ZoneGeometryReference"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "turn_index",
+          "slot",
+          "value"
+        ],
+        "title": "ZoneSourceAmendment",
+        "description": "A source message supplies one typed slot; earlier slots stay intact."
       }
     }
   }

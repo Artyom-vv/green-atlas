@@ -1,0 +1,14 @@
+/* OpenLayers creates these elements outside React. The map widget owns their
+   presentation; form and control styling belongs to @green/ui. */
+[data-map-view] .ol-dragbox {
+  border: 1.5px dashed var(--color-blue-600);
+  background: color-mix(in srgb, var(--color-blue-600) 6%, transparent);
+}
+
+[data-map-view] .ol-viewport {
+  background: var(--color-neutral-50, #fafbfc);
+}
+
+[data-map-view] .ol-zoom {
+  display: none;
+}

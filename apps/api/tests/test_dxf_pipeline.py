@@ -10,6 +10,7 @@ from shapely.geometry import shape
 import app.dxf_import.adapters as dxf_adapters
 from app.contracts import GeometrySnapshot, LayerKind, Plan, PlanObject, Project
 from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.capacity import SourceCapacityExceeded, SourceGeometryCapacity
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.query_adapters import IndexedGeometryQuery
@@ -26,6 +27,38 @@ KITAY_GOROD_3D_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "kit
 def imported_project(source: bytes | None = None) -> Project:
     imported = EzdxfReader().read("site.dxf", source or SITE_DXF.read_bytes())
     return Project(name="DXF", layers=imported.layers, source_geometry=imported.geometry)
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+@pytest.mark.parametrize("encoding", ["utf-8", "cp1251"])
+def test_text_dxf_line_endings_preserve_source_geometry_and_text_on_round_trip(newline: str, encoding: str) -> None:
+    document = ezdxf.new("R2013" if encoding == "utf-8" else "R2000")
+    document.units = ezdxf.units.M
+    document.encoding = encoding
+    document.layers.add("SITE_BORDER", color=1)
+    document.layers.add("ANNOTATION", color=7)
+    document.modelspace().add_lwpolyline(
+        [(0, 0), (20, 0), (20, 20), (0, 20)], close=True, dxfattribs={"layer": "SITE_BORDER"},
+    )
+    document.modelspace().add_text("Главная аллея", dxfattribs={"layer": "ANNOTATION", "insert": (5, 5)})
+    stream = StringIO()
+    document.write(stream)
+    source = stream.getvalue().replace("\n", newline).encode(encoding)
+
+    # The HTTP upload path supplies a mutable buffer with its original line endings.
+    imported = EzdxfReader().read("windows-site.dxf", bytearray(source))
+    assert imported.entity_count == 2
+    assert imported.bounds == [0.0, 0.0, 20.0, 20.0]
+    assert next(layer for layer in imported.layers if layer.source_name == "SITE_BORDER").suggested_kind == LayerKind.SITE_BORDER
+    assert any(feature["properties"].get("source_text") == "Главная аллея" for feature in imported.geometry.feature_collection["features"])
+
+    project = Project(name="Windows DXF", plan=Plan(objects=[PlanObject(kind="tree", x=10, y=10, radius=1.6)]))
+    _, output = DxfRoundTripWriter().create(project, source)
+    reopened = ezdxf.read(StringIO(output.decode(encoding), newline=None))
+    assert len(reopened.modelspace().query('LWPOLYLINE[layer=="SITE_BORDER"]')) == 1
+    assert reopened.modelspace().query('TEXT[layer=="ANNOTATION"]')[0].dxf.text == "Главная аллея"
+    assert len(reopened.modelspace().query('CIRCLE[layer=="GREEN_ATLAS_TREES"]')) == 1
+    assert len(reopened.modelspace()) == 3
 
 
 def test_reader_accepts_binary_dxf_and_keeps_boundary_kind() -> None:
@@ -161,9 +194,9 @@ def test_nonfinite_dxf_coordinates_never_reach_the_map_or_calculation() -> None:
     assert not any(feature["properties"].get("source_layer") == "BROKEN_SURVEY" for feature in reopened.geometry.feature_collection["features"])
 
 
-def test_import_cap_blocks_truncated_physical_layer_from_calculation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A dense DXF may have a preview, but never an incomplete safe zone."""
-    monkeypatch.setattr(dxf_adapters, "MAX_NORMALIZED_DXF_FEATURES", 3)
+def test_source_capacity_rejects_a_partial_physical_snapshot() -> None:
+    """A display budget must never truncate the authoritative source."""
+    reader = EzdxfReader(capacity=SourceGeometryCapacity(max_features=3))
     document = ezdxf.new("R2013", setup=True)
     document.units = ezdxf.units.M
     document.layers.add("SITE_BORDER", color=1)
@@ -176,23 +209,13 @@ def test_import_cap_blocks_truncated_physical_layer_from_calculation(monkeypatch
     stream = StringIO()
     document.write(stream)
 
-    imported = EzdxfReader().read("dense.dxf", stream.getvalue().encode())
-    buildings = next(layer for layer in imported.layers if layer.source_name == "DENSE_BUILDINGS")
-    project = Project(name="Плотная застройка", layers=imported.layers, source_geometry=imported.geometry)
-
-    assert len(imported.geometry.feature_collection["features"]) == 3
-    assert buildings.geometry_complete is False
-    assert any("DENSE_BUILDINGS" in warning and "Неполный слой" in warning for warning in imported.warnings)
-    with pytest.raises(ValueError, match="DENSE_BUILDINGS"):
-        ShapelyGeometryEngine().calculate(project)
-
-    buildings.mapped_kind = LayerKind.IGNORE
-    assert ShapelyGeometryEngine().calculate(project).site_area_m2 == 10_000
+    with pytest.raises(SourceCapacityExceeded, match="DENSE_BUILDINGS"):
+        reader.read("dense.dxf", stream.getvalue().encode())
 
 
-def test_coordinate_cap_blocks_an_overdetailed_physical_curve_from_calculation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """One enormous polyline is also an incomplete constraint, not a safe gap."""
-    monkeypatch.setattr(dxf_adapters, "MAX_NORMALIZED_COORDINATES_PER_FEATURE", 5)
+def test_coordinate_capacity_rejects_an_overdetailed_physical_curve() -> None:
+    """An enormous curve cannot silently disappear from the source."""
+    reader = EzdxfReader(capacity=SourceGeometryCapacity(max_feature_coordinates=5))
     document = ezdxf.new("R2013", setup=True)
     document.units = ezdxf.units.M
     document.layers.add("SITE_BORDER", color=1)
@@ -203,18 +226,8 @@ def test_coordinate_cap_blocks_an_overdetailed_physical_curve_from_calculation(m
     stream = StringIO()
     document.write(stream)
 
-    imported = EzdxfReader().read("detailed-road.dxf", stream.getvalue().encode())
-    road = next(layer for layer in imported.layers if layer.source_name == "DENSE_ROAD")
-    project = Project(name="Детальная дорога", layers=imported.layers, source_geometry=imported.geometry)
-
-    assert road.geometry_complete is False
-    assert not any(feature["properties"].get("source_layer") == "DENSE_ROAD" for feature in imported.geometry.feature_collection["features"])
-    assert any("DENSE_ROAD" in warning and "Слишком детальная" in warning for warning in imported.warnings)
-    with pytest.raises(ValueError, match="DENSE_ROAD"):
-        ShapelyGeometryEngine().calculate(project)
-
-    road.mapped_kind = LayerKind.IGNORE
-    assert ShapelyGeometryEngine().calculate(project).site_area_m2 == 10_000
+    with pytest.raises(SourceCapacityExceeded, match="DENSE_ROAD"):
+        reader.read("detailed-road.dxf", stream.getvalue().encode())
 
 
 def test_remote_cad_annotations_do_not_make_the_site_open_as_an_empty_dot() -> None:

@@ -16,11 +16,20 @@ from app.agent_runtime.contracts import (
     ToolCall,
     ToolResult,
 )
-from app.agent_runtime.engine import AgentEngine
-from app.agent_runtime.gateway import GatewayPolicy, ToolGateway
-from app.agent_runtime.registry import CapabilityRegistry
-from app.agent_runtime.store import AgentRunStore
-from app.agent_runtime.verifier import VerificationSummary, verify_preview_data
+from app.agent_runtime.contracts import VerificationSummary
+
+
+def __getattr__(name):
+    # Importing a stable contract must not initialize geometry, storage or an
+    # execution engine. Preserve public convenience exports lazily.
+    modules = {"AgentEngine": "engine", "GatewayPolicy": "gateway", "ToolGateway": "gateway",
+        "CapabilityRegistry": "registry", "AgentRunStore": "store", "verify_preview_data": "verifier"}
+    if name not in modules:
+        raise AttributeError(name)
+    from importlib import import_module
+    value = getattr(import_module(f"app.agent_runtime.{modules[name]}"), name)
+    globals()[name] = value
+    return value
 
 __all__ = [
     "AgentDecision",

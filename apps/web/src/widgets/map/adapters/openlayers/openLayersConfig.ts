@@ -1,0 +1,3 @@
+export const MAX_CACHED_GEOMETRY_FEATURES = 25_000;
+export const MAX_SNAP_TARGET_FEATURES = 3_500;
+export const GEOMETRY_CHUNK_SIZE = 350;

@@ -5,7 +5,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import Sequence
 
-from app.contracts import GrowthEnvelopeForecast
+from app.species.contracts import GrowthEnvelopeForecast
 
 
 def forecast_at(

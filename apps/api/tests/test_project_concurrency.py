@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import ExitStack
 import sqlite3
 from tempfile import TemporaryDirectory
 from threading import RLock
@@ -9,9 +10,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.application import ProjectApplication
+from app.geometry.queries import SpatialQueries
+from app.projects.application import ProjectCatalogApplication
+from app.shared.identity import random_id, utc_now
 from app.contracts import GeometrySnapshot, Plan, PlanObject, Project, ValidationIssue
 from app.history.adapters import InMemoryProjectHistory
-from app.api import application
+from app.composition import get_application
+application = get_application()
 from app.validation.adapters import RuleBasedPlanValidator
 from app.main import app
 from app.projects.adapters import InMemoryProjectRepository, SqliteProjectRepository, project_projection
@@ -92,9 +97,7 @@ def test_repeated_map_viewports_use_the_compact_project_projection_after_first_l
             return project_projection(project) if lightweight else project.model_copy(deep=True)
 
     repository = TrackingRepository()
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.repository = repository
-    application.geometry_query = IndexedGeometryQuery()
+    application = SpatialQueries(repository, IndexedGeometryQuery(), RuleBasedPlanValidator())
 
     first = application.query_geometry(project.id, (0, 0, 100, 100), 1)
     second = application.query_geometry(project.id, (10, 10, 90, 90), 1)
@@ -105,9 +108,10 @@ def test_repeated_map_viewports_use_the_compact_project_projection_after_first_l
 
 
 def test_sqlite_migrates_legacy_rows_and_uses_atomic_compare_and_swap() -> None:
-    with TemporaryDirectory() as directory:
+    with TemporaryDirectory() as directory, ExitStack() as connections:
         path = Path(directory) / "projects.sqlite3"
         connection = sqlite3.connect(path)
+        connections.callback(connection.close)
         project = Project(id="legacy-project", name="Старый проект")
         connection.execute(
             "CREATE TABLE projects (id TEXT PRIMARY KEY, payload TEXT NOT NULL, projection TEXT, source BLOB, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
@@ -120,6 +124,7 @@ def test_sqlite_migrates_legacy_rows_and_uses_atomic_compare_and_swap() -> None:
         connection.close()
 
         repository = SqliteProjectRepository(path)
+        connections.callback(repository._connection.close)
         first = repository.get(project.id)
         second = repository.get(project.id)
         assert first.state_version == 1
@@ -377,17 +382,17 @@ def test_placement_preview_reuses_and_invalidates_its_plan_spacing_index() -> No
     project = create_manual_project("Кэш расстояний")
     project_id = project["id"]
     assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
-    assert project_id not in application._spacing_indexes
+    assert project_id not in application.spatial._spacing_indexes
 
     first = client.post(f"/api/projects/{project_id}/plan/placement-check", json={"kind": "tree", "x": 40, "y": 20})
     assert first.status_code == 200
-    first_index = application._spacing_indexes[project_id][1]
+    first_index = application.spatial._spacing_indexes[project_id][1]
     second = client.post(f"/api/projects/{project_id}/plan/placement-check", json={"kind": "tree", "x": 45, "y": 20})
 
     assert second.status_code == 200
-    assert application._spacing_indexes[project_id][1] is first_index
+    assert application.spatial._spacing_indexes[project_id][1] is first_index
     assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 40, "y": 20}).status_code == 200
-    assert project_id not in application._spacing_indexes
+    assert project_id not in application.spatial._spacing_indexes
 
 
 def test_delete_conflict_keeps_history_when_the_race_happens_after_project_read() -> None:
@@ -396,14 +401,17 @@ def test_delete_conflict_keeps_history_when_the_race_happens_after_project_read(
     history.record(project, "Добавление дерева")
 
     class ConflictRepository:
+        def get(self, _project_id: str, *, lightweight: bool = False) -> Project:
+            return project
+
         def delete(self, _project_id: str) -> None:
             raise ProjectVersionConflict(project.id, 1, 2)
 
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.history = history
-    application.repository = ConflictRepository()
-    application.get = lambda _project_id: project
-    application._operation_commit_lock = RLock()
+    application = ProjectCatalogApplication(
+        repository=ConflictRepository(), history=history, commit_lock=RLock(),
+        cancel_active=lambda _: None, invalidate_spatial=lambda _: None,
+        now=utc_now, new_id=random_id,
+    )
 
     with pytest.raises(ProjectVersionConflict):
         application.delete_project(project.id)

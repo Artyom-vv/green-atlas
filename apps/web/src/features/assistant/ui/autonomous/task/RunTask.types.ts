@@ -1,0 +1,26 @@
+import type { AutonomousRunController } from '@/features/assistant/model/autonomous/useAutonomousRunController';
+export interface RunTaskProps extends Pick<
+  AutonomousRunController,
+  | 'failedRestore'
+  | 'restoring'
+  | 'decisionDisabled'
+  | 'retryRestore'
+  | 'run'
+  | 'creating'
+  | 'fillDraft'
+  | 'active'
+  | 'result'
+  | 'existing'
+  | 'issues'
+  | 'shortlist'
+  | 'status'
+  | 'acceptedSelectionLabel'
+  | 'draft'
+  | 'submitted'
+  | 'lifecycle'
+  | 'busy'
+  | 'continueRun'
+  | 'stopping'
+  | 'canCancel'
+  | 'cancel'
+> {}

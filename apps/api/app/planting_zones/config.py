@@ -1,0 +1,7 @@
+"""Existing zone policy and proposal cache bounds."""
+
+MIN_ZONE_AREA_M2 = 24
+MAX_PARTIAL_OVERLAP_M2 = 0.5
+MAX_ZONE_COUNT = 40
+MAX_ZONE_PREVIEWS = 128
+ZONE_PREVIEW_TTL_SECONDS = 600

@@ -1,19 +1,29 @@
 """Bind only supported requirement meanings; never equate missing data to compliance."""
 import re
+from typing import Literal
 
 from app.data_passport import build_data_passport
 from app.geometry.domain import CONSTRAINT_KINDS
 
+PositionRuleId = Literal["pp743-3.6.3-building", "pp743-3.6.3-road-edge"]
 
+
+_SETBACK_VERB = r'(?:сохраняя|сохранять|сохраняй|сохраняйте|соблюдая|соблюдать|соблюдай|соблюдайте|сохранить|сохраните)'
+_SETBACK_NOUN = r'(?:нормативн(?:ые|ых)\s+)?отступ(?:ы|ов)'
 _SUPPORTED_SETBACK_RE = re.compile(
-    r'(?:'
-    r'(?:сохраняя|соблюдая|соблюдать|соблюдай|соблюдайте|сохранить|сохраните)\s+'
-    r'нормативн(?:ые|ых)\s+отступ(?:ы|ов)'
-    r'|(?:с|при)\s+(?:соблюдением|соблюдении|учетом|учётом)\s+'
-    r'нормативн(?:ые|ых)\s+отступ(?:ы|ов)'
-    r'|нормативн(?:ые|ых)\s+отступ(?:ы|ов)'
-    r'(?:\s+(?:соблюдай|соблюдайте|сохраняй))?'
-    r')', re.IGNORECASE)
+    rf'(?<!\w)(?:{_SETBACK_VERB}\s+{_SETBACK_NOUN}'
+    rf'|(?:с|при)\s+(?:соблюдением|соблюдении|учетом|учётом)\s+{_SETBACK_NOUN}'
+    rf'|{_SETBACK_NOUN}\s+{_SETBACK_VERB}'
+    r'|нормативн(?:ые|ых)\s+отступ(?:ы|ов))(?!\w)', re.IGNORECASE)
+_NEGATIVE_SETBACK_RE = re.compile(
+    rf'(?<!\w)(?:не\s+(?:(?:надо|нужно|нужно\s+будет)\s+)?{_SETBACK_VERB}\s+{_SETBACK_NOUN}'
+    rf'|{_SETBACK_NOUN}\s+не\s+(?:(?:надо|нужно)\s+)?{_SETBACK_VERB}'
+    rf'|без\s+(?:соблюдения|учета|учёта)\s+{_SETBACK_NOUN})(?!\w)', re.IGNORECASE)
+_NUMERIC_CONSTRAINT_RE = re.compile(
+    r'(?<!\w)(?:не\s+ближе|не\s+дальше|отступ(?:ы|а|ом|ов)?)\s+'
+    r'\d+(?:[.,]\d+)?\s*(?:метр(?:а|ов)?|м\b)', re.IGNORECASE)
+_SETBACK_MENTION_RE = re.compile(r'\bотступ(?:ы|а|ом|ов)?\b', re.IGNORECASE)
+_CLAUSE_SEPARATOR_RE = re.compile(r'[;!?\n]|(?<!\d)[.,]|[.,](?!\d)')
 
 
 def _normalize_constraint(source: str) -> str:
@@ -27,27 +37,46 @@ def is_supported_setback_constraint(source: str) -> bool:
 
 def extract_supported_setback_constraints(text: str) -> list[str]:
     """Recover the implemented setback phrase if the model omitted it."""
-    fragments = []
-    for match in _SUPPORTED_SETBACK_RE.finditer(text):
-        prefix = text[max(0, match.start() - 4):match.start()]
-        if re.search(r'\bне\s*$', prefix.casefold()):
-            continue
-        fragments.append(match.group(0).strip(' .,!?'))
+    unsupported = _unsupported_constraint_spans(text)
+    fragments = [match.group(0) for match in _SUPPORTED_SETBACK_RE.finditer(text)
+                 if not any(start < match.end() and match.start() < end for start, end in unsupported)]
     return list(dict.fromkeys(fragments))
 
 
 def extract_unsupported_constraint_evidence(text: str) -> list[str]:
     """Keep explicit negative/numeric restrictions from being silently lost."""
-    patterns = (
-        r'не\s+(?:соблюдая|соблюдать|соблюдай|соблюдайте|сохраняя|сохранять|сохраняй|сохранить|сохраните)\s+'
-        r'нормативн(?:ые|ых)\s+отступ(?:ы|ов)',
-        r'(?:не\s+ближе|не\s+дальше|отступ(?:ы|а|ом|ов)?)\s+'
-        r'\d+(?:[.,]\d+)?\s*(?:метр(?:а|ов)?|м\b)',
-    )
-    fragments = []
-    for pattern in patterns:
-        fragments.extend(match.group(0).strip(' .,!?') for match in re.finditer(pattern, text, re.IGNORECASE))
-    return list(dict.fromkeys(fragments))
+    return list(dict.fromkeys(text[start:end].strip(' .,!?') for start, end in _unsupported_constraint_spans(text)))
+
+
+def _unsupported_constraint_spans(text: str) -> list[tuple[int, int]]:
+    """Preserve modifiers attached to a setback phrase, never its safe substring.
+
+    Exact positive forms may be embedded in a task. A negation, numeric value,
+    exception or unrecognised tail remains an unsupported condition. A separate
+    numeric clause retains its own source fragment for the legacy interpreter.
+    """
+    spans = [match.span() for pattern in (_NEGATIVE_SETBACK_RE, _NUMERIC_CONSTRAINT_RE)
+             for match in pattern.finditer(text)]
+    positives = list(_SUPPORTED_SETBACK_RE.finditer(text))
+    separators = list(_CLAUSE_SEPARATOR_RE.finditer(text))
+    for noun in _SETBACK_MENTION_RE.finditer(text):
+        if any(start <= noun.start() < end for start, end in spans):
+            continue
+        start = max((item.end() for item in separators if item.end() <= noun.start()), default=0)
+        end = min((item.start() for item in separators if item.start() >= noun.end()), default=len(text))
+        positive = next((item for item in positives if item.start() <= noun.start() and item.end() >= noun.end()), None)
+        if positive is None:
+            spans.append((start, end))
+            continue
+        prefix, tail = text[start:positive.start()].strip(), text[positive.end():end].strip()
+        # Bare normative nouns are supported as a clause; a preceding command
+        # such as "increase" or "ignore" must not disappear in extraction.
+        bare_with_prefix = re.fullmatch(r'нормативн(?:ые|ых)\s+отступ(?:ы|ов)', positive.group(0), re.IGNORECASE) and prefix
+        separate_numeric = re.fullmatch(r'и\s+(.+)', tail, re.IGNORECASE)
+        numeric_tail = separate_numeric and _NUMERIC_CONSTRAINT_RE.fullmatch(separate_numeric.group(1))
+        if bare_with_prefix or (tail and not numeric_tail):
+            spans.append((start if bare_with_prefix else positive.start(), end))
+    return spans
 
 
 def compact_constraint_evidence(fragments: list[str]) -> list[str]:

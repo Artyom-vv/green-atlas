@@ -3,14 +3,23 @@ from __future__ import annotations
 from collections import OrderedDict
 from copy import deepcopy
 from threading import RLock
+from typing import Literal
+
 from shapely.geometry import GeometryCollection, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 
-from app.contracts import GeometrySnapshot, LayerKind, Project
+from app.dxf_import.layer_contracts import LayerKind
+from app.dxf_import.utility_mapping import (
+    assign_utility_context,
+    utility_contexts_by_layer,
+)
+from app.geometry.contracts import GeometrySnapshot
 from app.geometry.domain import CONSTRAINT_KINDS, PositionChecker, envelope_distance
+from app.geometry.rule_trace import position_rule_trace
 from app.operations.progress import ProgressReporter, WorkProgress
-
+from app.projects.contracts import Project
+from app.regulations.trace_contracts import PlantingRuleTrace
 
 RULES = {
     LayerKind.BUILDING: "building",
@@ -172,6 +181,7 @@ class ShapelyGeometryEngine:
         if project.source_geometry is None:
             raise ValueError("Сначала импортируйте DXF")
         mapping_by_layer = {layer.source_name: layer.mapped_kind for layer in project.layers}
+        utility_by_layer = utility_contexts_by_layer(project.layers)
         source_features = deepcopy(project.source_geometry.feature_collection.get("features", []))
         unprojectable_layers = _unprojectable_physical_layers(project, source_features)
         if unprojectable_layers:
@@ -225,12 +235,16 @@ class ShapelyGeometryEngine:
                 # boundary. Preserve it for map context but never turn it
                 # into a planting rule because its source pixels are absent.
                 properties["kind"] = LayerKind.IGNORE.value
+                assign_utility_context(properties, utility_by_layer)
                 visible_features.append(feature)
                 if progress and (index % report_step == 0 or index == total_features):
                     progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.35 * index / max(1, total_features), processed=index, total=total_features, unit="объектов"))
                 continue
             kind = mapping_by_layer.get(source_layer) or LayerKind.IGNORE
             properties["kind"] = kind.value
+            # Explicit mapping owns network interpretation. Imported names or
+            # old derived feature properties cannot confirm a network type.
+            assign_utility_context(properties, utility_by_layer)
             if kind == LayerKind.IGNORE:
                 visible_features.append(feature)
                 if progress and (index % report_step == 0 or index == total_features):
@@ -438,6 +452,9 @@ class ShapelyGeometryEngine:
 
     def placement_advisory_detail(self, project: Project, x: float, y: float, radius: float):
         return self._position_checker(project).advisory(x, y, radius)
+
+    def position_rule_trace(self, project: Project, x: float, y: float, plant_kind: Literal["tree", "shrub"] = "tree", mature_crown_diameter_m: float | None = None) -> PlantingRuleTrace:
+        return position_rule_trace(self._position_checker(project), project, x, y, plant_kind, mature_crown_diameter_m)
 
     def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> str | None:
         advisory = self._position_checker(project).growth_advisory(x, y, canopy_radius, root_radius)

@@ -59,7 +59,7 @@ def main():
             "existing": len(project.plan.objects), "distribution": args.distribution,
             "requested": preview.requested_count, "accepted": preview.accepted_count,
             "zones": [zone.model_dump() for zone in preview.zone_allocations],
-            "cached_previews": len(application._change_set_previews),
+            "cached_previews": len(application.changes._previews),
         }, ensure_ascii=False), flush=True)
         if args.profile:
             pstats.Stats(profile).sort_stats("cumulative").print_stats(15)

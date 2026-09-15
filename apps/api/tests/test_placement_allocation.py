@@ -42,13 +42,13 @@ def test_equal_count_reaches_distant_unequal_zones_and_keeps_only_final_preview(
     request = dict(base_plan_version=project.plan.version, zone_ids=["east", "west"], placement_mode="count", target_count=5, zone_distribution="equal", spacing_m=6)
     request = PlacementMaskRequest(mask_id="regular_grid", **request) if layout == "mask" else FillPatternRequest(layout=layout, **request)
     refreshes = []
-    original = app._refresh_plan
-    monkeypatch.setattr(app, "_refresh_plan", lambda *a, **kw: (refreshes.append(1), original(*a, **kw))[1])
+    original = app.validation.refresh
+    monkeypatch.setattr(app.validation, "refresh", lambda *a, **kw: (refreshes.append(1), original(*a, **kw))[1])
     preview = app.preview_pattern(project.id, request)
     assert preview.accepted_count == 5
     assert [(z.zone_id, z.requested_count, z.accepted_count) for z in preview.zone_allocations] == [("west", 3, 3), ("east", 2, 2)]
     assert preview.change_set.can_apply
-    assert len(app._change_set_previews) == len(refreshes) == 1
+    assert len(app.changes._previews) == len(refreshes) == 1
     assert app.get(project.id).plan.objects == []
     assert all(item.status == "allowed" for item in preview.change_set.candidate_results)
 

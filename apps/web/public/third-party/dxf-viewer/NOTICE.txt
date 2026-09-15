@@ -1,0 +1,33 @@
+Green Atlas includes dxf-viewer 1.0.44, by Artyom Lebedev and contributors.
+Upstream: https://github.com/vagran/dxf-viewer
+License: Mozilla Public License 2.0 (MPL-2.0).
+
+The source archive, MPL license and Green Atlas modifications are available
+next to this notice:
+  dxf-viewer-1.0.44.tgz
+  MPL-2.0.txt
+  dxf-viewer-1.0.44.patch
+
+Unpack the archive, then run from its package directory:
+  git apply ../dxf-viewer-1.0.44.patch
+
+Modified covered files (15 September 2026):
+  src/BatchingKey.js
+  src/DxfScene.js
+  src/DxfViewer.js
+  src/TextRenderer.js
+  src/index.d.ts
+
+Changes preserve explicit nested entity layers, resolve layer 0 and
+BYLAYER/BYBLOCK through INSERT contexts, keep independent parent visibility
+gates and add a bulk ShowLayers API with one render per update.
+Batch keys retain line/fill/text appearance classes through flattening and
+instancing. Scene objects expose dxfLayer/dxfAppearanceClass metadata.
+The existing fragment shader gains an opacity uniform, defaulting to 1.
+This enables application-owned material variants without changing source
+geometry or treating text glyph triangles as CAD fills.
+These modifications to MPL-covered files are made available under MPL-2.0.
+Original notices and embedded dependency licenses are retained in the archive.
+
+The original archive is also available from:
+https://registry.npmjs.org/dxf-viewer/-/dxf-viewer-1.0.44.tgz

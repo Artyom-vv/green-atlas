@@ -1,0 +1,122 @@
+import type {
+  CadPackagePassport,
+  CadPreviewRequest,
+  Project,
+  ProjectOperation,
+} from '@green/api-client';
+
+export const previewRequestFixture: CadPreviewRequest = {
+  intake_operation_id: 'intake',
+  manifest_sha256: 'c'.repeat(64),
+  source: {
+    path: 'АПОТ.dwg',
+    source_sha256: 'a'.repeat(64),
+    normalized_sha256: 'b'.repeat(64),
+  },
+  boundary: {
+    path: 'АПОТ.dwg',
+    source_sha256: 'a'.repeat(64),
+    normalized_sha256: 'b'.repeat(64),
+    handle: '14651AD',
+  },
+};
+export const previewReceipt: ProjectOperation = {
+  id: 'preview',
+  project_id: 'project',
+  kind: 'prepare_cad_preview',
+  status: 'completed',
+  progress: 100,
+  progress_mode: 'determinate',
+  stage: 'Предварительная карта подготовлена',
+  project_state_version: 7,
+  cad_preview: {
+    request: previewRequestFixture,
+    result: {
+      status: 'preview_only',
+      calculation_ready: false,
+      published_state_version: 8,
+      geometry_version: 1,
+      source_name: 'area.dxf',
+      output_sha256: 'd'.repeat(64),
+      output_bytes: 1000,
+      manifest_sha256: 'e'.repeat(64),
+      source_units: 6,
+      boundary_mask_area_m2: 100,
+      selected_entities: 2,
+      unknown_bounds: 0,
+      warning_count: 0,
+    },
+  },
+};
+export const previewProject: Project = {
+  id: 'project',
+  name: 'Preview',
+  status: 'imported',
+  state_version: 8,
+  geometry_version: 1,
+  map_ready: false,
+  import_status: {
+    mode: 'cad_preview',
+    editability: 'read_only',
+    message: 'Предварительная карта',
+  },
+  source_file: {
+    name: 'area.dxf',
+    size: 1000,
+    imported_at: '2026-09-15',
+    dxf_version: 'AC1024',
+    units: 'м',
+    units_assumed: false,
+    entity_count: 2,
+    content_sha256: 'd'.repeat(64),
+  },
+};
+export const boundaryPassport: CadPackagePassport = {
+  root_id: 'official',
+  entry: 'АПОТ.dwg',
+  manifest_sha256: 'c'.repeat(64),
+  status: 'blocked',
+  calculation_ready: false,
+  blockers: [],
+  references: [],
+  drawings: [
+    {
+      path: 'АПОТ.dwg',
+      source_sha256: 'a'.repeat(64),
+      normalized_sha256: 'b'.repeat(64),
+      source_bytes: 1000,
+      status: 'readable',
+      inspection: {
+        dxf_version: 'AC1024',
+        units: 6,
+        modelspace_entities: { LWPOLYLINE: 2 },
+        layer_names: ['Граница'],
+        xrefs: {},
+        boundary_catalog: {
+          schema_version: 'green-atlas-boundary-catalog-v1',
+          truncated: false,
+          total_candidates: 2,
+          candidates: [
+            {
+              handle: '14651AD',
+              entity_type: 'LWPOLYLINE',
+              layer: 'Граница',
+              vertex_count: 4,
+              has_bulges: false,
+              available_for_preview: true,
+            },
+            {
+              handle: 'BAD',
+              entity_type: 'LWPOLYLINE',
+              layer: 'Наклонный контур',
+              vertex_count: 4,
+              has_bulges: false,
+              available_for_preview: false,
+              reason: 'Наклонная плоскость',
+            },
+          ],
+        },
+      },
+    },
+  ],
+};

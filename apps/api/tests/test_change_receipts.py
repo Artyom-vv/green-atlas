@@ -1,3 +1,5 @@
+
+from application_factory import recompose_application
 import pytest
 
 from app.contracts import PlanChangeSetApplyRequest, PlanChangeSetDraft
@@ -11,8 +13,8 @@ def durable_application(path, project=None):
     repository = SqliteProjectRepository(path)
     if project is None:
         project = repository.create(seed)
-    domain.repository = repository
-    domain.history = SqliteProjectHistory(repository)
+    domain = recompose_application(domain, repository=repository)
+    domain = recompose_application(domain, history=SqliteProjectHistory(repository))
     return domain, project
 
 
@@ -78,6 +80,6 @@ def test_receipt_outlives_bounded_undo_history(tmp_path):
         preview_id=second.id, digest=second.digest, base_plan_version=second.base_plan_version))
     assert first.preview_id not in {entry.id for entry in domain.history.state(project.id).entries}
     assert domain.history.receipt(project.id, first.preview_id)["status"] == "applied"
-    domain._applied_change_sets.clear()
+    domain.changes._applied.clear()
     assert domain.change_set_status(project.id, first.preview_id, first.digest) == "applied"
     domain.repository._connection.close()

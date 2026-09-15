@@ -1,8 +1,10 @@
-from typing import Protocol
+from typing import Literal, Protocol
 
-from app.contracts import GeometrySnapshot, Project
+from app.geometry.contracts import GeometrySnapshot
 from app.geometry.domain import PositionAdvisory, PositionViolation
 from app.operations.progress import ProgressReporter
+from app.projects.contracts import Project
+from app.regulations.trace_contracts import PlantingRuleTrace
 
 
 class GeometryEnginePort(Protocol):
@@ -25,6 +27,8 @@ class GeometryEnginePort(Protocol):
     def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None: ...
 
     def placement_advisory_detail(self, project: Project, x: float, y: float, radius: float) -> PositionAdvisory | None: ...
+
+    def position_rule_trace(self, project: Project, x: float, y: float, plant_kind: Literal["tree", "shrub"] = "tree", mature_crown_diameter_m: float | None = None) -> PlantingRuleTrace: ...
 
     def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> str | None: ...
 

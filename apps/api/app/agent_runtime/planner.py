@@ -4,8 +4,9 @@ import json
 from typing import Any
 
 from app import planning_assistant as local
-from app.agent_runtime.contracts import AgentDecision
+from app.agent_runtime.contracts import AgentDecision, AgentIntent
 from app.agent_runtime.registry import CapabilityRegistry
+from app.agent_runtime.selection import bound_scope
 from pydantic import ValidationError
 
 
@@ -29,6 +30,11 @@ PLANNER_PROMPT = """Вы — planner автономного агента про�
 схему или допустимый участок, сохранив явно заданные требования. Если runtime вернул
 REPEATED_TOOL_CALL, следующий tool call обязан отличаться именем или аргументами.
 Ориентируйтесь на цель, а не на фиксированный порядок инструментов.
+Количество target_count и quantity_mode=target берите из run.intent.goal, если
+пользователь задал количество. Никогда не уменьшайте цель до найденной вместимости.
+placement_outcome=partial/impossible означает, что задание не выполнено: approval
+недоступен. Runtime проверяет до трёх ранжированных участков при делегации scope;
+явно выбранный участок и обязательные требования не меняются без ответа пользователя.
 Для prepare_placement используйте run.plan_version, а не run.snapshot_version:
 первая — версия плана для base_plan_version, вторая — версия состояния проекта.
 species_revision_ids — это строки id из результата species_shortlist; не передавайте
@@ -42,7 +48,38 @@ species_revision_ids — это строки id из результата specie
 но не оба. Удаление всегда представляется preview и ждёт approval; не используйте сырые
 preview_changes и не выбирайте объекты по позиции в списке. Для edit укажите edit_action;
 для species передайте одну породу, для move реальные dx/dy.
+При explicit scope берите zone_ids и object_ids из run.intent без замены зоны найденными
+объектами. Доменный инструмент сам проверяет точное количество подходящих посадок;
+не выбирайте произвольную часть результатов find_plantings.
 Не раскрывайте chain-of-thought; в decision укажите только действие и параметры."""
+
+
+def _bind_existing_change_scope(decision: AgentDecision, context: dict[str, Any]) -> AgentDecision:
+    """Keep source-bound explicit scope intact across model tool selection.
+
+    A discovered object list cannot replace the user's whole zone or choose a
+    subset of explicit objects. The domain still checks the requested count,
+    filters, object existence and all actual changes through the gateway.
+    """
+    if decision.action != "tool" or decision.tool.name != "prepare_existing_change":
+        return decision
+    run = context.get("run")
+    if not isinstance(run, dict):
+        return decision
+    try:
+        intent = AgentIntent.model_validate(run.get("intent"))
+    except ValidationError:
+        return decision
+    zones, objects = bound_scope(intent)
+    if (intent.goal.operation not in {"edit", "delete"} or intent.scope_mode not in {"explicit", "selection"}
+            or bool(zones) == bool(objects)):
+        return decision
+    arguments = {
+        **decision.tool.arguments,
+        "zone_ids": zones,
+        "object_ids": objects,
+    }
+    return decision.model_copy(update={"tool": decision.tool.model_copy(update={"arguments": arguments})})
 
 
 class LocalPlanner:
@@ -73,7 +110,7 @@ class LocalPlanner:
         }, timeout=60)
         content = response["message"]["content"]
         try:
-            return AgentDecision.model_validate_json(content)
+            decision = AgentDecision.model_validate_json(content)
         except ValidationError as error:
             # Ollama supports only a conservative JSON-schema subset. Keep
             # the transport schema portable and spend one corrective turn only
@@ -118,4 +155,5 @@ class LocalPlanner:
                 "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 700},
                 "keep_alive": "10m",
             }, timeout=60)
-            return AgentDecision.model_validate_json(repair["message"]["content"])
+            decision = AgentDecision.model_validate_json(repair["message"]["content"])
+        return _bind_existing_change_scope(decision, context)

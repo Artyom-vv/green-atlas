@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.composition import get_application
 
 import asyncio
 import csv
@@ -17,9 +18,9 @@ from shapely.ops import unary_union
 from starlette.datastructures import UploadFile
 
 from app import api as api_module
-from app import application as application_module
+from app.dxf_import import limits as import_limits
 from app.application import ProjectApplication
-from app.application import _context_base_elevation_source
+from app.scene.context import _context_base_elevation_source
 from app.contracts import CoordinateReference, FillPatternRequest, GrowthEnvelopeForecast, LayerMapping, PlanObject, PlanObjectCreate, PlantingZoneAssignment
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
@@ -132,7 +133,7 @@ def area(id_: str, label: str, coordinates: list[list[float]]) -> dict:
 
 
 def test_import_is_limited_before_parser_runs(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(api_module, "MAX_DXF_CONTENT_BYTES", 4)
+    monkeypatch.setattr(import_limits, "MAX_DXF_CONTENT_BYTES", 4)
     project_id = client.post("/api/projects", json={"name": "Размер DXF"}).json()["id"]
 
     response = client.post(
@@ -161,16 +162,16 @@ def test_mutable_source_passes_through_import_and_persists_exactly() -> None:
     payload = bytearray(site_content())
     project_id = client.post("/api/projects", json={"name": "Буфер загрузки"}).json()["id"]
 
-    imported = api_module.application.import_dxf(project_id, "site.dxf", payload)
+    imported = get_application().import_dxf(project_id, "site.dxf", payload)
 
     assert imported.source_file is not None
-    assert api_module.application.repository.get_source(project_id) == bytes(payload)
+    assert get_application().repository.get_source(project_id) == bytes(payload)
 
 
 def test_opening_manual_plan_releases_raw_geometry_but_keeps_map_and_source() -> None:
     source = site_content()
     project_id = prepare_project("Освобождение исходной геометрии")
-    before = api_module.application.get(project_id)
+    before = get_application().get(project_id)
     assert before.source_geometry is not None
     assert before.geometry is not None
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
@@ -178,7 +179,7 @@ def test_opening_manual_plan_releases_raw_geometry_but_keeps_map_and_source() ->
     opened = client.post(f"/api/projects/{project_id}/plan/manual")
 
     assert opened.status_code == 200
-    after = api_module.application.get(project_id)
+    after = get_application().get(project_id)
     assert after.source_geometry is None
     assert after.geometry is not None
     viewport = client.get(
@@ -251,7 +252,7 @@ def test_real_large_dxf_survives_http_import_geometry_viewport_and_source_recove
     assert features
     assert any(feature["properties"].get("source_layer") == "OSM_ROAD_LOCAL" for feature in features)
 
-    full_project = api_module.application.get(project_id)
+    full_project = get_application().get(project_id)
     site_geometry = next(
         feature["geometry"]
         for feature in full_project.geometry.feature_collection["features"]
@@ -275,7 +276,7 @@ def test_real_large_dxf_survives_http_import_geometry_viewport_and_source_recove
     })
     assert preview.status_code == 200, preview.json()
     assert preview.json()["accepted_count"] == 100
-    checker = PositionChecker(api_module.application.get(project_id))
+    checker = PositionChecker(get_application().get(project_id))
     assert all(
         checker.check(item["x"], item["y"], item["radius"], item["kind"]) is None
         for item in preview.json()["change_set"]["additions"]
@@ -308,7 +309,7 @@ def test_real_moscow_3d_dxf_keeps_georeference_and_estimated_dem_through_public_
     ).status_code == 200
     prepare_map(project_id)
 
-    project = api_module.application.get(project_id)
+    project = get_application().get(project_id)
     site_geometry = next(
         feature["geometry"]
         for feature in project.geometry.feature_collection["features"]
@@ -413,13 +414,13 @@ def test_large_dxf_manual_plan_survives_repository_reopen_and_exports_from_sourc
 
 
 def test_application_limit_applies_without_http(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(application_module, "MAX_DXF_CONTENT_BYTES", 4)
+    monkeypatch.setattr(import_limits, "MAX_DXF_CONTENT_BYTES", 4)
     project_id = client.post("/api/projects", json={"name": "Размер без HTTP"}).json()["id"]
 
     with pytest.raises(ValueError, match="DXF должен быть не больше"):
-        api_module.application.import_dxf(project_id, "too-large.dxf", b"12345")
+        get_application().import_dxf(project_id, "too-large.dxf", b"12345")
 
-    assert api_module.application.get(project_id).source_file is None
+    assert get_application().get(project_id).source_file is None
 
 
 def test_failed_map_keeps_the_exact_uploaded_dxf_available_for_download() -> None:
@@ -489,7 +490,7 @@ def test_failed_reimport_keeps_the_saved_source_manual_plan_and_export() -> None
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
     assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
     assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
-    source_before = api_module.application.repository.get_source(project_id)
+    source_before = get_application().repository.get_source(project_id)
 
     failed = client.post(
         f"/api/projects/{project_id}/source-dxf",
@@ -502,7 +503,7 @@ def test_failed_reimport_keeps_the_saved_source_manual_plan_and_export() -> None
     assert restored["source_file"]["name"] == "site.dxf"
     assert restored["status"] == "editing"
     assert len(restored["plan"]["objects"]) == 1
-    assert api_module.application.repository.get_source(project_id) == source_before
+    assert get_application().repository.get_source(project_id) == source_before
 
     artifact = client.post(f"/api/projects/{project_id}/exports")
     assert artifact.status_code == 200
@@ -514,7 +515,7 @@ def test_valid_reimport_cannot_silently_replace_a_manual_project_source() -> Non
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
     assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
     assert client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20}).status_code == 200
-    source_before = api_module.application.repository.get_source(project_id)
+    source_before = get_application().repository.get_source(project_id)
 
     replacement = client.post(
         f"/api/projects/{project_id}/source-dxf",
@@ -526,7 +527,7 @@ def test_valid_reimport_cannot_silently_replace_a_manual_project_source() -> Non
     restored = client.get(f"/api/projects/{project_id}").json()
     assert restored["source_file"]["name"] == "site.dxf"
     assert len(restored["plan"]["objects"]) == 1
-    assert api_module.application.repository.get_source(project_id) == source_before
+    assert get_application().repository.get_source(project_id) == source_before
 
 
 def test_manual_route_keeps_several_real_working_areas() -> None:
@@ -610,7 +611,7 @@ def test_existing_green_is_a_hard_occupied_contour_for_manual_and_bulk_placement
         "seed": 47,
     })
     assert preview.status_code == 200, preview.json()
-    project = api_module.application.get(project_id)
+    project = get_application().get(project_id)
     green = unary_union([
         shape(feature["geometry"])
         for feature in project.geometry.feature_collection["features"]
@@ -782,9 +783,9 @@ def test_changing_layer_meaning_discards_the_old_map_and_selected_areas() -> Non
         f"/api/projects/{project_id}/map-features",
         params={"min_x": 0, "min_y": 0, "max_x": 120, "max_y": 80, "resolution": 1},
     ).status_code == 200
-    assert project_id in api_module.application.geometry_query._indexes
-    api_module.application.validator._position_checker(api_module.application.get(project_id))
-    assert project_id in api_module.application.validator._position_checkers
+    assert project_id in get_application().geometry_query._indexes
+    get_application().validator._position_checker(get_application().get(project_id))
+    assert project_id in get_application().validator._position_checkers
 
     project = client.get(f"/api/projects/{project_id}").json()
     mappings = [
@@ -803,8 +804,8 @@ def test_changing_layer_meaning_discards_the_old_map_and_selected_areas() -> Non
     assert remapped.json()["geometry"] is None
     assert remapped.json()["planting_zones"] == []
     assert remapped.json()["status"] == "mapped"
-    assert project_id not in api_module.application.geometry_query._indexes
-    assert project_id not in api_module.application.validator._position_checkers
+    assert project_id not in get_application().geometry_query._indexes
+    assert project_id not in get_application().validator._position_checkers
     manual = client.post(f"/api/projects/{project_id}/plan/manual")
     assert manual.status_code == 400
     assert "подготовьте карту" in manual.json()["message"]
@@ -833,7 +834,7 @@ def test_application_query_rejects_nonfinite_viewport_without_http_validation() 
     project_id = prepare_project("Конечный viewport без HTTP")
 
     with pytest.raises(ValueError, match="конечными"):
-        api_module.application.query_geometry(project_id, (float("nan"), 0, 120, 80), 1)
+        get_application().query_geometry(project_id, (float("nan"), 0, 120, 80), 1)
 
 
 def test_manual_move_reassigns_object_between_selected_areas() -> None:
@@ -1013,7 +1014,7 @@ def test_draft_release_is_reproducible_and_links_every_artifact_by_object_id() -
         assert all(info.date_time == (2026, 8, 28, 0, 0, 0) for info in archive.infolist())
 
 
-def test_final_release_requires_species_and_has_an_honest_process_scope() -> None:
+def test_final_release_requires_species_and_networks_and_preserves_draft_scope() -> None:
     project_id = prepare_project("Финальный выпуск")
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])
     assert client.post(f"/api/projects/{project_id}/plan/manual").status_code == 200
@@ -1033,7 +1034,7 @@ def test_final_release_requires_species_and_has_an_honest_process_scope() -> Non
     assert missing_basis.status_code == 400
     assert "основания ПП-616 и ПП-1160" in missing_basis.json()["message"]
 
-    final = client.post(f"/api/projects/{project_id}/releases", json={
+    release_request = {
         "mode": "final",
         "scene_horizon": 20,
         "regulatory_basis": {
@@ -1043,10 +1044,15 @@ def test_final_release_requires_species_and_has_an_honest_process_scope() -> Non
             "pp1160_reference": "Удаление и пересадка не входят в эту ревизию",
             "confirmed_by": "Иванов И И",
         },
-    })
-    assert final.status_code == 200, final.json()
-    assert final.json()["status"] == "ready"
-    manifest_artifact = next(item for item in final.json()["artifacts"] if item["kind"] == "manifest")
+    }
+    final = client.post(f"/api/projects/{project_id}/releases", json=release_request)
+    assert final.status_code == 400, final.json()
+    assert "проверки инженерных сетей" in final.json()["message"]
+    draft = client.post(f"/api/projects/{project_id}/releases", json={**release_request, "mode": "draft"})
+    assert draft.status_code == 200, draft.json()
+    assert draft.json()["status"] == "draft"
+    assert sum(warning.startswith("Инженерные сети:") for warning in draft.json()["warnings"]) == 1
+    manifest_artifact = next(item for item in draft.json()["artifacts"] if item["kind"] == "manifest")
     manifest = client.get(manifest_artifact["download_url"]).json()
     assert manifest["missing_species_object_ids"] == []
     registry = manifest["regulatory_registry"]
@@ -1063,7 +1069,7 @@ def test_final_release_requires_species_and_has_an_honest_process_scope() -> Non
     assert all(layer["parsing_status"] in {"complete", "partial"} for layer in manifest["layer_mappings"])
     assert all("used_in_calculation" in layer for layer in manifest["layer_mappings"])
     assert "approved" not in json.dumps(manifest).lower()
-    dxf_artifact = next(item for item in final.json()["artifacts"] if item["kind"] == "dxf")
+    dxf_artifact = next(item for item in draft.json()["artifacts"] if item["kind"] == "dxf")
     document = ezdxf.read(StringIO(client.get(dxf_artifact["download_url"]).content.decode("utf-8")))
     tags = [tag.value for tag in document.modelspace().query('CIRCLE[layer=="GREEN_ATLAS_TREES"]')[0].get_xdata("GREEN_ATLAS") if tag.code == 1000]
     assert "species_revision_id=tilia-cordata@2026-08-28.1" in tags
@@ -1079,7 +1085,7 @@ def test_failed_export_storage_does_not_publish_a_new_project_revision(monkeypat
     def fail_storage(*_args: object, **_kwargs: object) -> None:
         raise OSError("Хранилище экспорта недоступно")
 
-    monkeypatch.setattr(api_module.application.repository, "publish_export", fail_storage)
+    monkeypatch.setattr(get_application().repository, "publish_export", fail_storage)
     failed = client.post(f"/api/projects/{project_id}/exports")
 
     assert failed.status_code == 400
@@ -1107,7 +1113,7 @@ def test_binary_source_survives_full_saved_manual_flow() -> None:
     downloaded = client.get(artifact.json()["download_url"])
     reopened = EzdxfReader().read("binary-plan.dxf", downloaded.content)
 
-    assert api_module.application.repository.get_source(project_id) == source
+    assert get_application().repository.get_source(project_id) == source
     assert downloaded.content.startswith(b"AutoCAD Binary DXF")
     assert any(feature["properties"].get("source_layer") == "SOURCE_CONTEXT" for feature in reopened.geometry.feature_collection["features"])
     assert any(layer.source_name == "GREEN_ATLAS_TREES" for layer in reopened.layers)
@@ -1358,7 +1364,7 @@ def test_row_pattern_creates_many_sites_as_one_undoable_revision(monkeypatch) ->
     def unused_area_masks(*args, **kwargs):
         raise AssertionError("Row sampling must not construct unused safe-area masks")
 
-    monkeypatch.setattr(api_module.application, "_automatic_generation_zones", unused_area_masks)
+    monkeypatch.setattr(get_application().evaluation, "automatic_generation_zones", unused_area_masks)
     pattern = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
         "type": "row",
         "base_plan_version": base_version,
@@ -1577,7 +1583,7 @@ def test_placement_masks_are_discoverable_and_keep_every_preview_candidate_safe(
     assert {item["id"] for item in catalog.json()} == {"road_edges", "regular_grid", "cluster_groves"}
     assert next(item for item in catalog.json() if item["id"] == "road_edges")["available"] is True
 
-    project = api_module.application.get(project_id)
+    project = get_application().get(project_id)
     checker = PositionChecker(project)
     requests = [
         {
@@ -1896,8 +1902,10 @@ def test_recommendation_is_one_explainable_atomic_draft_and_preserves_locked_sit
     assert applied.status_code == 200, applied.json()
     assert applied.json()["plan_version"] == locked_plan["version"] + 1
     added_ids = {item["id"] for item in preview["additions"]}
-    assert not {item["object_id"] for item in applied.json()["plan"]["issues"]} & added_ids
-    assert all(item["status"] == "valid" for item in applied.json()["plan"]["objects"] if item["id"] in added_ids)
+    added_issues = [item for item in applied.json()["plan"]["issues"] if item["object_id"] in added_ids]
+    assert all(item["code"] == "NETWORK_CONTEXT_UNKNOWN" and item["severity"] == "warning" for item in added_issues)
+    review_ids = {item["object_id"] for item in added_issues}
+    assert all(item["status"] == ("warning" if item["id"] in review_ids else "valid") for item in applied.json()["plan"]["objects"] if item["id"] in added_ids)
     preserved = next(item for item in applied.json()["plan"]["objects"] if item["id"] == locked_id)
     assert preserved["locked"] is True
     undone = client.post(f"/api/projects/{project_id}/plan/history/undo").json()
@@ -2029,7 +2037,7 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
         if item["kind"] == "building"
     )
 
-    project = api_module.application.get(project_id)
+    project = get_application().get(project_id)
     project.coordinate_reference = CoordinateReference(
         status="verified",
         crs_id="EPSG:32637",
@@ -2045,7 +2053,7 @@ def test_scene_uses_stable_object_ids_local_coordinates_and_growth_horizons() ->
             building_count += 1
             feature["properties"]["source_extrusion_height_m"] = 9.75
     assert building_count > 0
-    api_module.application.repository.save(project)
+    get_application().repository.save(project)
 
     current = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
     early = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 1})
@@ -2165,7 +2173,7 @@ def test_scene_preserves_dxf_context_before_translating_to_local_coordinates() -
     client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20})
     client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 60, "y": 40})
 
-    project = api_module.application.get(project_id)
+    project = get_application().get(project_id)
     assert project.geometry is not None and project.plan is not None
     x_offset, y_offset = 1_000, 2_000
     shifted_features = [
@@ -2184,7 +2192,7 @@ def test_scene_preserves_dxf_context_before_translating_to_local_coordinates() -
             for item in project.plan.objects
         ],
     })
-    api_module.application.repository.save(project)
+    get_application().repository.save(project)
 
     response = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0})
     assert response.status_code == 200, response.json()
@@ -2206,11 +2214,11 @@ def test_scene_keeps_empty_work_areas_and_distant_source_context() -> None:
     ])
     client.post(f"/api/projects/{project_id}/plan/manual")
     client.post(f"/api/projects/{project_id}/plan/objects", json={"kind": "tree", "x": 20, "y": 20})
-    project = api_module.application.get(project_id)
+    project = get_application().get(project_id)
     assert project.geometry is not None
     remote = {"type": "Feature", "id": "far-building", "geometry": {"type": "Polygon", "coordinates": [[[1000, 1000], [1020, 1000], [1020, 1020], [1000, 1000]]]}, "properties": {"kind": "building"}}
     project.geometry.feature_collection["features"].append(remote)
-    api_module.application.repository.save(project)
+    get_application().repository.save(project)
     scene = client.get(f"/api/projects/{project_id}/plan/scene", params={"horizon_year": 0}).json()
     context = scene["context_features"]
     assert sum(item["kind"] == "planting_area" for item in context) == 2

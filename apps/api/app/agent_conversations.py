@@ -1,18 +1,24 @@
 """Conversation transport, separate from project mutation endpoints."""
-from functools import lru_cache
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from app.agent_memory import ConversationConflict, ConversationStore, TaskState, TaskPatch
-from app.agent_interpreter import interpret_task, project_context
 from app import planning_assistant as local
-from app.agent_planning import prepare_task as prepare_agent_task
+from app.agent_interpreter import interpret_task, project_context
+from app.agent_loop import run_placement_agent, run_read_agent
+from app.agent_memory import (
+    ConversationConflict,
+    ConversationStore,
+    TaskPatch,
+    TaskState,
+)
 from app.agent_perception import MapContext, StaleMapContext, bind_selection, perceive
+from app.agent_planning import prepare_task as prepare_agent_task
 from app.agent_readiness import next_question
-from app.agent_loop import run_read_agent, run_placement_agent
+from app.composition import get_application, get_conversation_store
 from app.contracts import PlanChangeSetApplyRequest, PlanMutationResult
+from app.http_errors import handle
 
 
 class ConversationCreate(BaseModel):
@@ -93,19 +99,14 @@ class ConfirmProposal(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
-@lru_cache(maxsize=4)
-def store_for_path(path: str) -> ConversationStore:
-    return ConversationStore(path)
-
-
 def project_store(project_id: str) -> ConversationStore:
     # Same project lookup as the existing local API. Do not create orphan chats.
-    from app.api import application, database_path
+    application = get_application()
     try:
         application.get(project_id, lightweight=True)
     except KeyError as error:
         raise HTTPException(404, "Проект не найден") from error
-    return store_for_path(database_path)
+    return get_conversation_store()
 
 
 router = APIRouter(prefix="/api/projects/{project_id}/conversations", tags=["Project conversations"])
@@ -151,7 +152,7 @@ def append_message(project_id: str, conversation_id: str, request: UserMessage, 
                 raise ConversationConflict("Record id is already used")
             return chat
         if request.map_context is not None:
-            from app.api import application
+            application = get_application()
             perceive(application.get(project_id, lightweight=True), request.map_context)
         return store.append(project_id, conversation_id, expected_revision=request.expected_revision,
                             record_id=request.record_id, kind="message", payload=request.content())
@@ -167,7 +168,7 @@ def append_message(project_id: str, conversation_id: str, request: UserMessage, 
 
 @router.post("/{conversation_id}/interpret", response_model=Conversation)
 def interpret_message(project_id: str, conversation_id: str, request: UserMessage, store: ConversationStore = Depends(project_store)):
-    from app.api import application
+    application = get_application()
     try:
         chat = store.get(project_id, conversation_id)
     except KeyError as error:
@@ -233,7 +234,7 @@ def interpret_message(project_id: str, conversation_id: str, request: UserMessag
 
 @router.post("/{conversation_id}/prepare", response_model=Conversation)
 def prepare_task(project_id: str, conversation_id: str, request: PrepareTask, store: ConversationStore = Depends(project_store)):
-    from app.api import application
+    application = get_application()
     try:
         chat = store.get(project_id, conversation_id)
         previous = next((record for record in chat["records"] if record["record_id"] == request.record_id), None)
@@ -268,7 +269,7 @@ def prepare_task(project_id: str, conversation_id: str, request: PrepareTask, st
 
 @router.get("/{conversation_id}/proposals/{record_id}/status", response_model=ProposalStatus)
 def proposal_status(project_id: str, conversation_id: str, record_id: str, store: ConversationStore = Depends(project_store)):
-    from app.api import application
+    application = get_application()
     try:
         chat = store.get(project_id, conversation_id)
         record = next((item for item in chat["records"] if item["record_id"] == record_id), None)
@@ -311,7 +312,7 @@ def decline_proposal(project_id: str, conversation_id: str, proposal_record_id: 
 @router.post("/{conversation_id}/proposals/{proposal_record_id}/confirm", response_model=PlanMutationResult)
 def confirm_proposal(project_id: str, conversation_id: str, proposal_record_id: str, request: ConfirmProposal,
                      store: ConversationStore = Depends(project_store)):
-    from app.api import application, handle
+    application = get_application()
     # Serialize against append/interpret/decline commits in this local server.
     # This is NOT a cross-process SQLite transaction: multi-worker deployment
     # requires moving the conversation revision check into the plan commit.

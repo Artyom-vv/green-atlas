@@ -4,7 +4,10 @@ import json
 from threading import RLock
 from uuid import uuid4
 
-from app.contracts import Plan, PlanHistoryEntry, PlanHistoryState, PlantingZoneAssignment, Project, ProjectStatus
+from app.planning.contracts import Plan
+from app.history.contracts import PlanHistoryEntry, PlanHistoryState
+from app.planting_zones.contracts import PlantingZoneAssignment
+from app.projects.contracts import Project, ProjectStatus
 from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import ProjectVersionConflict, advance_expected_project_version, expected_project_version
 
@@ -44,6 +47,8 @@ class InMemoryProjectHistory:
         )
 
     def _restore(self, project: Project, snapshot: _Snapshot) -> Project:
+        if project.planting_zones != snapshot.planting_zones:
+            raise ValueError("История плана относится к прежним участкам. Обновите историю перед отменой или повтором.")
         project.planting_zones = [zone.model_copy(deep=True) for zone in snapshot.planting_zones]
         project.plan = snapshot.plan.model_copy(deep=True) if snapshot.plan else None
         project.status = snapshot.status
@@ -93,26 +98,30 @@ class InMemoryProjectHistory:
             undo = self._undo.get(project.id, [])
             if not undo:
                 raise ValueError("Нет изменений для отмены")
-            snapshot = undo.pop()
+            snapshot = undo[-1]
             redo = self._redo.setdefault(project.id, [])
             current = self._snapshot(project, snapshot.label)
             current.id = snapshot.id
             current.created_at = snapshot.created_at
+            restored = self._restore(project, snapshot)
+            undo.pop()
             redo.append(current)
-            return self._restore(project, snapshot)
+            return restored
 
     def redo(self, project: Project) -> Project:
         with self._lock:
             redo = self._redo.get(project.id, [])
             if not redo:
                 raise ValueError("Нет изменений для повтора")
-            snapshot = redo.pop()
+            snapshot = redo[-1]
             undo = self._undo.setdefault(project.id, [])
             current = self._snapshot(project, snapshot.label)
             current.id = snapshot.id
             current.created_at = snapshot.created_at
+            restored = self._restore(project, snapshot)
+            redo.pop()
             undo.append(current)
-            return self._restore(project, snapshot)
+            return restored
 
 
 class SqliteProjectHistory:
@@ -182,7 +191,10 @@ class SqliteProjectHistory:
     @staticmethod
     def _restore(project: Project, payload: str) -> Project:
         value = json.loads(payload)
-        project.planting_zones = [PlantingZoneAssignment.model_validate(item) for item in value["planting_zones"]]
+        zones = [PlantingZoneAssignment.model_validate(item) for item in value["planting_zones"]]
+        if project.planting_zones != zones:
+            raise ValueError("История плана относится к прежним участкам. Обновите историю перед отменой или повтором.")
+        project.planting_zones = zones
         project.plan = Plan.model_validate(value["plan"]) if value["plan"] is not None else None
         project.status = ProjectStatus(value["status"])
         return project

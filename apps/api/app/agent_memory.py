@@ -3,6 +3,8 @@
 Messages are immutable. Tool events and task revisions are separate records so a
 declined preview never erases either the user's intent or the assistant's answer.
 """
+from __future__ import annotations
+
 import json
 import sqlite3
 from datetime import datetime, timezone

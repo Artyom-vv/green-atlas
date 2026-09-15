@@ -1,24 +1,39 @@
 from __future__ import annotations
 
-import csv
 import base64
+import csv
+import json
+import zipfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from html import escape
 from io import BytesIO, StringIO
-import json
 from pathlib import Path
-from dataclasses import dataclass
 from posixpath import normpath
-import zipfile
 from typing import Any
 
-from app.contracts import GeometrySnapshot, Plan, PlantingZoneAssignment, Project, ReleaseArtifact, ReleaseCreateRequest, ReleasePackage, SceneSnapshot
+from app.contracts import (
+    GeometrySnapshot,
+    Plan,
+    PlantingZoneAssignment,
+    Project,
+    ReleaseArtifact,
+    ReleaseCreateRequest,
+    ReleasePackage,
+    SceneSnapshot,
+)
 from app.data_passport import build_data_passport
-from app.species.catalog import forecast_at, get_species
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES, validate_dxf_filename
-from app.regulations.registry import REGISTRY_REVISION, applied_record_ids, registry_snapshot
-
+from app.geometry.rule_trace import project_rule_traces
+from app.regulations.network_summary import network_review_reason
+from app.regulations.profiles import LCT_REQUIREMENT_PROFILE, requirement_profile
+from app.regulations.registry import (
+    REGISTRY_REVISION,
+    applied_record_ids,
+    registry_snapshot,
+)
+from app.species.catalog import forecast_at, get_species
 
 RULE_SET_REVISION = "green-atlas-spatial-draft@2026-08-28.1"
 SPECIES_CATALOG_REVISION = "green-atlas-species@2026-08-28.1"
@@ -294,6 +309,7 @@ def release_identity(project: Project, request: ReleaseCreateRequest) -> str:
         "regulatory_basis": request.regulatory_basis.model_dump(mode="json") if request.regulatory_basis is not None else None,
         "rules": RULE_SET_REVISION,
         "regulatory_registry": REGISTRY_REVISION,
+        "regulatory_requirement_profile": LCT_REQUIREMENT_PROFILE,
         "applied_rule_ids": applied_record_ids([issue.rule_id for issue in project.plan.issues]),
         "catalog": SPECIES_CATALOG_REVISION,
     }
@@ -432,6 +448,16 @@ def build_release(
     geometry_payload = project.geometry.model_dump(mode="json") if project.geometry is not None else None
     planting_zone_payload = [zone.model_dump(mode="json") for zone in project.planting_zones]
     groups = sorted({group_id for item in project.plan.objects for group_id in item.group_ids})
+    traces = project_rule_traces(project)
+    network_limitation = network_review_reason(traces.values())
+    if network_limitation:
+        warnings.append(network_limitation)
+    traced_rule_ids = [
+        entry.rule_id
+        for trace in traces.values()
+        for entry in trace.entries
+        if entry.status in {"passed", "failed"} and entry.rule_id is not None
+    ]
     manifest = {
         "schema": "green-atlas-release:2",
         "editable": True,
@@ -441,6 +467,7 @@ def build_release(
         "project": {
             "id": project.id,
             "name": project.name,
+            "state_version": project.state_version,
             "plan_version": project.plan.version,
             "geometry_version": project.geometry_version,
             "status": project.status.value,
@@ -466,6 +493,8 @@ def build_release(
                 "parsing_status": "complete" if layer.geometry_complete else "partial",
                 "semantic_status": "excluded" if str(layer.mapped_kind) == "LayerKind.IGNORE" or getattr(layer.mapped_kind, "value", layer.mapped_kind) == "ignore" else "classified",
                 "used_in_calculation": bool(layer.geometry_complete and getattr(layer.mapped_kind, "value", layer.mapped_kind) not in {None, "ignore", "unclassified"}),
+                "utility_context": layer.utility_context.model_dump(mode="json") if layer.utility_context is not None else None,
+                "utility_axis_bindings": [binding.model_dump(mode="json") for binding in layer.utility_axis_bindings],
             }
             for layer in sorted(project.layers, key=lambda item: item.id)
         ],
@@ -482,7 +511,9 @@ def build_release(
         "missing_species_object_ids": missing_species,
         "hard_error_ids": hard_errors,
         "rule_set_revision": RULE_SET_REVISION,
-        "regulatory_registry": registry_snapshot([issue.rule_id for issue in project.plan.issues]),
+        "regulatory_registry": registry_snapshot([*traced_rule_ids, *[issue.rule_id for issue in project.plan.issues]]),
+        "regulatory_requirement_profile": requirement_profile().model_dump(mode="json"),
+        "planting_rule_traces": {object_id: trace.model_dump(mode="json") for object_id, trace in traces.items()},
         "species_catalog_revision": SPECIES_CATALOG_REVISION,
         "regulatory_scope": {
             "spatial_draft": "implemented",

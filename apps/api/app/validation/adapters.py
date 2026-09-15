@@ -1,13 +1,23 @@
+import json
 from collections import OrderedDict
 from math import hypot
 from threading import RLock
+from uuid import NAMESPACE_URL, uuid5
 
-from app.contracts import Plan, Project, ValidationIssue
-from app.planning.domain import PlantSpacingIndex, required_spacing
 from app.geometry.domain import PositionChecker
+from app.planning.contracts import Plan
+from app.planning.domain import PlantSpacingIndex, required_spacing
+from app.projects.contracts import Project
+from app.validation.contracts import ValidationIssue
+from app.validation.networks import (
+    compact_missing_network_issues,
+    object_network_issues,
+)
 
 
 class RuleBasedPlanValidator:
+    revision = "rule-based-plan-v4-network-source-summary"
+
     def __init__(self, max_cached_projects: int = 32) -> None:
         if max_cached_projects < 1:
             raise ValueError("Размер кэша проверок должен быть положительным")
@@ -75,6 +85,15 @@ class RuleBasedPlanValidator:
                     y=object_.y,
                     suggested_action=advisory.suggested_action,
                 ))
+            network_issues = object_network_issues(position_checker, object_)
+            for issue in network_issues:
+                if violation and issue.code == violation.code and issue.rule_id == violation.rule_id:
+                    continue
+                issues.append(issue)
+                if issue.severity == "error":
+                    object_.status = "error"
+                elif object_.status == "valid":
+                    object_.status = "warning"
             canopy_20 = next((item for item in object_.canopy_forecast if item.horizon_year == 20), None)
             roots_20 = next((item for item in object_.root_forecast if item.horizon_year == 20), None)
             growth_advisory = position_checker.growth_advisory(
@@ -119,20 +138,30 @@ class RuleBasedPlanValidator:
                     continue
                 first.status = "error"
                 second.status = "error"
+                # A pair is the same finding regardless of object list order.
+                anchor = min((first, second), key=lambda item: item.id)
                 issues.append(ValidationIssue(
                     severity="error",
                     code="PLANT_SPACING",
                     title="Недостаточное расстояние между посадками",
                     description=f"Между объектами {actual:.2f} м при требовании {required:.2f} м.",
-                    object_id=first.id,
+                    object_id=anchor.id,
                     actual=round(actual, 2),
                     required=round(required, 2),
                     unit="м",
                     rule_id="plant_spacing",
-                    x=first.x,
-                    y=first.y,
+                    x=anchor.x,
+                    y=anchor.y,
                     suggested_action=f"Разнести посадки ещё минимум на {required - actual:.2f} м",
-                    related_object_ids=[first.id, second.id],
+                    related_object_ids=sorted([first.id, second.id]),
                 ))
             spacing_index.add(first)
-        return issues
+        issues = compact_missing_network_issues(issues, object_count=len(plan.objects))
+        for issue in issues:
+            # Measurements and prose may change while this remains the same
+            # finding about the same object(s). Do not use random IDs or a
+            # geometry revision in that identity.
+            identity = [project.id, plan.id, issue.rule_id, issue.code,
+                        sorted(set(issue.related_object_ids or ([issue.object_id] if issue.object_id else [])))]
+            issue.id = str(uuid5(NAMESPACE_URL, "green-atlas/plan-issue/" + json.dumps(identity, ensure_ascii=False)))
+        return sorted(issues, key=lambda item: item.id)

@@ -1,0 +1,18 @@
+diff --git a/src/out_dxf.c b/src/out_dxf.c
+index 8de1989..73af6df 100644
+--- a/src/out_dxf.c
++++ b/src/out_dxf.c
+@@ -3094,6 +3094,13 @@ decl_dxf_process_INSERT (MINSERT)
+         {
+           return minimal ? 0 : dwg_dxf_LAYOUT (dat, obj);
+         }
++      else if (obj->fixedtype == DWG_TYPE_MATERIAL)
++        {
++          /* Green Atlas: preserve material records referenced by dictionaries.
++             Reuse the existing ASCII DXF writer without enabling other
++             experimental classes or changing DWG encoding. */
++          return minimal ? 0 : dwg_dxf_MATERIAL (dat, obj);
++        }
+       else if (obj->fixedtype == DWG_TYPE_TABLESTYLE)
+         {
+ #  if defined DEBUG_CLASSES

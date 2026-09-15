@@ -8,7 +8,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.agent_runtime.contracts import AgentIntent, AgentRunState, ResolvedScope, ToolResult, utc_now
+from app.agent_runtime.contracts import AgentIntent, AgentRunState, ResolvedScope, ToolError, ToolResult, utc_now
+from app.agent_runtime.selection import resolved_selection
+
+
+_EXECUTION_OWNER_ID = str(uuid4())
 
 
 class RunConflict(ValueError):
@@ -37,7 +41,8 @@ class AgentRunRecord(BaseModel):
 class AgentRunStore:
     """SQLite-backed checkpoint store with optimistic concurrency."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, execution_owner_id: str | None = None):
+        self.execution_owner_id = execution_owner_id or _EXECUTION_OWNER_ID
         self.connection = sqlite3.connect(str(path), check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.lock = RLock()
@@ -66,9 +71,56 @@ class AgentRunStore:
                 );
                 """
             )
+        self._recover_interrupted_executions()
+
+    def _recover_interrupted_executions(self):
+        """Recover prior process work once when the local runtime opens its store.
+
+        Reads by an old worker must never invalidate a newer owner's attempt.
+        Only startup recovery examines ownership of already persisted work.
+        """
+        rows = self.connection.execute(
+            "SELECT project_id, run_id FROM agent_runs WHERE json_extract(state, '$.status') IN ('scheduled', 'running')"
+        ).fetchall()
+        for row in rows:
+            record = self.get(row["project_id"], row["run_id"])
+            if record.state.status not in {"scheduled", "running"}:
+                continue
+            if self._execution_owner(record) == self.execution_owner_id:
+                continue
+            failure = ToolError(code="EXECUTION_INTERRUPTED", retryable=True,
+                message="Исполнение остановилось после перезапуска локального сервиса.",
+                remedy="Возобновите задание, чтобы запустить новую попытку по актуальному состоянию проекта.")
+            try:
+                self.checkpoint(row["project_id"], row["run_id"], expected_revision=record.revision,
+                    state=record.state.model_copy(update={"status": "failed", "failure": failure}),
+                    kind="execution_interrupted", payload={"execution_attempt_id": record.state.execution_attempt_id,
+                        **failure.model_dump(mode="json")})
+            except RunConflict:
+                # A concurrent terminal transition or a new explicit attempt
+                # already superseded the startup snapshot.
+                continue
+
+    @staticmethod
+    def _execution_owner(record):
+        if record.state.execution_attempt_id is None:
+            return None
+        scheduling = next((event for event in reversed(record.events)
+            if event.kind == "execution_scheduled"
+            and event.payload.get("execution_attempt_id") == record.state.execution_attempt_id), None)
+        return scheduling.payload.get("execution_owner_id") if scheduling is not None else None
 
     def close(self):
         self.connection.close()
+
+    def list(self, project_id: str, *, limit: int = 20) -> list[AgentRunRecord]:
+        """Recent resumable records, always bounded to one project."""
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT run_id FROM agent_runs WHERE project_id=? ORDER BY updated_at DESC, run_id DESC LIMIT ?",
+                (project_id, min(max(limit, 1), 50)),
+            ).fetchall()
+        return [self.get(project_id, row["run_id"]) for row in rows]
 
     def create(self, project_id: str, intent: AgentIntent, *,
                conversation_id: str | None = None, snapshot_version: int = 1,
@@ -84,7 +136,7 @@ class AgentRunStore:
             snapshot_version=snapshot_version,
             plan_version=plan_version,
         )
-        if intent.scope_mode == "explicit":
+        if intent.scope_mode == "explicit" and (intent.explicit_zone_ids or intent.explicit_object_ids):
             state.resolved_scope = ResolvedScope(
                 project_id=project_id,
                 zone_ids=intent.explicit_zone_ids,
@@ -93,6 +145,8 @@ class AgentRunStore:
                 criteria=["explicit_user_scope"],
                 source_revision=snapshot_version,
             )
+        elif intent.scope_mode == "selection":
+            state.resolved_scope = resolved_selection(intent, project_id)
         with self.lock, self.connection:
             try:
                 self.connection.execute(
@@ -114,7 +168,7 @@ class AgentRunStore:
                 "SELECT sequence, kind, payload, created_at FROM agent_run_events WHERE run_id=? ORDER BY sequence",
                 (run_id,),
             ).fetchall()
-        return AgentRunRecord(
+        record = AgentRunRecord(
             state=AgentRunState.model_validate_json(row["state"]),
             revision=row["revision"],
             created_at=row["created_at"],
@@ -123,6 +177,38 @@ class AgentRunStore:
                                   payload=json.loads(item["payload"]), created_at=item["created_at"])
                     for item in events],
         )
+        return record
+
+    def claim_execution(self, project_id: str, run_id: str) -> tuple[AgentRunRecord, bool]:
+        """Atomically accept one worker dispatch for a compiled, unstarted run."""
+        with self.lock:
+            record = self.get(project_id, run_id)
+            if record.state.status != "queued":
+                return record, False
+            attempt_id = str(uuid4())
+            try:
+                record = self.checkpoint(project_id, run_id, expected_revision=record.revision,
+                    state=record.state.model_copy(update={"status": "scheduled", "execution_attempt_id": attempt_id}),
+                    kind="execution_scheduled", payload={"execution_attempt_id": attempt_id,
+                        "execution_owner_id": self.execution_owner_id})
+                return record, True
+            except RunConflict:
+                return self.get(project_id, run_id), False
+
+    def start_execution(self, project_id: str, run_id: str, attempt_id: str) -> tuple[AgentRunRecord, bool]:
+        """Claim the scheduled attempt once; duplicate or late workers do nothing."""
+        with self.lock:
+            record = self.get(project_id, run_id)
+            if (record.state.status != "scheduled" or record.state.execution_attempt_id != attempt_id
+                    or self._execution_owner(record) != self.execution_owner_id):
+                return record, False
+            try:
+                record = self.checkpoint(project_id, run_id, expected_revision=record.revision,
+                    state=record.state.model_copy(update={"status": "running", "failure": None}),
+                    kind="run_started", payload={"run_id": run_id, "execution_attempt_id": attempt_id})
+                return record, True
+            except RunConflict:
+                return self.get(project_id, run_id), False
 
     def checkpoint(self, project_id: str, run_id: str, *, expected_revision: int,
                    state: AgentRunState, kind: str, payload: dict) -> AgentRunRecord:

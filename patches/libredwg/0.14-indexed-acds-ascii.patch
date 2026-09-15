@@ -1,0 +1,571 @@
+--- a/src/acds.spec
++++ b/src/acds.spec
+@@ -90,7 +90,8 @@
+   END_REPEAT (segidx) // still needed, free later
+ #endif
+ 
+-  _REPEAT_NF (_obj->num_segidx, segments, Dwg_AcDs_Segment, 1)
++  /* This is a sparse file index, already bounded by the section size above. */
++  _REPEAT_CNF (_obj->num_segidx, segments, Dwg_AcDs_Segment, 1)
+   REPEAT_BLOCK
+       if (_obj->segidx[rcount1].offset)
+         {
+@@ -286,17 +287,30 @@
+         REPEAT2 (search.num_search, search.search, Dwg_AcDs_Search_Data)
+         REPEAT_BLOCK
+           SUB_FIELD_RL (search.search[rcount2],schema_namidx, 0);
+-          SUB_FIELD_RL (search.search[rcount2],num_sortedidx, 0);
++          /* ODA 24.2.2.7.1: the on-disk count is UInt64. Keep the public
++             UInt32 field, but reject truncation before the existing limits. */
++          DECODER {
++            Bit_Chain probe = *dat;
++            if (bit_read_RLL (&probe) > UINT32_MAX)
++              return DWG_ERR_VALUEOUTOFBOUNDS;
++          }
++          SUB_FIELD_CAST (search.search[rcount2],num_sortedidx, RLL, RL, 0);
+           SUB_FIELD_VECTOR (search.search[rcount2],sortedidx, RLLd, num_sortedidx, 0);
+           SUB_FIELD_RL (search.search[rcount2],num_ididxs, 0);
+-          SUB_FIELD_RL (search.search[rcount2],unknown, 0);
++          if (_obj->search.search[rcount2].num_ididxs)
++            SUB_FIELD_RL (search.search[rcount2],unknown, 0);
+           REPEAT3 (search.search[rcount2].num_ididxs, search.search[rcount2].ididxs, Dwg_AcDs_Search_IdIdxs)
+           REPEAT_BLOCK
+             SUB_FIELD_RL (search.search[rcount2].ididxs[rcount3],num_ididx, 0);
+             REPEAT4 (search.search[rcount2].ididxs[rcount3].num_ididx, search.search[rcount2].ididxs[rcount3].ididx, Dwg_AcDs_Search_IdIdx)
+             REPEAT_BLOCK
+               SUB_FIELD_RLL (search.search[rcount2].ididxs[rcount3].ididx[rcount4],handle, 0);
+-              SUB_FIELD_RL (search.search[rcount2].ididxs[rcount3].ididx[rcount4],num_ididx, 0);
++              DECODER {
++                Bit_Chain probe = *dat;
++                if (bit_read_RLL (&probe) > UINT32_MAX)
++                  return DWG_ERR_VALUEOUTOFBOUNDS;
++              }
++              SUB_FIELD_CAST (search.search[rcount2].ididxs[rcount3].ididx[rcount4],num_ididx, RLL, RL, 0);
+               SUB_FIELD_VECTOR (search.search[rcount2].ididxs[rcount3].ididx[rcount4],ididx, RLL, num_ididx, 0);
+             END_REPEAT_BLOCK
+             END_REPEAT (search.search[rcount2].ididxs[rcount3].ididx)
+@@ -329,89 +343,5 @@
+ #endif
+ 
+ #ifdef IS_DECODER
+-  DECODER {
+-    char *s, *e;
+-    unsigned int i = 0;
+-    char *acis_sab_data;
+-    const BITCODE_B acis_empty = 0;
+-    const BITCODE_BS version = 2;
+-    BITCODE_BL num_acis_sab_data;
+-    const unsigned int wanted = dwg->num_acis_sab_hdl;
+-    // 414349532042696E61727946696C65 @10504/2 = 5252
+-    const char start[] = "ACIS BinaryFile";
+-    // 0E03456E640E026F660E0341534D0D0464617461 @13822/2 = 6911
+-    const char end[] = "\016\003End\016\002of\016\003ASM\r\004data";
+-    LOG_TRACE ("\nSearch for ACIS BinaryFile data:\n");
+-    num_acis_sab_data = 0;
+-    while ((s = (char *)memmem (&dat->chain[i], dat->size - i, start,
+-                                strlen (start))))
+-      {
+-        size_t j = s - (char*)&dat->chain[0]; // absolute_offset of found range
+-        if ((e = (char *)memmem (s, dat->size - j, end, strlen (end))))
+-          {
+-            BITCODE_H hdl;
+-            Dwg_Object *o;
+-            Dwg_Entity_3DSOLID *sol;
+-            size_t size = e - s;
+-            size += strlen (end);
+-            LOG_TRACE ("acis_sab_data[%d]: found %s at %" PRIuSIZE ", size %" PRIuSIZE "\n",
+-                       num_acis_sab_data, start, j, size);
+-            if (!dwg->num_acis_sab_hdl)
+-              {
+-                LOG_ERROR ("Not enough %u 3DSOLIDs for the %u-th AcDs SAB data",
+-                           wanted, num_acis_sab_data);
+-                return DWG_ERR_INVALIDHANDLE;
+-              }
+-            hdl = SHIFT_HV (dwg, num_acis_sab_hdl, acis_sab_hdl);
+-            o = dwg_resolve_handle (dwg, hdl->handleref.value);
+-            LOG_TRACE ("%s.acis_sab_hdl[%u] = " FORMAT_REF "\n", o->name,
+-                       dwg->num_acis_sab_hdl + 1, ARGS_REF (hdl));
+-            if (!o || !dwg_obj_is_3dsolid (o))
+-              {
+-                LOG_ERROR ("Matching object %s " FORMAT_REF " not a 3DSOLID",
+-                           o ? o->name : "", ARGS_REF (hdl));
+-                free (hdl);
+-                error |= DWG_ERR_INVALIDHANDLE;
+-                continue;
+-              }
+-            sol = o->tio.entity->tio._3DSOLID;
+-            // not NULL terminated
+-            acis_sab_data = (char*)malloc (size);
+-            memcpy (acis_sab_data, s, size);
+-            num_acis_sab_data++;
+-            dwg_dynapi_entity_set_value (sol, o->name, "acis_data", &acis_sab_data, 0);
+-            dwg_dynapi_entity_set_value (sol, o->name, "sab_size", &size, 0);
+-            dwg_dynapi_entity_set_value (sol, o->name, "version", &version, 0);
+-            // FIXME only until we can write acds:
+-            dwg_dynapi_entity_set_value (sol, o->name, "acis_empty", &acis_empty, 0);
+-            // o->tio.entity->has_ds_data = 0; // maybe there is more, like the
+-            // wires and silhuettes
+-            LOG_TRACE ("%s.acis_data = %" PRIuSIZE " " FORMAT_REF "\n", o->name, size,
+-                       ARGS_REF (hdl));
+-            free (hdl); // it is a non-global, free'able handleref. Created in
+-                        // common_entity_data.spec
+-            i = (j + size) & UINT_MAX; // next offset to try
+-          }
+-        else
+-          {
+-            LOG_WARN ("No End-of-ASM-data found from %" PRIuSIZE " - %" PRIuSIZE
+-                      " for %d-th SAB data",
+-                       j, dat->size, num_acis_sab_data);
+-            i = (j + 20) & UINT_MAX;
+-          }
+-      }
+-    if (wanted == num_acis_sab_data)
+-      {
+-        LOG_TRACE ("Matching number of %u 3DSOLID entities and AcDs SAB data\n",
+-                   wanted);
+-      }
+-    else
+-      {
+-        LOG_WARN ("Not matching number of %u 3DSOLID entities and %u AcDs SAB "
+-                  "data\n",
+-                  wanted, num_acis_sab_data);
+-        while (dwg->num_acis_sab_hdl > 0)
+-          free (SHIFT_HV (dwg, num_acis_sab_hdl, acis_sab_hdl));
+-      }
+-  }
+-#endif
++  error |= dwg_decode_acds_sab (dat, dwg);
++#endif
+--- a/src/decode.c
++++ b/src/decode.c
+@@ -3300,6 +3300,123 @@
+     free (sec_dat.chain);
+   *dat = old_dat; // unrestrict
+   return error;
++}
++
++/* Resolve modeler data through the active datidx, not the physical order of
++   blobs (old saved records may still exist in the section). ODA DWG spec
++   24.2.2.1-3. This path handles inline records; paged blobs fail explicitly. */
++int
++dwg_decode_acds_sab (Bit_Chain *dat, Dwg_Data *dwg)
++{
++  Dwg_AcDs *acds = &dwg->acds;
++  BITCODE_BL i, attached = 0;
++  for (i = 0; i < acds->datidx.num_entries; i++)
++    {
++      Dwg_AcDs_DataIndex_Entry *entry = &acds->datidx.entries[i];
++      Dwg_AcDs_SegmentIndex *index;
++      Dwg_AcDs_Segment *segment;
++      Dwg_Object *object;
++      Dwg_Entity_3DSOLID *solid;
++      Bit_Chain cursor = *dat;
++      BITCODE_RLL handle;
++      BITCODE_RL record_size, data_offset, data_size;
++      size_t start, stop, base, position;
++      if (!entry->segidx)
++        continue;
++      if (entry->segidx >= acds->num_segidx)
++        return DWG_ERR_VALUEOUTOFBOUNDS;
++      index = &acds->segidx[entry->segidx];
++      segment = &acds->segments[entry->segidx];
++      if (!index->offset || index->offset > dat->size
++          || index->size < 48 || index->size > dat->size - index->offset
++          || segment->type != 2)
++        return DWG_ERR_VALUEOUTOFBOUNDS;
++      start = (size_t)index->offset;
++      stop = start + index->size;
++      /* datidx local offsets are relative to the segment's content header. */
++      if (entry->offset > index->size - 48
++          || index->size - 48 - entry->offset < 20)
++        return DWG_ERR_VALUEOUTOFBOUNDS;
++      cursor.byte = start + 48 + entry->offset;
++      cursor.bit = 0;
++      record_size = bit_read_RL (&cursor);
++      (void)bit_read_RL (&cursor); /* flags */
++      handle = bit_read_RLL (&cursor);
++      data_offset = bit_read_RL (&cursor);
++      object = dwg_resolve_handle_silent (dwg, handle);
++      if (!object || !dwg_obj_is_3dsolid (object)
++          || !object->tio.entity->has_ds_data)
++        continue; /* Non-modeler schemas (e.g. block thumbnails). */
++      if (record_size != 20)
++        return DWG_ERR_NOTYETSUPPORTED;
++      if (segment->objdata_algn_offset > index->size / 16)
++        return DWG_ERR_VALUEOUTOFBOUNDS;
++      base = start + (size_t)segment->objdata_algn_offset * 16;
++      if (base < cursor.byte || data_offset > stop - base
++          || stop - base - data_offset < 4)
++        return DWG_ERR_VALUEOUTOFBOUNDS;
++      position = base + data_offset;
++      cursor.byte = position;
++      data_size = bit_read_RL (&cursor);
++      if (data_size == 0xbb106bb1)
++        {
++          LOG_ERROR ("AcDs paged SAB requires indexed blob01 support: "
++                     FORMAT_RLL, handle);
++          return DWG_ERR_NOTYETSUPPORTED;
++        }
++      if (data_size < 15 || data_size > stop - cursor.byte)
++        return DWG_ERR_VALUEOUTOFBOUNDS;
++      /* Respect the next physical record boundary, including inactive rows. */
++      if (start + 48 + entry->offset + 40 <= base)
++        {
++          Bit_Chain next = cursor;
++          next.byte = start + 48 + entry->offset + 20;
++          if (bit_read_RL (&next) == 20)
++            {
++              BITCODE_RL next_offset;
++              next.byte += 12;
++              next_offset = bit_read_RL (&next);
++              if (next_offset <= data_offset || next_offset > stop - base
++                  || (size_t)data_size + 4 > next_offset - data_offset)
++                return DWG_ERR_VALUEOUTOFBOUNDS;
++            }
++        }
++      if (memcmp (&dat->chain[cursor.byte], "ASM BinaryFile", 14)
++          && memcmp (&dat->chain[cursor.byte], "ACIS BinaryFile", 15))
++        return DWG_ERR_NOTYETSUPPORTED;
++      solid = object->tio.entity->tio._3DSOLID;
++      if (solid->acis_data || solid->sab_size)
++        return DWG_ERR_INVALIDHANDLE; /* Never overwrite an ambiguous owner. */
++      solid->acis_data = (BITCODE_RC *)malloc (data_size);
++      if (!solid->acis_data)
++        return DWG_ERR_OUTOFMEM;
++      memcpy (solid->acis_data, &dat->chain[cursor.byte], data_size);
++      solid->sab_size = data_size;
++      solid->version = 2;
++      solid->acis_empty = 0;
++      attached++;
++      LOG_INFO ("AcDs indexed SAB: handle " FORMAT_RLL ", bytes %u\n",
++                handle, data_size);
++    }
++  /* Pending handles are validation evidence, never an ordering heuristic. */
++  while (dwg->num_acis_sab_hdl)
++    {
++      BITCODE_H ref = SHIFT_HV (dwg, num_acis_sab_hdl, acis_sab_hdl);
++      Dwg_Object *object = dwg_resolve_handle_silent (dwg, ref->handleref.value);
++      free (ref);
++      if (!object || !dwg_obj_is_3dsolid (object)
++          || !object->tio.entity->tio._3DSOLID->sab_size)
++        return DWG_ERR_INVALIDHANDLE;
++    }
++  for (i = 0; i < dwg->num_objects; i++)
++    {
++      Dwg_Object *object = &dwg->object[i];
++      if (dwg_obj_is_3dsolid (object) && object->tio.entity->has_ds_data
++          && !object->tio.entity->tio._3DSOLID->sab_size)
++        return DWG_ERR_INVALIDHANDLE;
++    }
++  LOG_INFO ("AcDs indexed modeler bodies: %u\n", attached);
++  return 0;
+ }
+ 
+ static int
+--- a/src/decode.h
++++ b/src/decode.h
+@@ -39,6 +39,7 @@
+ } EntitySectionIndexR11;
+ 
+ EXPORT int dwg_decode (Bit_Chain *restrict dat, Dwg_Data *restrict dwg);
++int dwg_decode_acds_sab (Bit_Chain *dat, Dwg_Data *dwg);
+ int dwg_decode_unknown_bits (Bit_Chain *restrict dat,
+                              Dwg_Object *restrict obj);
+ int dwg_decode_unknown_rest (Bit_Chain *restrict dat,
+--- a/src/out_dxf.c
++++ b/src/out_dxf.c
+@@ -2590,6 +2590,14 @@
+   int error = 0;
+ 
+   COMMON_ENTITY_HANDLE_DATA; // dummy
++  /* R2013+ external SAB is written unchanged in ACDSDATA. Do not down-convert
++     it to encrypted SAT or mutate the source entity during ASCII export. */
++  if (dat->version >= R_2013 && obj->tio.entity->has_ds_data
++      && FIELD_VALUE (acis_data) && FIELD_VALUE (sab_size))
++    {
++      VALUE_BS (1, 70);
++      return 0;
++    }
+   FIELD_B0 (acis_empty, 290);
+   if (!FIELD_VALUE (acis_empty))
+     {
+@@ -4035,21 +4043,257 @@
+   return error;
+ }
+ 
+-// New ACDSDATA r2013+ section, with ACDSSCHEMA elements
++/* Standard ACDSDATA schema from ezdxf sections/acdsdata.py DEFAULT_SETUP.
++   Copyright (c) 2014-2022 Manfred Moitzi, MIT License.
++   Full MIT notice retained in patches/libredwg/THIRD_PARTY_NOTICES.md. */
++static const char acds_default_schema[] =
++  "0\r\n"
++  "SECTION\r\n"
++  "2\r\n"
++  "ACDSDATA\r\n"
++  "70\r\n"
++  "2\r\n"
++  "71\r\n"
++  "2\r\n"
++  "0\r\n"
++  "ACDSSCHEMA\r\n"
++  "90\r\n"
++  "0\r\n"
++  "1\r\n"
++  "AcDb_Thumbnail_Schema\r\n"
++  "2\r\n"
++  "AcDbDs::ID\r\n"
++  "280\r\n"
++  "10\r\n"
++  "91\r\n"
++  "8\r\n"
++  "2\r\n"
++  "Thumbnail_Data\r\n"
++  "280\r\n"
++  "15\r\n"
++  "91\r\n"
++  "0\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "95\r\n"
++  "0\r\n"
++  "90\r\n"
++  "2\r\n"
++  "2\r\n"
++  "AcDbDs::TreatedAsObjectData\r\n"
++  "280\r\n"
++  "1\r\n"
++  "291\r\n"
++  "1\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "95\r\n"
++  "0\r\n"
++  "90\r\n"
++  "3\r\n"
++  "2\r\n"
++  "AcDbDs::Legacy\r\n"
++  "280\r\n"
++  "1\r\n"
++  "291\r\n"
++  "1\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "1\r\n"
++  "AcDbDs::ID\r\n"
++  "90\r\n"
++  "4\r\n"
++  "2\r\n"
++  "AcDs:Indexable\r\n"
++  "280\r\n"
++  "1\r\n"
++  "291\r\n"
++  "1\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "1\r\n"
++  "AcDbDs::ID\r\n"
++  "90\r\n"
++  "5\r\n"
++  "2\r\n"
++  "AcDbDs::HandleAttribute\r\n"
++  "280\r\n"
++  "7\r\n"
++  "282\r\n"
++  "1\r\n"
++  "0\r\n"
++  "ACDSSCHEMA\r\n"
++  "90\r\n"
++  "1\r\n"
++  "1\r\n"
++  "AcDb3DSolid_ASM_Data\r\n"
++  "2\r\n"
++  "AcDbDs::ID\r\n"
++  "280\r\n"
++  "10\r\n"
++  "91\r\n"
++  "8\r\n"
++  "2\r\n"
++  "ASM_Data\r\n"
++  "280\r\n"
++  "15\r\n"
++  "91\r\n"
++  "0\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "95\r\n"
++  "1\r\n"
++  "90\r\n"
++  "2\r\n"
++  "2\r\n"
++  "AcDbDs::TreatedAsObjectData\r\n"
++  "280\r\n"
++  "1\r\n"
++  "291\r\n"
++  "1\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "95\r\n"
++  "1\r\n"
++  "90\r\n"
++  "3\r\n"
++  "2\r\n"
++  "AcDbDs::Legacy\r\n"
++  "280\r\n"
++  "1\r\n"
++  "291\r\n"
++  "1\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "1\r\n"
++  "AcDbDs::ID\r\n"
++  "90\r\n"
++  "4\r\n"
++  "2\r\n"
++  "AcDs:Indexable\r\n"
++  "280\r\n"
++  "1\r\n"
++  "291\r\n"
++  "1\r\n"
++  "101\r\n"
++  "ACDSRECORD\r\n"
++  "1\r\n"
++  "AcDbDs::ID\r\n"
++  "90\r\n"
++  "5\r\n"
++  "2\r\n"
++  "AcDbDs::HandleAttribute\r\n"
++  "280\r\n"
++  "7\r\n"
++  "282\r\n"
++  "1\r\n"
++  "0\r\n"
++  "ACDSSCHEMA\r\n"
++  "90\r\n"
++  "2\r\n"
++  "1\r\n"
++  "AcDbDs::TreatedAsObjectDataSchema\r\n"
++  "2\r\n"
++  "AcDbDs::TreatedAsObjectData\r\n"
++  "280\r\n"
++  "1\r\n"
++  "91\r\n"
++  "0\r\n"
++  "0\r\n"
++  "ACDSSCHEMA\r\n"
++  "90\r\n"
++  "3\r\n"
++  "1\r\n"
++  "AcDbDs::LegacySchema\r\n"
++  "2\r\n"
++  "AcDbDs::Legacy\r\n"
++  "280\r\n"
++  "1\r\n"
++  "91\r\n"
++  "0\r\n"
++  "0\r\n"
++  "ACDSSCHEMA\r\n"
++  "90\r\n"
++  "4\r\n"
++  "1\r\n"
++  "AcDbDs::IndexedPropertySchema\r\n"
++  "2\r\n"
++  "AcDs:Indexable\r\n"
++  "280\r\n"
++  "1\r\n"
++  "91\r\n"
++  "0\r\n"
++  "0\r\n"
++  "ACDSSCHEMA\r\n"
++  "90\r\n"
++  "5\r\n"
++  "1\r\n"
++  "AcDbDs::HandleAttributeSchema\r\n"
++  "2\r\n"
++  "AcDbDs::HandleAttribute\r\n"
++  "280\r\n"
++  "7\r\n"
++  "91\r\n"
++  "1\r\n"
++  "284\r\n"
++  "1\r\n";
++
++static int
++dxf_acds_validate (Dwg_Data *dwg)
++{
++  BITCODE_BL i;
++  for (i = 0; i < dwg->num_objects; i++)
++    {
++      Dwg_Object *object = &dwg->object[i];
++      Dwg_Entity_3DSOLID *solid;
++      if (!dwg_obj_is_3dsolid (object) || !object->tio.entity->has_ds_data)
++        continue;
++      solid = object->tio.entity->tio._3DSOLID;
++      if (!solid->acis_data || !solid->sab_size || solid->version != 2)
++        {
++          LOG_ERROR ("Missing indexed AcDs SAB for handle " FORMAT_RLL,
++                     object->handle.value);
++          return DWG_ERR_INVALIDDWG;
++        }
++    }
++  return 0;
++}
++
+ static int
+ dxf_acds_write (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
+ {
+-  // const char *section = "AcDsProtoype";
+-  Dwg_AcDs *_obj = &dwg->acds;
+-  if (0 && _obj->num_segidx)
+-    {
+-      SECTION (ACSDSDATA); // FIXME
+-      // 70
+-      // 71
+-      // 0 ACDSSCHEMA
+-      // TODO ...
+-      ENDSEC ();
+-    }
++  BITCODE_BL i;
++  int has_records = 0;
++  /* Modeler payloads were validated before writing the document header. */
++  for (i = 0; i < dwg->num_objects; i++)
++    {
++      Dwg_Object *object = &dwg->object[i];
++      if (!dwg_obj_is_3dsolid (object) || !object->tio.entity->has_ds_data)
++        continue;
++      has_records = 1;
++      break;
++    }
++  if (!has_records)
++    return 0;
++  fputs (acds_default_schema, dat->fh);
++  for (i = 0; i < dwg->num_objects; i++)
++    {
++      Dwg_Object *object = &dwg->object[i];
++      Dwg_Entity_3DSOLID *solid;
++      if (!dwg_obj_is_3dsolid (object) || !object->tio.entity->has_ds_data)
++        continue;
++      solid = object->tio.entity->tio._3DSOLID;
++      RECORD (ACDSRECORD);
++      VALUE_RL (1, 90); /* AcDb3DSolid_ASM_Data in the standard schema */
++      VALUE_TVc ("AcDbDs::ID", 2);
++      VALUE_RC (10, 280);
++      VALUE_H (object->handle.value, 320);
++      VALUE_TVc ("ASM_Data", 2);
++      VALUE_RC (15, 280);
++      VALUE_RL (solid->sab_size, 94);
++      VALUE_BINARY (solid->acis_data, solid->sab_size, 310);
++    }
++  ENDSEC ();
+   return 0;
+ }
+ 
+@@ -4088,6 +4332,9 @@
+   if (dwg->header.version <= R_2000 && dwg->header.from_version > R_2000)
+     dwg_fixup_BLOCKS_entities (dwg);
+ 
++  /* Refuse a partial modeler conversion before any document bytes are written. */
++  if (!minimal && dat->version >= R_2013 && dxf_acds_validate (dwg))
++    goto fail;
+   VALUE_TVc (PACKAGE_STRING, 999);
+ 
+   // A minimal header requires only $ACADVER, $HANDSEED, and then ENTITIES

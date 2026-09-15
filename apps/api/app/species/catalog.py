@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.contracts import GrowthEnvelopeForecast, SpeciesRevision
+from app.species.contracts import GrowthEnvelopeForecast, SpeciesRevision
 from app.species.forecast import forecast_at
 
 

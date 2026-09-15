@@ -1,3 +1,4 @@
+from app.composition import get_runtime
 import pytest
 
 from app import api, agent_conversations as routes
@@ -13,7 +14,7 @@ from test_agent_planning import existing_application
 @pytest.mark.parametrize("intent", ["discuss", "new_task"])
 def test_inspection_preserves_task_and_persists_evidence_once(client, monkeypatch, intent):
     domain, project = existing_application()
-    monkeypatch.setattr(api, "application", domain)
+    monkeypatch.setattr(get_runtime(), "application", domain)
     monkeypatch.setattr(routes.local, "configured_model", lambda: "test")
     monkeypatch.setattr(routes, "interpret_task", lambda *_: (TaskPatch(operation="inspect"), TaskInterpretation(intent=intent, operation="inspect")))
     store = app.dependency_overrides[project_store]()

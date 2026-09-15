@@ -108,6 +108,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/source-dxf/asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native Dxf Asset */
+        get: operations["native_dxf_asset_api_projects__project_id__source_dxf_asset_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/source-dxf/download": {
         parameters: {
             query?: never;
@@ -115,8 +132,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Source */
-        get: operations["download_source_api_projects__project_id__source_dxf_download_get"];
+        /** Source Dxf Download */
+        get: operations["source_dxf_download_api_projects__project_id__source_dxf_download_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -669,6 +686,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cad/roots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Roots */
+        get: operations["roots_api_cad_roots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad/roots/{root_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Entries */
+        get: operations["entries_api_cad_roots__root_id__entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad/roots/{root_id}/fingerprint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fingerprint */
+        get: operations["fingerprint_api_cad_roots__root_id__fingerprint_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/operations/cad-intake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_projects__project_id__operations_cad_intake_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/operations/cad-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Preview */
+        post: operations["start_preview_api_projects__project_id__operations_cad_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/operations/{operation_id}/cad-asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cad Asset Metadata */
+        get: operations["cad_asset_metadata_api_projects__project_id__operations__operation_id__cad_asset_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/operations/{operation_id}/cad-asset/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cad Asset File */
+        get: operations["cad_asset_file_api_projects__project_id__operations__operation_id__cad_asset_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/planning-assistant/status": {
         parameters: {
             query?: never;
@@ -881,7 +1017,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Runs */
+        get: operations["list_runs_api_projects__project_id__agent_runs_get"];
         put?: never;
         /** Create Run */
         post: operations["create_run_api_projects__project_id__agent_runs_post"];
@@ -902,6 +1039,80 @@ export interface paths {
         get: operations["get_run_api_projects__project_id__agent_runs__run_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/agent-runs/{run_id}/control-command": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Control Command */
+        get: operations["get_control_command_api_projects__project_id__agent_runs__run_id__control_command_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/agent-runs/{run_id}/control-result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Control Result */
+        post: operations["record_control_result_api_projects__project_id__agent_runs__run_id__control_result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/agent-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description Cancel a checkpointed run; no project write is implied by cancellation.
+         */
+        post: operations["cancel_run_api_projects__project_id__agent_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/agent-runs/{run_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Run
+         * @description Restart a failed/cancelled run from fresh facts and retain its audit log.
+         */
+        post: operations["resume_run_api_projects__project_id__agent_runs__run_id__resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -962,6 +1173,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/agent-runs/{run_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Preview */
+        get: operations["get_run_preview_api_projects__project_id__agent_runs__run_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/agent-runs/{run_id}/zone-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Zone Preview */
+        get: operations["get_run_zone_preview_api_projects__project_id__agent_runs__run_id__zone_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -977,6 +1222,8 @@ export interface components {
         AgentIntent: {
             /** Raw Text */
             raw_text: string;
+            /** Source Turns */
+            source_turns?: string[];
             goal: components["schemas"]["Goal"];
             /**
              * Scope Mode
@@ -1005,11 +1252,20 @@ export interface components {
             species_ids?: string[];
             /** Post Action */
             post_action?: "focus_map" | null;
+            edit?: components["schemas"]["EditIntent"] | null;
+            read?: components["schemas"]["ReadIntent"] | null;
+            control?: components["schemas"]["ControlIntent"] | null;
+            zone?: components["schemas"]["BoundZoneIntent"] | null;
+            selection_context?: components["schemas"]["SelectionContext"] | null;
+            selection_reference?: components["schemas"]["SelectionReference"] | null;
+            selection_binding?: components["schemas"]["SelectionBinding"] | null;
+            selection_issue?: components["schemas"]["SelectionIssue"] | null;
         };
         /** AgentRunAnswer */
         AgentRunAnswer: {
             /** Text */
             text: string;
+            selection_context?: components["schemas"]["SelectionContext"] | null;
         };
         /** AgentRunApproval */
         AgentRunApproval: {
@@ -1022,6 +1278,7 @@ export interface components {
             text: string;
             /** Conversation Id */
             conversation_id?: string | null;
+            selection_context?: components["schemas"]["SelectionContext"] | null;
         };
         /** AgentRunEvent */
         AgentRunEvent: {
@@ -1064,7 +1321,9 @@ export interface components {
              * @default queued
              * @enum {string}
              */
-            status: "queued" | "running" | "waiting_question" | "waiting_approval" | "waiting_job" | "finished" | "failed" | "cancelled";
+            status: "queued" | "scheduled" | "running" | "waiting_question" | "waiting_approval" | "waiting_job" | "waiting_ui" | "finished" | "failed" | "cancelled";
+            /** Execution Attempt Id */
+            execution_attempt_id?: string | null;
             intent: components["schemas"]["AgentIntent"];
             resolved_scope?: components["schemas"]["ResolvedScope"] | null;
             /** Candidate Zone Ids */
@@ -1085,14 +1344,15 @@ export interface components {
             /** Evidence Refs */
             evidence_refs?: string[];
             last_result?: components["schemas"]["ToolResult"] | null;
+            read_outcome?: components["schemas"]["ReadOutcome"] | null;
+            control_command?: components["schemas"]["ControlCommand"] | null;
+            control_result?: components["schemas"]["ControlResult"] | null;
+            placement_retry?: components["schemas"]["ToolCall"] | null;
             /** Pending Question */
             pending_question?: {
                 [key: string]: string;
             } | null;
-            /** Pending Approval */
-            pending_approval?: {
-                [key: string]: string;
-            } | null;
+            pending_approval?: components["schemas"]["PendingApproval"] | null;
             /** Outcome Ref */
             outcome_ref?: string | null;
             failure?: components["schemas"]["ToolError"] | null;
@@ -1113,6 +1373,30 @@ export interface components {
              */
             local: true;
         };
+        /** AxisDistanceEvidence */
+        AxisDistanceEvidence: {
+            binding: components["schemas"]["UtilityAxisBinding"];
+            /** Axis Distance M */
+            axis_distance_m: number;
+            /**
+             * Coordinate Precision M
+             * @default 0.000001
+             */
+            coordinate_precision_m: number;
+        };
+        /** AxisSourceReference */
+        AxisSourceReference: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Feature Id */
+            feature_id: string;
+            /** Source Handle */
+            source_handle: string;
+            /** Insert Chain */
+            insert_chain: string[];
+            /** Geometry Sha256 */
+            geometry_sha256: string;
+        };
         /** Body_upload_dxf_api_projects__project_id__source_dxf_post */
         Body_upload_dxf_api_projects__project_id__source_dxf_post: {
             /** File */
@@ -1122,6 +1406,27 @@ export interface components {
         Body_upload_release_bundle_api_projects__project_id__release_bundle_post: {
             /** File */
             file: string;
+        };
+        /** BoundZoneIntent */
+        BoundZoneIntent: {
+            /** Source Text */
+            source_text: string;
+            /** Source Turns */
+            source_turns?: string[];
+            /** Amendments */
+            amendments?: components["schemas"]["ZoneSourceAmendment"][];
+            /** Project Id */
+            project_id: string;
+            intent: components["schemas"]["ZoneIntent"];
+            draft: components["schemas"]["ZoneChangeDraft"];
+            /** Base Geometry Version */
+            base_geometry_version: number;
+            /** Base Plan Version */
+            base_plan_version?: number | null;
+            /** Before Zones Digest */
+            before_zones_digest: string;
+            /** Planting Digest */
+            planting_digest: string;
         };
         /** BrushPreview */
         BrushPreview: {
@@ -1267,6 +1572,322 @@ export interface components {
              */
             has_roads: boolean;
         };
+        /** CadBoundarySelection */
+        CadBoundarySelection: {
+            /** Path */
+            path: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Normalized Sha256 */
+            normalized_sha256: string;
+            /** Handle */
+            handle: string;
+        };
+        /** CadDirectory */
+        CadDirectory: {
+            /** Root Id */
+            root_id: string;
+            /** Path */
+            path: string;
+            /** Entries */
+            entries: components["schemas"]["CadDirectoryEntry"][];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /** CadDirectoryEntry */
+        CadDirectoryEntry: {
+            /** Path */
+            path: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "directory" | "drawing";
+            /** Bytes */
+            bytes?: number | null;
+        };
+        /** CadDrawingPassport */
+        CadDrawingPassport: {
+            /** Path */
+            path: string;
+            /** Source Sha256 */
+            source_sha256?: string | null;
+            /** Source Bytes */
+            source_bytes: number;
+            /** Normalized Sha256 */
+            normalized_sha256?: string | null;
+            inspection?: components["schemas"]["DrawingInspection"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "readable" | "rejected";
+            /** Message */
+            message?: string | null;
+        };
+        /** CadDrawingSelection */
+        CadDrawingSelection: {
+            /** Path */
+            path: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Normalized Sha256 */
+            normalized_sha256: string;
+        };
+        /** CadFingerprint */
+        CadFingerprint: {
+            /** Root Id */
+            root_id: string;
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+            /** Bytes */
+            bytes: number;
+        };
+        /** CadIntakeRecord */
+        CadIntakeRecord: {
+            request: components["schemas"]["CadIntakeRequest"];
+            passport?: components["schemas"]["CadPackagePassport"] | null;
+        };
+        /** CadIntakeRequest */
+        CadIntakeRequest: {
+            /** Root Id */
+            root_id: string;
+            /** Entry */
+            entry: string;
+            /** Entry Sha256 */
+            entry_sha256: string;
+            /** Overrides */
+            overrides?: components["schemas"]["CadReferenceOverride"][];
+        };
+        /** CadPackagePassport */
+        CadPackagePassport: {
+            /** Root Id */
+            root_id: string;
+            /** Entry */
+            entry: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** Drawings */
+            drawings: components["schemas"]["CadDrawingPassport"][];
+            /** References */
+            references: components["schemas"]["CadReferencePassport"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requires_review" | "blocked";
+            /**
+             * Calculation Ready
+             * @default false
+             * @constant
+             */
+            calculation_ready: false;
+            /** Blockers */
+            blockers: string[];
+        };
+        /** CadPreviewProvenance */
+        CadPreviewProvenance: {
+            /**
+             * Schema Version
+             * @default green-atlas-cad-preview-v1
+             * @constant
+             */
+            schema_version: "green-atlas-cad-preview-v1";
+            /**
+             * Status
+             * @default preview_only
+             * @constant
+             */
+            status: "preview_only";
+            /**
+             * Calculation Ready
+             * @default false
+             * @constant
+             */
+            calculation_ready: false;
+            /** Original Sha256 */
+            original_sha256: string;
+            /** Converted Sha256 */
+            converted_sha256: string;
+            /** Boundary Original Sha256 */
+            boundary_original_sha256: string;
+            /** Boundary Handle */
+            boundary_handle: string;
+            /** Influence Radius M */
+            influence_radius_m?: number | null;
+            /** Boundary Bounds M */
+            boundary_bounds_m?: [
+                number,
+                number,
+                number,
+                number
+            ] | null;
+            /**
+             * Omitted Entity Count
+             * @default 0
+             */
+            omitted_entity_count: number;
+        };
+        /** CadPreviewRecord */
+        CadPreviewRecord: {
+            request: components["schemas"]["CadPreviewRequest"];
+            result?: components["schemas"]["CadPreviewResult"] | null;
+        };
+        /** CadPreviewRequest */
+        CadPreviewRequest: {
+            /** Intake Operation Id */
+            intake_operation_id: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            source: components["schemas"]["CadDrawingSelection"];
+            boundary: components["schemas"]["CadBoundarySelection"];
+        };
+        /** CadPreviewResult */
+        CadPreviewResult: {
+            /**
+             * Status
+             * @default preview_only
+             * @constant
+             */
+            status: "preview_only";
+            /**
+             * Calculation Ready
+             * @default false
+             * @constant
+             */
+            calculation_ready: false;
+            /** Published State Version */
+            published_state_version: number;
+            /** Geometry Version */
+            geometry_version: number;
+            /** Source Name */
+            source_name: string;
+            /** Output Sha256 */
+            output_sha256: string;
+            /** Output Bytes */
+            output_bytes: number;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** Source Units */
+            source_units: number;
+            /** Boundary Mask Area M2 */
+            boundary_mask_area_m2: number;
+            /** Selected Entities */
+            selected_entities: number;
+            /** Unknown Bounds */
+            unknown_bounds: number;
+            /** Warnings */
+            warnings?: string[];
+            /** Warning Count */
+            warning_count: number;
+        };
+        /** CadReferenceOverride */
+        CadReferenceOverride: {
+            /** Owner */
+            owner: string;
+            /** Block */
+            block: string;
+            /** Target */
+            target: string;
+            /** Expected Sha256 */
+            expected_sha256: string;
+            /** Reason */
+            reason: string;
+        };
+        /** CadReferencePassport */
+        CadReferencePassport: {
+            /** Owner */
+            owner: string;
+            /** Block */
+            block: string;
+            /** Requested Path */
+            requested_path: string;
+            /** Target */
+            target?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "resolved" | "missing" | "outside_package" | "ambiguous" | "cycle";
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "relative_path" | "explicit_override";
+            /** Expected Sha256 */
+            expected_sha256?: string | null;
+            /** Resolution Reason */
+            resolution_reason?: string | null;
+        };
+        /** CadRoot */
+        CadRoot: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** CadSourceAsset */
+        CadSourceAsset: {
+            /** Project Id */
+            project_id: string;
+            /** Operation Id */
+            operation_id: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** Source Name */
+            source_name: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Source Bytes */
+            source_bytes: number;
+            /** Source Units */
+            source_units: number;
+            /** Unit Scale To M */
+            unit_scale_to_m?: number | null;
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /** Asset Bytes */
+            asset_bytes: number;
+            /** File Url */
+            file_url: string;
+            /**
+             * Format
+             * @default dxf_ascii
+             * @constant
+             */
+            format: "dxf_ascii";
+            /**
+             * Scope
+             * @default entry_drawing
+             * @constant
+             */
+            scope: "entry_drawing";
+            /**
+             * External References Loaded
+             * @default false
+             * @constant
+             */
+            external_references_loaded: false;
+            /**
+             * Fidelity
+             * @default unverified
+             * @enum {string}
+             */
+            fidelity: "unverified" | "requires_review";
+            /**
+             * Calculation Ready
+             * @default false
+             * @constant
+             */
+            calculation_ready: false;
+        };
         /** CandidateReasonSummary */
         CandidateReasonSummary: {
             /**
@@ -1325,6 +1946,7 @@ export interface components {
             suggested_action?: string | null;
             /** Zone Id */
             zone_id?: string | null;
+            rule_trace?: components["schemas"]["PlantingRuleTrace"] | null;
         };
         /** ChangeSetPreview */
         ChangeSetPreview: {
@@ -1377,6 +1999,85 @@ export interface components {
         ConfirmProposal: {
             /** Expected Revision */
             expected_revision: number;
+        };
+        /**
+         * ControlCommand
+         * @description Immutable server instruction bound to one source and execution attempt.
+         */
+        ControlCommand: {
+            /** Id */
+            id: string;
+            /**
+             * Action
+             * @default focus_zone
+             * @constant
+             */
+            action: "focus_zone";
+            /** Project Id */
+            project_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Execution Attempt Id */
+            execution_attempt_id: string;
+            /** Zone Id */
+            zone_id: string;
+            /** Zone Label */
+            zone_label: string;
+            /** State Version */
+            state_version: number;
+            /** Geometry Version */
+            geometry_version: number;
+            /** Geometry Digest */
+            geometry_digest: string;
+            /** Bounds */
+            bounds: number[];
+            /** Issued At */
+            issued_at: string;
+        };
+        /** ControlCommandGeometry */
+        ControlCommandGeometry: {
+            command: components["schemas"]["ControlCommand"];
+            /** Geometry Json */
+            geometry_json: string;
+        };
+        /** ControlIntent */
+        ControlIntent: {
+            /**
+             * Action
+             * @default focus_zone
+             * @constant
+             */
+            action: "focus_zone";
+            /** Zone Id */
+            zone_id?: string | null;
+            /** Unsupported Requirements */
+            unsupported_requirements?: string[];
+        };
+        /** ControlResult */
+        ControlResult: {
+            /** Command Id */
+            command_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Execution Attempt Id */
+            execution_attempt_id: string;
+            /** Zone Id */
+            zone_id: string;
+            /** Geometry Version */
+            geometry_version: number;
+            /** Geometry Digest */
+            geometry_digest: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "failed" | "cancelled" | "unknown";
+            /** Error Code */
+            error_code?: ("MAP_NOT_READY" | "MAP_UNAVAILABLE" | "CONTROL_STALE" | "FOCUS_INTERRUPTED" | "CONTROL_OUTCOME_UNKNOWN") | null;
+            /** Message */
+            message?: string | null;
         };
         /** Conversation */
         Conversation: {
@@ -1598,6 +2299,76 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** DrawingBoundaryCandidate */
+        DrawingBoundaryCandidate: {
+            /** Handle */
+            handle: string;
+            /** Layer */
+            layer: string;
+            /**
+             * Entity Type
+             * @default LWPOLYLINE
+             * @constant
+             */
+            entity_type: "LWPOLYLINE";
+            /** Vertex Count */
+            vertex_count: number;
+            /** Has Bulges */
+            has_bulges: boolean;
+            /** Bounds M */
+            bounds_m?: [
+                number,
+                number,
+                number,
+                number
+            ] | null;
+            /** Available For Preview */
+            available_for_preview: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DrawingBoundaryCatalog */
+        DrawingBoundaryCatalog: {
+            /**
+             * Schema Version
+             * @default green-atlas-boundary-catalog-v1
+             * @constant
+             */
+            schema_version: "green-atlas-boundary-catalog-v1";
+            /** Candidates */
+            candidates?: components["schemas"]["DrawingBoundaryCandidate"][];
+            /** Total Candidates */
+            total_candidates: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /** DrawingInspection */
+        DrawingInspection: {
+            /** Dxf Version */
+            dxf_version: string;
+            /** Units */
+            units: number;
+            /** Modelspace Entities */
+            modelspace_entities: {
+                [key: string]: number;
+            };
+            /** Layer Names */
+            layer_names: string[];
+            /** Xrefs */
+            xrefs: {
+                [key: string]: string;
+            };
+            boundary_catalog?: components["schemas"]["DrawingBoundaryCatalog"] | null;
+        };
+        /**
+         * DxfTextEncoding
+         * @description Browser TextDecoder labels for codecs supported by the DXF reader.
+         * @enum {string}
+         */
+        DxfTextEncoding: "utf-8" | "windows-874" | "shift_jis" | "gbk" | "euc-kr" | "big5" | "windows-1250" | "windows-1251" | "windows-1252" | "windows-1253" | "windows-1254" | "windows-1255" | "windows-1256" | "windows-1257" | "windows-1258";
         /** DxfVerticalPrimitive */
         DxfVerticalPrimitive: {
             /** Primitive Id */
@@ -1654,6 +2425,18 @@ export interface components {
             vertical_datum?: string | null;
             /** Vertical Datum Offset M */
             vertical_datum_offset_m?: number | null;
+        };
+        /** EditIntent */
+        EditIntent: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "species" | "move" | "lock" | "unlock";
+            /** Move Dx M */
+            move_dx_m?: number | null;
+            /** Move Dy M */
+            move_dy_m?: number | null;
         };
         /** EffectEstimate */
         EffectEstimate: {
@@ -1901,7 +2684,7 @@ export interface components {
          *     editing safely.
          * @enum {string}
          */
-        ImportMode: "source_dxf" | "release_bundle" | "plain_dxf_fallback";
+        ImportMode: "source_dxf" | "release_bundle" | "plain_dxf_fallback" | "cad_preview";
         /** ImportStatus */
         ImportStatus: {
             /** @default source_dxf */
@@ -1974,6 +2757,9 @@ export interface components {
              * @default true
              */
             visible: boolean;
+            utility_context?: components["schemas"]["UtilityContext"] | null;
+            /** Utility Axis Bindings */
+            utility_axis_bindings?: components["schemas"]["UtilityAxisBinding"][];
         };
         /**
          * LayerKind
@@ -1990,6 +2776,9 @@ export interface components {
              * @default true
              */
             visible: boolean;
+            utility_context?: components["schemas"]["UtilityContext"] | null;
+            /** Utility Axis Bindings */
+            utility_axis_bindings?: components["schemas"]["UtilityAxisBinding"][];
         };
         /** LayerMappingRequest */
         LayerMappingRequest: {
@@ -2033,6 +2822,48 @@ export interface components {
                 number
             ] | null;
         };
+        /** NativeDxfSourceAsset */
+        NativeDxfSourceAsset: {
+            /** Project Id */
+            project_id: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Source Bytes */
+            source_bytes: number;
+            /** Source Name */
+            source_name: string;
+            file_encoding: components["schemas"]["DxfTextEncoding"];
+            /** Unit Scale To M */
+            unit_scale_to_m: number;
+            /** Units Assumed */
+            units_assumed: boolean;
+            /**
+             * Scale Basis
+             * @enum {string}
+             */
+            scale_basis: "imported_units" | "import_assumption";
+            /** Bounds M */
+            bounds_m?: [
+                number,
+                number,
+                number,
+                number
+            ] | null;
+            /** File Url */
+            file_url: string;
+            /**
+             * Format
+             * @default dxf_ascii
+             * @constant
+             */
+            format: "dxf_ascii";
+            /**
+             * Scope
+             * @default uploaded_drawing
+             * @constant
+             */
+            scope: "uploaded_drawing";
+        };
         /** OperationError */
         OperationError: {
             /** Code */
@@ -2044,7 +2875,7 @@ export interface components {
          * OperationKind
          * @enum {string}
          */
-        OperationKind: "calculate_geometry";
+        OperationKind: "calculate_geometry" | "inspect_cad_package" | "prepare_cad_preview";
         /**
          * OperationStatus
          * @enum {string}
@@ -2149,6 +2980,18 @@ export interface components {
             /** Accepted Count */
             accepted_count: number;
         };
+        /** PendingApproval */
+        PendingApproval: {
+            /** Preview Ref */
+            preview_ref?: string;
+            /** Reason */
+            reason?: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind?: "plantings" | "planting_zones";
+        };
         /** PlacementCheck */
         PlacementCheck: {
             /** Allowed */
@@ -2175,8 +3018,32 @@ export interface components {
             rule_id?: string | null;
             /** Zone Id */
             zone_id?: string | null;
+            /** Code */
+            code?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Source Layer */
+            source_layer?: string | null;
+            /** Source Feature Ids */
+            source_feature_ids?: string[];
+            /** Actual Distance M */
+            actual_distance_m?: number | null;
+            /** Required Distance M */
+            required_distance_m?: number | null;
+            /** Suggested Action */
+            suggested_action?: string | null;
+            /** Plan Version */
+            plan_version?: number | null;
+            /** Geometry Version */
+            geometry_version?: number | null;
+            /** State Version */
+            state_version?: number | null;
+            rule_trace?: components["schemas"]["PlantingRuleTrace"] | null;
         };
-        /** PlacementCheckRequest */
+        /**
+         * PlacementCheckRequest
+         * @description The same candidate as Add, optionally bound to the caller's snapshot.
+         */
         PlacementCheckRequest: {
             /**
              * Kind
@@ -2189,6 +3056,37 @@ export interface components {
             y: number;
             /** Radius */
             radius?: number | null;
+            /** Layout Radius M */
+            layout_radius_m?: number | null;
+            /**
+             * Size Class
+             * @default unspecified
+             * @enum {string}
+             */
+            size_class: "unspecified" | "sapling" | "standard" | "large";
+            /** Species Revision Id */
+            species_revision_id?: string | null;
+            /** Pattern Id */
+            pattern_id?: string | null;
+            /** Group Ids */
+            group_ids?: string[];
+            /**
+             * Spacing Policy
+             * @default balanced
+             * @enum {string}
+             */
+            spacing_policy: "open" | "balanced" | "canopy";
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            /** Base Plan Version */
+            base_plan_version?: number | null;
+            /** Geometry Version */
+            geometry_version?: number | null;
+            /** State Version */
+            state_version?: number | null;
         };
         /** PlacementMaskPreset */
         PlacementMaskPreset: {
@@ -2339,6 +3237,7 @@ export interface components {
              * @default 1
              */
             version: number;
+            validation_basis?: components["schemas"]["PlanValidationBasis"] | null;
         };
         /** PlanChangeSetApplyRequest */
         PlanChangeSetApplyRequest: {
@@ -2578,6 +3477,20 @@ export interface components {
             /** Ids */
             ids: string[];
         };
+        /**
+         * PlanValidationBasis
+         * @description The inputs of derived issues; independent of the planting edit version.
+         */
+        PlanValidationBasis: {
+            /** Plan Version */
+            plan_version: number;
+            /** Geometry Version */
+            geometry_version: number;
+            /** Validator Revision */
+            validator_revision: string;
+            /** Objects Digest */
+            objects_digest: string;
+        };
         /** PlanningBrief */
         PlanningBrief: {
             /**
@@ -2599,6 +3512,29 @@ export interface components {
         PlanningBriefInput: {
             /** Task */
             task: string;
+        };
+        /** PlantingRuleTrace */
+        PlantingRuleTrace: {
+            basis: components["schemas"]["RuleTraceBasis"];
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /**
+             * Plant Kind
+             * @enum {string}
+             */
+            plant_kind: "tree" | "shrub";
+            /** Mature Crown Diameter M */
+            mature_crown_diameter_m?: number | null;
+            /**
+             * Current Compliance
+             * @default not_established
+             * @constant
+             */
+            current_compliance: "not_established";
+            /** Entries */
+            entries: components["schemas"]["RuleTraceEntry"][];
         };
         /** PlantingZoneAssignment */
         PlantingZoneAssignment: {
@@ -2658,6 +3594,25 @@ export interface components {
             record_id: string;
             /** Expected Revision */
             expected_revision: number;
+        };
+        /** PreviewRefusal */
+        PreviewRefusal: {
+            /**
+             * Status
+             * @default blocked
+             * @constant
+             */
+            status: "blocked";
+            /** Candidate Count */
+            candidate_count: number;
+            /** Blocked Count */
+            blocked_count: number;
+            /** Reason Codes */
+            reason_codes: string[];
+            /** Reasons */
+            reasons: string[];
+            /** Remedy */
+            remedy: string;
         };
         /** Project */
         Project: {
@@ -2811,6 +3766,8 @@ export interface components {
              * @default 1
              */
             project_state_version: number;
+            cad_intake?: components["schemas"]["CadIntakeRecord"] | null;
+            cad_preview?: components["schemas"]["CadPreviewRecord"] | null;
         };
         /**
          * ProjectStatus
@@ -2867,6 +3824,102 @@ export interface components {
             status: "ready" | "blocked" | "expired" | "stale" | "applied" | "undone" | "declined" | "unavailable" | "superseded";
             /** Can Apply */
             can_apply: boolean;
+        };
+        /** ReadIntent */
+        ReadIntent: {
+            /**
+             * Capability
+             * @enum {string}
+             */
+            capability: "plan_issues" | "species_shortlist";
+            /** Unsupported Requirements */
+            unsupported_requirements?: string[];
+        };
+        /** ReadOutcome */
+        ReadOutcome: {
+            /**
+             * Status
+             * @default complete
+             * @constant
+             */
+            status: "complete";
+            /**
+             * Capability
+             * @enum {string}
+             */
+            capability: "plan_issues" | "species_shortlist";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "saved_plan_validation" | "species_suitability";
+            /** Total */
+            total: number;
+            /** Pages */
+            pages: number;
+            /** Zone Ids */
+            zone_ids?: string[];
+            /** Object Ids */
+            object_ids?: string[];
+            /** Kind */
+            kind?: ("tree" | "shrub") | null;
+            /** Snapshot Version */
+            snapshot_version: number;
+            /** Plan Version */
+            plan_version?: number | null;
+            /** Evidence Refs */
+            evidence_refs: string[];
+            /**
+             * Global Issues Excluded
+             * @default false
+             */
+            global_issues_excluded: boolean;
+            /** Caveat */
+            caveat: string;
+        };
+        /** ReadPageEvidence */
+        ReadPageEvidence: {
+            /** Project Id */
+            project_id: string;
+            /** Run Id */
+            run_id?: string | null;
+            /** Call Id */
+            call_id: string;
+            /**
+             * Capability
+             * @enum {string}
+             */
+            capability: "plan_issues" | "species_shortlist";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "saved_plan_validation" | "species_suitability";
+            /** Zone Ids */
+            zone_ids?: string[];
+            /** Object Ids */
+            object_ids?: string[];
+            /** Kind */
+            kind?: ("tree" | "shrub") | null;
+            /** Snapshot Version */
+            snapshot_version: number;
+            /** Plan Version */
+            plan_version?: number | null;
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Item Ids */
+            item_ids?: string[];
+            /** Next Offset */
+            next_offset?: number | null;
+            /**
+             * Global Issues Excluded
+             * @default false
+             */
+            global_issues_excluded: boolean;
+            /** Caveat */
+            caveat: string;
         };
         /** RecommendationExplanation */
         RecommendationExplanation: {
@@ -3127,6 +4180,75 @@ export interface components {
              * @enum {string}
              */
             spacing_policy: "open" | "balanced" | "canopy";
+        };
+        /** RuleSourceFeature */
+        RuleSourceFeature: {
+            /** Feature Id */
+            feature_id?: string | null;
+            /** Source Layer */
+            source_layer?: string | null;
+            /**
+             * Source Index
+             * @description Index among parsed nonempty geometries of obstacle_kind in this geometry revision
+             */
+            source_index: number;
+            /** Actual Distance M */
+            actual_distance_m: number;
+            utility_context?: components["schemas"]["UtilityContext"] | null;
+            axis_evidence?: components["schemas"]["AxisDistanceEvidence"] | null;
+        };
+        /** RuleTraceBasis */
+        RuleTraceBasis: {
+            /** Project Id */
+            project_id: string;
+            /** State Version */
+            state_version: number;
+            /** Geometry Version */
+            geometry_version: number;
+            /** Plan Version */
+            plan_version?: number | null;
+            /** Requirement Profile */
+            requirement_profile: string;
+            /** Registry Revision */
+            registry_revision: string;
+            /**
+             * Network Rule Pack
+             * @default lct-sp42-2016-table9.1@2026-09-15.2
+             */
+            network_rule_pack: string;
+            /** Source Content Sha256 */
+            source_content_sha256?: string | null;
+        };
+        /** RuleTraceEntry */
+        RuleTraceEntry: {
+            /** Rule Id */
+            rule_id?: string | null;
+            /** Document Code */
+            document_code?: string | null;
+            /** Clause */
+            clause?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Obstacle Kind */
+            obstacle_kind: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed" | "not_checked" | "no_matching_obstacle";
+            /** Code */
+            code: string;
+            /** Actual Distance M */
+            actual_distance_m?: number | null;
+            /** Required Distance M */
+            required_distance_m?: number | null;
+            /**
+             * Nearest Features
+             * @description Up to 20 equidistant nearest source features in original order
+             */
+            nearest_features?: components["schemas"]["RuleSourceFeature"][];
+            /** Note */
+            note: string;
         };
         /**
          * SceneContextFeature
@@ -3408,10 +4530,61 @@ export interface components {
             /** Vertical Datum Offset M */
             vertical_datum_offset_m?: number | null;
         };
+        /**
+         * SelectionBinding
+         * @description Source-selected subset and last explicitly accepted project revision.
+         */
+        SelectionBinding: {
+            /** Zone Ids */
+            zone_ids?: string[];
+            /** Object Ids */
+            object_ids?: string[];
+            /** State Version */
+            state_version: number;
+            /** Plan Version */
+            plan_version: number | null;
+        };
+        /**
+         * SelectionContext
+         * @description UI snapshot, never an instruction to select or expand a scope.
+         */
+        SelectionContext: {
+            /** Project Id */
+            project_id: string;
+            /** State Version */
+            state_version: number;
+            /** Plan Version */
+            plan_version: number | null;
+            /** Zone Ids */
+            zone_ids?: string[];
+            /** Object Ids */
+            object_ids?: string[];
+        };
+        /** SelectionIssue */
+        SelectionIssue: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "SELECTION_MISSING" | "SELECTION_EMPTY" | "SELECTION_AMBIGUOUS" | "SELECTION_STALE" | "SELECTION_PROJECT_MISMATCH" | "SELECTION_UNKNOWN" | "SELECTION_CONFLICT";
+            /** Message */
+            message: string;
+        };
+        /** SelectionReference */
+        SelectionReference: {
+            /** Target */
+            target?: ("zones" | "objects") | null;
+            /** Plant Kind */
+            plant_kind?: ("tree" | "shrub" | "mixed") | null;
+            /** Unsupported Reason */
+            unsupported_reason?: string | null;
+        };
         /** SourceFile */
         SourceFile: {
             /** Name */
             name: string;
+            /** Content Sha256 */
+            content_sha256?: string | null;
             /** Size */
             size: number;
             /** Imported At */
@@ -3433,6 +4606,7 @@ export interface components {
             bounds?: number[] | null;
             /** Warnings */
             warnings?: string[];
+            preview_provenance?: components["schemas"]["CadPreviewProvenance"] | null;
         };
         /** SpeciesRevision */
         SpeciesRevision: {
@@ -3575,6 +4749,17 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** ToolCall */
+        ToolCall: {
+            /** Call Id */
+            call_id?: string;
+            /** Name */
+            name: string;
+            /** Arguments */
+            arguments?: {
+                [key: string]: unknown;
+            };
+        };
         /** ToolError */
         ToolError: {
             /** Code */
@@ -3614,6 +4799,8 @@ export interface components {
             }[];
             error?: components["schemas"]["ToolError"] | null;
             verification?: components["schemas"]["VerificationSummary"] | null;
+            read_page?: components["schemas"]["ReadPageEvidence"] | null;
+            preview_refusal?: components["schemas"]["PreviewRefusal"] | null;
         };
         /** UserMessage */
         UserMessage: {
@@ -3625,6 +4812,76 @@ export interface components {
             text: string;
             map_context?: components["schemas"]["MapContext"] | null;
         };
+        /** UtilityAxisBinding */
+        UtilityAxisBinding: {
+            /** Id */
+            id: string;
+            source: components["schemas"]["AxisSourceReference"];
+            context: components["schemas"]["UtilityContext"];
+            /** Outside Diameter M */
+            outside_diameter_m: number;
+            /**
+             * Surface Reference
+             * @enum {string}
+             */
+            surface_reference: "outer_surface" | "protective_casing";
+            /** Outside Size Reference */
+            outside_size_reference: string;
+            /**
+             * Envelope Model
+             * @constant
+             */
+            envelope_model: "circular_sweep";
+            /**
+             * Endpoint Model
+             * @constant
+             */
+            endpoint_model: "round_full_source_extent";
+            /** Extent Reference */
+            extent_reference: string;
+        };
+        /**
+         * UtilityContext
+         * @description Explicit source interpretation; a layer-name guess is not confirmation.
+         */
+        UtilityContext: {
+            /** @default unknown */
+            network_type: components["schemas"]["UtilityType"];
+            /** @default unknown */
+            geometry_reference: components["schemas"]["UtilityGeometryReference"];
+            /**
+             * Installation
+             * @default unknown
+             * @enum {string}
+             */
+            installation: "unknown" | "underground" | "aboveground";
+            /**
+             * Review Status
+             * @default unconfirmed
+             * @enum {string}
+             */
+            review_status: "unconfirmed" | "confirmed";
+            /**
+             * Source Reference
+             * @default
+             */
+            source_reference: string;
+            /**
+             * Confirmed By
+             * @default
+             */
+            confirmed_by: string;
+        };
+        /**
+         * UtilityGeometryReference
+         * @enum {string}
+         */
+        UtilityGeometryReference: "unknown" | "axis" | "outer_surface" | "channel_wall" | "protective_casing";
+        /**
+         * UtilityType
+         * @enum {string}
+         */
+        UtilityType: "unknown" | "gas" | "sewer" | "heat" | "water" | "drainage" | "power_cable" | "communication_cable";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -3686,6 +4943,132 @@ export interface components {
             checks?: string[];
             /** Message */
             message?: string | null;
+        };
+        /** ZoneChangeDraft */
+        ZoneChangeDraft: {
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "create" | "update" | "delete";
+            /** Base State Version */
+            base_state_version: number;
+            /** Zone Id */
+            zone_id?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Geometry */
+            geometry?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ZoneChangePreview */
+        ZoneChangePreview: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            draft: components["schemas"]["ZoneChangeDraft"];
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "create" | "update" | "delete";
+            /** Target Zone Id */
+            target_zone_id: string;
+            /** Base State Version */
+            base_state_version: number;
+            /** Base Geometry Version */
+            base_geometry_version: number;
+            /** Base Plan Version */
+            base_plan_version?: number | null;
+            /** Before Zones */
+            before_zones: components["schemas"]["ZoneSnapshot"][];
+            /** After Zones */
+            after_zones: components["schemas"]["ZoneSnapshot"][];
+            /** Before Area M2 */
+            before_area_m2: number | null;
+            /** After Area M2 */
+            after_area_m2: number | null;
+            /** Planting Digest */
+            planting_digest: string;
+            /** Can Apply */
+            can_apply: boolean;
+            /**
+             * Blockers
+             * @default []
+             */
+            blockers: string[];
+            /**
+             * Affected Planting Ids
+             * @default []
+             */
+            affected_planting_ids: string[];
+            preflight?: components["schemas"]["PlantingZonePreview"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Digest */
+            digest: string;
+        };
+        /** ZoneGeometryReference */
+        ZoneGeometryReference: {
+            /** Project Id */
+            project_id: string;
+            /** State Version */
+            state_version: number;
+            /** Geometry Version */
+            geometry_version: number;
+            /** Feature Id */
+            feature_id: string;
+            /** Geometry Digest */
+            geometry_digest: string;
+        };
+        /** ZoneIntent */
+        ZoneIntent: {
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "create" | "update" | "delete";
+            /** Target Zone Id */
+            target_zone_id?: string | null;
+            /** Label */
+            label?: string | null;
+            geometry_reference?: components["schemas"]["ZoneGeometryReference"] | null;
+        };
+        /** ZoneSnapshot */
+        ZoneSnapshot: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Geometry */
+            geometry: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ZoneSourceAmendment
+         * @description A source message supplies one typed slot; earlier slots stay intact.
+         */
+        ZoneSourceAmendment: {
+            /** Turn Index */
+            turn_index: number;
+            /**
+             * Slot
+             * @enum {string}
+             */
+            slot: "target_zone_id" | "label" | "geometry_reference";
+            /** Value */
+            value: string | components["schemas"]["ZoneGeometryReference"];
         };
     };
     responses: never;
@@ -3968,10 +5351,47 @@ export interface operations {
             };
         };
     };
-    download_source_api_projects__project_id__source_dxf_download_get: {
+    native_dxf_asset_api_projects__project_id__source_dxf_asset_get: {
         parameters: {
             query?: never;
             header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeDxfSourceAsset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_dxf_download_api_projects__project_id__source_dxf_download_get: {
+        parameters: {
+            query?: {
+                expected_source_sha256?: string | null;
+            };
+            header?: {
+                Range?: string | null;
+                "If-Range"?: string | null;
                 "If-Match"?: string | null;
             };
             path: {
@@ -5136,6 +6556,245 @@ export interface operations {
             };
         };
     };
+    roots_api_cad_roots_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CadRoot"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entries_api_cad_roots__root_id__entries_get: {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                root_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CadDirectory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fingerprint_api_cad_roots__root_id__fingerprint_get: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                root_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CadFingerprint"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_projects__project_id__operations_cad_intake_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CadIntakeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_preview_api_projects__project_id__operations_cad_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CadPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cad_asset_metadata_api_projects__project_id__operations__operation_id__cad_asset_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CadSourceAsset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cad_asset_file_api_projects__project_id__operations__operation_id__cad_asset_file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/dxf": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     assistant_status_api_planning_assistant_status_get: {
         parameters: {
             query?: never;
@@ -5570,6 +7229,39 @@ export interface operations {
             };
         };
     };
+    list_runs_api_projects__project_id__agent_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_run_api_projects__project_id__agent_runs_post: {
         parameters: {
             query?: never;
@@ -5606,6 +7298,140 @@ export interface operations {
         };
     };
     get_run_api_projects__project_id__agent_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_control_command_api_projects__project_id__agent_runs__run_id__control_command_get: {
+        parameters: {
+            query?: {
+                command_id?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlCommandGeometry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_control_result_api_projects__project_id__agent_runs__run_id__control_result_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlResult"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_projects__project_id__agent_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_run_api_projects__project_id__agent_runs__run_id__resume_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5728,6 +7554,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRunRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_preview_api_projects__project_id__agent_runs__run_id__preview_get: {
+        parameters: {
+            query: {
+                preview_ref: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeSetPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_zone_preview_api_projects__project_id__agent_runs__run_id__zone_preview_get: {
+        parameters: {
+            query: {
+                preview_ref: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoneChangePreview"];
                 };
             };
             /** @description Validation Error */

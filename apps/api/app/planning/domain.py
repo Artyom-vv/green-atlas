@@ -1,7 +1,7 @@
 from collections import defaultdict
 from math import ceil, floor, hypot
 
-from app.contracts import PlanObject
+from app.planning.contracts import PlanObject
 
 
 class PlanVersionConflict(Exception):

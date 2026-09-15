@@ -1,13 +1,23 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from pathlib import Path
+import json
 import sqlite3
 from threading import RLock
 
-from app.contracts import Project
+from app.projects.contracts import Project
+from app.projects.source_contracts import SourceContentInfo
 from app.projects.concurrency import ProjectVersionConflict, advance_expected_project_version, assert_project_version, expected_project_version
 
 
 EMPTY_FEATURE_COLLECTION = {"type": "FeatureCollection", "features": []}
+
+
+def _mutation_receipt_payload(project: Project, receipt: dict) -> str:
+    return json.dumps({**receipt, "project_id": project.id, "state_version": project.state_version,
+        "geometry_version": project.geometry_version, "plan_version": project.plan.version if project.plan else None},
+        ensure_ascii=False, allow_nan=False)
 
 
 def project_projection(project: Project) -> Project:
@@ -21,6 +31,7 @@ class InMemoryProjectRepository:
         self._sources: dict[str, bytes] = {}
         self._exports: dict[tuple[str, str], bytes] = {}
         self._releases: dict[tuple[str, str], str] = {}
+        self._mutation_receipts: dict[tuple[str, str, str], str] = {}
         self._lock = RLock()
 
     def create(self, project: Project) -> Project:
@@ -61,6 +72,23 @@ class InMemoryProjectRepository:
             advance_expected_project_version(project.state_version)
             return project.model_copy(deep=True)
 
+    def save_with_receipt(self, project: Project, kind: str, mutation_id: str, receipt: dict) -> Project:
+        with self._lock:
+            key = (project.id, kind, mutation_id)
+            if key in self._mutation_receipts:
+                raise ValueError("Квитанция изменения уже существует")
+            prospective = project.model_copy(deep=True)
+            prospective.state_version = self._projects[project.id].state_version + 1
+            encoded = _mutation_receipt_payload(prospective, receipt)
+            saved = self.save(project)
+            self._mutation_receipts[key] = encoded
+            return saved
+
+    def mutation_receipt(self, project_id: str, kind: str, mutation_id: str) -> dict | None:
+        with self._lock:
+            encoded = self._mutation_receipts.get((project_id, kind, mutation_id))
+            return json.loads(encoded) if encoded else None
+
     def list(self, *, lightweight: bool = False) -> list[Project]:
         projects = sorted((item.model_copy(deep=True) for item in self._projects.values()), key=lambda item: item.updated_at, reverse=True)
         return [project_projection(item) for item in projects] if lightweight else projects
@@ -82,6 +110,8 @@ class InMemoryProjectRepository:
                 del self._exports[key]
             for key in [key for key in self._releases if key[0] == project_id]:
                 del self._releases[key]
+            for key in [key for key in self._mutation_receipts if key[0] == project_id]:
+                del self._mutation_receipts[key]
 
     def save_source(self, project_id: str, content: bytes | bytearray) -> None:
         with self._lock:
@@ -92,6 +122,13 @@ class InMemoryProjectRepository:
     def get_source(self, project_id: str) -> bytes | None:
         with self._lock:
             return self._sources.get(project_id)
+
+    def get_source_info(self, project_id: str, *, prefix_bytes: int) -> SourceContentInfo | None:
+        with self._lock:
+            if project_id not in self._projects:
+                raise KeyError(f"Project {project_id} not found")
+            content = self._sources.get(project_id)
+            return SourceContentInfo(len(content), content[:prefix_bytes]) if content is not None else None
 
     def save_export(self, project_id: str, artifact_id: str, content: bytes) -> None:
         with self._lock:
@@ -152,6 +189,10 @@ class InMemoryProjectRepository:
 class SqliteProjectRepository:
     """Small durable store: project metadata, compact projection, original DXF."""
 
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
+
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
         if self.path != ":memory:":
@@ -170,6 +211,7 @@ class SqliteProjectRepository:
             self._connection.execute("CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, payload TEXT NOT NULL, projection TEXT, source BLOB, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, state_version INTEGER NOT NULL DEFAULT 1)")
             self._connection.execute("CREATE TABLE IF NOT EXISTS project_exports (project_id TEXT NOT NULL, artifact_id TEXT NOT NULL, content BLOB NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (project_id, artifact_id))")
             self._connection.execute("CREATE TABLE IF NOT EXISTS project_releases (project_id TEXT NOT NULL, release_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (project_id, release_id))")
+            self._connection.execute("CREATE TABLE IF NOT EXISTS project_mutation_receipts (project_id TEXT NOT NULL, kind TEXT NOT NULL, mutation_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(project_id, kind, mutation_id))")
             self._connection.execute("CREATE INDEX IF NOT EXISTS idx_project_exports_project ON project_exports (project_id, created_at DESC)")
             columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(projects)").fetchall()}
             if "projection" not in columns:
@@ -240,6 +282,39 @@ class SqliteProjectRepository:
     def save_many(self, projects: list[Project]) -> list[Project]:
         return [self.save(project) for project in projects]
 
+    def save_with_receipt(self, project: Project, kind: str, mutation_id: str, receipt: dict) -> Project:
+        """Persist the project and exact mutation receipt in one transaction."""
+        original_version, original_updated_at = project.state_version, project.updated_at
+        expected = expected_project_version() or original_version or 1
+        project.state_version = expected + 1
+        project.updated_at = datetime.now(UTC).isoformat()
+        try:
+            payload, projection = self._payloads(project)
+            encoded = _mutation_receipt_payload(project, receipt)
+            with self._lock, self._connection:
+                cursor = self._connection.execute(
+                    "UPDATE projects SET payload=?, projection=?, updated_at=?, state_version=? WHERE id=? AND state_version=?",
+                    (payload, projection, project.updated_at, project.state_version, project.id, expected))
+                if cursor.rowcount == 0:
+                    row = self._connection.execute("SELECT state_version FROM projects WHERE id=?", (project.id,)).fetchone()
+                    if row is None:
+                        raise KeyError(f"Project {project.id} not found")
+                    raise ProjectVersionConflict(project.id, expected, int(row["state_version"]))
+                self._connection.execute("INSERT INTO project_mutation_receipts VALUES (?, ?, ?, ?)",
+                    (project.id, kind, mutation_id, encoded))
+        except Exception:
+            project.state_version, project.updated_at = original_version, original_updated_at
+            raise
+        advance_expected_project_version(project.state_version)
+        return project
+
+    def mutation_receipt(self, project_id: str, kind: str, mutation_id: str) -> dict | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload FROM project_mutation_receipts WHERE project_id=? AND kind=? AND mutation_id=?",
+                (project_id, kind, mutation_id)).fetchone()
+            return json.loads(row["payload"]) if row else None
+
     def delete(self, project_id: str, *, expected_version: int | None = None) -> None:
         expected = expected_version or expected_project_version()
         with self._lock, self._connection:
@@ -247,6 +322,7 @@ class SqliteProjectRepository:
             if cursor.rowcount:
                 self._connection.execute("DELETE FROM project_exports WHERE project_id = ?", (project_id,))
                 self._connection.execute("DELETE FROM project_releases WHERE project_id = ?", (project_id,))
+                self._connection.execute("DELETE FROM project_mutation_receipts WHERE project_id = ?", (project_id,))
         if cursor.rowcount:
             return
         try:
@@ -267,6 +343,16 @@ class SqliteProjectRepository:
         if row is None:
             raise KeyError(f"Project {project_id} not found")
         return bytes(row["source"]) if row["source"] is not None else None
+
+    def get_source_info(self, project_id: str, *, prefix_bytes: int) -> SourceContentInfo | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT length(source) AS size, substr(source, 1, ?) AS prefix FROM projects WHERE id=?",
+                (prefix_bytes, project_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Project {project_id} not found")
+        return SourceContentInfo(row["size"], bytes(row["prefix"])) if row["size"] is not None else None
 
     def save_export(self, project_id: str, artifact_id: str, content: bytes) -> None:
         now = datetime.now(UTC).isoformat()
