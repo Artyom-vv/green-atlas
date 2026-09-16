@@ -1,6 +1,9 @@
 # Green Atlas — контекст для новых задач
 
-Сначала прочитайте `HANDOFF.md`. Актуальный оставшийся объём описан в
+Сначала прочитайте `HANDOFF.md`, затем актуальный перенос на ПК:
+`docs/implementation/2026-09-16-pc-dxf-handoff.md`. Рабочий маршрут: полный комплект DXF → сервис → DXF;
+DWG-датасет готовится заранее вне сервиса. Основной пример — Кустанайская улица,
+не Парковая. Исторический оставшийся объём описан в
 `docs/implementation/2026-09-10-remaining-scope.md`, локальный запуск Windows —
 в `docs/implementation/windows-local-runtime.md`, выкладка — в
 `deploy/adminvps/README.md`.
