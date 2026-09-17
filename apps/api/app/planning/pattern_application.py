@@ -48,6 +48,8 @@ class PatternApplication:
         self, project_id: str, request: PatternPreviewRequest
     ) -> PatternPreview:
         project = self.repository.get(project_id)
+        if project.source_review is not None:
+            raise ValueError("Автоматическая расстановка требует расчёта ограничений. Ручное редактирование проекта доступно.")
         if project.plan is None:
             raise ValueError("План ещё не создан")
         if project.plan.version != request.base_plan_version:

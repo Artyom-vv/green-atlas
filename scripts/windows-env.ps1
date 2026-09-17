@@ -24,6 +24,8 @@ param(
         npm_config_cache = Join-Path $cache 'npm-cache'
         PIP_CACHE_DIR = Join-Path $cache 'pip-cache'
         UV_CACHE_DIR = Join-Path $cache 'uv-cache'
+        UV_PYTHON_INSTALL_DIR = Join-Path $cache 'uv-python'
+        UV_PYTHON_BIN_DIR = Join-Path $cache 'uv-python-bin'
         PYTEST_DEBUG_TEMPROOT = Join-Path $runtime 'pytest'
     }
 

@@ -438,6 +438,8 @@ def build_release(
     ]
     if missing_species:
         warnings.append(f"Вид не назначен для {len(missing_species)} посадок.")
+    if project.source_review is not None:
+        warnings.append("Посадки не проверены по ограничениям исходного комплекта: требуется расчёт после уточнения данных.")
     if hard_errors:
         warnings.append(f"В плане осталось ошибок: {len(hard_errors)}.")
     # The manifest is intentionally self-contained for a round-trip import.
@@ -465,6 +467,7 @@ def build_release(
         "mode": request.mode,
         "status": "draft" if request.mode == "draft" else "ready",
         "project": {
+            "source_review": project.source_review.model_dump(mode="json") if project.source_review is not None else None,
             "id": project.id,
             "name": project.name,
             "state_version": project.state_version,
@@ -476,6 +479,7 @@ def build_release(
             "geometry": geometry_payload,
         },
         "source": {
+            "prepared_provenance": project.source_file.prepared_provenance.model_dump(mode="json") if project.source_file.prepared_provenance is not None else None,
             "filename": project.source_file.name,
             "size": len(source_content),
             "sha256": sha256(source_content).hexdigest(),
@@ -492,7 +496,7 @@ def build_release(
                 "kind": layer.mapped_kind,
                 "parsing_status": "complete" if layer.geometry_complete else "partial",
                 "semantic_status": "excluded" if str(layer.mapped_kind) == "LayerKind.IGNORE" or getattr(layer.mapped_kind, "value", layer.mapped_kind) == "ignore" else "classified",
-                "used_in_calculation": bool(layer.geometry_complete and getattr(layer.mapped_kind, "value", layer.mapped_kind) not in {None, "ignore", "unclassified"}),
+                "used_in_calculation": bool(project.source_review is None and layer.geometry_complete and getattr(layer.mapped_kind, "value", layer.mapped_kind) not in {None, "ignore", "unclassified"}),
                 "utility_context": layer.utility_context.model_dump(mode="json") if layer.utility_context is not None else None,
                 "utility_axis_bindings": [binding.model_dump(mode="json") for binding in layer.utility_axis_bindings],
             }

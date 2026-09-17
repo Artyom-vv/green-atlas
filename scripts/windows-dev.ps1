@@ -70,6 +70,10 @@ switch ($Action) {
         try {
             . (Join-Path $PSScriptRoot 'windows-env.ps1') `
                 -PreviousEnvironment $previous
+            & $python (Join-Path $repoRoot 'apps/api/scripts/check_runtime.py')
+            if ($LASTEXITCODE -ne 0) {
+                throw 'API runtime verification failed. See docs/implementation/windows-local-runtime.md.'
+            }
             foreach ($name in $settings.Keys) {
                 $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
                 [Environment]::SetEnvironmentVariable($name, $settings[$name], 'Process')

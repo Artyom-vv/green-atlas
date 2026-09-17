@@ -14,8 +14,10 @@ from app.dxf_import.contracts import (
     ImportStatus,
     SourceFile,
 )
+from app.dxf_import.editor_source import open_source_editor
 from app.dxf_import.layer_contracts import LayerKind, LayerMapping
 from app.dxf_import.ports import DxfReaderPort, ImportProjectRepository
+from app.dxf_import.review_contracts import SourceReview
 from app.dxf_import.utility_mapping import (
     assign_utility_context,
     utility_contexts_by_layer,
@@ -44,6 +46,15 @@ class ImportApplication:
         self.history = history
         self.invalidate_spatial = invalidate_spatial
         self.now = now
+
+    def open_editor(self, project_id: str) -> Project:
+        project = self.repository.get(project_id)
+        opened = open_source_editor(project)
+        if opened is project:
+            return project
+        saved = self.repository.save(opened)
+        self.invalidate_spatial(project.id)
+        return saved
 
     def import_dxf(
         self, project_id: str, filename: str, content: bytes | bytearray
@@ -94,6 +105,8 @@ class ImportApplication:
         manifest = parsed.manifest
         project_payload = manifest.get("project")
         project_meta = project_payload if isinstance(project_payload, dict) else {}
+        source_payload = manifest.get("source")
+        source_meta = source_payload if isinstance(source_payload, dict) else {}
         if project_meta.get("name"):
             project.name = str(project_meta["name"])
 
@@ -109,7 +122,11 @@ class ImportApplication:
             bounds=imported.bounds,
             warnings=list(imported.warnings),
             preview_provenance=imported.preview_provenance,
+            prepared_provenance=source_meta.get("prepared_provenance"),
         )
+        provenance = project.source_file.prepared_provenance
+        if provenance is not None and provenance.source_sha256 != project.source_file.content_sha256:
+            raise ValueError("Происхождение подготовленного исходника не совпадает с его содержимым")
         project.layers = imported.layers
         mappings = manifest.get("layer_mappings")
         if isinstance(mappings, list):
@@ -174,6 +191,8 @@ class ImportApplication:
                 else parsed.read_only_reason or "Пакет открыт только для просмотра."
             ),
         )
+        review_payload = project_meta.get("source_review")
+        project.source_review = SourceReview.model_validate(review_payload) if review_payload is not None else None
         if imported.preview_provenance is not None:
             project.import_status = cad_preview_status()
         if not editable:
@@ -312,7 +331,7 @@ class ImportApplication:
             project.site_area_m2 = None
             project.planning_area_m2 = None
             project.allowed_area_m2 = None
-            if project.plan is not None and project.source_geometry is None:
+            if (project.plan is not None or project.source_review is not None) and project.source_geometry is None:
                 if project.geometry is None:
                     raise ValueError("Сохранённая карта недоступна для уточнения слоёв")
                 source_features = [
@@ -323,6 +342,7 @@ class ImportApplication:
                     if feature.get("properties", {}).get("source_layer")
                 ]
                 project.source_geometry = GeometrySnapshot(
+                    vertical_primitives=project.geometry.vertical_primitives,
                     feature_collection={
                         "type": "FeatureCollection",
                         "features": source_features,
@@ -330,8 +350,10 @@ class ImportApplication:
                 )
             project.geometry = None
             project.geometry_version += 1
-            if project.plan is None:
+            if project.plan is None and project.source_review is None:
                 project.planting_zones = []
+            if project.source_review is not None:
+                project = open_source_editor(project)
         if project.geometry is None and project.plan is None:
             project.status = ProjectStatus.MAPPED
         saved = self.repository.save(project)

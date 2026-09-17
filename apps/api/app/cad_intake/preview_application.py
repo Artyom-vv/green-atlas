@@ -70,7 +70,9 @@ class CadPreviewApplication:
             self.preparation.prepare(
                 operation.id,
                 operation.cad_preview.request,
-                lambda: self.lifecycle.check_cancelled(operation.id),
+                lambda: self.lifecycle.check_cancelled(
+                    operation.id, allow_completed=True
+                ),
                 lambda update: self.lifecycle.report(operation.id, update, 0, 99),
             )
             if (

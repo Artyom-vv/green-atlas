@@ -57,7 +57,12 @@ class ManualPlanningApplication:
     def check_placement(
         self, project_id: str, payload: PlacementCheckRequest
     ) -> PlacementCheck:
-        project = self.repository.get(project_id)
+        # A pending source draft checks work areas and plant spacing only.
+        # Both live in the projection: loading every CAD vertex on each pointer
+        # move adds seconds without contributing to this explicitly unverified check.
+        project = self.repository.get(project_id, lightweight=True)
+        if project.source_review is None:
+            project = self.repository.get(project_id)
         candidate = PlanObjectCreate.model_validate(payload.model_dump())
         radius = (
             candidate.layout_radius_m
@@ -256,4 +261,5 @@ class ManualPlanningApplication:
                 digest=preview.digest,
                 base_plan_version=preview.base_plan_version,
             ),
+            snapshot=project,
         ).plan

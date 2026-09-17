@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.cad_import.policy import ConversionPolicy
+from app.cad_intake.prepare_policy import PREPARE_POLICY
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,11 @@ class CadIntakeConfig:
     storage: Path
     converter: Path | None
     policy: ConversionPolicy = ConversionPolicy(timeout_seconds=600)
+
+    def inspection_policy(self, entry: str) -> ConversionPolicy:
+        # Native prepared DXF uses the same bounded admission as its full reader.
+        # DWG conversion and the ordinary browser upload retain their policies.
+        return PREPARE_POLICY if entry.lower().endswith(".dxf") else self.policy
 
     @classmethod
     def from_environment(cls, database_path: str) -> "CadIntakeConfig":
@@ -50,5 +56,5 @@ class CadIntakeConfig:
         raise ValueError("Каталог CAD не разрешён на сервере")
 
     def require_enabled(self) -> None:
-        if not self.roots or self.converter is None:
+        if not self.roots:
             raise ValueError("Приём CAD-комплектов не настроен на сервере")

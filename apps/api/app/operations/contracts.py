@@ -8,6 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from app.cad_intake.contracts import CadIntakeRecord
+from app.cad_intake.prepare_contracts import CadPrepareRecord
 from app.cad_intake.preview_contracts import CadPreviewRecord
 
 
@@ -15,6 +16,7 @@ class OperationKind(StrEnum):
     CALCULATE_GEOMETRY = "calculate_geometry"
     INSPECT_CAD_PACKAGE = "inspect_cad_package"
     PREPARE_CAD_PREVIEW = "prepare_cad_preview"
+    PREPARE_CAD_PROJECT = "prepare_cad_project"
 
 
 class OperationStatus(StrEnum):
@@ -53,3 +55,4 @@ class ProjectOperation(BaseModel):
     project_state_version: int = Field(default=1, ge=1)
     cad_intake: CadIntakeRecord | None = None
     cad_preview: CadPreviewRecord | None = None
+    cad_prepare: CadPrepareRecord | None = None

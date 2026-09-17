@@ -3,6 +3,7 @@ import type {
   CadFingerprint,
   CadIntakeRequest,
   CadPreviewRequest,
+  CadPrepareRequest,
   CadRoot,
   CadSourceAsset,
   ProjectOperation,
@@ -18,6 +19,15 @@ const assetPath = (projectId: string, operationId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/operations/${encodeURIComponent(operationId)}/cad-asset`;
 
 export const cadApi = {
+  startCadPrepare: (
+    projectId: string,
+    prepared: CadPrepareRequest,
+    options: ProjectWriteOptions,
+  ) =>
+    request<ProjectOperation>(
+      `/api/projects/${encodeURIComponent(projectId)}/cad-prepare`,
+      withProjectWriteOptions(json(prepared), options),
+    ),
   getCadSourceAsset: (
     projectId: string,
     operationId: string,

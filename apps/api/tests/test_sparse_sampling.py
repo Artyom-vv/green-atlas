@@ -10,6 +10,27 @@ from app.planning.patterns import _poisson_candidates
 from app.planning.sampling import sparse_area_sampler
 
 
+@pytest.mark.parametrize("sparse", [False, True])
+def test_sdk_preparation_preserves_entire_seeded_result(monkeypatch, sparse):
+    from shapely import from_wkb
+
+    from app.planning import patterns
+
+    polygon = Polygon(
+        Point(0, 0).buffer(100, quad_segs=256).exterior.coords,
+        [Point(0, 0).buffer(30, quad_segs=64).exterior.coords],
+    )
+    geometry = (
+        MultiPolygon([polygon, box(1000000, 0, 1000100, 100)]) if sparse else polygon
+    )
+    original = geometry.wkb
+    with monkeypatch.context() as patch:
+        patch.setattr(patterns, "prepare", lambda _: None)
+        expected = patterns._poisson_candidates(from_wkb(original), 8, 96, 47)
+    assert patterns._poisson_candidates(geometry, 8, 96, 47) == expected
+    assert geometry.wkb == original
+
+
 @pytest.mark.parametrize(
     "geometry",
     [

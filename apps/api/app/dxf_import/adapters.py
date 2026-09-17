@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from io import StringIO
 from math import atan, atan2, cos, isfinite, pi, sin
+from pathlib import Path
 from typing import Any, Callable
 from uuid import NAMESPACE_URL, uuid5
 
@@ -10,17 +11,22 @@ import ezdxf
 from ezdxf.document import Drawing
 from ezdxf.lldxf.tagger import binary_tags_loader
 from ezdxf.math import OCS, Vec3
-from ezdxf.path import from_hatch, make_path
+from ezdxf.path import make_path
 from shapely import STRtree
 from shapely.geometry import LineString as ShapelyLineString
 from shapely.geometry import Polygon as ShapelyPolygon
 
+from app.dxf_import.acis_lookup import indexed_acis_lookup
 from app.dxf_import.axis_provenance import straight_axis_provenance
+from app.dxf_import.block_capacity import inspect_block_expansion
+from app.dxf_import.block_diagnostics import BlockGeometryFailure, record_failure, source_handle
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.contracts import DxfImportResult
 from app.dxf_import.encoding import decode_text_dxf
 from app.dxf_import.layer_contracts import Layer, LayerKind
-from app.dxf_import.polygons import mpolygon_geometry
+from app.dxf_import.layer_suggestions import suggest_layer_kind
+from app.dxf_import.mleader_compat import prepare_multileader_transforms
+from app.dxf_import.polygons import hatch_geometry, mpolygon_geometry
 from app.dxf_import.preview_marker import read_preview_marker
 from app.dxf_import.styles import SourceStyleResolver
 from app.dxf_import.units import DXF_UNIT_FACTORS
@@ -33,10 +39,10 @@ from app.geometry.geojson_size import coordinate_count as _geometry_coordinate_c
 
 SUPPORTED_TYPES = {
     "LINE", "LWPOLYLINE", "POLYLINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "HATCH", "MPOLYGON",
-    "3DFACE", "SOLID", "TRACE", "POINT", "TEXT", "MTEXT", "INSERT", "DIMENSION", "WIPEOUT",
+    "3DFACE", "SOLID", "TRACE", "POINT", "TEXT", "MTEXT", "ATTDEF", "INSERT", "DIMENSION", "WIPEOUT",
     # These entities are common in survey/CAD exports. They are rendered as
     # native geometry where possible and never participate in planting rules.
-    "LEADER", "MLEADER", "MLINE", "HELIX", "MESH", "RAY", "XLINE", "IMAGE",
+    "LEADER", "MLEADER", "MULTILEADER", "MLINE", "HELIX", "MESH", "RAY", "XLINE", "IMAGE",
     "PDFUNDERLAY", "PDFREFERENCE", "DWFUNDERLAY", "DGNUNDERLAY",
     "ACAD_PROXY_ENTITY",
 }
@@ -57,7 +63,7 @@ InsertComponents = list[list[tuple[dict[str, Any], Any, str]]]
 # obstacle. They stay visible on the map, but must never acquire a planting
 # constraint even if their source layer is mapped manually to a physical kind.
 CONTEXT_ONLY_ENTITY_TYPES = {
-    "TEXT", "MTEXT", "DIMENSION", "LEADER", "MLEADER", "MLINE", "HELIX",
+    "TEXT", "MTEXT", "ATTDEF", "DIMENSION", "LEADER", "MLEADER", "MULTILEADER", "MLINE", "HELIX",
     "MESH", "RAY", "XLINE", "WIPEOUT", "IMAGE", "PDFUNDERLAY",
     "PDFREFERENCE", "DWFUNDERLAY", "DGNUNDERLAY", "ACAD_PROXY_ENTITY",
 }
@@ -127,41 +133,6 @@ def _insert_instance_count(entity: Any) -> int:
         return 1
 
 
-def _estimated_insert_component_count(entity: Any, depth: int = 0, ancestry: frozenset[str] = frozenset()) -> int:
-    """Estimate visible block components without expanding a virtual tree.
-
-    ``virtual_entities`` deliberately renders only the first member of a
-    nested MINSERT. Before calling it, inspect the raw block graph and count
-    all visible leaves. The same budget protects a normal INSERT which wraps a
-    large nested array, or a recursive/corrupt block graph that otherwise
-    cannot be safely interpreted as complete geometry.
-    """
-    if depth >= MAX_NESTED_BLOCK_DEPTH:
-        return MAX_EXPANDED_MINSERT_INSTANCES + 1
-    instances = _insert_instance_count(entity)
-    if instances > MAX_EXPANDED_MINSERT_INSTANCES:
-        return instances
-    try:
-        block_name = str(entity.dxf.name)
-        if not block_name or block_name in ancestry:
-            return MAX_EXPANDED_MINSERT_INSTANCES + 1
-        components = list(entity.block())
-    except Exception:
-        return MAX_EXPANDED_MINSERT_INSTANCES + 1
-    total = 0
-    next_ancestry = ancestry | {block_name}
-    for component in components:
-        nested_count = (
-            _estimated_insert_component_count(component, depth + 1, next_ancestry)
-            if component.dxftype() == "INSERT"
-            else 1
-        )
-        total += instances * nested_count
-        if total > MAX_EXPANDED_MINSERT_INSTANCES:
-            return MAX_EXPANDED_MINSERT_INSTANCES + 1
-    return total
-
-
 def _read_document(content: bytes | bytearray) -> Any:
     """Read ASCII and binary DXF uploads without writing them to disk."""
     if content.startswith(b"AutoCAD Binary DXF"):
@@ -169,28 +140,6 @@ def _read_document(content: bytes | bytearray) -> Any:
     # Match file-based DXF loading: ezdxf expects universal newlines, while
     # StringIO's default preserves CR characters in Windows/CAD text uploads.
     return ezdxf.read(StringIO(decode_text_dxf(content), newline=None))
-
-
-def _kind_for_layer(name: str) -> LayerKind:
-    value = name.lower().replace("ё", "е")
-    if value == "green_atlas_terrain_cop90":
-        # The mesh is scene evidence, not an existing-green planning polygon.
-        return LayerKind.IGNORE
-    if any(word in value for word in ("site", "border", "boundary", "parcel", "границ", "участ")):
-        return LayerKind.SITE_BORDER
-    if any(word in value for word in ("build", "house", "structure", "здан", "сооруж")):
-        return LayerKind.BUILDING
-    if any(word in value for word in ("road", "street", "drive", "path", "trail", "foot", "walk", "alley", "lane", "sidewalk", "дорог", "проезд", "троп", "дорожк", "аллея")):
-        return LayerKind.ROAD
-    if any(word in value for word in ("hydro", "river", "lake", "pond", "stream", "waterbody", "водоем", "пруд", "река", "ручей")):
-        return LayerKind.WATER
-    if any(word in value for word in ("restricted", "obstacle", "technical_area", "equipment", "hardscape", "техзон", "технич", "препятств", "оборудован")):
-        return LayerKind.RESTRICTED
-    if any(word in value for word in ("util", "water", "heat", "gas", "sewer", "cable", "вод", "тепл", "газ", "канал", "кабел", "сет")):
-        return LayerKind.UTILITY
-    if any(word in value for word in ("green", "tree", "shrub", "exist", "park", "lawn", "flower", "landscape", "озелен", "дерев", "куст", "газон", "парк", "цветник")):
-        return LayerKind.EXISTING_GREEN
-    return LayerKind.IGNORE
 
 
 def _point(value: Any, factor: float) -> list[float]:
@@ -689,7 +638,11 @@ def _hatch_polygon_geometry(loops: list[list[list[float]]]) -> dict[str, Any] | 
     return {"type": "MultiPolygon", "coordinates": polygons}
 
 
-def _flatten_insert_components(reference: Any, factor: float, inherited_layer: str, depth: int = 0) -> list[tuple[dict[str, Any], Any, str]]:
+def _flatten_insert_components(
+    reference: Any, factor: float, inherited_layer: str, depth: int = 0,
+    failures: list[BlockGeometryFailure] | None = None,
+    insert_path: tuple[str, ...] = (),
+) -> list[tuple[dict[str, Any], Any, str]]:
     """Flatten a virtual block tree while preserving each explicit layer.
 
     ``Insert.virtual_entities()`` correctly applies nested transformations,
@@ -699,24 +652,34 @@ def _flatten_insert_components(reference: Any, factor: float, inherited_layer: s
     and setbacks retain their original semantics.
     """
     if depth >= MAX_NESTED_BLOCK_DEPTH:
+        record_failure(failures, reference, inherited_layer, insert_path, "Достигнута граница вложенности блоков")
         return []
     components: list[tuple[dict[str, Any], Any, str]] = []
     try:
         count = _insert_instance_count(reference)
         if count > MAX_EXPANDED_MINSERT_INSTANCES:
+            record_failure(failures, reference, inherited_layer, insert_path, "Превышен предел экземпляров массива")
             return []
         references = reference.multi_insert() if count > 1 else [reference]
-        for instance in references:
-            for virtual in instance.virtual_entities():
+        for instance_index, instance in enumerate(references, start=1):
+            path = (*insert_path, f"{source_handle(reference)}[{instance_index}]")
+
+            def skipped(virtual: Any, reason: str) -> None:
+                record_failure(failures, virtual, inherited_layer, path, reason)
+
+            for virtual in instance.virtual_entities(skipped_entity_callback=skipped):
                 declared_layer = str(virtual.dxf.get("layer", "0") or "0")
                 effective_layer = inherited_layer if declared_layer == "0" else declared_layer
                 if virtual.dxftype() == "INSERT":
-                    components.extend(_flatten_insert_components(virtual, factor, effective_layer, depth + 1))
+                    components.extend(_flatten_insert_components(virtual, factor, effective_layer, depth + 1, failures, path))
                     continue
                 geometry = _entity_geometry(virtual, factor)
                 if geometry is not None:
                     components.append((geometry, virtual, effective_layer))
-    except Exception:
+                elif virtual.dxftype() in SUPPORTED_TYPES and virtual.dxftype() not in CONTEXT_ONLY_ENTITY_TYPES:
+                    record_failure(failures, virtual, inherited_layer, path, "Не удалось получить полный плоский контур")
+    except Exception as error:
+        record_failure(failures, reference, inherited_layer, insert_path, f"Ошибка раскрытия блока: {error}")
         return []
     return components
 
@@ -750,7 +713,7 @@ def _block_definition_components(reference: Any, inherited_layer: str, depth: in
     return components
 
 
-def _insert_instance_components(entity: Any, factor: float) -> list[list[tuple[dict[str, Any], Any, str]]]:
+def _insert_instance_components(entity: Any, factor: float, failures: list[BlockGeometryFailure] | None = None) -> list[list[tuple[dict[str, Any], Any, str]]]:
     """Flatten an INSERT into its instance components and effective layers.
 
     Layer ``0`` follows the layer of the parent INSERT in DXF. A non-zero
@@ -763,10 +726,12 @@ def _insert_instance_components(entity: Any, factor: float) -> list[list[tuple[d
         instance_count = _insert_instance_count(entity)
         references = entity.multi_insert() if instance_count > 1 else [entity]
         instances: list[list[tuple[dict[str, Any], Any, str]]] = []
-        for reference in references:
-            instances.append(_flatten_insert_components(reference, factor, parent_layer))
+        for instance_index, reference in enumerate(references, start=1):
+            path = (f"{source_handle(entity)}[{instance_index}]",) if instance_count > 1 else ()
+            instances.append(_flatten_insert_components(reference, factor, parent_layer, 0, failures, path))
         return instances
-    except Exception:
+    except Exception as error:
+        record_failure(failures, entity, parent_layer, (source_handle(entity),), f"Ошибка раскрытия массива: {error}")
         return []
 
 
@@ -820,7 +785,7 @@ def _entity_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
         except Exception:
             return None
         return {"type": "GeometryCollection", "geometries": geometries} if geometries else None
-    if entity_type in {"DIMENSION", "LEADER", "MLEADER", "MLINE"}:
+    if entity_type in {"DIMENSION", "LEADER", "MLEADER", "MULTILEADER", "MLINE"}:
         # ezdxf exposes the rendered dimension as virtual LINE/ARC/TEXT/INSERT
         # entities (and MLINE/leader strokes) as virtual entities. Keeping that collection preserves the drafting context
         # without turning annotation geometry into a planting constraint.
@@ -965,29 +930,7 @@ def _entity_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
     if entity_type == "MPOLYGON":
         return mpolygon_geometry(entity, factor, _hatch_polygon_geometry)
     if entity_type == "HATCH":
-        # Boundary paths can be polylines, arcs, ellipses or splines. Flatten
-        # each one independently: merging them first loses the distinction
-        # between disconnected islands and holes.
-        loops: list[list[list[float]]] = []
-        try:
-            for boundary_path in from_hatch(entity):
-                loop = [_point(point, factor) for point in boundary_path.flattening(0.1, segments=16)]
-                if len(loop) < 3:
-                    continue
-                if loop[-1] != loop[0]:
-                    loop.append(loop[0])
-                loops.append(loop)
-        except Exception:
-            loops = []
-        polygon_geometry = _hatch_polygon_geometry(loops)
-        if polygon_geometry is not None:
-            return polygon_geometry
-        try:
-            hatch_path = make_path(entity)
-            points = [_point(point, factor) for point in hatch_path.flattening(0.1, segments=16)]
-        except Exception:
-            return None
-        return {"type": "LineString", "coordinates": points} if len(points) >= 2 else None
+        return hatch_geometry(entity, factor, _hatch_polygon_geometry)
     if entity_type in {"3DFACE", "SOLID", "TRACE"}:
         # SOLID and TRACE use the DXF storage order 0, 1, 2, 3, where 2 and
         # 3 are opposite corners rather than the next perimeter vertex. A
@@ -1052,7 +995,7 @@ def _entity_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
             # expands MINSERT into separate top-level features below.
             return geometries[0]
         return {"type": "Point", "coordinates": _point(entity.dxf.insert, factor)}
-    if entity_type == "TEXT":
+    if entity_type in {"TEXT", "ATTDEF"}:
         # TEXT keeps its insertion point in OCS (unlike MTEXT, whose layout
         # point is already exposed by ezdxf in world coordinates).
         return {"type": "Point", "coordinates": _ocs_point(entity, entity.dxf.insert, factor)}
@@ -1198,6 +1141,19 @@ class EzdxfReader:
     def __init__(self, *, capacity: SourceGeometryCapacity | None = None) -> None:
         self.capacity = capacity or SourceGeometryCapacity()
 
+    def read_prepared_file(self, path: Path) -> DxfImportResult:
+        """Use ezdxf's file stream for a verified prepared DXF in a bounded worker.
+
+        Normalization is identical to upload reading. Avoid constructing a full
+        Unicode StringIO copy alongside the SDK document for large local sources.
+        This never rewrites the source or invokes recover/audit repairs.
+        """
+        if path.suffix.lower() != ".dxf":
+            raise ValueError("Поддерживаются только DXF-файлы")
+        document = ezdxf.readfile(path)
+        with indexed_acis_lookup(document):
+            return self._normalize_document(document)
+
     def read(self, filename: str, content: bytes | bytearray) -> DxfImportResult:
         if not filename.lower().endswith(".dxf"):
             raise ValueError("Поддерживаются только DXF-файлы")
@@ -1208,6 +1164,11 @@ class EzdxfReader:
         except Exception as error:
             raise ValueError("DXF повреждён или имеет неподдерживаемую структуру") from error
 
+        with indexed_acis_lookup(document):
+            return self._normalize_document(document)
+
+    def _normalize_document(self, document: Drawing) -> DxfImportResult:
+        prepare_multileader_transforms(document)
         preview_provenance = read_preview_marker(document)
         styles = SourceStyleResolver(document)
         unit_code = int(document.header.get("$INSUNITS", 0) or 0)
@@ -1248,6 +1209,7 @@ class EzdxfReader:
         unsupported = Counter(entity.dxftype() for entity in entities if entity.dxftype() not in SUPPORTED_TYPES)
         unsupported_by_layer: dict[str, Counter[str]] = {}
         unrenderable_geometry_count_by_layer: Counter[str] = Counter()
+        block_failures: list[BlockGeometryFailure] = []
         for entity in entities:
             entity_type = entity.dxftype()
             if entity_type not in SUPPORTED_TYPES:
@@ -1271,14 +1233,19 @@ class EzdxfReader:
             if entity.dxftype() != "INSERT":
                 continue
             instance_count = _insert_instance_count(entity)
-            component_count = _estimated_insert_component_count(entity)
-            if component_count > MAX_EXPANDED_MINSERT_INSTANCES:
+            expansion = inspect_block_expansion(
+                entity,
+                max_components=self.capacity.max_features,
+                max_array_instances=MAX_EXPANDED_MINSERT_INSTANCES,
+                max_depth=MAX_NESTED_BLOCK_DEPTH,
+            )
+            if expansion.blocked:
                 # ``multi_insert`` would materialize every member just to
                 # audit its layers, which defeats the import safety limit.
                 # The same applies when the array lives inside a nested
                 # symbol: showing the first child would make unseen geometry
                 # look safely available.
-                oversized_minsert_instances[index] = component_count
+                oversized_minsert_instances[index] = expansion.components
                 continue
             parent_layer = str(entity.dxf.layer)
             definition_key = (str(entity.dxf.name), parent_layer)
@@ -1292,7 +1259,19 @@ class EzdxfReader:
                 unsupported_by_layer.setdefault(component_layer, Counter())[entity_type] += 1
                 counts[component_layer] += 1
                 entity_types_by_layer.setdefault(component_layer, Counter())[entity_type] += 1
-            instances = _insert_instance_components(entity, factor)
+            failures: list[BlockGeometryFailure] = []
+            instances = _insert_instance_components(entity, factor, failures)
+            block_failures.extend(failures)
+            diagnosed_components: Counter[tuple[str, str]] = Counter()
+            for failure in failures:
+                if failure.entity_type not in SUPPORTED_TYPES or failure.entity_type in CONTEXT_ONLY_ENTITY_TYPES:
+                    continue
+                component_layer = failure.source_layer
+                unrenderable_geometry_count_by_layer[component_layer] += 1
+                diagnosed_components[failure.entity_type, component_layer] += 1
+                if component_layer != parent_layer:
+                    counts[component_layer] += 1
+                entity_types_by_layer.setdefault(component_layer, Counter())[failure.entity_type] += 1
             components = [virtual for instance in instances for _geometry, virtual, _layer in instance]
             if not components:
                 if definition_components is None:
@@ -1302,6 +1281,9 @@ class EzdxfReader:
                 else:
                     for entity_type, component_layer in definition_components:
                         if entity_type in SUPPORTED_TYPES and entity_type not in CONTEXT_ONLY_ENTITY_TYPES:
+                            if diagnosed_components[entity_type, component_layer]:
+                                diagnosed_components[entity_type, component_layer] -= 1
+                                continue
                             unrenderable_geometry_count_by_layer[component_layer] += 1
                             # A failed virtual transform can otherwise hide
                             # an explicitly layered component from the whole
@@ -1440,7 +1422,7 @@ class EzdxfReader:
                         fallback_color = LAYER_COLORS[list(counts).index(source_layer) % len(LAYER_COLORS)]
                         properties: dict[str, Any] = {
                             "source_layer": source_layer,
-                            "kind": _kind_for_layer(source_layer).value,
+                            "kind": suggest_layer_kind(source_layer).value,
                             "entity_type": virtual.dxftype(),
                             # A virtual component has no persistent DXF handle;
                             # retain its parent handle as the audit link.
@@ -1459,8 +1441,8 @@ class EzdxfReader:
                                 "geometry_fallback": True,
                                 "geometry_fallback_reason": "Бесконечная конструктивная линия показана точкой привязки.",
                             })
-                        if virtual.dxftype() in {"TEXT", "MTEXT"}:
-                            height_attribute = "height" if virtual.dxftype() == "TEXT" else "char_height"
+                        if virtual.dxftype() in {"TEXT", "MTEXT", "ATTDEF"}:
+                            height_attribute = "char_height" if virtual.dxftype() == "MTEXT" else "height"
                             properties.update({
                                 "source_text": str(virtual.plain_text()),
                                 "source_text_height": round(float(virtual.dxf.get(height_attribute, 2.5) or 2.5) * factor, 3),
@@ -1519,7 +1501,7 @@ class EzdxfReader:
                 )
                 properties: dict[str, Any] = {
                     "source_layer": source_layer,
-                    "kind": _kind_for_layer(source_layer).value,
+                    "kind": suggest_layer_kind(source_layer).value,
                     "entity_type": entity.dxftype(),
                     "source_handle": str(entity.dxf.get("handle", "")),
                     **straight_axis_provenance(entity, geometry),
@@ -1531,8 +1513,8 @@ class EzdxfReader:
                         "geometry_fallback": True,
                         "geometry_fallback_reason": "Бесконечная конструктивная линия показана точкой привязки.",
                     })
-                if entity.dxftype() in {"TEXT", "MTEXT"}:
-                    height_attribute = "height" if entity.dxftype() == "TEXT" else "char_height"
+                if entity.dxftype() in {"TEXT", "MTEXT", "ATTDEF"}:
+                    height_attribute = "char_height" if entity.dxftype() == "MTEXT" else "height"
                     properties.update({
                         "source_text": str(entity.plain_text()),
                         "source_text_height": round(float(entity.dxf.get(height_attribute, 2.5) or 2.5) * factor, 3),
@@ -1615,9 +1597,14 @@ class EzdxfReader:
             elif feature["properties"]["kind"] == LayerKind.SITE_BORDER.value and feature["properties"]["source_layer"] not in polygon_layers:
                 feature["properties"]["kind"] = LayerKind.IGNORE.value
 
+        features_by_layer: dict[str, list[dict[str, Any]]] = {}
+        for feature in features:
+            source_layer = feature["properties"].get("source_layer")
+            if source_layer is not None:
+                features_by_layer.setdefault(source_layer, []).append(feature)
         layers: list[Layer] = []
         for index, (name, count) in enumerate(counts.items()):
-            kind = _kind_for_layer(name)
+            kind = suggest_layer_kind(name)
             if kind == LayerKind.SITE_BORDER and name not in polygon_layers:
                 kind = LayerKind.IGNORE
             style = styles.layer(name, LAYER_COLORS[index % len(LAYER_COLORS)])
@@ -1627,6 +1614,7 @@ class EzdxfReader:
                 suggested_kind=kind,
                 mapped_kind=kind,
                 object_count=count,
+                bounds=_geometry_bounds(features_by_layer.get(name, [])),
                 color=style.color,
                 linetype=style.linetype,
                 lineweight_mm=style.lineweight_mm,
@@ -1639,6 +1627,7 @@ class EzdxfReader:
             ))
 
         warnings = styles.warnings()
+        warnings.extend(failure.warning() for failure in block_failures)
         if units_assumed:
             warnings.append("Единицы чертежа не заданы; координаты интерпретированы как метры.")
         if simplified:
@@ -1667,14 +1656,14 @@ class EzdxfReader:
             warnings.append(
                 "Часть геометрии не удалось прочитать для карты: "
                 f"{labels}. Неполный слой нельзя использовать для расчёта ограничений; "
-                "исправьте DXF или загрузите рабочий фрагмент."
+                "проверьте объекты слоя и подготовьте их расчётное представление в полном DXF."
             )
         if unsupported:
             labels = ", ".join(f"{name}: {count}" for name, count in sorted(unsupported.items()))
             warnings.append(
                 f"Часть типов доступна только в исходном файле: {labels}. "
                 "Если такой слой назначен физическим ограничением, расчёт будет остановлен; "
-                "проверьте назначение слоя или загрузите рабочий фрагмент."
+                "проверьте назначение слоя и подготовьте расчётное представление его физических объектов."
             )
         if not features:
             warnings.append("В карте нет визуализируемой геометрии; исходные объекты и слои сохранены для просмотра и повторного экспорта.")

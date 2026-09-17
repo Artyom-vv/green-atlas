@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.dxf_import.contracts import ImportStatus, SourceFile
 from app.dxf_import.layer_contracts import Layer
+from app.dxf_import.review_contracts import SourceReview
 from app.geometry.contracts import CoordinateReference, GeometrySnapshot
 from app.planning.contracts import Plan
 from app.planting_zones.contracts import PlantingZoneAssignment
@@ -30,6 +31,9 @@ class Project(BaseModel):
     # tells clients whether the current payload also carries the release
     # semantics required for another editable revision.
     import_status: ImportStatus = Field(default_factory=ImportStatus)
+    # An editable source draft is not evidence of completed constraint analysis.
+    # Kept outside the map payload so lightweight HTTP reads retain this state.
+    source_review: SourceReview | None = None
     layers: list[Layer] = Field(default_factory=list)
     coordinate_reference: CoordinateReference = Field(
         default_factory=CoordinateReference

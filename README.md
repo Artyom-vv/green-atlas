@@ -23,9 +23,15 @@
 ```bash
 pnpm install
 cd apps/api
-uv sync --group dev
+uv sync --locked --group dev
+uv run --no-sync python scripts/check_runtime.py
 uv run uvicorn app.main:app --reload --port 8000
 ```
+
+API использует CPython из `apps/api/.python-version` (3.13.15) и готовые
+C-ускорители ezdxf. `uv.lock` фиксирует зависимости; проверка перед запуском
+останавливает неверное окружение или отключённые ускорители. Для Windows
+сначала примените [окружение на диске проекта](docs/implementation/windows-local-runtime.md).
 
 Во втором терминале из корня:
 

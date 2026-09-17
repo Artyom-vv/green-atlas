@@ -62,5 +62,5 @@ result=dict(source=str(source),dxf_units=doc.units,acis=acis,xrefs=xrefs,
             rotated_inserts=sum(e.dxf.rotation!=0 for e in inserts),
             mirrored_inserts=sum(e.dxf.xscale*e.dxf.yscale*e.dxf.zscale<0 for e in inserts),
             block_units=dict(Counter(b.block_record.dxf.get('units',0) for b in doc.blocks)))
-(out/'inventory.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
+(out/'inventory.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n', encoding='utf8')
 print(json.dumps(result,ensure_ascii=False))

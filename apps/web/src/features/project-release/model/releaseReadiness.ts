@@ -13,6 +13,9 @@ export function releaseReadiness(
   const hardErrors = (plan.issues ?? []).filter(
     (issue) => issue.severity === 'error',
   ).length;
+  const sourcePending = (plan.issues ?? []).some(
+    (issue) => issue.code === 'SOURCE_REVIEW_PENDING',
+  );
   const { mode, basis } = form;
   const regulatoryReady =
     basis.pp616_status !== 'pending' &&
@@ -24,6 +27,9 @@ export function releaseReadiness(
     );
   const blockedReasons = [
     ...(!objects.length ? ['Добавьте посадки в план перед выпуском.'] : []),
+    ...(mode === 'final' && sourcePending
+      ? ['Проверьте исходные данные и выполните расчёт ограничений.']
+      : []),
     ...(mode === 'final' && hardErrors ? ['Устраните ошибки размещения.'] : []),
     ...(mode === 'final' && missingSpecies ? ['Назначьте виды посадкам.'] : []),
     ...(mode === 'final' && !regulatoryReady
@@ -36,6 +42,7 @@ export function releaseReadiness(
   return {
     missingSpecies,
     hardErrors,
+    sourcePending,
     blockedReasons,
     ready: !blockedReasons.length,
   };

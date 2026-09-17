@@ -1,14 +1,35 @@
+from collections import Counter
 from io import BytesIO, StringIO
 from typing import Any
 
 import ezdxf
 from ezdxf.document import Drawing
+from ezdxf.entities.acis import Body
 from ezdxf.lldxf.tagger import binary_tags_loader
 
-from app.exporting.contracts import ExportArtifact
-from app.projects.contracts import Project
+from app.dxf_import.acis_lookup import indexed_acis_lookup
 from app.dxf_import.encoding import decode_text_dxf
 from app.dxf_import.units import meters_per_dxf_unit
+from app.exporting.contracts import ExportArtifact
+from app.projects.contracts import Project
+
+
+def _check_acis_export(document: Drawing) -> None:
+    """ezdxf silently skips modeler entities without their SAT/SAB payload."""
+    missing: Counter[str] = Counter()
+    with indexed_acis_lookup(document):
+        for entity in document.entitydb.values():
+            if entity.is_alive and isinstance(entity, Body) and not entity.acis_data:
+                missing[entity.dxftype()] += 1
+    if missing:
+        details = ", ".join(
+            f"{kind}: {count}" for kind, count in sorted(missing.items())
+        )
+        raise ValueError(
+            f"DXF-выпуск остановлен: у исходных объектов отсутствуют SAT/SAB-данные ({details}); "
+            "библиотека исключила бы их при сохранении. Проект и исходный файл сохранены. "
+            "Проверьте подготовку полного DXF-комплекта."
+        )
 
 
 GREEN_ATLAS_APP_ID = "GREEN_ATLAS"
@@ -41,13 +62,16 @@ def _new_layer_name(document: Any, base_name: str) -> str:
 class DxfRoundTripWriter:
     """Round-trip writer: source entities stay intact, planting is added to new layers."""
 
-    def create(self, project: Project, source_content: bytes) -> tuple[ExportArtifact, bytes]:
+    def create(
+        self, project: Project, source_content: bytes
+    ) -> tuple[ExportArtifact, bytes]:
         if project.plan is None:
             raise ValueError("Нельзя экспортировать проект без плана")
         try:
             document = _read_document(source_content)
         except Exception as error:
             raise ValueError("Не удалось повторно открыть исходный DXF") from error
+        _check_acis_export(document)
         planting_layers = {
             kind: _new_layer_name(document, base_name)
             for kind, (base_name, _color) in PLANTING_LAYER_BASES.items()
@@ -75,8 +99,13 @@ class DxfRoundTripWriter:
                 (1000, f"layout_radius_m={object_.layout_radius_m or object_.radius}"),
                 (1000, f"locked={'true' if object_.locked else 'false'}"),
             ]
+            if project.source_review is not None:
+                # Keep the review state when a recipient gets only the DXF.
+                xdata.append((1000, "source_review=pending"))
             if object_.species_revision_id:
-                xdata.append((1000, f"species_revision_id={object_.species_revision_id}"))
+                xdata.append(
+                    (1000, f"species_revision_id={object_.species_revision_id}")
+                )
             if object_.pattern_id:
                 xdata.append((1000, f"pattern_id={object_.pattern_id}"))
             for group_id in sorted(object_.group_ids):
@@ -100,6 +129,14 @@ class DxfRoundTripWriter:
             # gives us Unicode text; encoding it unconditionally as UTF-8
             # leaves the original $DWGCODEPAGE lying to CAD consumers. Let
             # ezdxf select the format-required output encoding instead.
-            content = stream.getvalue().encode(document.output_encoding, errors="dxfreplace")
-        artifact = ExportArtifact(filename=f"{project.name.lower().replace(' ', '_')}_plan.dxf", status="ready", size=len(content), download_url="")
+            content = stream.getvalue().encode(
+                document.output_encoding, errors="dxfreplace"
+            )
+        suffix = "draft_plan" if project.source_review is not None else "plan"
+        artifact = ExportArtifact(
+            filename=f"{project.name.lower().replace(' ', '_')}_{suffix}.dxf",
+            status="ready",
+            size=len(content),
+            download_url="",
+        )
         return artifact, content

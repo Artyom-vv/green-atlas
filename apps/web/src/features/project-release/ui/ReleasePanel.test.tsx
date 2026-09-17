@@ -74,6 +74,37 @@ const draftPlan = {
 } as Plan;
 
 describe('ReleasePanel', () => {
+  it('shows unverified source constraints and keeps the draft available', () => {
+    const plan = {
+      ...draftPlan,
+      issues: [
+        {
+          code: 'SOURCE_REVIEW_PENDING',
+          severity: 'warning',
+          title: 'Source requires review',
+          description: 'Constraints have not been calculated',
+        },
+      ],
+    } as Plan;
+    render(
+      <ReleasePanel plan={plan} onCreate={vi.fn()} onDownload={vi.fn()} />,
+    );
+    expect(screen.getByText('Ограничения исходных данных')).toBeVisible();
+    expect(screen.getByText('Не проверены')).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Собрать черновой пакет' }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Финальный' }));
+    expect(
+      screen.getByText(
+        'Проверьте исходные данные и выполните расчёт ограничений.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Собрать финальный пакет' }),
+    ).toBeDisabled();
+  });
+
   it('allows an honest draft while blocking a final package without species', () => {
     const onCreate = vi.fn();
     render(

@@ -59,7 +59,7 @@ def position_rule_trace(
     mature_crown_diameter_m: float | None = None,
 ) -> PlantingRuleTrace:
     center = Point(x, y)
-    ready = project.geometry is not None and project.map_ready
+    ready = project.geometry is not None and project.map_ready and project.source_review is None
     entries: list[RuleTraceEntry] = []
     for kind, (rule_id, _title, _distances) in CONSTRAINT_KINDS.items():
         record = BY_ID[rule_id]

@@ -141,6 +141,7 @@ class ProjectApplication:
             repository, candidate_generator, self.evaluation, self.changes
         )
         self.operations = GeometryOperationApplication(
+            history=history,
             repository=repository,
             operation_repository=operation_repository,
             geometry=geometry,
@@ -222,6 +223,9 @@ class ProjectApplication:
         self, project_id: str, filename: str, content: bytes | bytearray
     ) -> Project:
         return self._imports.import_dxf(project_id, filename, content)
+
+    def open_source_editor(self, project_id: str) -> Project:
+        return self._imports.open_editor(project_id)
 
     def import_release_bundle(
         self, project_id: str, filename: str, content: bytes | bytearray

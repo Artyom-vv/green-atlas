@@ -131,8 +131,10 @@ export function createViewportHandle({
           duration: 180,
         });
     },
-    fitLayer: (sourceLayer) => {
-      const extent = createEmpty();
+    fitLayer: (sourceLayer, sourceBounds) => {
+      const hasFullExtent =
+        sourceBounds?.length === 4 && sourceBounds.every(Number.isFinite);
+      const extent = hasFullExtent ? [...sourceBounds] : createEmpty();
       const features = [
         baseSourceRef.current,
         zoneSourceRef.current,
@@ -140,14 +142,14 @@ export function createViewportHandle({
       ]
         .flatMap((source) => source.getFeatures())
         .filter((feature) => feature.get('source_layer') === sourceLayer);
-      for (const feature of features) {
+      for (const feature of hasFullExtent ? [] : features) {
         const geometry = feature.getGeometry();
         if (geometry) extend(extent, geometry.getExtent());
       }
       const map = mapRef.current;
       const size = map?.getSize();
       const targetExtent = paddedMapExtent(extent) ?? extent;
-      if (features.length && map && size)
+      if ((hasFullExtent || features.length) && map && size)
         map.getView().fit(targetExtent, {
           size,
           padding: [72, 72, 72, 72],

@@ -15,9 +15,12 @@ export const PreparationActions: FC<PreparationActionsProps> = ({
   mapReady,
   mappingsChanged,
   cadPreview = false,
+  openEditor,
+  calculationPending,
 }) => {
   const openPreparedMap =
-    cadPreview || (mapReady && (reviewOnly || !mappingsChanged));
+    cadPreview ||
+    (mapReady && !calculationPending && (reviewOnly || !mappingsChanged));
   return (
     <>
       <Button
@@ -27,6 +30,18 @@ export const PreparationActions: FC<PreparationActionsProps> = ({
       >
         {reviewOnly && !cadPreview ? 'Загрузить полный ZIP' : 'Другой источник'}
       </Button>
+      {!reviewOnly && !cadPreview && (!mapReady || calculationPending) && (
+        <Button
+          variant="secondary"
+          loading={openEditor.isPending}
+          disabled={preparationBlocked}
+          onClick={() => openEditor.mutate()}
+        >
+          {mappingsChanged
+            ? 'Сохранить слои и открыть редактор'
+            : 'Открыть редактор без расчёта'}
+        </Button>
+      )}
       <Button
         variant="primary"
         icon={MapIcon}

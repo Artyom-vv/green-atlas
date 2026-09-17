@@ -52,6 +52,8 @@ class ExportApplication:
         if project.source_file is None:
             raise ValueError("Исходный DXF недоступен для выпуска")
         if request.mode == "final":
+            if project.source_review is not None:
+                raise ValueError("Финальный выпуск недоступен: расчёт ограничений исходного комплекта ещё не выполнен. Сохранение проекта и черновой выпуск доступны.")
             error_count = sum(
                 issue.severity == "error" for issue in project.plan.issues
             )

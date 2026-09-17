@@ -1,17 +1,13 @@
 """Atomic publication on the existing project and operation journal tables."""
 
-import sqlite3
-from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
 from app.cad_intake.preview_contracts import CadPreviewResult
+from app.cad_intake.source_publication import SqliteSourcePublication
 from app.dxf_import.contracts import ImportEditability, ImportMode
 from app.dxf_import.preview_contracts import CadPreviewProvenance
-from app.operations.contracts import OperationKind, OperationStatus, ProjectOperation
-from app.operations.progress import OperationCancelled
-from app.projects.adapters import project_projection
-from app.projects.concurrency import ProjectVersionConflict
+from app.operations.contracts import OperationKind, ProjectOperation
 from app.projects.contracts import Project
 
 
@@ -68,10 +64,8 @@ def _validate_operation(
 
 
 class SqliteCadPreviewPublication:
-    """No new registry: this operation's terminal record is its durable receipt."""
-
     def __init__(self, database_path: str | Path) -> None:
-        self.database_path = str(database_path)
+        self.publication = SqliteSourcePublication(database_path)
 
     def publish(
         self,
@@ -81,91 +75,14 @@ class SqliteCadPreviewPublication:
         result: CadPreviewResult,
     ) -> ProjectOperation:
         provenance = _validate_publication(project, source, result)
-        expected = project.state_version
-        now = datetime.now(UTC).isoformat()
-        published = project.model_copy(
-            update={"state_version": expected + 1, "updated_at": now}
+        return self.publication.publish(
+            project,
+            source,
+            operation_id,
+            result,
+            record_field="cad_preview",
+            stage="Предварительная карта открыта только для просмотра",
+            validate_operation=lambda operation: _validate_operation(
+                operation, project, provenance
+            ),
         )
-        if (
-            result.published_state_version != published.state_version
-            or result.geometry_version != project.geometry_version
-        ):
-            raise ValueError("Версия результата не соответствует публикации")
-        # Serialize the bounded worker's graph before holding a SQLite write lock.
-        payload = published.model_dump_json()
-        projection = project_projection(published).model_dump_json()
-        connection = sqlite3.connect(self.database_path, timeout=5)
-        connection.row_factory = sqlite3.Row
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT payload FROM project_operations WHERE id=?", (operation_id,)
-            ).fetchone()
-            if row is None:
-                raise KeyError("Операция не найдена")
-            operation = ProjectOperation.model_validate_json(row["payload"])
-            _validate_operation(operation, project, provenance)
-            assert operation.cad_preview is not None
-            if operation.status == OperationStatus.COMPLETED:
-                if operation.cad_preview.result != result:
-                    raise ValueError("Операция уже опубликовала другой результат")
-                connection.rollback()
-                return operation
-            if (
-                operation.status != OperationStatus.RUNNING
-                or operation.cancel_requested_at is not None
-            ):
-                raise OperationCancelled("Публикация отменена до фиксации проекта")
-            if operation.project_state_version != expected:
-                raise ProjectVersionConflict(
-                    project.id, operation.project_state_version, expected
-                )
-            current = connection.execute(
-                "SELECT projection, state_version FROM projects WHERE id=?",
-                (project.id,),
-            ).fetchone()
-            if current is None:
-                raise KeyError("Проект не найден")
-            if current["state_version"] != expected:
-                raise ProjectVersionConflict(
-                    project.id, expected, current["state_version"]
-                )
-            previous = Project.model_validate_json(current["projection"])
-            if previous.source_file is not None or previous.plan is not None:
-                raise ValueError(
-                    "Для предварительной карты нужен новый проект без исходника"
-                )
-            connection.execute(
-                "UPDATE projects SET payload=?, projection=?, source=?, updated_at=?, state_version=? WHERE id=? AND state_version=?",
-                (
-                    payload,
-                    projection,
-                    source,
-                    now,
-                    published.state_version,
-                    project.id,
-                    expected,
-                ),
-            )
-            operation.status = OperationStatus.COMPLETED
-            operation.progress = 100
-            operation.progress_mode = "determinate"
-            operation.stage = "Предварительная карта открыта только для просмотра"
-            operation.updated_at = operation.completed_at = now
-            operation.cad_preview.result = result
-            connection.execute(
-                "UPDATE project_operations SET status=?, payload=?, updated_at=? WHERE id=?",
-                (
-                    operation.status.value,
-                    operation.model_dump_json(),
-                    now,
-                    operation.id,
-                ),
-            )
-            connection.commit()
-            return operation
-        except BaseException:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()

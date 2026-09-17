@@ -98,6 +98,8 @@ export const projectsApi = {
       `/api/projects/${projectId}/operations/geometry`,
       json(),
     ),
+  openSourceEditor: (projectId: string) =>
+    request<Project>(`/api/projects/${projectId}/source-editor`, json()),
   getOperation: (projectId: string, operationId: string) =>
     request<ProjectOperation>(
       `/api/projects/${projectId}/operations/${operationId}`,

@@ -8,15 +8,46 @@ from app.cad_intake.contracts import (
     CadIntakeRequest,
     CadRoot,
 )
+from app.cad_intake.prepare_application import CadPrepareApplication
+from app.cad_intake.prepare_contracts import CadPrepareRequest
 from app.cad_intake.preview_application import CadPreviewApplication
 from app.cad_intake.preview_contracts import CadPreviewRequest
-from app.composition import get_cad_intake, get_cad_preview
+from app.composition import get_cad_intake, get_cad_prepare, get_cad_preview
 from app.http_errors import handle
 from app.operations.contracts import OperationStatus, ProjectOperation
 
 router = APIRouter(
     prefix="/api", dependencies=[Depends(project_version_scope)], tags=["CAD intake"]
 )
+
+
+@router.post(
+    "/projects/{project_id}/cad-prepare",
+    response_model=ProjectOperation,
+    status_code=202,
+)
+def prepare_project(
+    project_id: str,
+    body: CadPrepareRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    application: CadPrepareApplication = Depends(get_cad_prepare),
+) -> ProjectOperation:
+    if not request.headers.get("If-Match"):
+        raise HTTPException(
+            status_code=428,
+            detail={
+                "code": "PROJECT_VERSION_REQUIRED",
+                "message": "Обновите проект перед подготовкой полного DXF",
+            },
+        )
+    try:
+        operation = application.start(project_id, body)
+        if operation.status == OperationStatus.QUEUED:
+            background_tasks.add_task(application.run, operation.id)
+        return operation
+    except Exception as error:
+        raise handle(error) from error
 
 
 @router.get("/cad/roots", response_model=list[CadRoot])

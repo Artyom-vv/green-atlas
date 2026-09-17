@@ -39,17 +39,18 @@ class ProcessPackageInspection:
         check_cancelled: Callable[[], None],
     ) -> CadPackagePassport:
         self.config.require_enabled()
-        assert self.config.converter is not None
         root = self.config.root(request.root_id)
         directory = self.config.storage / "operations" / operation_id
         directory.mkdir(parents=True, exist_ok=True)
         output = directory / "source-package.json"
+        policy = self.config.inspection_policy(request.entry)
         work = InspectionWork(
             root=root.path,
             cache=self.config.storage / "cache",
             converter=self.config.converter,
             output=output,
             request=request,
+            policy=policy,
         )
         task = directory / "request.json"
         task.write_text(work.model_dump_json(indent=2), encoding="utf-8")
@@ -60,7 +61,7 @@ class ProcessPackageInspection:
             [sys.executable, "-m", "app.cad_intake.worker", str(task)],
             output,
             directory / "worker.log",
-            replace(self.config.policy, max_output_bytes=16 * 1024 * 1024),
+            replace(policy, max_output_bytes=16 * 1024 * 1024),
             environment=environment,
             check_cancelled=check_cancelled,
         )

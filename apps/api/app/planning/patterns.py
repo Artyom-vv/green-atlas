@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import ceil, cos, floor, hypot, pi, sin, sqrt
 from random import Random
 
+from shapely import prepare
 from shapely.geometry import LineString, Point, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, unary_union
@@ -45,6 +46,9 @@ def _poisson_candidates(geometry, spacing: float, target: int, seed: int) -> lis
     random = Random(f"poisson:{seed}")
     max_attempts = max(4_000, target * 120)
     sampler = sparse_area_sampler(geometry, target, max_attempts)
+    # GEOS indexes repeated coverage queries without changing coordinates,
+    # random draws, boundary inclusion or the spacing predicate.
+    prepare(geometry if sampler is None else [window.geometry for window in sampler.windows])
     attempts_without_acceptance = 0
     for _ in range(max_attempts):
         if sampler is None:

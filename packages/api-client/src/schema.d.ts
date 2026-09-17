@@ -244,6 +244,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/source-editor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Source Editor */
+        post: operations["open_source_editor_api_projects__project_id__source_editor_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/operations/latest": {
         parameters: {
             query?: never;
@@ -680,6 +697,23 @@ export interface paths {
         get: operations["download_release_artifact_api_projects__project_id__releases__release_id__artifacts__artifact_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cad-prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare Project */
+        post: operations["prepare_project_api_projects__project_id__cad_prepare_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1691,6 +1725,37 @@ export interface components {
             calculation_ready: false;
             /** Blockers */
             blockers: string[];
+        };
+        /** CadPrepareRecord */
+        CadPrepareRecord: {
+            request: components["schemas"]["CadPrepareRequest"];
+            result?: components["schemas"]["CadPrepareResult"] | null;
+        };
+        /** CadPrepareRequest */
+        CadPrepareRequest: {
+            /** Intake Operation Id */
+            intake_operation_id: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /**
+             * Profile Version
+             * @default 1
+             * @constant
+             */
+            profile_version: 1;
+        };
+        /** CadPrepareResult */
+        CadPrepareResult: {
+            /** Published State Version */
+            published_state_version: number;
+            /** Geometry Version */
+            geometry_version: number;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Source Bytes */
+            source_bytes: number;
+            /** Feature Count */
+            feature_count: number;
         };
         /** CadPreviewProvenance */
         CadPreviewProvenance: {
@@ -2729,6 +2794,13 @@ export interface components {
             mapped_kind?: components["schemas"]["LayerKind"] | null;
             /** Object Count */
             object_count: number;
+            /** Bounds */
+            bounds?: [
+                number,
+                number,
+                number,
+                number
+            ] | null;
             /** Color */
             color: string;
             /**
@@ -2875,7 +2947,7 @@ export interface components {
          * OperationKind
          * @enum {string}
          */
-        OperationKind: "calculate_geometry" | "inspect_cad_package" | "prepare_cad_preview";
+        OperationKind: "calculate_geometry" | "inspect_cad_package" | "prepare_cad_preview" | "prepare_cad_project";
         /**
          * OperationStatus
          * @enum {string}
@@ -3595,6 +3667,23 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** PreparedSourceProvenance */
+        PreparedSourceProvenance: {
+            /** Intake Operation Id */
+            intake_operation_id: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /**
+             * Profile Version
+             * @default 1
+             * @constant
+             */
+            profile_version: 1;
+            /** Entry */
+            entry: string;
+            /** Source Sha256 */
+            source_sha256: string;
+        };
         /** PreviewRefusal */
         PreviewRefusal: {
             /**
@@ -3624,6 +3713,7 @@ export interface components {
             status: components["schemas"]["ProjectStatus"];
             source_file?: components["schemas"]["SourceFile"] | null;
             import_status?: components["schemas"]["ImportStatus"];
+            source_review?: components["schemas"]["SourceReview"] | null;
             /** Layers */
             layers?: components["schemas"]["Layer"][];
             coordinate_reference?: components["schemas"]["CoordinateReference"];
@@ -3768,6 +3858,7 @@ export interface components {
             project_state_version: number;
             cad_intake?: components["schemas"]["CadIntakeRecord"] | null;
             cad_preview?: components["schemas"]["CadPreviewRecord"] | null;
+            cad_prepare?: components["schemas"]["CadPrepareRecord"] | null;
         };
         /**
          * ProjectStatus
@@ -4607,6 +4698,34 @@ export interface components {
             /** Warnings */
             warnings?: string[];
             preview_provenance?: components["schemas"]["CadPreviewProvenance"] | null;
+            prepared_provenance?: components["schemas"]["PreparedSourceProvenance"] | null;
+        };
+        /** SourceReview */
+        SourceReview: {
+            /**
+             * Status
+             * @default pending
+             * @constant
+             */
+            status: "pending";
+            /** Issues */
+            issues?: components["schemas"]["SourceReviewIssue"][];
+        };
+        /** SourceReviewIssue */
+        SourceReviewIssue: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "calculation_pending" | "incomplete_layer" | "source_warning";
+            /** Message */
+            message: string;
+            /** Layer Id */
+            layer_id?: string | null;
+            /** Source Layer */
+            source_layer?: string | null;
+            /** Suggested Action */
+            suggested_action: string;
         };
         /** SpeciesRevision */
         SpeciesRevision: {
@@ -5637,6 +5756,39 @@ export interface operations {
             };
         };
     };
+    open_source_editor_api_projects__project_id__source_editor_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_latest_operation_api_projects__project_id__operations_latest_get: {
         parameters: {
             query: {
@@ -6543,6 +6695,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prepare_project_api_projects__project_id__cad_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CadPrepareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOperation"];
                 };
             };
             /** @description Validation Error */

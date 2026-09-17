@@ -94,7 +94,12 @@ export const WorkspaceInspector: FC<WorkspaceInspectorProps> = (props) => {
                 [activeLayer.id]: visible,
               }))
             }
-            onFit={() => mapViewport.current?.fitLayer(activeLayer.source_name)}
+            onFit={() =>
+              mapViewport.current?.fitLayer(
+                activeLayer.source_name,
+                activeLayer.bounds,
+              )
+            }
           />
         )}
 

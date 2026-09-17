@@ -92,7 +92,13 @@ class PositionChecker:
         self._networks: NetworkConstraints | None = None
         if project.geometry is None:
             return
-        self.features = project.geometry.feature_collection.get("features", [])
+        # Source drafts retain drawing detail but have no validated physical
+        # constraint model. Still enforce explicit work areas and spacing;
+        # the advisory marks every manual placement as unverified.
+        self.features = (
+            project.geometry.feature_collection.get("features", [])
+            if project.source_review is None else []
+        )
         site_geometries: list[BaseGeometry] = []
         for feature in self.features:
             kind = feature.get("properties", {}).get("kind")
@@ -225,6 +231,8 @@ class PositionChecker:
         growth_canopy_radius: float | None = None,
         growth_root_radius: float | None = None,
     ) -> BaseGeometry:
+        if self.project.source_review is not None:
+            raise ValueError("Автоматическая расстановка требует расчёта ограничений. Ручное редактирование проекта доступно.")
         # Immutable Shapely geometries are safe to reuse. The checker belongs
         # to one geometry/zone revision; plan-object collisions are deliberately
         # not cached here and remain part of each candidate's final validation.
@@ -410,6 +418,13 @@ class PositionChecker:
         footprint touches it, the operator must obtain its subtype and the
         applicable rule before calling the position safe.
         """
+        if self.project.source_review is not None:
+            return PositionAdvisory(
+                code="SOURCE_REVIEW_PENDING",
+                title="Ограничения ещё не проверены",
+                description="Ограничения исходного комплекта ещё не рассчитаны. Посадка требует проверки после расчёта.",
+                suggested_action="Уточните слои и выполните расчёт ограничений",
+            )
         center = Point(x, y)
         uncertain_sources = [
             feature

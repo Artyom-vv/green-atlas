@@ -8,7 +8,7 @@ import traceback
 
 root = Path(os.environ['CAD_ACIS_LAB'])
 sys.path.insert(0, str(root/'InventorLoader'))
-case = json.loads(Path(sys.argv[1]).read_text())[int(sys.argv[2])]
+case = json.loads(Path(sys.argv[1]).read_text(encoding='utf8'))[int(sys.argv[2])]
 out = Path(sys.argv[3])
 out.mkdir(exist_ok=False, parents=True)
 result = dict(name=case['name'], status='failed', source=case)
@@ -65,6 +65,6 @@ try:
 except Exception:
     result['error'] = traceback.format_exc()
 finally:
-    (out/'result.json').write_text(json.dumps(result, indent=2)+'\n')
+    (out/'result.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf8')
     print(json.dumps(result))
 sys.exit(0 if result.get('gate') == 'passed' else 1)

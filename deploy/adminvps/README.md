@@ -19,6 +19,9 @@
   администратора не отключался.
 - Приложение: `/opt/green-atlas/current` → каталог в `/opt/green-atlas/releases/`.
 - Runtime: `/opt/green-atlas/venv`; версии зависимостей из `apps/api/uv.lock`.
+- Целевой Python: `apps/api/.python-version` (CPython 3.13.15), с C-ускорителями
+  ezdxf. Управляемый интерпретатор хранится в `/opt/green-atlas/python`, чтобы
+  service с `ProtectHome=true` мог его читать. Исторический VPS ещё не мигрирован.
 - Настройки: `/etc/green-atlas/runtime.env`.
 - База: `/var/lib/green-atlas/green-atlas.sqlite3`, вне каталога версии.
 - Ежедневная согласованная SQLite-копия: `/var/lib/green-atlas/backups/`;
@@ -31,17 +34,33 @@
 
 1. Собрать frontend с `VITE_API_URL` равным пустой строке (тот же origin).
 2. Создать новый каталог версии с `api/app`, `api/pyproject.toml`, `api/uv.lock`,
+   `api/.python-version`, `api/scripts/check_runtime.py`,
    `web` (содержимое `apps/web/dist`) и `deploy` (этот каталог).
    В рабочей версии много незакоммиченных изменений: `git archive HEAD`
    не соответствует выложенному приложению. Не включать `.env`, ключи и базы.
 3. Выполнить `bash <release>/deploy/bootstrap.sh <имя-версии>`.
-   Скрипт синхронизирует зависимости по lockfile, переключает symlink и API.
+   Скрипт синхронизирует зависимости по lockfile с закреплённым Python,
+   проверяет C-ускорители, переключает symlink и API.
    Это обновление с кратким перерывом, не атомарный blue-green deploy.
 4. Для первой установки нужны `python3-venv`, `nginx`, `certbot`, `apache2-utils`;
    после bootstrap выполнить `enable-https.sh` и установить backup units.
 5. Проверить HTTPS, проект и скачивание ZIP. Перед обновлением существующей
    площадки сделать SQLite backup. При изменении зависимостей откат требует
    повторного bootstrap предыдущей версии, а не только смены symlink.
+
+При первой смене Python сначала остановить API и сохранить `/opt/green-atlas/venv`
+как резервную копию; bootstrap пересоздаёт этот общий venv. Не обновлять окружение
+живого процесса. После sync `check_runtime.py` запрещает тихий переход на
+pure-Python ezdxf. Systemd выполняет ту же проверку в `ExecStartPre`, включая
+проверку конфигурации из `runtime.env`. Эти изменения подготовлены локально;
+переключение существующей VPS в этой сессии не выполнялось.
+
+Docker использует тот же CPython 3.13.15 и проверку на сборке и при старте.
+`python:3.13.15-slim-bookworm` закреплён по multi-platform digest
+`sha256:ed86c82274b3c69b52fb5820f358f0bd7df0b603332063cb5c6e32bd220c3e6e`,
+проверенному через [официальный Docker Hub API](https://hub.docker.com/v2/repositories/library/python/tags/3.13.15-slim-bookworm)
+16 сентября 2026.
+Docker-образ в этой сессии не собирался и не выкладывался.
 
 ## Приёмка
 

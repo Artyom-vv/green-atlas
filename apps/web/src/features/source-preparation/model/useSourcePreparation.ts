@@ -81,7 +81,9 @@ export function useSourcePreparation({
     setMappingDraft({ source: currentSource, mappings: next });
   const sourceWarnings = projectQuery.data?.source_file?.warnings ?? [];
   const sourceReadOnly = Boolean(
-    projectQuery.data?.map_ready && projectQuery.data.plan,
+    projectQuery.data?.map_ready &&
+    projectQuery.data.plan &&
+    !projectQuery.data.source_review,
   );
   const reviewOnly =
     projectQuery.data?.import_status?.editability === 'read_only';
@@ -111,7 +113,7 @@ export function useSourcePreparation({
   const readinessBlockedReason = !requiredReady
     ? 'Назначьте роль обязательным слоям границы перед подготовкой карты.'
     : incompleteConstraintLayers.length
-      ? 'Исключите неполные слои из ограничений или загрузите меньший фрагмент DXF.'
+      ? 'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.'
       : undefined;
   const hasPlanningBoundary = requiredLayers.length > 0;
   const latestOperationQuery = useQuery({
@@ -222,6 +224,21 @@ export function useSourcePreparation({
     onSuccess: (next) =>
       queryClient.setQueryData(['operation', projectId, next.id], next),
   });
+  const openEditor = useMutation({
+    mutationFn: async () => {
+      if (mappingsChanged)
+        await preparationApi.saveMappings(projectId, Object.values(mappings));
+      return preparationApi.openSourceEditor(projectId);
+    },
+    onSuccess: (project) => {
+      queryClient.setQueryData(['setup-project', projectId], project);
+      queryClient.setQueryData(['workspace-project', projectId], project);
+      void queryClient.invalidateQueries({
+        queryKey: ['data-passport', projectId],
+      });
+      navigate(`/projects/${projectId}/workspace`);
+    },
+  });
   const lastKnownOperation =
     operationQuery.data ??
     (!operationId || latestUnfinishedOperation?.id === operationId
@@ -247,13 +264,15 @@ export function useSourcePreparation({
     Boolean(operationId && operationQuery.isLoading) ||
     operationActive(operation);
   const preparationBlocked =
+    openEditor.isPending ||
     calculating ||
     statusUnknown ||
     checkingStatus ||
     cancelOperation.isPending ||
     preparationMutation.needsRecovery ||
     Boolean(reloadError);
-  const mutationError = saveMutation.error ?? cancelOperation.error;
+  const mutationError =
+    saveMutation.error ?? cancelOperation.error ?? openEditor.error;
 
   const reloadAfterConflict = async () => {
     try {
@@ -265,6 +284,7 @@ export function useSourcePreparation({
       });
       saveMutation.reset();
       cancelOperation.reset();
+      openEditor.reset();
       setReloadError(undefined);
     } catch (error) {
       // Cached data in a failed refetch is not a fresh basis for the form.
@@ -301,6 +321,7 @@ export function useSourcePreparation({
     layers,
     mappings,
     mappingsChanged,
+    calculationPending: Boolean(projectQuery.data?.source_review),
     setMappings,
     sourceWarnings,
     sourceReadOnly,
@@ -318,6 +339,7 @@ export function useSourcePreparation({
     preparationBlocked,
     statusQuery,
     saveMutation,
+    openEditor,
     cancelOperation,
     mutationError,
     preparationRecovery,

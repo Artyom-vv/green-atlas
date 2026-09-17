@@ -27,7 +27,7 @@ def validate_planting_zones(
     borders = [
         shape(feature["geometry"])
         for feature in project.geometry.feature_collection.get("features", [])
-        if feature.get("properties", {}).get("kind") == "site_border"
+        if project.source_review is None and feature.get("properties", {}).get("kind") == "site_border"
     ]
     site = unary_union(borders).buffer(0) if borders else None
     seen_ids: set[str] = set()

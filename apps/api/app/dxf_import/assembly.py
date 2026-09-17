@@ -57,6 +57,7 @@ def assemble_imported_project(
     return project.model_copy(
         update={
             "source_file": source,
+            "source_review": None,
             "import_status": status,
             "layers": imported.layers,
             "source_geometry": imported.geometry,

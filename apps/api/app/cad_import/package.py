@@ -1,10 +1,12 @@
 """Prepare one CAD entry and its dependency graph, without modifying originals."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 from app.cad_import.cache import file_sha256
 from app.cad_import.contracts import CadConversionError
 from app.cad_import.conversion import LibreDwgConverter
+from app.cad_import.dxf_inspection import DxfInspector
 from app.cad_import.package_contracts import (
     PackageDrawing,
     ReferenceOverride,
@@ -18,8 +20,15 @@ MAX_PACKAGE_SOURCE_BYTES = 512 * 1024 * 1024
 
 
 class PackageInspector:
-    def __init__(self, converter: LibreDwgConverter) -> None:
+    def __init__(
+        self,
+        converter: DxfInspector,
+        *,
+        converter_factory: Callable[[], LibreDwgConverter] | None = None,
+    ) -> None:
         self.converter = converter
+        self._dwg_converter = converter if isinstance(converter, LibreDwgConverter) else None
+        self._converter_factory = converter_factory
 
     def inspect(
         self, root: Path, entry: Path, overrides: list[ReferenceOverride] | None = None
@@ -70,7 +79,16 @@ class PackageInspector:
         manifest.drawings.append(drawing)
         try:
             if source.suffix.lower() == ".dwg":
-                result = self.converter.convert(source)
+                # Native DXF must not initialize an optional executable or its
+                # DLLs, even if an old DWG converter path remains configured.
+                if self._dwg_converter is None and self._converter_factory is not None:
+                    self._dwg_converter = self._converter_factory()
+                if self._dwg_converter is None:
+                    raise CadConversionError(
+                        "Комплект содержит DWG. Подготовьте этот чертёж в DXF "
+                        "и назначьте соответствующую внешнюю ссылку."
+                    )
+                result = self._dwg_converter.convert(source)
                 drawing.source_sha256 = result.evidence.source_sha256
                 drawing.normalized_path = str(result.path)
                 drawing.evidence_path = str(result.evidence_path)

@@ -15,12 +15,15 @@ from app.geometry.geojson_size import coordinate_count
 
 source, output = map(Path, sys.argv[1:3])
 budget=int(sys.argv[3]) if len(sys.argv)>3 else 2_000_000
+feature_budget=int(sys.argv[4]) if len(sys.argv)>4 else 100_000
 assert not output.exists()
 start = time.monotonic()
 result = dict(source=str(source), sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
-              diagnostic_coordinate_budget=budget, production_policy_changed=False)
+              diagnostic_coordinate_budget=budget, diagnostic_feature_budget=feature_budget,
+              production_policy_changed=False)
 try:
-    imported = EzdxfReader(capacity=SourceGeometryCapacity(max_coordinates=budget)).read(source.name, source.read_bytes())
+    imported = EzdxfReader(capacity=SourceGeometryCapacity(max_coordinates=budget,
+        max_features=feature_budget)).read(source.name, source.read_bytes())
     features = imported.geometry.feature_collection['features']
     result.update(status='completed', entity_count=imported.entity_count,
                   features=len(features), coordinates=sum(coordinate_count(f['geometry']) for f in features),
@@ -33,6 +36,6 @@ try:
 except Exception:
     result.update(status='failed',error=traceback.format_exc())
 result['seconds']=time.monotonic()-start
-output.write_text(json.dumps(result, indent=2, ensure_ascii=False)+'\n')
+output.write_text(json.dumps(result, indent=2, ensure_ascii=False)+'\n', encoding='utf8')
 print(json.dumps(result, ensure_ascii=False))
 sys.exit(0 if result['status']=='completed' else 1)

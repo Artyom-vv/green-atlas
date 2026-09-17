@@ -24,7 +24,7 @@ export const DataTable: FC<DataTableProps> = ({
 }) => (
   <div
     className={cx(
-      'min-h-0 min-w-0 overflow-auto overscroll-contain',
+      'min-h-0 min-w-0 overflow-auto overscroll-x-contain',
       containerClassName,
     )}
   >

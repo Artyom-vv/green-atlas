@@ -441,7 +441,11 @@ class ChangeSetApplication:
                 return self._previews[preview_id].preview.model_copy(deep=True)
 
     def apply_change_set(
-        self, project_id: str, payload: PlanChangeSetApplyRequest
+        self,
+        project_id: str,
+        payload: PlanChangeSetApplyRequest,
+        *,
+        snapshot: Project | None = None,
     ) -> PlanMutationResult:
         with self.edit_lock:
             applied_key = (project_id, payload.preview_id)
@@ -479,7 +483,10 @@ class ChangeSetApplication:
                 raise PlanVersionConflict(
                     payload.base_plan_version, preview.base_plan_version
                 )
-            project = self.repository.get(project_id)
+            # A synchronous manual command already loaded the complete source
+            # for its preview. Recheck the authoritative version through the
+            # projection instead of deserializing the CAD graph twice.
+            project = self.repository.get(project_id, lightweight=snapshot is not None)
             if project.plan is None:
                 raise ValueError("План ещё не создан")
             if project.plan.version != preview.base_plan_version:
@@ -495,6 +502,14 @@ class ChangeSetApplication:
                 )
             if not preview.can_apply:
                 raise ValueError("Набор содержит заблокированные изменения")
+            if snapshot is not None:
+                if (
+                    snapshot.id != project.id
+                    or snapshot.state_version != project.state_version
+                    or snapshot.geometry_version != project.geometry_version
+                ):
+                    raise ValueError("Снимок ручной команды устарел. Обновите проект")
+                project = snapshot
             before = history_basis(project)
             before_plan = project.plan.model_copy(deep=True)
             project.plan = cached.plan.model_copy(deep=True)

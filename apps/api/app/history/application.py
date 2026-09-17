@@ -64,7 +64,8 @@ class PlanHistoryApplication:
         return saved
 
     def get_plan_history(self, project_id: str) -> PlanHistoryState:
-        self.repository.get(project_id)
+        # Validate existence/version without loading the immutable CAD graph.
+        self.repository.get(project_id, lightweight=True)
         return self.history.state(project_id)
 
     def undo_plan_change(self, project_id: str) -> Project:

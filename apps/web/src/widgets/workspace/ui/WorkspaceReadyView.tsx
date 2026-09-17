@@ -4,6 +4,7 @@ import { IDEWorkspaceShell } from '@/widgets/workbench';
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
 import { WorkspaceCanvas, WorkspaceCanvasPropsFor } from './WorkspaceCanvas';
 import { WorkspaceHeader, WorkspaceHeaderPropsFor } from './WorkspaceHeader';
+import { SourceReviewNotice } from './SourceReviewNotice';
 import {
   WorkspaceResources,
   WorkspaceResourcesPropsFor,
@@ -49,7 +50,21 @@ export const WorkspaceReadyView: FC<WorkspaceReadyViewProps> = ({ model }) => {
   return (
     <>
       <IDEWorkspaceShell
-        header={<WorkspaceHeader {...WorkspaceHeaderPropsFor(model)} />}
+        header={
+          <div>
+            <WorkspaceHeader {...WorkspaceHeaderPropsFor(model)} />
+            {model.project.source_review && (
+              <SourceReviewNotice
+                incompleteGeometry={model.project.source_review.issues?.some(
+                  (issue) => issue.code === 'incomplete_layer',
+                )}
+                onReview={() =>
+                  model.leaveWorkspace(`/projects/${model.project.id}/setup`)
+                }
+              />
+            )}
+          </div>
+        }
         map={<WorkspaceCanvas {...WorkspaceCanvasPropsFor(model)} />}
         resources={
           <WorkspaceResources {...WorkspaceResourcesPropsFor(model)} />

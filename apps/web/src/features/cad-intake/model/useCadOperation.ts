@@ -4,12 +4,15 @@ import { operationActive } from '@/entities/operation/model/operationPresentatio
 import { mergeOperationReceipt } from './mergeOperationReceipt';
 
 const CAD_POLL_INTERVAL_MS = 1_000;
-type CadOperationKind = 'inspect_cad_package' | 'prepare_cad_preview';
+type CadOperationKind =
+  'inspect_cad_package' | 'prepare_cad_preview' | 'prepare_cad_project';
 const operationKey = (projectId: string | undefined, kind: CadOperationKind) =>
   [
     kind === 'inspect_cad_package'
       ? 'cad-intake-operation'
-      : 'cad-preview-operation',
+      : kind === 'prepare_cad_preview'
+        ? 'cad-preview-operation'
+        : 'cad-prepare-operation',
     projectId,
   ] as const;
 

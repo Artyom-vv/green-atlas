@@ -1031,6 +1031,61 @@
         }
       }
     },
+    "/api/projects/{project_id}/source-editor": {
+      "post": {
+        "summary": "Open Source Editor",
+        "operationId": "open_source_editor_api_projects__project_id__source_editor_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/operations/latest": {
       "get": {
         "summary": "Get Latest Operation",
@@ -2691,6 +2746,74 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/cad-prepare": {
+      "post": {
+        "tags": [
+          "CAD intake"
+        ],
+        "summary": "Prepare Project",
+        "operationId": "prepare_project_api_projects__project_id__cad_prepare_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CadPrepareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOperation"
+                }
               }
             }
           },
@@ -5993,6 +6116,88 @@
         ],
         "title": "CadPackagePassport"
       },
+      "CadPrepareRecord": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/CadPrepareRequest"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadPrepareResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "request"
+        ],
+        "title": "CadPrepareRecord"
+      },
+      "CadPrepareRequest": {
+        "properties": {
+          "intake_operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Intake Operation Id"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifest Sha256"
+          },
+          "profile_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Profile Version",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "intake_operation_id",
+          "manifest_sha256"
+        ],
+        "title": "CadPrepareRequest"
+      },
+      "CadPrepareResult": {
+        "properties": {
+          "published_state_version": {
+            "type": "integer",
+            "title": "Published State Version"
+          },
+          "geometry_version": {
+            "type": "integer",
+            "title": "Geometry Version"
+          },
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "source_bytes": {
+            "type": "integer",
+            "title": "Source Bytes"
+          },
+          "feature_count": {
+            "type": "integer",
+            "title": "Feature Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "published_state_version",
+          "geometry_version",
+          "source_sha256",
+          "source_bytes",
+          "feature_count"
+        ],
+        "title": "CadPrepareResult"
+      },
       "CadPreviewProvenance": {
         "properties": {
           "schema_version": {
@@ -8741,6 +8946,33 @@
             "type": "integer",
             "title": "Object Count"
           },
+          "bounds": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounds"
+          },
           "color": {
             "type": "string",
             "title": "Color"
@@ -9128,7 +9360,8 @@
         "enum": [
           "calculate_geometry",
           "inspect_cad_package",
-          "prepare_cad_preview"
+          "prepare_cad_preview",
+          "prepare_cad_project"
         ],
         "title": "OperationKind"
       },
@@ -11180,6 +11413,40 @@
         ],
         "title": "PrepareTask"
       },
+      "PreparedSourceProvenance": {
+        "properties": {
+          "intake_operation_id": {
+            "type": "string",
+            "title": "Intake Operation Id"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "profile_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Profile Version",
+            "default": 1
+          },
+          "entry": {
+            "type": "string",
+            "title": "Entry"
+          },
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intake_operation_id",
+          "manifest_sha256",
+          "entry",
+          "source_sha256"
+        ],
+        "title": "PreparedSourceProvenance"
+      },
       "PreviewRefusal": {
         "properties": {
           "status": {
@@ -11260,6 +11527,16 @@
           },
           "import_status": {
             "$ref": "#/components/schemas/ImportStatus"
+          },
+          "source_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "layers": {
             "items": {
@@ -11698,6 +11975,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CadPreviewRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cad_prepare": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadPrepareRecord"
               },
               {
                 "type": "null"
@@ -14049,6 +14336,16 @@
                 "type": "null"
               }
             ]
+          },
+          "prepared_provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreparedSourceProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -14061,6 +14358,75 @@
           "entity_count"
         ],
         "title": "SourceFile"
+      },
+      "SourceReview": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "pending",
+            "title": "Status",
+            "default": "pending"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReviewIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "type": "object",
+        "title": "SourceReview"
+      },
+      "SourceReviewIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "calculation_pending",
+              "incomplete_layer",
+              "source_warning"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer Id"
+          },
+          "source_layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Layer"
+          },
+          "suggested_action": {
+            "type": "string",
+            "title": "Suggested Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "suggested_action"
+        ],
+        "title": "SourceReviewIssue"
       },
       "SpeciesRevision": {
         "properties": {

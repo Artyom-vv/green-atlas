@@ -26,6 +26,8 @@ class Layer(BaseModel):
     suggested_kind: LayerKind
     mapped_kind: LayerKind | None = None
     object_count: int
+    # Full normalized source extent, independent of the current viewport/LOD.
+    bounds: tuple[float, float, float, float] | None = None
     color: str
     linetype: str = "CONTINUOUS"
     lineweight_mm: float | None = None

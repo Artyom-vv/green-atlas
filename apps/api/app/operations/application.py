@@ -5,6 +5,7 @@ from threading import RLock
 from app.dxf_import.admission import require_calculation_source
 from app.geometry.contracts import GeometrySnapshot
 from app.geometry.ports import GeometryEnginePort
+from app.history.ports import ProjectHistoryResetPort
 from app.operations.contracts import (
     OperationKind,
     OperationStatus,
@@ -36,6 +37,7 @@ class GeometryOperationApplication:
         invalidate_spatial: Callable[[str], None],
         now: Callable[[], datetime],
         new_id: Callable[[], str],
+        history: ProjectHistoryResetPort | None = None,
     ) -> None:
         self.repository = repository
         self.operation_repository = operation_repository
@@ -45,6 +47,7 @@ class GeometryOperationApplication:
         self._discard_spatial_indexes = invalidate_spatial
         self._now = now
         self._new_id = new_id
+        self.history = history
         self.lifecycle = OperationLifecycle(
             repository, operation_repository, commit_lock, now, new_id
         )
@@ -87,7 +90,7 @@ class GeometryOperationApplication:
         with self._operation_commit_lock:
             project = self.repository.get(project_id)
             require_calculation_source(project.source_file)
-            if project.plan is not None and project.map_ready:
+            if project.plan is not None and project.map_ready and project.source_review is None:
                 raise ValueError(
                     "Нельзя пересчитывать карту после открытия ручной схемы. Создайте новый проект."
                 )
@@ -117,6 +120,16 @@ class GeometryOperationApplication:
             project = self.repository.get(operation.project_id).model_copy(deep=False)
             require_calculation_source(project.source_file)
             release_source_after = project.plan is not None
+            if project.source_review is not None and project.source_geometry is None:
+                if project.geometry is None:
+                    raise ValueError("Исходная карта недоступна для расчёта")
+                project.source_geometry = project.geometry.model_copy(update={
+                    "feature_collection": {
+                        "type": "FeatureCollection",
+                        "features": [feature for feature in project.geometry.feature_collection.get("features", [])
+                                     if feature.get("properties", {}).get("source_layer")],
+                    }
+                })
             geometry = self.geometry.calculate(
                 project,
                 lambda update: self.lifecycle.report(operation_id, update, 2, 96),
@@ -130,6 +143,7 @@ class GeometryOperationApplication:
                     stage="Фиксируем проверенную геометрию",
                 )
                 self._assign_geometry(project, geometry)
+                project.source_review = None
                 attach_planting_zone_features(project)
                 if project.plan is not None:
                     self.validation.refresh(
@@ -139,6 +153,8 @@ class GeometryOperationApplication:
                 if release_source_after:
                     project.source_geometry = None
                 self.repository.save(project)
+                if self.history is not None:
+                    self.history.clear(project.id)
                 self._discard_spatial_indexes(project.id)
                 self.lifecycle.update(
                     operation_id,

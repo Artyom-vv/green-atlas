@@ -9,6 +9,7 @@ export type CadIntakeRequest = Schemas['CadIntakeRequest'];
 export type CadPackagePassport = Schemas['CadPackagePassport'];
 export type CadDrawingPassport = Schemas['CadDrawingPassport'];
 export type CadPreviewRequest = Schemas['CadPreviewRequest'];
+export type CadPrepareRequest = Schemas['CadPrepareRequest'];
 export type CadDrawingSelection = Schemas['CadDrawingSelection'];
 export type DrawingBoundaryCandidate = Schemas['DrawingBoundaryCandidate'];
 export type DrawingBoundaryCatalog = Schemas['DrawingBoundaryCatalog'];

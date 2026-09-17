@@ -106,14 +106,14 @@ def build_data_passport(project: Project) -> DataPassport:
             for layer in included
         )
         complete = bool(included) and all(layer.geometry_complete for layer in included) and snapshot_complete
-        used = bool(project.map_ready and included and complete)
+        used = bool(project.map_ready and project.source_review is None and included and complete)
         if has_feature_payload and used:
             # If the calculated snapshot has source features, only mark a
             # layer as used when at least one real feature survived into it.
             used = any(layer.source_name in used_counts for layer in included)
-        feature_missing = bool(project.map_ready and has_feature_payload and included and complete and not used)
+        feature_missing = bool(project.map_ready and project.source_review is None and has_feature_payload and included and complete and not used)
         for layer in included:
-            if project.map_ready and layer.geometry_complete and (not has_feature_payload or layer.source_name in used_counts):
+            if project.map_ready and project.source_review is None and layer.geometry_complete and (not has_feature_payload or layer.source_name in used_counts):
                 used_layers.append(layer.source_name)
 
         if not matching:
@@ -188,7 +188,7 @@ def build_data_passport(project: Project) -> DataPassport:
     if unclassified:
         critical_gaps.append(f"Нераспознанные слои: {', '.join(unclassified)}")
 
-    calculation_ready = bool(project.map_ready and project.geometry is not None)
+    calculation_ready = bool(project.map_ready and project.source_review is None and project.geometry is not None)
     if not calculation_ready:
         overall_status = "not_ready"
         calculation_status = "not_ready"

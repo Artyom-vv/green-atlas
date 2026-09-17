@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from app.cad_import.conversion import LibreDwgConverter
+from app.cad_import.dxf_inspection import DxfInspector
 from app.cad_import.package import PackageInspector, write_package
 from app.cad_import.package_contracts import ReferenceOverride
 
@@ -33,7 +34,7 @@ def main() -> int:
     package.add_argument("root", type=Path)
     package.add_argument("--entry", type=Path, required=True)
     package.add_argument("--output", type=Path, required=True)
-    package.add_argument("--converter", type=Path, required=True)
+    package.add_argument("--converter", type=Path, help="Optional DWG converter; native DXF needs none")
     package.add_argument("--cache", type=Path, required=True)
     package.add_argument(
         "--xref-map",
@@ -42,7 +43,6 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        converter = LibreDwgConverter(args.converter, args.cache)
         if args.command == "inspect-package":
             overrides = (
                 TypeAdapter(list[ReferenceOverride]).validate_json(
@@ -51,7 +51,11 @@ def main() -> int:
                 if args.xref_map
                 else []
             )
-            manifest = PackageInspector(converter).inspect(
+            manifest = PackageInspector(
+                DxfInspector(args.cache),
+                converter_factory=(lambda: LibreDwgConverter(args.converter, args.cache))
+                if args.converter is not None else None,
+            ).inspect(
                 args.root, args.entry, overrides
             )
             write_package(manifest, args.output)
@@ -70,7 +74,7 @@ def main() -> int:
                 )
             )
             return 2 if manifest.status == "blocked" else 0
-        result = converter.convert(args.source)
+        result = LibreDwgConverter(args.converter, args.cache).convert(args.source)
     except (OSError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1

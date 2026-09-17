@@ -48,7 +48,7 @@ export type MapViewportHandle = {
     revision: number,
     signal: AbortSignal,
   ) => Promise<MapFocusResult>;
-  fitLayer: (sourceLayer: string) => void;
+  fitLayer: (sourceLayer: string, bounds?: readonly number[] | null) => void;
   fitSelection: (id: string) => void;
   fitObjects: (ids: string[]) => void;
   fitPlan: () => void;

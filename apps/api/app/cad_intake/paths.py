@@ -87,7 +87,12 @@ class CadDiscovery:
     def fingerprint(self, root_id: str, path: str) -> CadFingerprint:
         source = self.resolve(root_id, path, drawing=True)
         before = source.stat()
-        if before.st_size > self.config.policy.max_source_bytes:
+        source_budget = (
+            self.config.policy.max_output_bytes
+            if source.suffix.lower() == ".dxf"
+            else self.config.policy.max_source_bytes
+        )
+        if before.st_size > source_budget:
             raise ValueError("Чертёж превышает бюджет исходного CAD-файла")
         digest = file_sha256(source)
         after = source.stat()

@@ -7,6 +7,7 @@ from threading import RLock
 from typing import Literal
 
 from app.cad_intake.contracts import CadIntakeRecord
+from app.cad_intake.prepare_contracts import CadPrepareRecord
 from app.cad_intake.preview_contracts import CadPreviewRecord
 from app.operations.contracts import (
     OperationError,
@@ -48,6 +49,7 @@ class OperationLifecycle:
         *,
         cad_intake: CadIntakeRecord | None = None,
         cad_preview: CadPreviewRecord | None = None,
+        cad_prepare: CadPrepareRecord | None = None,
     ) -> ProjectOperation:
         with self.lock:
             project = self.repository.get(project_id, lightweight=True)
@@ -77,6 +79,7 @@ class OperationLifecycle:
                     project_state_version=project.state_version,
                     cad_intake=cad_intake,
                     cad_preview=cad_preview,
+                    cad_prepare=cad_prepare,
                 )
             )
 
@@ -102,8 +105,13 @@ class OperationLifecycle:
             next_operation.stage = stage
             return self.operations.compare_and_save(current, next_operation)
 
-    def check_cancelled(self, operation_id: str) -> None:
-        if self.operations.get(operation_id).status not in {
+    def check_cancelled(
+        self, operation_id: str, *, allow_completed: bool = False
+    ) -> None:
+        status = self.operations.get(operation_id).status
+        if allow_completed and status == OperationStatus.COMPLETED:
+            return
+        if status not in {
             OperationStatus.QUEUED,
             OperationStatus.RUNNING,
         }:

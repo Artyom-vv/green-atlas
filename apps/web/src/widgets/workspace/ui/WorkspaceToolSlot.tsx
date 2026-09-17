@@ -29,6 +29,7 @@ export interface WorkspaceToolSlotProps extends Pick<
   >;
   speciesQuery: Pick<WorkspaceReadyModel['speciesQuery'], 'data'>;
   hasPlan: boolean;
+  sourceReviewPending?: boolean;
   pattern: ReactNode;
   brush: ReactNode;
   placement: ReactNode;
@@ -48,6 +49,7 @@ export const WorkspaceToolSlotPropsFor = (model: WorkspaceReadyModel) => ({
   speciesQuery: model.speciesQuery,
   tool: model.tool,
   hasPlan: Boolean(model.project.plan),
+  sourceReviewPending: Boolean(model.project.source_review),
 });
 
 export const WorkspaceToolSlot: FC<WorkspaceToolSlotProps> = ({
@@ -64,6 +66,7 @@ export const WorkspaceToolSlot: FC<WorkspaceToolSlotProps> = ({
   speciesQuery,
   tool,
   hasPlan,
+  sourceReviewPending,
   pattern,
   brush,
   placement,
@@ -80,6 +83,7 @@ export const WorkspaceToolSlot: FC<WorkspaceToolSlotProps> = ({
         check={placementCheck}
         checking={singlePlacement.checking}
         placing={singlePlacement.placing}
+        sourceReviewPending={sourceReviewPending}
         disabled={externalEditorBusy}
         error={
           singlePlacement.error

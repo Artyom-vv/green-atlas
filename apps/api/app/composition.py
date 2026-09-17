@@ -19,6 +19,8 @@ from app.cad_intake.adapter import ProcessPackageInspection
 from app.cad_intake.application import CadIntakeApplication
 from app.cad_intake.asset_application import CadAssetApplication
 from app.cad_intake.config import CadIntakeConfig
+from app.cad_intake.prepare_adapter import ProcessCadProjectPreparation
+from app.cad_intake.prepare_application import CadPrepareApplication
 from app.cad_intake.preview_adapter import ProcessCadPreviewPreparation
 from app.cad_intake.preview_application import CadPreviewApplication
 from app.dxf_import.adapters import EzdxfReader
@@ -49,6 +51,7 @@ class Runtime:
     cad_intake: CadIntakeApplication
     cad_preview: CadPreviewApplication
     cad_assets: CadAssetApplication
+    cad_prepare: CadPrepareApplication
 
     _closed: bool = False
     _conversations: ConversationStore | None = field(default=None, init=False)
@@ -130,6 +133,12 @@ def create_runtime(database_path: str | os.PathLike[str]) -> Runtime:
             application.spatial.invalidate,
         ),
         cad_assets=CadAssetApplication(cad_config, operation_repository),
+        cad_prepare=CadPrepareApplication(
+            cad_config,
+            application.operations.lifecycle,
+            ProcessCadProjectPreparation(cad_config, path),
+            application.spatial.invalidate,
+        ),
     )
 
 
@@ -161,6 +170,10 @@ def get_cad_preview() -> CadPreviewApplication:
 
 def get_cad_assets() -> CadAssetApplication:
     return get_runtime().cad_assets
+
+
+def get_cad_prepare() -> CadPrepareApplication:
+    return get_runtime().cad_prepare
 
 
 def get_database_path() -> str:

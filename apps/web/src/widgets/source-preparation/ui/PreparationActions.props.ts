@@ -9,6 +9,8 @@ export interface PreparationActionsProps extends Pick<
   | 'checkingStatus'
   | 'saveMutation'
   | 'mappingsChanged'
+  | 'openEditor'
+  | 'calculationPending'
 > {
   onImport: () => void;
   onPlan: () => void;
@@ -26,6 +28,8 @@ export const PreparationActionsPropsFor = (
     | 'checkingStatus'
     | 'saveMutation'
     | 'mappingsChanged'
+    | 'openEditor'
+    | 'calculationPending'
   > & { cadPreview?: boolean },
 ) => ({
   preparationBlocked: state.preparationBlocked,
@@ -37,4 +41,6 @@ export const PreparationActionsPropsFor = (
   checkingStatus: state.checkingStatus,
   saveMutation: state.saveMutation,
   mappingsChanged: state.mappingsChanged,
+  openEditor: state.openEditor,
+  calculationPending: state.calculationPending,
 });

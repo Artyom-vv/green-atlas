@@ -328,6 +328,17 @@ def start_geometry_operation(
         raise handle(error) from error
 
 
+@router.post("/projects/{project_id}/source-editor", response_model=Project)
+def open_source_editor(
+    project_id: str,
+    application: ProjectApplication = Depends(get_application),
+) -> Project:
+    try:
+        return lightweight(application.open_source_editor(project_id))
+    except Exception as error:
+        raise handle(error) from error
+
+
 @router.get("/projects/{project_id}/operations/latest", response_model=ProjectOperation | None)
 def get_latest_operation(
     project_id: str,

@@ -1,13 +1,5 @@
-"""Trusted process configuration, never accepted from HTTP."""
+"""Compatibility import for existing preview workers and receipts."""
 
-from pathlib import Path
+from app.cad_intake.work import CadWork as PreviewWork
 
-from pydantic import BaseModel
-
-
-class PreviewWork(BaseModel):
-    operation_id: str
-    database: Path
-    root: Path
-    storage: Path
-    receipt: Path
+__all__ = ["PreviewWork"]

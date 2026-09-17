@@ -1,13 +1,13 @@
-"""Complete planar MPOLYGON boundaries with explicit OCS and offset handling."""
+"""Complete CAD filled areas using SDK boundaries and explicit OCS handling."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from math import isfinite
 from typing import Any
 
 from ezdxf.math import Vec3
-from ezdxf.path import from_hatch
+from ezdxf.path import Path, from_hatch, from_hatch_boundary_path
 from shapely.geometry import Polygon, shape
 
 FLATTENING_DISTANCE = 0.1
@@ -28,10 +28,45 @@ def mpolygon_geometry(
     ezdxf's shared path reader applies extrusion/elevation, but its separate
     offset argument must be supplied explicitly for MPOLYGON.
     """
-    loops: PolygonRings = []
     try:
         offset = Vec3(entity.dxf.get("offset_vector", (0, 0, 0)))
-        for path in from_hatch(entity, offset=offset):
+        return _polygon_geometry(from_hatch(entity, offset=offset), factor, assemble_rings)
+    except Exception:
+        return None
+
+
+def hatch_geometry(
+    entity: Any,
+    factor: float,
+    assemble_rings: Callable[[PolygonRings], PolygonGeometry | None],
+) -> PolygonGeometry | None:
+    """Respect fill style without losing disconnected external boundaries.
+
+    Unlike MPOLYGON, HATCH chooses active boundaries by hatch_style. Let the
+    SDK select them; retain our multi-polygon assembly rather than assuming
+    the first external path is the only exterior. Reject partial footprints.
+    """
+    def paths() -> Iterator[Path]:
+        ocs = entity.ocs()
+        elevation = entity.dxf.elevation.z
+        for boundary in entity.paths.rendering_paths(entity.dxf.hatch_style):
+            path = from_hatch_boundary_path(boundary, ocs, elevation=elevation)
+            if path.has_sub_paths:
+                yield from path.sub_paths()
+            else:
+                yield path
+
+    return _polygon_geometry(paths(), factor, assemble_rings)
+
+
+def _polygon_geometry(
+    paths: Iterable[Path],
+    factor: float,
+    assemble_rings: Callable[[PolygonRings], PolygonGeometry | None],
+) -> PolygonGeometry | None:
+    loops: PolygonRings = []
+    try:
+        for path in paths:
             loop = [
                 [
                     round(point.x * factor, COORDINATE_DECIMALS),

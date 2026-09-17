@@ -30,7 +30,7 @@ export const ReleaseForm: FC<ReleaseFormProps> = ({
   const mode = useWatch({ control, name: 'mode' });
   const basis = useWatch({ control, name: 'basis' });
   const sceneHorizon = useWatch({ control, name: 'sceneHorizon' });
-  const { missingSpecies, hardErrors, blockedReasons, ready } =
+  const { missingSpecies, hardErrors, sourcePending, blockedReasons, ready } =
     releaseReadiness(plan, { mode, basis, sceneHorizon }, draftStale);
   const reasonId = useId();
   return (
@@ -44,6 +44,13 @@ export const ReleaseForm: FC<ReleaseFormProps> = ({
           className="rounded-control grid gap-2 bg-neutral-100 p-3"
           aria-label="Проверка плана перед выпуском"
         >
+          {sourcePending && (
+            <StatusIndicator
+              tone="warning"
+              label="Ограничения исходных данных"
+              value="Не проверены"
+            />
+          )}
           <StatusIndicator
             tone={hardErrors ? 'error' : 'success'}
             label="Ошибки размещения"

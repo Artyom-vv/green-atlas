@@ -16,6 +16,7 @@ export interface SinglePlacementPanelProps {
   check?: PlacementCheck;
   checking: boolean;
   placing: boolean;
+  sourceReviewPending?: boolean;
   disabled?: boolean;
   error?: string;
   notice?: string;
@@ -33,6 +34,7 @@ export const SinglePlacementPanel: FC<SinglePlacementPanelProps> = ({
   check,
   checking,
   placing,
+  sourceReviewPending = false,
   disabled,
   error,
   notice,
@@ -51,7 +53,9 @@ export const SinglePlacementPanel: FC<SinglePlacementPanelProps> = ({
           (checking
             ? 'Проверяем место…'
             : (check?.reason ??
-              'Кликните в нужном месте на карте. Перед посадкой проверим ограничения.')));
+              (sourceReviewPending
+                ? 'Кликните в пределах рабочего участка. Ограничения исходных данных пока не проверены.'
+                : 'Кликните в нужном месте на карте. Перед посадкой проверим ограничения.'))));
   return (
     <PlacementToolSurface
       title={kind === 'tree' ? 'Посадить дерево' : 'Посадить кустарник'}

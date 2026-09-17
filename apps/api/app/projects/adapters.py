@@ -236,10 +236,21 @@ class SqliteProjectRepository:
     def _read(self, project_id: str, *, lightweight: bool) -> Project:
         field = "projection" if lightweight else "payload"
         with self._lock:
-            row = self._connection.execute(f"SELECT {field} AS payload, state_version FROM projects WHERE id = ?", (project_id,)).fetchone()
+            # Our SQLite databases use UTF-8. Pydantic accepts JSON bytes
+            # directly: avoid a large Unicode string and a second UTF-8
+            # encoding when loading a complete CAD snapshot.
+            row = self._connection.execute(f"SELECT CAST({field} AS BLOB) AS payload, state_version FROM projects WHERE id = ?", (project_id,)).fetchone()
         if row is None:
             raise KeyError(f"Project {project_id} not found")
-        project = Project.model_validate_json(row["payload"])
+        # JSON-mode decoding peaks much higher for our large GeoJSON trees.
+        # The stdlib decoder plus normal validation
+        # retains the nested geometry containers and substantially lowers peak
+        # memory without bypassing Project validation or changing stored bytes.
+        project = (
+            Project.model_validate_json(row["payload"])
+            if lightweight
+            else Project.model_validate(json.loads(row["payload"]))
+        )
         project.state_version = int(row["state_version"])
         assert_project_version(project_id, project.state_version)
         return project

@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from app.cad_intake.prepare_contracts import PreparedSourceProvenance
 from app.dxf_import.layer_contracts import Layer
 from app.dxf_import.preview_contracts import CadPreviewProvenance
 from app.geometry.contracts import CoordinateReference, GeometrySnapshot
@@ -50,6 +51,7 @@ class SourceFile(BaseModel):
     bounds: list[float] | None = None
     warnings: list[str] = Field(default_factory=list)
     preview_provenance: CadPreviewProvenance | None = None
+    prepared_provenance: PreparedSourceProvenance | None = None
 
 
 class DxfImportResult(BaseModel):

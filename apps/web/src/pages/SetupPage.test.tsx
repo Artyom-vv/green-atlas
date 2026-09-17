@@ -136,6 +136,49 @@ afterEach(() => {
 });
 
 describe('import to source-bound setup', () => {
+  it('opens an incomplete source for editing without starting a calculation', async () => {
+    const source = project();
+    source.layers![1].geometry_complete = false;
+    vi.mocked(api.getProject).mockResolvedValue(source);
+    const opened = {
+      ...source,
+      map_ready: true,
+      source_review: { status: 'pending' as const, issues: [] },
+    };
+    const openEditor = vi
+      .spyOn(api, 'openSourceEditor')
+      .mockResolvedValue(opened);
+    openPage();
+    const action = await screen.findByRole('button', {
+      name: 'Открыть редактор без расчёта',
+    });
+    await waitFor(() => expect(action).toBeEnabled());
+    fireEvent.click(action);
+    expect(
+      await screen.findByRole('heading', { name: 'Карта проекта' }),
+    ).toBeVisible();
+    expect(openEditor).toHaveBeenCalledWith('project-1');
+    expect(api.startGeometryOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps layer correction and calculation available for an editable source draft', async () => {
+    vi.mocked(api.getProject).mockResolvedValue({
+      ...project(),
+      map_ready: true,
+      plan: { version: 1, objects: [], issues: [] },
+      source_review: { status: 'pending', issues: [] },
+    });
+    openPage();
+    const action = await screen.findByRole('button', {
+      name: 'Подготовить карту',
+    });
+    await waitFor(() => expect(action).toBeEnabled());
+    expect(screen.getByLabelText('Тип слоя BUILDING_A')).toBeEnabled();
+    fireEvent.click(action);
+    await waitFor(() =>
+      expect(api.startGeometryOperation).toHaveBeenCalledWith('project-1'),
+    );
+  });
   it('publishes a replacement before navigation, clears only source-derived cache and submits the new layers', async () => {
     const queryClient = client();
     queryClient.setQueryData(['setup-project', 'project-1'], project());
@@ -594,7 +637,7 @@ describe('geometry operation status recovery', () => {
       invalid: 'utility',
       fixed: 'ignore',
       reason:
-        'Исключите неполные слои из ограничений или загрузите меньший фрагмент DXF.',
+        'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.',
     },
   ] as const)(
     'blocks an invalid $name for both preparation actions, then retries only corrected mappings',

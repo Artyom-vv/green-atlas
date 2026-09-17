@@ -12,7 +12,7 @@ import sys
 from ezdxf.acis import sab
 
 
-def reference(path):
+def reference(path, *, units_scale=1):
     raw = sab.parse_sab(path.read_bytes())
     groups = {}
     for entity in raw.entities:
@@ -22,11 +22,15 @@ def reference(path):
     curve = groups['ellipse-curve'][0]
     center, normal, axis, ratio = [t.value for t in curve.data[1:5]]
     assert ratio == 1 and tuple(normal) == (0, 0, 1)
-    transform = [t.value for t in groups['transform'][0].data]
-    assert transform[:3] == [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
-    assert transform[4] == 1 and not any(transform[5:])
-    assert raw.header.units_in_mm == 1  # raw CAD coordinates, no project unit inference
-    offset = transform[3]
+    transforms = groups.get('transform', [])
+    assert len(transforms) <= 1
+    offset = (0, 0, 0)
+    if transforms:
+        transform = [t.value for t in transforms[0].data]
+        assert transform[:3] == [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+        assert transform[4] == 1 and not any(transform[5:])
+        offset = transform[3]
+    assert raw.header.units_in_mm == units_scale
     edge = next(e for e in groups['edge'] if e.data[6].value is curve)
     t0, t1 = edge.data[2].value, edge.data[4].value
     delta = t1 - t0
@@ -36,10 +40,10 @@ def reference(path):
     tangent = (-axis[1], axis[0], 0)
 
     def point(t):
-        return [center[i] + offset[i] + axis[i] * math.cos(t) +
-                tangent[i] * math.sin(t) for i in range(3)]
+        return [units_scale * (center[i] + offset[i] + axis[i] * math.cos(t) +
+                tangent[i] * math.sin(t)) for i in range(3)]
 
-    source_vertices = [[e.data[1].value[i] + offset[i] for i in range(3)]
+    source_vertices = [[units_scale * (e.data[1].value[i] + offset[i]) for i in range(3)]
                        for e in groups['point']]
     endpoint_error = max(min(math.dist(point(t), v) for v in source_vertices)
                          for t in (t0, t1))
@@ -53,8 +57,8 @@ def reference(path):
     bounds = [min(p[i] for p in extrema_points) for i in range(3)] + [
         max(p[i] for p in extrema_points) for i in range(3)]
     return dict(sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-                area=radius**2 / 2 * (delta - math.sin(delta)),
-                perimeter=radius * delta + math.dist(*source_vertices),
+                area=(radius * units_scale)**2 / 2 * (delta - math.sin(delta)),
+                perimeter=radius * units_scale * delta + math.dist(*source_vertices),
                 radius=radius, angle=delta, bounds=bounds,
                 vertices=source_vertices, endpoint_error=endpoint_error,
                 samples=[point(t0 + delta * n / 128) for n in range(129)])

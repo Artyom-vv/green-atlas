@@ -36,9 +36,14 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
       </Disclosure>
     )}
     {!reviewOnly && !!incompleteConstraintLayers.length && (
-      <InlineMessage tone="error" title="Нужен рабочий фрагмент">
-        Часть объектов не попала на карту. Исключите эти слои из ограничений или
-        загрузите меньший фрагмент DXF.
+      <InlineMessage
+        tone="warning"
+        title="Нужно уточнить геометрию отдельных слоёв"
+      >
+        Исходные объекты сохранены в DXF, но часть не представлена расчётными
+        контурами. Можно открыть редактор без расчёта и продолжить работу.
+        Назначение слоёв и ограничения нужно проверить до автоматической
+        расстановки.
       </InlineMessage>
     )}
     {!reviewOnly && !hasPlanningBoundary && (

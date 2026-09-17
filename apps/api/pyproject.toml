@@ -46,6 +46,7 @@ include = [
   "app/geometry/query_adapters.py", "app/geometry/viewport_simplification.py", "tests/test_viewport_coverage.py",
   "app/geometry/viewport_selection.py", "app/geometry/viewport_admission.py", "tests/test_viewport_fairness.py",
   "app/dxf_import/capacity.py", "app/dxf_import/styles.py", "app/dxf_import/polygons.py",
+  "app/dxf_import/block_diagnostics.py", "tests/test_dxf_geometry_fidelity.py",
   "app/dxf_import/utility_mapping.py", "app/geometry/constraint_index.py",
   "app/geometry/geojson_size.py", "app/geometry/viewport_budget.py", "app/geometry/rule_trace.py",
   "app/geometry/utility_contracts.py", "app/regulations/profiles.py", "app/regulations/trace_contracts.py",
@@ -71,9 +72,9 @@ include = [
 select = ["E4", "E7", "E9", "F", "I", "UP"]
 
 [tool.mypy]
-# Check installed dependency stubs against the local verification runtime.
+# Check installed dependency stubs against the qualified runtime.
 # Ruff retains the application's Python 3.11 syntax boundary.
-python_version = "3.14"
+python_version = "3.13"
 plugins = ["pydantic.mypy"]
 follow_imports = "silent"
 check_untyped_defs = true
@@ -95,6 +96,7 @@ files = [
   "app/geometry/viewport_simplification.py",
   "app/geometry/viewport_selection.py", "app/geometry/viewport_admission.py",
   "app/dxf_import/capacity.py", "app/dxf_import/styles.py", "app/dxf_import/polygons.py",
+  "app/dxf_import/block_diagnostics.py",
   "app/dxf_import/utility_mapping.py", "app/geometry/constraint_index.py",
   "app/geometry/geojson_size.py", "app/geometry/viewport_budget.py", "app/geometry/rule_trace.py",
   "app/geometry/utility_contracts.py", "app/regulations/profiles.py", "app/regulations/trace_contracts.py",
