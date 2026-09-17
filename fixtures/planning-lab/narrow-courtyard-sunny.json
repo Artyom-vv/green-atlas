@@ -1,0 +1,179 @@
+{
+  "evidence_note": "Synthetic geometry; existing rule coverage only, not full-site normative acceptance",
+  "input_kind": "synthetic",
+  "name": "narrow-courtyard",
+  "project": {
+    "allowed_area_m2": null,
+    "coordinate_reference": {
+      "axis_order": null,
+      "control_points_count": 0,
+      "crs_id": null,
+      "earth_radius_m": null,
+      "evidence": "Система координат не указана",
+      "horizontal_source": null,
+      "local_projection": null,
+      "name": null,
+      "origin_wgs84": null,
+      "source": "none",
+      "status": "unknown",
+      "updated_at": null
+    },
+    "created_at": "2026-09-17T00:00:00+00:00",
+    "geometry": {
+      "allowed_area_m2": null,
+      "feature_collection": {
+        "features": [
+          {
+            "geometry": {
+              "coordinates": [
+                [
+                  [
+                    510.0,
+                    -10.0
+                  ],
+                  [
+                    510.0,
+                    210.0
+                  ],
+                  [
+                    -10.0,
+                    210.0
+                  ],
+                  [
+                    -10.0,
+                    -10.0
+                  ],
+                  [
+                    510.0,
+                    -10.0
+                  ]
+                ]
+              ],
+              "type": "Polygon"
+            },
+            "properties": {
+              "kind": "site_border"
+            },
+            "type": "Feature"
+          }
+        ],
+        "type": "FeatureCollection"
+      },
+      "planning_area_m2": null,
+      "site_area_m2": null,
+      "vertical_primitives": []
+    },
+    "geometry_version": 0,
+    "id": "species-narrow-courtyard",
+    "import_status": {
+      "editability": "editable",
+      "message": "Исходный DXF доступен для подготовки редактируемого плана.",
+      "mode": "source_dxf",
+      "release_id": null
+    },
+    "layers": [],
+    "map_ready": true,
+    "name": "Allocation",
+    "plan": {
+      "id": "plan-narrow-courtyard",
+      "issues": [],
+      "objects": [],
+      "validation_basis": null,
+      "version": 1
+    },
+    "planning_area_m2": null,
+    "planting_zones": [
+      {
+        "geometry": {
+          "coordinates": [
+            [
+              [
+                16.0,
+                0.0
+              ],
+              [
+                16.0,
+                150.0
+              ],
+              [
+                0.0,
+                150.0
+              ],
+              [
+                0.0,
+                0.0
+              ],
+              [
+                16.0,
+                0.0
+              ]
+            ]
+          ],
+          "type": "Polygon"
+        },
+        "id": "west",
+        "label": "West"
+      },
+      {
+        "geometry": {
+          "coordinates": [
+            [
+              [
+                500.0,
+                0.0
+              ],
+              [
+                500.0,
+                100.0
+              ],
+              [
+                400.0,
+                100.0
+              ],
+              [
+                400.0,
+                0.0
+              ],
+              [
+                500.0,
+                0.0
+              ]
+            ]
+          ],
+          "type": "Polygon"
+        },
+        "id": "east",
+        "label": "East"
+      }
+    ],
+    "site_area_m2": null,
+    "source_file": null,
+    "source_geometry": null,
+    "source_review": null,
+    "state_version": 1,
+    "status": "empty",
+    "updated_at": "2026-09-17T00:00:00+00:00"
+  },
+  "request": {
+    "base_plan_version": 1,
+    "max_sites": 5,
+    "profile": "shade",
+    "site_conditions": {
+      "basis": "Synthetic homogeneous condition comparison",
+      "drainage": "well_drained",
+      "light": "full_sun",
+      "moisture": "moist"
+    },
+    "territory": {
+      "basis": "Analytical test brief",
+      "category": "courtyard",
+      "regime": "ordinary"
+    },
+    "zone_ids": [
+      "west"
+    ]
+  },
+  "scenario": "recommendation",
+  "schema_version": 1,
+  "units": "m"
+}

@@ -13,6 +13,7 @@ from app.history.adapters import InMemoryProjectHistory
 from app.planning.change_contracts import PlanChangeSetApplyRequest
 from app.planning.recommendation_contracts import RecommendationRequest
 from app.species.assortment import TerritoryContext
+from app.species.catalog import list_species
 from app.species.site_contracts import SiteConditions
 from app.species.site_profiles import site_profile, site_profile_inventory
 from app.species.site_suitability import assess_site
@@ -205,3 +206,75 @@ def test_profile_access_does_not_mutate_later_recommendations():
     site_profile("cornus-alba").moisture.clear()
     site_profile_inventory().profiles.clear()
     assert site_profile_inventory().model_dump(mode="json") == original
+
+
+def test_every_calculation_species_has_an_identified_ecological_source():
+    inventory = site_profile_inventory()
+    assert {p.species_id for p in inventory.profiles} == {
+        p.species_id for p in list_species()
+    }
+    assert all(
+        p.source_url.startswith("https://") and p.checked_on for p in inventory.profiles
+    )
+
+
+def test_sunny_narrow_zone_can_choose_rowan_with_all_observed_conditions():
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "fixtures/planning-lab/narrow-courtyard-territory.json"
+    )
+    case = parse_case(path.read_bytes())
+    case.request.site_conditions = SiteConditions(
+        light="full_sun",
+        moisture="moist",
+        drainage="well_drained",
+        basis="Synthetic homogeneous observation",
+    )
+    result = run_case(case)["content"]["result"]
+    assert len(result["change_set"]["additions"]) == 5
+    assert {p["species_revision_id"] for p in result["change_set"]["additions"]} == {
+        "sorbus-aucuparia@2026-08-28.1"
+    }
+    rowan = next(
+        o
+        for o in result["species_options"]
+        if o["species_revision_id"].startswith("sorbus-aucuparia@")
+    )
+    assert rowan["site_suitability"]["status"] == "documented_match"
+    assert rowan["site_suitability"]["source_url"].endswith("/sorbus-aucuparia/")
+    case.request.site_conditions.light = "partial_shade"
+    shaded = run_case(case)["content"]["result"]
+    rowan = next(
+        o
+        for o in shaded["species_options"]
+        if o["species_revision_id"].startswith("sorbus-aucuparia@")
+    )
+    assert rowan["site_suitability"]["status"] == "unknown"
+    assert rowan["accepted_count"] == 0
+
+
+def test_elm_source_does_not_infer_light_drainage_or_municipal_approval():
+    app, project = application()
+    req = request(project, moisture="moist")
+    req.plant_kind = "tree"
+    result = app.preview_recommendation(project.id, req)
+    elm = options(result)["ulmus-laevis"]
+    assert elm.site_suitability.status == "documented_match"
+    assert elm.assortment_status == "unreviewed"
+    assert elm.accepted_count == 0
+    assert not any(
+        p.species_revision_id.startswith("ulmus-laevis@")
+        for p in result.change_set.additions
+    )
+    for conditions in (
+        {"light": "full_sun"},
+        {"drainage": "well_drained"},
+        {"moisture": "persistently_wet"},
+    ):
+        assert (
+            assess_site(
+                SiteConditions(basis="Observed", **conditions),
+                site_profile("ulmus-laevis"),
+            ).status
+            == "unknown"
+        )

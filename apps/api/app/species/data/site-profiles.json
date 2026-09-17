@@ -1,5 +1,5 @@
 {
-  "revision": "site-evidence@2026-09-17.1",
+  "revision": "site-evidence@2026-09-17.2",
   "profiles": [
     {
       "species_id": "syringa-vulgaris",
@@ -56,6 +56,144 @@
       "moisture": [],
       "drainage": ["well_drained"],
       "notes": ["NC State: Cultural Conditions не указывает отдельную категорию влажности. Общая засухоустойчивость не заменяет данные о поливе и возрасте саженца; конкретный сорт проверяется отдельно."]
+    },
+    {
+      "species_id": "tilia-cordata",
+      "source_url": "https://plants.ces.ncsu.edu/plants/tilia-cordata/",
+      "checked_on": "2026-09-17",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Описание отдельно отмечает риски переувлажнения, сильной засухи, загрязнения и солевых брызг; эти условия нельзя выводить из одной категории территории. Нужна оценка сорта и полива."
+      ]
+    },
+    {
+      "species_id": "acer-platanoides",
+      "source_url": "https://plants.ces.ncsu.edu/plants/acer-platanoides/",
+      "checked_on": "2026-09-17",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_dry"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Периодически сухая почва не означает отсутствие полива при укоренении. Сведения не заменяют местную оценку сорта и условий."
+      ]
+    },
+    {
+      "species_id": "quercus-robur",
+      "source_url": "https://plants.ces.ncsu.edu/plants/quercus-robur/",
+      "checked_on": "2026-09-17",
+      "light": [
+        "full_sun"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions перечисляет солнце; отсутствие полутени не является доказательством непереносимости. Пространство для взрослого дерева и муниципальная категория проверяются отдельно."
+      ]
+    },
+    {
+      "species_id": "betula-pendula",
+      "source_url": "https://plants.ces.ncsu.edu/plants/betula-pendula/",
+      "checked_on": "2026-09-17",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_dry"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Сведения относятся к Betula pendula, не ко всем берёзам. Периодическая сухость не гарантирует переносимость постоянной засухи."
+      ]
+    },
+    {
+      "species_id": "sorbus-aucuparia",
+      "source_url": "https://plants.ces.ncsu.edu/plants/sorbus-aucuparia/",
+      "checked_on": "2026-09-17",
+      "light": [
+        "full_sun"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Описание отмечает чувствительность к уплотнению почвы и жаркому влажному лету; эти риски пока не оцениваются численно. Отсутствие полутени в перечне означает неизвестность."
+      ]
+    },
+    {
+      "species_id": "pinus-sylvestris",
+      "source_url": "https://plants.ces.ncsu.edu/plants/pinus-sylvestris/",
+      "checked_on": "2026-09-17",
+      "light": [
+        "full_sun"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_dry"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Видовые сведения не относятся автоматически к карликовым сортам; периодически сухая почва не отменяет уход за саженцами."
+      ]
+    },
+    {
+      "species_id": "picea-abies",
+      "source_url": "https://plants.ces.ncsu.edu/plants/picea-abies/",
+      "checked_on": "2026-09-17",
+      "light": [
+        "full_sun"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Отсутствие полутени в этом перечне не доказывает непереносимость; другие условия и конкретный сорт требуют проверки."
+      ]
+    },
+    {
+      "species_id": "ulmus-laevis",
+      "source_url": "https://www.euforgen.org/species/ulmus-laevis",
+      "checked_on": "2026-09-17",
+      "light": [],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [],
+      "notes": [
+        "EUFORGEN: вводное описание указывает влажные плодородные местообитания. Устойчивость к длительным затоплениям не преобразована в бессрочное затопление; свет и дренирование не классифицированы. Московская строка ассортимента для этого вида ещё не квалифицирована."
+      ]
     }
   ]
 }
