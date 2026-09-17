@@ -20,6 +20,7 @@ from app.planning.recommendation_contracts import (
 )
 from app.planning.results import rejected_category
 from app.planning.rules import (
+    default_layout_radius,
     growth_radii,
 )
 from app.planning.species_selection import (
@@ -32,9 +33,9 @@ from app.projects.ports import ProjectReader
 from app.species.assortment import (
     ASSORTMENT_REVISION,
     ASSORTMENT_SOURCE,
-    TREE_ASSORTMENT,
     assortment_status,
 )
+from app.species.assortment_inventory import assortment_entry
 from app.species.catalog import get_species, list_species
 
 
@@ -87,15 +88,19 @@ class RecommendationApplication:
         options = []
         best_key = None
         selected_id = None
-        for species in sorted(list_species("tree"), key=lambda item: item.id):
+        for species in sorted(
+            list_species(request.effective_plant_kind), key=lambda item: item.id
+        ):
             status = assortment_status(species.species_id, request.territory)
-            row = TREE_ASSORTMENT.get(species.species_id)
+            row = assortment_entry(species.species_id)
             option = RecommendationSpeciesOption(
                 species_revision_id=species.id,
                 assortment_status=status,
                 source_url=ASSORTMENT_SOURCE if row else None,
                 source_page=row.page if row else None,
                 source_row=row.row if row else None,
+                source_row_id=row.id if row else None,
+                source_tier=row.tier if row else None,
                 notes=list(row.notes)
                 if row
                 else ["Строка этого вида ещё не квалифицирована"],
@@ -159,10 +164,16 @@ class RecommendationApplication:
             base_plan_version=request.base_plan_version,
             zone_ids=request.zone_ids,
             layout=profile["layout"],
-            spacing_m=profile["spacing"],
-            edge_offset_m=profile["edge"],
+            # Shrub spacing uses the existing catalogue envelope, not a tree
+            # preset or a fabricated statutory distance. Exact sites are checked below.
+            spacing_m=profile["spacing"]
+            if request.effective_plant_kind == "tree"
+            else revision.mature_crown_diameter_max_m,
+            edge_offset_m=profile["edge"]
+            if request.effective_plant_kind == "tree"
+            else default_layout_radius(request.effective_plant_kind),
             seed=profile["seed"],
-            plant_kind="tree",
+            plant_kind=request.effective_plant_kind,
             size_class="standard",
             species_revision_id=revision.id,
             placement_mode="count",
@@ -189,7 +200,7 @@ class RecommendationApplication:
                 {
                     "type": "add",
                     "object": {
-                        "kind": "tree",
+                        "kind": request.effective_plant_kind,
                         "x": candidate.x,
                         "y": candidate.y,
                         "size_class": "standard",

@@ -63,6 +63,7 @@ from app.projects.ports import ProjectRepository
 from app.scene.application import SceneApplication
 from app.shared.identity import random_id, utc_now
 from app.species.application import SpeciesApplication
+from app.species.assortment_inventory import AssortmentInventory
 from app.species.catalog import get_species
 from app.validation.application import PlanValidation
 from app.validation.ports import PlanValidatorPort
@@ -305,6 +306,10 @@ class ProjectApplication:
     @staticmethod
     def species_catalog(kind: str | None = None) -> list[SpeciesRevision]:
         return SpeciesApplication.species_catalog(kind)
+
+    @staticmethod
+    def assortment_catalog(kind: str | None = None) -> AssortmentInventory:
+        return SpeciesApplication.assortment_catalog(kind)
 
     def shortlist_species(
         self,

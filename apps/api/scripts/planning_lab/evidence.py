@@ -12,6 +12,7 @@ from shapely import geos_version_string
 
 from app.regulations.profiles import requirement_profile
 from app.regulations.registry import registry_snapshot
+from app.species.assortment_inventory import assortment_inventory
 from app.species.catalog import list_species
 
 
@@ -53,6 +54,7 @@ def implementation_basis() -> dict:
         "requirement_profile": requirement_profile().model_dump(mode="json"),
         "registry": registry_snapshot([]),
         "species_catalog": [item.model_dump(mode="json") for item in list_species()],
+        "assortment": assortment_inventory().model_dump(mode="json"),
     }
 
 

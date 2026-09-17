@@ -6,6 +6,68 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/species/assortment": {
+      "get": {
+        "summary": "Get Assortment Catalog",
+        "operationId": "get_assortment_catalog_api_species_assortment_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentInventory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/species": {
       "get": {
         "summary": "Get Species Catalog",
@@ -5265,6 +5327,150 @@
           "available"
         ],
         "title": "AssistantStatus"
+      },
+      "AssortmentEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "main",
+              "additional"
+            ],
+            "title": "Tier"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub",
+              "vine"
+            ],
+            "title": "Kind"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "row": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Row"
+          },
+          "cells": {
+            "type": "string",
+            "pattern": "^[+?\\-]{8}$",
+            "title": "Cells"
+          },
+          "matrix_reviewed": {
+            "type": "boolean",
+            "title": "Matrix Reviewed"
+          },
+          "conditions_reviewed": {
+            "type": "boolean",
+            "title": "Conditions Reviewed"
+          },
+          "calculation_species_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Species Id"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "requires_spread_control": {
+            "type": "boolean",
+            "title": "Requires Spread Control",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "source_name",
+          "tier",
+          "section",
+          "kind",
+          "page",
+          "row",
+          "cells",
+          "matrix_reviewed",
+          "conditions_reviewed"
+        ],
+        "title": "AssortmentEntry"
+      },
+      "AssortmentInventory": {
+        "properties": {
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 8,
+            "title": "Categories"
+          },
+          "special_territories_note": {
+            "type": "string",
+            "title": "Special Territories Note"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AssortmentEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "source_url",
+          "source_sha256",
+          "categories",
+          "special_territories_note",
+          "entries"
+        ],
+        "title": "AssortmentInventory"
       },
       "AxisDistanceEvidence": {
         "properties": {
@@ -12608,6 +12814,21 @@
                 "type": "null"
               }
             ]
+          },
+          "plant_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "shrub"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plant Kind"
           }
         },
         "type": "object",
@@ -12675,6 +12896,32 @@
               }
             ],
             "title": "Source Row"
+          },
+          "source_row_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Row Id"
+          },
+          "source_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "main",
+                  "additional"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Tier"
           },
           "notes": {
             "items": {
@@ -15163,6 +15410,11 @@
             "maxLength": 500,
             "minLength": 1,
             "title": "Basis"
+          },
+          "spread_control_confirmed": {
+            "type": "boolean",
+            "title": "Spread Control Confirmed",
+            "default": false
           }
         },
         "type": "object",

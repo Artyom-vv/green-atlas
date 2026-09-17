@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/species/assortment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assortment Catalog */
+        get: operations["get_assortment_catalog_api_species_assortment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/species": {
         parameters: {
             query?: never;
@@ -1406,6 +1423,61 @@ export interface components {
              * @constant
              */
             local: true;
+        };
+        /** AssortmentEntry */
+        AssortmentEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Source Name */
+            source_name: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "main" | "additional";
+            /** Section */
+            section: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tree" | "shrub" | "vine";
+            /** Page */
+            page: number;
+            /** Row */
+            row: number;
+            /** Cells */
+            cells: string;
+            /** Matrix Reviewed */
+            matrix_reviewed: boolean;
+            /** Conditions Reviewed */
+            conditions_reviewed: boolean;
+            /** Calculation Species Id */
+            calculation_species_id?: string | null;
+            /** Notes */
+            notes?: string[];
+            /**
+             * Requires Spread Control
+             * @default false
+             */
+            requires_spread_control: boolean;
+        };
+        /** AssortmentInventory */
+        AssortmentInventory: {
+            /** Revision */
+            revision: string;
+            /** Source Url */
+            source_url: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Categories */
+            categories: string[];
+            /** Special Territories Note */
+            special_territories_note: string;
+            /** Entries */
+            entries: components["schemas"]["AssortmentEntry"][];
         };
         /** AxisDistanceEvidence */
         AxisDistanceEvidence: {
@@ -4075,6 +4147,8 @@ export interface components {
              */
             max_sites: number;
             territory?: components["schemas"]["TerritoryContext"] | null;
+            /** Plant Kind */
+            plant_kind?: ("tree" | "shrub") | null;
         };
         /** RecommendationSpeciesOption */
         RecommendationSpeciesOption: {
@@ -4101,6 +4175,10 @@ export interface components {
             source_page?: number | null;
             /** Source Row */
             source_row?: number | null;
+            /** Source Row Id */
+            source_row_id?: string | null;
+            /** Source Tier */
+            source_tier?: ("main" | "additional") | null;
             /** Notes */
             notes?: string[];
         };
@@ -4917,6 +4995,11 @@ export interface components {
             regime: "ordinary" | "individual_project" | "unknown";
             /** Basis */
             basis: string;
+            /**
+             * Spread Control Confirmed
+             * @default false
+             */
+            spread_control_confirmed: boolean;
         };
         /** ToolCall */
         ToolCall: {
@@ -5248,6 +5331,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_assortment_catalog_api_species_assortment_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentInventory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_species_catalog_api_species_get: {
         parameters: {
             query?: {

@@ -67,6 +67,7 @@ from app.projects.concurrency import (
     set_expected_project_version,
 )
 from app.releases.service import MAX_RELEASE_BUNDLE_BYTES
+from app.species.assortment_inventory import AssortmentInventory
 
 
 async def project_version_scope(request: Request, if_match: str | None = Header(default=None, alias="If-Match")):
@@ -90,6 +91,17 @@ router = APIRouter(prefix="/api", dependencies=[Depends(project_version_scope)])
 def lightweight(project: Project) -> Project:
     """Keep project reads small; the map endpoint pages geometry on demand."""
     return project.model_copy(update={"source_geometry": None, "geometry": None})
+
+
+@router.get("/species/assortment", response_model=AssortmentInventory)
+def get_assortment_catalog(
+    kind: str | None = Query(default=None),
+    application: ProjectApplication = Depends(get_application),
+) -> AssortmentInventory:
+    try:
+        return application.assortment_catalog(kind)
+    except Exception as error:
+        raise handle(error) from error
 
 
 @router.get("/species", response_model=list[SpeciesRevision])

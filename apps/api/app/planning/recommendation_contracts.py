@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.planning.change_contracts import ChangeSetPreview
 from app.planning.pattern_contracts import PatternSkippedCandidate
@@ -17,6 +17,17 @@ class RecommendationRequest(BaseModel):
     )
     max_sites: int = Field(default=80, ge=1, le=500)
     territory: TerritoryContext | None = None
+    plant_kind: Literal["tree", "shrub"] | None = None
+
+    @property
+    def effective_plant_kind(self) -> Literal["tree", "shrub"]:
+        return self.plant_kind or "tree"
+
+    @model_validator(mode="after")
+    def require_shrub_context(self) -> RecommendationRequest:
+        if self.plant_kind == "shrub" and self.territory is None:
+            raise ValueError("Для подбора кустарников укажите контекст территории")
+        return self
 
 
 class EvidenceAssessment(BaseModel):
@@ -52,6 +63,8 @@ class RecommendationSpeciesOption(BaseModel):
     source_url: str | None = None
     source_page: int | None = None
     source_row: int | None = None
+    source_row_id: str | None = None
+    source_tier: Literal["main", "additional"] | None = None
     notes: list[str] = Field(default_factory=list)
 
 
