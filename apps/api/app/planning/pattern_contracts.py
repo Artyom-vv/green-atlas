@@ -69,8 +69,8 @@ class FillPatternRequest(BaseModel):
         if self.composition == "shrubs":
             self.plant_kind = "shrub"
         else:
-            # Mixed layouts use the stricter tree footprint for candidate
-            # generation; individual candidate kinds are assigned later.
+            # Preserve the legacy primary kind. Count-based mixed placement
+            # creates separate per-kind requests in the application scenario.
             self.plant_kind = "tree"
         return self
 
@@ -178,6 +178,27 @@ class PatternZoneAllocation(BaseModel):
     accepted_count: int = Field(ge=0)
 
 
+class CompositionKindResult(BaseModel):
+    kind: Literal["tree", "shrub"]
+    requested_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    shortfall: int = Field(ge=0)
+    effective_spacing_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class CompositionTrial(BaseModel):
+    order: list[Literal["tree", "shrub"]]
+    trees: int = Field(ge=0)
+    shrubs: int = Field(ge=0)
+
+
+class MixedCompositionSummary(BaseModel):
+    components: list[CompositionKindResult]
+    trials: list[CompositionTrial]
+    selected_order: list[Literal["tree", "shrub"]]
+    reason: str
+
+
 class PatternPreview(BaseModel):
     pattern_id: str
     type: Literal["row", "fill", "mask"]
@@ -204,6 +225,7 @@ class PatternPreview(BaseModel):
     data_confidence: Literal["verified", "limited", "blocked"] = "verified"
     data_confidence_reasons: list[str] = Field(default_factory=list)
     change_set: ChangeSetPreview | None = None
+    composition_summary: MixedCompositionSummary | None = None
 
 
 class BrushStroke(BaseModel):

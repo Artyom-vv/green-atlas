@@ -7211,6 +7211,85 @@
         ],
         "title": "ChatZone"
       },
+      "CompositionKindResult": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub"
+            ],
+            "title": "Kind"
+          },
+          "requested_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requested Count"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Accepted Count"
+          },
+          "shortfall": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Shortfall"
+          },
+          "effective_spacing_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Spacing M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "requested_count",
+          "accepted_count",
+          "shortfall"
+        ],
+        "title": "CompositionKindResult"
+      },
+      "CompositionTrial": {
+        "properties": {
+          "order": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "tree",
+                "shrub"
+              ]
+            },
+            "type": "array",
+            "title": "Order"
+          },
+          "trees": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Trees"
+          },
+          "shrubs": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Shrubs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order",
+          "trees",
+          "shrubs"
+        ],
+        "title": "CompositionTrial"
+      },
       "ConfirmProposal": {
         "properties": {
           "expected_revision": {
@@ -9445,6 +9524,47 @@
         ],
         "title": "MapContext"
       },
+      "MixedCompositionSummary": {
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionKindResult"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "trials": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionTrial"
+            },
+            "type": "array",
+            "title": "Trials"
+          },
+          "selected_order": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "tree",
+                "shrub"
+              ]
+            },
+            "type": "array",
+            "title": "Selected Order"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "components",
+          "trials",
+          "selected_order",
+          "reason"
+        ],
+        "title": "MixedCompositionSummary"
+      },
       "NativeDxfSourceAsset": {
         "properties": {
           "project_id": {
@@ -9706,6 +9826,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ChangeSetPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "composition_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MixedCompositionSummary"
               },
               {
                 "type": "null"

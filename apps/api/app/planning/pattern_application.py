@@ -8,6 +8,7 @@ from app.planning.allocation import equal_zone_targets, spread_indices
 from app.planning.change_contracts import PlanChangeSetDraft, PlanObjectAddOperation
 from app.planning.domain import PlanVersionConflict
 from app.planning.evaluation import PlanEvaluation
+from app.planning.mixed_composition import preview_mixed_composition
 from app.planning.pattern_contracts import (
     CandidateReasonSummary,
     FillPatternRequest,
@@ -27,6 +28,7 @@ from app.planning.rules import (
     pattern_growth_radii,
     planting_zone_at,
 )
+from app.projects.contracts import Project
 from app.projects.ports import ProjectReader
 from app.regulations.network_summary import network_review_reason
 
@@ -48,8 +50,19 @@ class PatternApplication:
         self, project_id: str, request: PatternPreviewRequest
     ) -> PatternPreview:
         project = self.repository.get(project_id)
+        return self.preview_on_snapshot(project, request)
+
+    def preview_on_snapshot(
+        self,
+        project: Project,
+        request: PatternPreviewRequest,
+        *,
+        cache_preview: bool = True,
+    ) -> PatternPreview:
         if project.source_review is not None:
-            raise ValueError("Автоматическая расстановка требует расчёта ограничений. Ручное редактирование проекта доступно.")
+            raise ValueError(
+                "Автоматическая расстановка требует расчёта ограничений. Ручное редактирование проекта доступно."
+            )
         if project.plan is None:
             raise ValueError("План ещё не создан")
         if project.plan.version != request.base_plan_version:
@@ -61,6 +74,21 @@ class PatternApplication:
         known_zone_ids = {zone.id for zone in project.planting_zones}
         if requested_zone_ids - known_zone_ids:
             raise ValueError("Один из выбранных участков больше не существует")
+
+        if (
+            isinstance(request, (FillPatternRequest, PlacementMaskRequest))
+            and request.composition == "mixed"
+            and request.placement_mode == "count"
+        ):
+            return preview_mixed_composition(
+                project,
+                request,
+                lambda snapshot, component: self.preview_on_snapshot(
+                    snapshot, component, cache_preview=False
+                ),
+                self.previews,
+                cache_preview=cache_preview,
+            )
 
         requested_target = (
             request.target_count if request.placement_mode == "count" else None
@@ -385,6 +413,7 @@ class PatternApplication:
                     label=f"{label}: {len(accepted_operations)}",
                     operations=[*accepted_operations],
                 ),
+                cache_preview=cache_preview,
             )
         reason_summary = summarize_skips(skipped)
         if requested_target is not None and len(candidates) < requested_target:

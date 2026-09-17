@@ -2132,6 +2132,31 @@ export interface components {
             /** Planting Count */
             planting_count: number;
         };
+        /** CompositionKindResult */
+        CompositionKindResult: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tree" | "shrub";
+            /** Requested Count */
+            requested_count: number;
+            /** Accepted Count */
+            accepted_count: number;
+            /** Shortfall */
+            shortfall: number;
+            /** Effective Spacing M */
+            effective_spacing_m?: number | null;
+        };
+        /** CompositionTrial */
+        CompositionTrial: {
+            /** Order */
+            order: ("tree" | "shrub")[];
+            /** Trees */
+            trees: number;
+            /** Shrubs */
+            shrubs: number;
+        };
         /** ConfirmProposal */
         ConfirmProposal: {
             /** Expected Revision */
@@ -2966,6 +2991,17 @@ export interface components {
                 number
             ] | null;
         };
+        /** MixedCompositionSummary */
+        MixedCompositionSummary: {
+            /** Components */
+            components: components["schemas"]["CompositionKindResult"][];
+            /** Trials */
+            trials: components["schemas"]["CompositionTrial"][];
+            /** Selected Order */
+            selected_order: ("tree" | "shrub")[];
+            /** Reason */
+            reason: string;
+        };
         /** NativeDxfSourceAsset */
         NativeDxfSourceAsset: {
             /** Project Id */
@@ -3074,6 +3110,7 @@ export interface components {
             /** Data Confidence Reasons */
             data_confidence_reasons?: string[];
             change_set?: components["schemas"]["ChangeSetPreview"] | null;
+            composition_summary?: components["schemas"]["MixedCompositionSummary"] | null;
         };
         /** PatternSkippedCandidate */
         PatternSkippedCandidate: {
