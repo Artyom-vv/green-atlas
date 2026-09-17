@@ -156,4 +156,4 @@ def test_frozen_recommendation_case_is_repeatable_and_records_alternative_checks
     assert first["content_sha256"] == second["content_sha256"]
     assert first["content"]["result"]["change_set"]["additions"]
     assert len(first["content"]["generation_calls"]) > 1
-    assert len(first["content"]["result"]["species_options"]) == 8
+    assert len(first["content"]["result"]["species_options"]) == 10

@@ -1,0 +1,58 @@
+[
+  {
+    "species_id": "syringa-vulgaris",
+    "common_name": "Сирень обыкновенная",
+    "scientific_name": "Syringa vulgaris",
+    "kind": "shrub",
+    "crown_shape": "irregular",
+    "height_ft": [8, 16],
+    "width_ft": [6, 12],
+    "growth_label": "Medium",
+    "source_url": "https://plants.ces.ncsu.edu/plants/syringa-vulgaris/",
+    "checked_on": "2026-09-17",
+    "revision_tag": "2026-09-17.1",
+    "site_notes": ["Уточнить сорт, дренаж и реакцию почвы; источник отмечает плохую переносимость сильно кислой и плохо дренированной почвы.", "Для привитых растений требуется контроль поросли подвоя; размеры конкретного сорта могут отличаться."]
+  },
+  {
+    "species_id": "physocarpus-opulifolius",
+    "common_name": "Пузыреплодник калинолистный",
+    "scientific_name": "Physocarpus opulifolius",
+    "kind": "shrub",
+    "crown_shape": "spreading",
+    "height_ft": [5, 8],
+    "width_ft": [4, 6],
+    "growth_label": "Rapid",
+    "source_url": "https://plants.ces.ncsu.edu/plants/physocarpus-opulifolius/",
+    "checked_on": "2026-09-17",
+    "revision_tag": "2026-09-17.1",
+    "site_notes": ["Источник описывает солнце или полутень и дренированную почву; конкретный сорт и условия требуют проверки.", "Московская таблица требует контроля распространения и исключает ООЗТ и ПТ."]
+  },
+  {
+    "species_id": "larix-decidua",
+    "common_name": "Лиственница европейская",
+    "scientific_name": "Larix decidua",
+    "kind": "tree",
+    "crown_shape": "conical",
+    "height_ft": [60, 100],
+    "width_ft": [20, 30],
+    "growth_label": "Rapid",
+    "source_url": "https://plants.ces.ncsu.edu/plants/larix-decidua/",
+    "checked_on": "2026-09-17",
+    "revision_tag": "2026-09-17.1",
+    "site_notes": ["Источник описывает влажную дренированную почву; условия и сорт требуется уточнить.", "Листопадная хвойная порода: летнюю крону нельзя трактовать как круглогодичный экран."]
+  },
+  {
+    "species_id": "picea-pungens",
+    "common_name": "Ель колючая",
+    "scientific_name": "Picea pungens",
+    "kind": "tree",
+    "crown_shape": "conical",
+    "height_ft": [30, 60],
+    "width_ft": [10, 20],
+    "growth_label": "Slow",
+    "source_url": "https://plants.ces.ncsu.edu/plants/picea-pungens/",
+    "checked_on": "2026-09-17",
+    "revision_tag": "2026-09-17.1",
+    "site_notes": ["Размеры относятся к виду, не к карликовым сортам. В структурированном поле NC State указан Slow, в тексте — slow to medium; точная скорость не установлена.", "Требуется оценка дренажа, влажности и контакта с людьми: источник отдельно отмечает острые концы хвои."]
+  }
+]

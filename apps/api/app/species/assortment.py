@@ -30,7 +30,7 @@ class TerritoryContext(BaseModel):
 
 ASSORTMENT_SOURCE = "https://www.mos.ru/upload/content/files/c6ee55bb75792e008a490f28cfe834fb/Osnovnoiidopolnitelniiassortimentderevevkystarnikovilian.pdf"
 ASSORTMENT_SHA256 = "114fe5b7598f32ca0b13162985cc80d14be569d8898aacbcd148fd08571a4b67"
-ASSORTMENT_REVISION = "mos-assortment@2026-09-17.2"
+ASSORTMENT_REVISION = "mos-assortment@2026-09-17.3"
 
 
 def assortment_status(species_id: str, context: TerritoryContext) -> AssortmentStatus:

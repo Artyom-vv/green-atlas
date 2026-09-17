@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.species.contracts import GrowthEnvelopeForecast, SpeciesRevision
 from app.species.forecast import forecast_at
+from app.species.source_profiles import SOURCE_GROWTH_LABELS, source_profiles
 
 
 MOSCOW_RULES = "https://www.mos.ru/upload/content/files/49f68586dd69e7d9cc0a0d9a6e933190/Postanovlenieot10_09_2002N743-PPObytverjdeniiPravilsozdaniyasoderjaniyaiohranizelenih_Tekst%281%29.pdf"
@@ -22,7 +23,7 @@ def _forecast_anchors(crown: tuple[float, float], growth_rate: str, root_archite
         scale = min(1.0, max(0.10, ratio + size_shift))
         canopy_min = round(mature_min * max(0.10, scale - 0.08), 2)
         canopy_max = round(mature_max * min(1.0, scale + 0.12), 2)
-        confidence = "medium" if year <= 10 else "low"
+        confidence = "medium" if year <= 10 and root_architecture != "uncertain" else "low"
         canopy.append(GrowthEnvelopeForecast(horizon_year=year, radius_min_m=canopy_min, radius_max_m=canopy_max, confidence=confidence, basis="Нелинейный диапазон каталога; не нормативный отступ"))
         roots.append(GrowthEnvelopeForecast(horizon_year=year, radius_min_m=round(canopy_min * root_factor[0], 2), radius_max_m=round(canopy_max * root_factor[1], 2), confidence="low", basis="Сценарная корневая зона; требует проверки дендрологом"))
     return canopy, roots
@@ -43,10 +44,12 @@ def _species(
     *,
     specialist_review: bool = False,
     risk_flags: list[str] | None = None,
+    revision_tag: str = "2026-08-28.1",
+    evidence_note: str | None = None,
 ) -> SpeciesRevision:
     canopy, roots = _forecast_anchors(crown, growth_rate, root_architecture)
     return SpeciesRevision(
-        id=f"{species_id}@2026-08-28.1",
+        id=f"{species_id}@{revision_tag}",
         species_id=species_id,
         revision=1,
         common_name=common_name,
@@ -62,7 +65,7 @@ def _species(
         provenance=provenance,
         territory_policy="specialist_review" if specialist_review else "general_draft",
         risk_flags=risk_flags or [],
-        evidence_note="Габариты являются диапазоном для эскизной проверки. Фактический сорт, возраст, условия участка и проектное решение уточняет дендролог.",
+        evidence_note=evidence_note or "Габариты являются диапазоном для эскизной проверки. Фактический сорт, возраст, условия участка и проектное решение уточняет дендролог.",
         source_urls=[source_url, MOSCOW_RULES],
         canopy_forecast=canopy,
         root_forecast=roots,
@@ -80,6 +83,21 @@ CATALOG: tuple[SpeciesRevision, ...] = (
     _species("picea-abies", "Ель европейская", "Picea abies", "tree", "conical", (20, 35), (6, 10), "moderate", "shallow", "native", "https://powo.science.kew.org/taxon/urn:lsid:ipni.org:names:262700-1", risk_flags=["shallow_roots"]),
     _species("cornus-alba", "Дёрен белый", "Cornus alba", "shrub", "round", (2, 3), (2, 4), "fast", "mixed", "native", "https://www.rhs.org.uk/plants/4380/cornus-alba/details"),
     _species("spiraea-japonica", "Спирея японская", "Spiraea japonica", "shrub", "round", (0.6, 1.5), (0.8, 1.8), "moderate", "shallow", "introduced", "https://www.rhs.org.uk/plants/17696/spiraea-japonica/details"),
+)
+
+
+# New source-backed dimensions reuse the existing sketch scenario, explicitly
+# leaving root architecture unknown. Earlier revision IDs and values stay frozen.
+CATALOG += tuple(
+    _species(
+        profile.species_id, profile.common_name, profile.scientific_name,
+        profile.kind, profile.crown_shape, profile.height_m, profile.width_m,
+        SOURCE_GROWTH_LABELS[profile.growth_label], "uncertain", "not_assessed",
+        profile.source_url, specialist_review=True,
+        risk_flags=["uncalibrated_growth", "root_data_missing"],
+        revision_tag=profile.revision_tag, evidence_note=profile.evidence_note,
+    )
+    for profile in source_profiles()
 )
 
 

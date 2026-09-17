@@ -85,6 +85,8 @@ class SpeciesApplication:
             if revision.territory_policy == "specialist_review":
                 reasons.append(
                     "Широкая крона: проектный отступ нужно уточнить по ПП-743"
+                    if "broad_crown" in revision.risk_flags
+                    else "Сценарные параметры требуют проверки специалистом"
                 )
             if "shallow_roots" in revision.risk_flags:
                 reasons.append(

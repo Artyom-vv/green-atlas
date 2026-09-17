@@ -145,9 +145,15 @@ class RecommendationApplication:
         selected_option = next(
             item for item in options if item.species_revision_id == selected_id
         )
+        selected_revision = get_species(selected_id)
         for explanation in result.explanations:
             explanation.biological_risks.extend(selected_option.notes)
+            explanation.biological_risks.append(selected_revision.evidence_note)
         result.data_gaps.extend(selected_option.notes)
+        if "root_data_missing" in selected_revision.risk_flags:
+            result.data_gaps.append(
+                "Корневая архитектура и местная калибровка роста выбранного вида"
+            )
         return result
 
     def _preview_species(

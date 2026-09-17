@@ -1,5 +1,5 @@
 {
-  "revision": "mos-assortment@2026-09-17.2",
+  "revision": "mos-assortment@2026-09-17.3",
   "source_url": "https://www.mos.ru/upload/content/files/c6ee55bb75792e008a490f28cfe834fb/Osnovnoiidopolnitelniiassortimentderevevkystarnikovilian.pdf",
   "source_sha256": "114fe5b7598f32ca0b13162985cc80d14be569d8898aacbcd148fd08571a4b67",
   "categories": [
@@ -24,9 +24,9 @@
       "page": 1,
       "row": 1,
       "cells": "++++++++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "picea-pungens",
       "notes": [],
       "requires_spread_control": false
     },
@@ -90,9 +90,9 @@
       "page": 1,
       "row": 5,
       "cells": "++++-++-",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "larix-decidua",
       "notes": [],
       "requires_spread_control": false
     },
@@ -2034,11 +2034,13 @@
       "page": 12,
       "row": 51,
       "cells": "++++++++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
-      "notes": [],
-      "requires_spread_control": false
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "physocarpus-opulifolius",
+      "notes": [
+        "Примечание таблицы исключает ООЗТ и ПТ и требует контроля распространения."
+      ],
+      "requires_spread_control": true
     },
     {
       "id": "main-deciduous_shrub-52",
@@ -2162,9 +2164,9 @@
       "page": 12,
       "row": 59,
       "cells": "++++++++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "syringa-vulgaris",
       "notes": [],
       "requires_spread_control": false
     },

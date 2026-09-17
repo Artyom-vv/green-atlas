@@ -14,6 +14,7 @@ from app.regulations.profiles import requirement_profile
 from app.regulations.registry import registry_snapshot
 from app.species.assortment_inventory import assortment_inventory
 from app.species.catalog import list_species
+from app.species.source_profiles import source_profiles
 
 
 def canonical_bytes(value: object) -> bytes:
@@ -55,6 +56,9 @@ def implementation_basis() -> dict:
         "registry": registry_snapshot([]),
         "species_catalog": [item.model_dump(mode="json") for item in list_species()],
         "assortment": assortment_inventory().model_dump(mode="json"),
+        "source_species_profiles": [
+            p.model_dump(mode="json") for p in source_profiles()
+        ],
     }
 
 

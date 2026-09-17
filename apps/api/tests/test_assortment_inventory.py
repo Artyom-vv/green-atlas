@@ -55,7 +55,7 @@ def test_repeated_source_name_is_not_deduplicated_or_merged():
 def test_reference_rows_do_not_become_fabricated_growth_models():
     revisions = list_species()
     mapped = [e for e in assortment_inventory().entries if e.calculation_species_id]
-    assert len(revisions) == 10 and len(mapped) == 9
+    assert len(revisions) == 14 and len(mapped) == 13
     by_species = {s.species_id: s for s in revisions}
     assert all(by_species[e.calculation_species_id].kind == e.kind for e in mapped)
     assert all(e.matrix_reviewed and e.conditions_reviewed for e in mapped)
@@ -154,5 +154,5 @@ def test_http_catalog_exposes_reference_rows_without_changing_existing_revision_
     assert len(reference.json()["entries"]) == 113
     existing = client.get("/api/species", params={"kind": "shrub"})
     assert existing.status_code == 200
-    assert len(existing.json()) == 2
+    assert len(existing.json()) == 4
     assert all(s["canopy_forecast"] for s in existing.json())
