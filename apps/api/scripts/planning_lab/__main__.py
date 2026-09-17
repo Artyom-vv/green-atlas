@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .contracts import PlanningCase
+from .contracts import parse_case
 from .evidence import publish_new
 from .runner import run_case
 
@@ -17,7 +17,7 @@ def main() -> int:
     if args.output.exists():
         parser.error("Output already exists; choose a new report path")
     try:
-        case = PlanningCase.model_validate_json(args.case.read_bytes())
+        case = parse_case(args.case.read_bytes())
         report = run_case(case)
         publish_new(args.output, report)
     except (ValueError, OSError) as error:

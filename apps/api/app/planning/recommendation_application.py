@@ -16,13 +16,26 @@ from app.planning.recommendation_contracts import (
     RecommendationExplanation,
     RecommendationPreview,
     RecommendationRequest,
+    RecommendationSpeciesOption,
 )
 from app.planning.results import rejected_category
 from app.planning.rules import (
     growth_radii,
 )
+from app.planning.species_selection import (
+    SELECTION_REASONS,
+    crown_projection_sum,
+    selection_key,
+)
+from app.projects.contracts import Project
 from app.projects.ports import ProjectReader
-from app.species.catalog import get_species
+from app.species.assortment import (
+    ASSORTMENT_REVISION,
+    ASSORTMENT_SOURCE,
+    TREE_ASSORTMENT,
+    assortment_status,
+)
+from app.species.catalog import get_species, list_species
 
 
 class RecommendationApplication:
@@ -50,6 +63,8 @@ class RecommendationApplication:
         corresponding sunlight, soil and hydrology evidence.
         """
         project = self.repository.get(project_id)
+        if project.source_review is not None:
+            raise ValueError("Автоматический подбор требует расчёта ограничений")
         if project.plan is None:
             raise ValueError("План ещё не создан")
         if project.plan.version != request.base_plan_version:
@@ -59,8 +74,87 @@ class RecommendationApplication:
         if requested_zone_ids - known_zone_ids:
             raise ValueError("Один из выбранных участков больше не существует")
 
+        preferred = RECOMMENDATION_PROFILES[request.profile]["species"]
+        if request.territory is None:
+            result = self._preview_species(
+                project, request, preferred, cache_final=True
+            )
+            result.selection_reason = "Категория территории не задана: использован прежний вид пресета, пригодность по ассортименту не проверена."
+            result.data_gaps.append("Категория территории и применимость ассортимента")
+            result.evidence.species_catalog = "partial"
+            return result
+
+        options = []
+        best_key = None
+        selected_id = None
+        for species in sorted(list_species("tree"), key=lambda item: item.id):
+            status = assortment_status(species.species_id, request.territory)
+            row = TREE_ASSORTMENT.get(species.species_id)
+            option = RecommendationSpeciesOption(
+                species_revision_id=species.id,
+                assortment_status=status,
+                source_url=ASSORTMENT_SOURCE if row else None,
+                source_page=row.page if row else None,
+                source_row=row.row if row else None,
+                notes=list(row.notes)
+                if row
+                else ["Строка этого вида ещё не квалифицирована"],
+            )
+            options.append(option)
+            if status != "listed":
+                continue
+            trial = self._preview_species(
+                project, request, species.id, cache_final=False
+            )
+            option.accepted_count = (
+                len(trial.change_set.additions) if trial.change_set else 0
+            )
+            option.crown_projection_sum_m2 = crown_projection_sum(trial)
+            key = selection_key(
+                trial, request.profile, species.id == preferred, species.id
+            )
+            if best_key is None or key < best_key:
+                best_key, selected_id = key, species.id
+
+        if selected_id is None:
+            return RecommendationPreview(
+                profile=request.profile,
+                evidence=EvidenceAssessment(
+                    spatial_constraints="partial",
+                    species_catalog="partial",
+                    note="Подбор не выполнен: требуется индивидуальная проверка территории или ассортимента.",
+                ),
+                species_options=options,
+                assortment_revision=ASSORTMENT_REVISION,
+                selection_reason="Для переданного контекста нет квалифицированного автоматического выбора.",
+                data_gaps=["Индивидуальный проект или уточнение категории территории"],
+            )
+        result = self._preview_species(project, request, selected_id, cache_final=True)
+        result.species_options = options
+        result.assortment_revision = ASSORTMENT_REVISION
+        result.selection_reason = SELECTION_REASONS[request.profile]
+        if result.change_set is None:
+            result.selection_reason = "Ни один проверенный вид не дал допустимых посадок при текущих параметрах. Это не доказательство невозможности другого проектного решения."
+        result.evidence.species_catalog = "partial"
+        result.evidence.note += " Проверены строки ассортимента для части каталога; почва, конкретный сорт и примечания таблицы требуют оценки."
+        selected_option = next(
+            item for item in options if item.species_revision_id == selected_id
+        )
+        for explanation in result.explanations:
+            explanation.biological_risks.extend(selected_option.notes)
+        result.data_gaps.extend(selected_option.notes)
+        return result
+
+    def _preview_species(
+        self,
+        project: Project,
+        request: RecommendationRequest,
+        species_revision_id: str,
+        *,
+        cache_final: bool,
+    ) -> RecommendationPreview:
         profile = RECOMMENDATION_PROFILES[request.profile]
-        revision = get_species(profile["species"])
+        revision = get_species(species_revision_id)
         fill = FillPatternRequest(
             base_plan_version=request.base_plan_version,
             zone_ids=request.zone_ids,
@@ -119,6 +213,7 @@ class RecommendationApplication:
                     label="Проверка предложения",
                     operations=[*operations],
                 ),
+                cache_preview=False,
             )
             for result in initial.candidate_results:
                 candidate = candidates[result.operation_index]
@@ -167,19 +262,12 @@ class RecommendationApplication:
                     label=f"Предложение посадок: {len(accepted_operations)}",
                     operations=[*accepted_operations],
                 ),
+                cache_preview=cache_final,
             )
 
-        mapped_physical_kinds = {
-            layer.mapped_kind.value
-            for layer in project.layers
-            if layer.mapped_kind is not None
-            and layer.mapped_kind.value not in {"ignore", "other"}
-        }
-        spatial_evidence: Literal["verified", "partial", "missing"] = (
-            "verified"
-            if project.geometry is not None
-            and {"site_border", "building", "road"} <= mapped_physical_kinds
-            else "partial"
+        # Layer names alone do not establish completeness of networks or norms.
+        spatial_evidence: Literal["partial", "missing"] = (
+            "partial" if project.geometry is not None else "missing"
         )
         evidence = EvidenceAssessment(
             spatial_constraints=spatial_evidence,

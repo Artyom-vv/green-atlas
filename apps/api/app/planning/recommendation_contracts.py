@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.planning.change_contracts import ChangeSetPreview
 from app.planning.pattern_contracts import PatternSkippedCandidate
+from app.species.assortment import AssortmentStatus, TerritoryContext
 
 
 class RecommendationRequest(BaseModel):
@@ -15,6 +16,7 @@ class RecommendationRequest(BaseModel):
         "balanced"
     )
     max_sites: int = Field(default=80, ge=1, le=500)
+    territory: TerritoryContext | None = None
 
 
 class EvidenceAssessment(BaseModel):
@@ -42,6 +44,17 @@ class RecommendationExplanation(BaseModel):
     effects: list[EffectEstimate] = Field(default_factory=list)
 
 
+class RecommendationSpeciesOption(BaseModel):
+    species_revision_id: str
+    assortment_status: AssortmentStatus
+    accepted_count: int = 0
+    crown_projection_sum_m2: float = 0
+    source_url: str | None = None
+    source_page: int | None = None
+    source_row: int | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
 class RecommendationPreview(BaseModel):
     arrangement: Literal["area", "building_screen"] = "area"
     target_geometry: dict[str, Any] | None = None
@@ -51,3 +64,6 @@ class RecommendationPreview(BaseModel):
     explanations: list[RecommendationExplanation] = Field(default_factory=list)
     skipped: list[PatternSkippedCandidate] = Field(default_factory=list)
     data_gaps: list[str] = Field(default_factory=list)
+    species_options: list[RecommendationSpeciesOption] = Field(default_factory=list)
+    selection_reason: str | None = None
+    assortment_revision: str | None = None

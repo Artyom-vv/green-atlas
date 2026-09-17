@@ -4050,6 +4050,12 @@ export interface components {
             skipped?: components["schemas"]["PatternSkippedCandidate"][];
             /** Data Gaps */
             data_gaps?: string[];
+            /** Species Options */
+            species_options?: components["schemas"]["RecommendationSpeciesOption"][];
+            /** Selection Reason */
+            selection_reason?: string | null;
+            /** Assortment Revision */
+            assortment_revision?: string | null;
         };
         /** RecommendationRequest */
         RecommendationRequest: {
@@ -4068,6 +4074,35 @@ export interface components {
              * @default 80
              */
             max_sites: number;
+            territory?: components["schemas"]["TerritoryContext"] | null;
+        };
+        /** RecommendationSpeciesOption */
+        RecommendationSpeciesOption: {
+            /** Species Revision Id */
+            species_revision_id: string;
+            /**
+             * Assortment Status
+             * @enum {string}
+             */
+            assortment_status: "listed" | "not_recommended" | "unreviewed" | "individual_review";
+            /**
+             * Accepted Count
+             * @default 0
+             */
+            accepted_count: number;
+            /**
+             * Crown Projection Sum M2
+             * @default 0
+             */
+            crown_projection_sum_m2: number;
+            /** Source Url */
+            source_url?: string | null;
+            /** Source Page */
+            source_page?: number | null;
+            /** Source Row */
+            source_row?: number | null;
+            /** Notes */
+            notes?: string[];
         };
         /**
          * RegulatoryReleaseBasis
@@ -4867,6 +4902,21 @@ export interface components {
             provenance?: {
                 [key: string]: string;
             };
+        };
+        /** TerritoryContext */
+        TerritoryContext: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "courtyard" | "preschool" | "school_sport" | "healthcare" | "major_road" | "public_square" | "park" | "industrial";
+            /**
+             * Regime
+             * @enum {string}
+             */
+            regime: "ordinary" | "individual_project" | "unknown";
+            /** Basis */
+            basis: string;
         };
         /** ToolCall */
         ToolCall: {

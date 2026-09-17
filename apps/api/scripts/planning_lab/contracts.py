@@ -1,14 +1,16 @@
 """Explicit input boundary for repeatable, metric planning experiments."""
 
+import json
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.planning.pattern_contracts import PatternPreviewRequest
+from app.planning.recommendation_contracts import RecommendationRequest
 from app.projects.contracts import Project
 
 
-class PlanningCase(BaseModel):
+class PlanningSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
@@ -17,7 +19,6 @@ class PlanningCase(BaseModel):
     units: Literal["m"]
     evidence_note: str
     project: Project
-    request: PatternPreviewRequest
 
     @model_validator(mode="before")
     @classmethod
@@ -50,3 +51,24 @@ class PlanningCase(BaseModel):
         if self.project.geometry is None or self.project.plan is None:
             raise ValueError("An analytical geometry snapshot and plan are required")
         return self
+
+
+class PlanningCase(PlanningSnapshot):
+    scenario: Literal["pattern"] = "pattern"
+    request: PatternPreviewRequest
+
+
+class RecommendationCase(PlanningSnapshot):
+    scenario: Literal["recommendation"] = "recommendation"
+    request: RecommendationRequest
+
+
+def parse_case(content: bytes) -> PlanningCase | RecommendationCase:
+    raw = json.loads(content)
+    if not isinstance(raw, dict):
+        raise ValueError("Expected an object containing a frozen case")
+    if raw.get("scenario", "pattern") == "pattern":
+        return PlanningCase.model_validate(raw)
+    if raw.get("scenario") == "recommendation":
+        return RecommendationCase.model_validate(raw)
+    raise ValueError("Unknown planning scenario")

@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "name": "narrow-courtyard",
+  "input_kind": "synthetic",
+  "units": "m",
+  "evidence_note": "Synthetic geometry; existing rule coverage only, not full-site normative acceptance",
+  "project": {
+    "id": "species-narrow-courtyard",
+    "name": "Allocation",
+    "status": "empty",
+    "source_file": null,
+    "import_status": {
+      "mode": "source_dxf",
+      "editability": "editable",
+      "release_id": null,
+      "message": "Исходный DXF доступен для подготовки редактируемого плана."
+    },
+    "source_review": null,
+    "layers": [],
+    "coordinate_reference": {
+      "status": "unknown",
+      "crs_id": null,
+      "name": null,
+      "source": "none",
+      "axis_order": null,
+      "origin_wgs84": null,
+      "local_projection": null,
+      "earth_radius_m": null,
+      "horizontal_source": null,
+      "control_points_count": 0,
+      "evidence": "Система координат не указана",
+      "updated_at": null
+    },
+    "source_geometry": null,
+    "geometry": {
+      "feature_collection": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "kind": "site_border"
+            },
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    510.0,
+                    -10.0
+                  ],
+                  [
+                    510.0,
+                    210.0
+                  ],
+                  [
+                    -10.0,
+                    210.0
+                  ],
+                  [
+                    -10.0,
+                    -10.0
+                  ],
+                  [
+                    510.0,
+                    -10.0
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "vertical_primitives": [],
+      "site_area_m2": null,
+      "planning_area_m2": null,
+      "allowed_area_m2": null
+    },
+    "map_ready": true,
+    "geometry_version": 0,
+    "planting_zones": [
+      {
+        "id": "west",
+        "label": "West",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                16.0,
+                0.0
+              ],
+              [
+                16.0,
+                150.0
+              ],
+              [
+                0.0,
+                150.0
+              ],
+              [
+                0.0,
+                0.0
+              ],
+              [
+                16.0,
+                0.0
+              ]
+            ]
+          ]
+        }
+      },
+      {
+        "id": "east",
+        "label": "East",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                500.0,
+                0.0
+              ],
+              [
+                500.0,
+                100.0
+              ],
+              [
+                400.0,
+                100.0
+              ],
+              [
+                400.0,
+                0.0
+              ],
+              [
+                500.0,
+                0.0
+              ]
+            ]
+          ]
+        }
+      }
+    ],
+    "site_area_m2": null,
+    "planning_area_m2": null,
+    "allowed_area_m2": null,
+    "plan": {
+      "id": "plan-narrow-courtyard",
+      "objects": [],
+      "issues": [],
+      "version": 1,
+      "validation_basis": null
+    },
+    "state_version": 1,
+    "created_at": "2026-09-17T00:00:00+00:00",
+    "updated_at": "2026-09-17T00:00:00+00:00"
+  },
+  "scenario": "recommendation",
+  "request": {
+    "base_plan_version": 1,
+    "zone_ids": [
+      "west"
+    ],
+    "profile": "shade",
+    "max_sites": 5,
+    "territory": {
+      "category": "courtyard",
+      "regime": "ordinary",
+      "basis": "Analytical test brief"
+    }
+  }
+}

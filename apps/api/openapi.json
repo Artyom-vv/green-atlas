@@ -12527,6 +12527,35 @@
             },
             "type": "array",
             "title": "Data Gaps"
+          },
+          "species_options": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationSpeciesOption"
+            },
+            "type": "array",
+            "title": "Species Options"
+          },
+          "selection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Reason"
+          },
+          "assortment_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assortment Revision"
           }
         },
         "type": "object",
@@ -12569,6 +12598,16 @@
             "minimum": 1.0,
             "title": "Max Sites",
             "default": 80
+          },
+          "territory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerritoryContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -12577,6 +12616,80 @@
           "zone_ids"
         ],
         "title": "RecommendationRequest"
+      },
+      "RecommendationSpeciesOption": {
+        "properties": {
+          "species_revision_id": {
+            "type": "string",
+            "title": "Species Revision Id"
+          },
+          "assortment_status": {
+            "type": "string",
+            "enum": [
+              "listed",
+              "not_recommended",
+              "unreviewed",
+              "individual_review"
+            ],
+            "title": "Assortment Status"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "title": "Accepted Count",
+            "default": 0
+          },
+          "crown_projection_sum_m2": {
+            "type": "number",
+            "title": "Crown Projection Sum M2",
+            "default": 0
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "source_row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Row"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "species_revision_id",
+          "assortment_status"
+        ],
+        "title": "RecommendationSpeciesOption"
       },
       "RegulatoryReleaseBasis": {
         "properties": {
@@ -15019,6 +15132,46 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TaskState"
+      },
+      "TerritoryContext": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "courtyard",
+              "preschool",
+              "school_sport",
+              "healthcare",
+              "major_road",
+              "public_square",
+              "park",
+              "industrial"
+            ],
+            "title": "Category"
+          },
+          "regime": {
+            "type": "string",
+            "enum": [
+              "ordinary",
+              "individual_project",
+              "unknown"
+            ],
+            "title": "Regime"
+          },
+          "basis": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Basis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "regime",
+          "basis"
+        ],
+        "title": "TerritoryContext"
       },
       "ToolCall": {
         "properties": {

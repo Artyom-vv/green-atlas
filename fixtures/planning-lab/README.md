@@ -13,3 +13,28 @@
 
 Запуск и содержание отчётов:
 [planning_lab](../../apps/api/scripts/planning_lab/README.md).
+
+## Контроль подбора пород
+
+Четыре дополнительных **синтетических** снимка вызывают recommendation-сценарий:
+
+| Пара входов | Условия | Прежний пресет | Контекст территории |
+| --- | --- | --- | --- |
+| narrow-courtyard-legacy / narrow-courtyard-territory | Полоса 16 × 150 м, shade, максимум 5 | 0 лип | 5 рябин |
+| healthcare-legacy / healthcare-territory | Участок 200 × 150 м, balanced, максимум 5 | 5 берёз | 5 клёнов |
+
+Внутри каждой пары geometry, план и настройки совпадают. У второго входа
+добавлен явный territory с regime=ordinary и основанием тестового задания.
+Legacy означает сохранённый путь без контекста, не запуск старого Git checkout.
+Сети на этих участках отсутствуют по конструкции теста; пригодность настоящей
+улицы ими не подтверждается. Оба режима используют текущие проверки геометрии,
+сценарные размеры кроны/корней и существующие отступы без подгонки под пример.
+
+Запуск из apps/api (после windows-env.ps1) тем же CLI, например:
+
+```powershell
+.venv/Scripts/python.exe -m scripts.planning_lab ../../fixtures/planning-lab/narrow-courtyard-territory.json --output ../../.runtime/planning-lab/new-territory-run.json
+```
+
+Каждый output должен быть новым. Сравнение до/после и ограничения:
+[checkpoint](../../docs/implementation/2026-09-17-species-selection/README.md).

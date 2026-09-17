@@ -12,12 +12,15 @@ from app.planning.changes import ChangeSetApplication
 from app.planning.domain import PlanVersionConflict
 from app.planning.evaluation import PlanEvaluation
 from app.planning.pattern_application import PatternApplication
+from app.planning.pattern_contracts import PatternPreview
 from app.planning.patterns import ShapelyCandidateGenerator
+from app.planning.recommendation_application import RecommendationApplication
+from app.planning.recommendation_contracts import RecommendationPreview
 from app.projects.contracts import Project
 from app.validation.adapters import RuleBasedPlanValidator
 from app.validation.application import PlanValidation
 
-from .contracts import PlanningCase
+from .contracts import PlanningCase, RecommendationCase
 from .evidence import digest, implementation_basis
 from .recording import RecordingGenerator, RecordingPreviews
 
@@ -37,7 +40,7 @@ class FrozenProjectReader:
         raise RuntimeError("Planning lab cannot mutate a project")
 
 
-def run_case(case: PlanningCase) -> dict:
+def run_case(case: PlanningCase | RecommendationCase) -> dict:
     case_input = case.model_dump(mode="json")
     input_hash = digest(case_input)
     basis = implementation_basis()
@@ -72,12 +75,18 @@ def run_case(case: PlanningCase) -> dict:
     )
     generator = RecordingGenerator(ShapelyCandidateGenerator())
     previews = RecordingPreviews(changes)
-    scenario = PatternApplication(reader, generator, evaluation, previews)
     start = perf_counter()
     error = None
-    result = None
+    result: PatternPreview | RecommendationPreview | None = None
     try:
-        result = scenario.preview_pattern(case.project.id, case.request)
+        if isinstance(case, RecommendationCase):
+            result = RecommendationApplication(
+                reader, generator, evaluation, previews
+            ).preview_recommendation(case.project.id, case.request)
+        else:
+            result = PatternApplication(
+                reader, generator, evaluation, previews
+            ).preview_pattern(case.project.id, case.request)
     except (ValueError, KeyError, PlanVersionConflict) as exception:
         # A rejected run still has an immutable artifact. Never clear source
         # review or unknown-network flags in order to make an experiment pass.
