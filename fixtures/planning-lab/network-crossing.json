@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "name": "Synthetic crossing",
+  "input_kind": "synthetic",
+  "units": "m",
+  "evidence_note": "Analytical fixture, no real-site acceptance claim",
+  "project": {
+    "id": "lab-fixture",
+    "name": "Synthetic gas crossing",
+    "status": "empty",
+    "source_file": null,
+    "import_status": {
+      "mode": "source_dxf",
+      "editability": "editable",
+      "release_id": null,
+      "message": "Исходный DXF доступен для подготовки редактируемого плана."
+    },
+    "source_review": null,
+    "layers": [
+      {
+        "id": "gas",
+        "source_name": "gas",
+        "suggested_kind": "utility",
+        "mapped_kind": "utility",
+        "object_count": 1,
+        "bounds": null,
+        "color": "#888888",
+        "linetype": "CONTINUOUS",
+        "lineweight_mm": null,
+        "entity_types": {},
+        "geometry_complete": true,
+        "required": false,
+        "visible": true,
+        "utility_context": {
+          "network_type": "gas",
+          "geometry_reference": "outer_surface",
+          "installation": "underground",
+          "review_status": "confirmed",
+          "source_reference": "Synthetic rectangle, not an official survey",
+          "confirmed_by": "Fixture author"
+        },
+        "utility_axis_bindings": []
+      }
+    ],
+    "coordinate_reference": {
+      "status": "unknown",
+      "crs_id": null,
+      "name": null,
+      "source": "none",
+      "axis_order": null,
+      "origin_wgs84": null,
+      "local_projection": null,
+      "earth_radius_m": null,
+      "horizontal_source": null,
+      "control_points_count": 0,
+      "evidence": "Система координат не указана",
+      "updated_at": null
+    },
+    "source_geometry": null,
+    "geometry": {
+      "feature_collection": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "id": "boundary",
+            "properties": {
+              "kind": "site_border"
+            },
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    100.0,
+                    0.0
+                  ],
+                  [
+                    100.0,
+                    100.0
+                  ],
+                  [
+                    0.0,
+                    100.0
+                  ],
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    100.0,
+                    0.0
+                  ]
+                ]
+              ]
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "pipe",
+            "properties": {
+              "kind": "utility",
+              "source_layer": "gas",
+              "utility_context": {
+                "network_type": "gas",
+                "geometry_reference": "outer_surface",
+                "installation": "underground",
+                "review_status": "confirmed",
+                "source_reference": "Synthetic rectangle, not an official survey",
+                "confirmed_by": "Fixture author"
+              }
+            },
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    52.0,
+                    0.0
+                  ],
+                  [
+                    52.0,
+                    100.0
+                  ],
+                  [
+                    48.0,
+                    100.0
+                  ],
+                  [
+                    48.0,
+                    0.0
+                  ],
+                  [
+                    52.0,
+                    0.0
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "vertical_primitives": [],
+      "site_area_m2": null,
+      "planning_area_m2": null,
+      "allowed_area_m2": null
+    },
+    "map_ready": true,
+    "geometry_version": 4,
+    "planting_zones": [
+      {
+        "id": "zone",
+        "label": "Test zone",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                100.0,
+                0.0
+              ],
+              [
+                100.0,
+                100.0
+              ],
+              [
+                0.0,
+                100.0
+              ],
+              [
+                0.0,
+                0.0
+              ],
+              [
+                100.0,
+                0.0
+              ]
+            ]
+          ]
+        }
+      }
+    ],
+    "site_area_m2": null,
+    "planning_area_m2": null,
+    "allowed_area_m2": null,
+    "plan": {
+      "id": "lab-plan",
+      "objects": [],
+      "issues": [],
+      "version": 1,
+      "validation_basis": null
+    },
+    "state_version": 8,
+    "created_at": "2026-09-17T00:00:00+00:00",
+    "updated_at": "2026-09-17T00:00:00+00:00"
+  },
+  "request": {
+    "type": "row",
+    "base_plan_version": 1,
+    "plant_kind": "tree",
+    "zone_ids": [
+      "zone"
+    ],
+    "axis": {
+      "type": "LineString",
+      "coordinates": [
+        [
+          10,
+          50
+        ],
+        [
+          90,
+          50
+        ]
+      ]
+    },
+    "spacing_m": 10.0,
+    "placement_mode": "spacing",
+    "target_count": 20,
+    "start_offset_m": 0.0,
+    "end_offset_m": 0.0,
+    "side": "center",
+    "lateral_offset_m": 0.0,
+    "layout_radius_m": null,
+    "size_class": "unspecified",
+    "species_revision_id": null,
+    "spacing_policy": "balanced"
+  }
+}
