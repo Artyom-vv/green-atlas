@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.planning.change_contracts import ChangeSetPreview
 from app.planning.pattern_contracts import PatternSkippedCandidate
 from app.species.assortment import AssortmentStatus, TerritoryContext
+from app.species.site_contracts import SiteConditions, SiteSuitability
 
 
 class RecommendationRequest(BaseModel):
@@ -18,6 +19,10 @@ class RecommendationRequest(BaseModel):
     max_sites: int = Field(default=80, ge=1, le=500)
     territory: TerritoryContext | None = None
     plant_kind: Literal["tree", "shrub"] | None = None
+    site_conditions: SiteConditions | None = Field(
+        default=None,
+        description="Явно заданные одинаковые условия всех выбранных участков. Для разных условий нужны отдельные запросы; null означает отсутствие данных.",
+    )
 
     @property
     def effective_plant_kind(self) -> Literal["tree", "shrub"]:
@@ -27,6 +32,10 @@ class RecommendationRequest(BaseModel):
     def require_shrub_context(self) -> RecommendationRequest:
         if self.plant_kind == "shrub" and self.territory is None:
             raise ValueError("Для подбора кустарников укажите контекст территории")
+        if self.site_conditions is not None and self.territory is None:
+            raise ValueError(
+                "Для подбора по условиям участка укажите контекст территории"
+            )
         return self
 
 
@@ -66,6 +75,7 @@ class RecommendationSpeciesOption(BaseModel):
     source_row_id: str | None = None
     source_tier: Literal["main", "additional"] | None = None
     notes: list[str] = Field(default_factory=list)
+    site_suitability: SiteSuitability | None = None
 
 
 class RecommendationPreview(BaseModel):
@@ -80,3 +90,5 @@ class RecommendationPreview(BaseModel):
     species_options: list[RecommendationSpeciesOption] = Field(default_factory=list)
     selection_reason: str | None = None
     assortment_revision: str | None = None
+    site_conditions: SiteConditions | None = None
+    site_evidence_revision: str | None = None

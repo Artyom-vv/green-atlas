@@ -4128,6 +4128,9 @@ export interface components {
             selection_reason?: string | null;
             /** Assortment Revision */
             assortment_revision?: string | null;
+            site_conditions?: components["schemas"]["SiteConditions"] | null;
+            /** Site Evidence Revision */
+            site_evidence_revision?: string | null;
         };
         /** RecommendationRequest */
         RecommendationRequest: {
@@ -4149,6 +4152,8 @@ export interface components {
             territory?: components["schemas"]["TerritoryContext"] | null;
             /** Plant Kind */
             plant_kind?: ("tree" | "shrub") | null;
+            /** @description Явно заданные одинаковые условия всех выбранных участков. Для разных условий нужны отдельные запросы; null означает отсутствие данных. */
+            site_conditions?: components["schemas"]["SiteConditions"] | null;
         };
         /** RecommendationSpeciesOption */
         RecommendationSpeciesOption: {
@@ -4181,6 +4186,7 @@ export interface components {
             source_tier?: ("main" | "additional") | null;
             /** Notes */
             notes?: string[];
+            site_suitability?: components["schemas"]["SiteSuitability"] | null;
         };
         /**
          * RegulatoryReleaseBasis
@@ -4782,6 +4788,56 @@ export interface components {
             plant_kind?: ("tree" | "shrub" | "mixed") | null;
             /** Unsupported Reason */
             unsupported_reason?: string | null;
+        };
+        /** SiteConditionCheck */
+        SiteConditionCheck: {
+            /**
+             * Dimension
+             * @enum {string}
+             */
+            dimension: "light" | "moisture" | "drainage";
+            /** Value */
+            value?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_provided" | "documented_match" | "documented_conflict" | "unknown";
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * SiteConditions
+         * @description One homogeneous observation context for all zones in this request.
+         *
+         *     Unknown dimensions stay null; drainage and moisture are independent.
+         *     Separate requests are necessary for zones with different conditions.
+         */
+        SiteConditions: {
+            /** Light */
+            light?: ("full_sun" | "partial_shade" | "full_shade") | null;
+            /** Moisture */
+            moisture?: ("moist" | "occasionally_dry" | "occasionally_wet" | "persistently_wet") | null;
+            /** Drainage */
+            drainage?: ("well_drained" | "poorly_drained") | null;
+            /** Basis */
+            basis: string;
+        };
+        /** SiteSuitability */
+        SiteSuitability: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "documented_match" | "documented_conflict" | "unknown";
+            /** Checks */
+            checks: components["schemas"]["SiteConditionCheck"][];
+            /** Source Url */
+            source_url?: string | null;
+            /** Checked On */
+            checked_on?: string | null;
+            /** Notes */
+            notes?: string[];
         };
         /** SourceFile */
         SourceFile: {

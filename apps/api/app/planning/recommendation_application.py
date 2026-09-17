@@ -37,6 +37,8 @@ from app.species.assortment import (
 )
 from app.species.assortment_inventory import assortment_entry
 from app.species.catalog import get_species, list_species
+from app.species.site_profiles import site_profile, site_profile_inventory
+from app.species.site_suitability import assess_site
 
 
 class RecommendationApplication:
@@ -104,9 +106,21 @@ class RecommendationApplication:
                 notes=list(row.notes)
                 if row
                 else ["Строка этого вида ещё не квалифицирована"],
+                site_suitability=assess_site(
+                    request.site_conditions, site_profile(species.species_id)
+                )
+                if request.site_conditions is not None
+                else None,
             )
             options.append(option)
             if status != "listed":
+                continue
+            if (
+                option.site_suitability is not None
+                and option.site_suitability.status != "documented_match"
+            ):
+                # Unknown is a review case, not a claim that the species is
+                # forbidden. Do not silently fall back to an unassessed plant.
                 continue
             trial = self._preview_species(
                 project, request, species.id, cache_final=False
@@ -122,7 +136,7 @@ class RecommendationApplication:
                 best_key, selected_id = key, species.id
 
         if selected_id is None:
-            return RecommendationPreview(
+            result = RecommendationPreview(
                 profile=request.profile,
                 evidence=EvidenceAssessment(
                     spatial_constraints="partial",
@@ -134,6 +148,13 @@ class RecommendationApplication:
                 selection_reason="Для переданного контекста нет квалифицированного автоматического выбора.",
                 data_gaps=["Индивидуальный проект или уточнение категории территории"],
             )
+            if request.site_conditions is not None:
+                result.evidence.note = "Подбор не выполнен: нет вида с подтверждённым сочетанием категории территории и заданных условий места. Причины сохранены по каждому виду."
+                result.data_gaps = [
+                    "Проверка ассортимента и условий места по отклонённым вариантам"
+                ]
+                self._record_site_context(result, request)
+            return result
         result = self._preview_species(project, request, selected_id, cache_final=True)
         result.species_options = options
         result.assortment_revision = ASSORTMENT_REVISION
@@ -146,6 +167,16 @@ class RecommendationApplication:
             item for item in options if item.species_revision_id == selected_id
         )
         selected_revision = get_species(selected_id)
+        if selected_option.site_suitability is not None:
+            self._record_site_context(result, request)
+            site_reasons = [
+                check.reason for check in selected_option.site_suitability.checks
+            ]
+            for explanation in result.explanations:
+                explanation.biological_risks.extend(site_reasons)
+                explanation.biological_risks.extend(
+                    selected_option.site_suitability.notes
+                )
         for explanation in result.explanations:
             explanation.biological_risks.extend(selected_option.notes)
             explanation.biological_risks.append(selected_revision.evidence_note)
@@ -155,6 +186,29 @@ class RecommendationApplication:
                 "Корневая архитектура и местная калибровка роста выбранного вида"
             )
         return result
+
+    @staticmethod
+    def _record_site_context(
+        result: RecommendationPreview, request: RecommendationRequest
+    ) -> None:
+        context = request.site_conditions
+        if context is None:
+            return
+        result.site_conditions = context.model_copy(deep=True)
+        result.site_evidence_revision = site_profile_inventory().revision
+        # Observations supplied by a caller are not a verified sunlight or
+        # hydrology simulation. Keep effects unknown and remaining gaps visible.
+        if context.light is not None:
+            result.evidence.sunlight = "partial"
+        if context.moisture is not None or context.drainage is not None:
+            result.evidence.soil = "partial"
+        result.evidence.note += " Сверены только явно заданные условия с опубликованными сведениями о видах; это не местная калибровка и не полная оценка пригодности."
+        result.data_gaps.extend(
+            [
+                "Кислотность, засоление и уплотнение почвы, сорт и уход",
+                "Проверка однородности условий во всех выбранных участках",
+            ]
+        )
 
     def _preview_species(
         self,
@@ -197,7 +251,14 @@ class RecommendationApplication:
         )
         digest = sha256(
             json.dumps(
-                request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
+                request.model_dump(
+                    mode="json",
+                    exclude={"site_conditions"}
+                    if request.site_conditions is None
+                    else set(),
+                ),
+                ensure_ascii=False,
+                sort_keys=True,
             ).encode()
         ).hexdigest()
         recommendation_id = f"recommendation-{digest[:16]}"

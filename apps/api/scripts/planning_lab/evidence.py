@@ -14,6 +14,7 @@ from app.regulations.profiles import requirement_profile
 from app.regulations.registry import registry_snapshot
 from app.species.assortment_inventory import assortment_inventory
 from app.species.catalog import list_species
+from app.species.site_profiles import site_profile_inventory
 from app.species.source_profiles import source_profiles
 
 
@@ -59,6 +60,7 @@ def implementation_basis() -> dict:
         "source_species_profiles": [
             p.model_dump(mode="json") for p in source_profiles()
         ],
+        "site_species_profiles": site_profile_inventory().model_dump(mode="json"),
     }
 
 

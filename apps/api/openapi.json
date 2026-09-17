@@ -12762,6 +12762,27 @@
               }
             ],
             "title": "Assortment Revision"
+          },
+          "site_conditions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteConditions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "site_evidence_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Evidence Revision"
           }
         },
         "type": "object",
@@ -12829,6 +12850,17 @@
               }
             ],
             "title": "Plant Kind"
+          },
+          "site_conditions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteConditions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Явно заданные одинаковые условия всех выбранных участков. Для разных условий нужны отдельные запросы; null означает отсутствие данных."
           }
         },
         "type": "object",
@@ -12929,6 +12961,16 @@
             },
             "type": "array",
             "title": "Notes"
+          },
+          "site_suitability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteSuitability"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -14611,6 +14653,171 @@
         "additionalProperties": false,
         "type": "object",
         "title": "SelectionReference"
+      },
+      "SiteConditionCheck": {
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "light",
+              "moisture",
+              "drainage"
+            ],
+            "title": "Dimension"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_provided",
+              "documented_match",
+              "documented_conflict",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dimension",
+          "status",
+          "reason"
+        ],
+        "title": "SiteConditionCheck"
+      },
+      "SiteConditions": {
+        "properties": {
+          "light": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full_sun",
+                  "partial_shade",
+                  "full_shade"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Light"
+          },
+          "moisture": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "moist",
+                  "occasionally_dry",
+                  "occasionally_wet",
+                  "persistently_wet"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moisture"
+          },
+          "drainage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "well_drained",
+                  "poorly_drained"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drainage"
+          },
+          "basis": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Basis"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "basis"
+        ],
+        "title": "SiteConditions",
+        "description": "One homogeneous observation context for all zones in this request.\n\nUnknown dimensions stay null; drainage and moisture are independent.\nSeparate requests are necessary for zones with different conditions."
+      },
+      "SiteSuitability": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "documented_match",
+              "documented_conflict",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SiteConditionCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "checked_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked On"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "SiteSuitability"
       },
       "SourceFile": {
         "properties": {
