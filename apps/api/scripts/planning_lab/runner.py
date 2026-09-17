@@ -9,6 +9,8 @@ from app.geometry.adapters import ShapelyGeometryEngine
 from app.history.adapters import InMemoryProjectHistory
 from app.history.application import PlanHistoryApplication
 from app.planning.changes import ChangeSetApplication
+from app.planning.composition_selection import select_composition
+from app.planning.composition_selection_contracts import CompositionSelectionResult
 from app.planning.domain import PlanVersionConflict
 from app.planning.evaluation import PlanEvaluation
 from app.planning.pattern_application import PatternApplication
@@ -20,7 +22,7 @@ from app.projects.contracts import Project
 from app.validation.adapters import RuleBasedPlanValidator
 from app.validation.application import PlanValidation
 
-from .contracts import PlanningCase, RecommendationCase
+from .contracts import CompositionSelectionCase, PlanningCase, RecommendationCase
 from .evidence import digest, implementation_basis
 from .recording import RecordingGenerator, RecordingPreviews
 
@@ -40,7 +42,9 @@ class FrozenProjectReader:
         raise RuntimeError("Planning lab cannot mutate a project")
 
 
-def run_case(case: PlanningCase | RecommendationCase) -> dict:
+def run_case(
+    case: PlanningCase | RecommendationCase | CompositionSelectionCase,
+) -> dict:
     case_input = case.model_dump(mode="json")
     input_hash = digest(case_input)
     basis = implementation_basis()
@@ -77,9 +81,17 @@ def run_case(case: PlanningCase | RecommendationCase) -> dict:
     previews = RecordingPreviews(changes)
     start = perf_counter()
     error = None
-    result: PatternPreview | RecommendationPreview | None = None
+    result: (
+        PatternPreview | RecommendationPreview | CompositionSelectionResult | None
+    ) = None
     try:
-        if isinstance(case, RecommendationCase):
+        if isinstance(case, CompositionSelectionCase):
+            result = select_composition(
+                reader.get(case.project.id),
+                case.request,
+                PatternApplication(reader, generator, evaluation, previews),
+            )
+        elif isinstance(case, RecommendationCase):
             result = RecommendationApplication(
                 reader, generator, evaluation, previews
             ).preview_recommendation(case.project.id, case.request)

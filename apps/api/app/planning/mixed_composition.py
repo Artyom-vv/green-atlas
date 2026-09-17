@@ -3,12 +3,12 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from hashlib import sha256
 from typing import Literal
 
 from app.data_passport import build_data_passport
+from app.planning.allocation import composition_targets as composition_targets
 from app.planning.allocation import equal_zone_targets
 from app.planning.change_contracts import PlanChangeSetDraft, PlanObjectAddOperation
 from app.planning.contracts import PlanObject, PlanObjectCreate
@@ -33,16 +33,6 @@ ORDERS: tuple[tuple[PlantKind, PlantKind], ...] = (
     ("tree", "shrub"),
     ("shrub", "tree"),
 )
-
-
-def composition_targets(total: int, tree_share: float) -> dict[PlantKind, int]:
-    """User ratio, rounded half up once for the whole request; never a norm."""
-    trees = int(
-        (Decimal(total) * Decimal(str(tree_share))).quantize(
-            Decimal(1), rounding=ROUND_HALF_UP
-        )
-    )
-    return {"tree": trees, "shrub": total - trees}
 
 
 @dataclass

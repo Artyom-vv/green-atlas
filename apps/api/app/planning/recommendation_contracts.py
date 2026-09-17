@@ -64,11 +64,9 @@ class RecommendationExplanation(BaseModel):
     effects: list[EffectEstimate] = Field(default_factory=list)
 
 
-class RecommendationSpeciesOption(BaseModel):
+class QualifiedSpeciesOption(BaseModel):
     species_revision_id: str
     assortment_status: AssortmentStatus
-    accepted_count: int = 0
-    crown_projection_sum_m2: float = 0
     source_url: str | None = None
     source_page: int | None = None
     source_row: int | None = None
@@ -76,6 +74,11 @@ class RecommendationSpeciesOption(BaseModel):
     source_tier: Literal["main", "additional"] | None = None
     notes: list[str] = Field(default_factory=list)
     site_suitability: SiteSuitability | None = None
+
+
+class RecommendationSpeciesOption(QualifiedSpeciesOption):
+    accepted_count: int = 0
+    crown_projection_sum_m2: float = 0
 
 
 class RecommendationPreview(BaseModel):

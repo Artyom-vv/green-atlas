@@ -23,6 +23,7 @@ from app.planning.rules import (
     default_layout_radius,
     growth_radii,
 )
+from app.planning.species_qualification import eligible, qualify_species
 from app.planning.species_selection import (
     SELECTION_REASONS,
     crown_projection_sum,
@@ -32,13 +33,9 @@ from app.projects.contracts import Project
 from app.projects.ports import ProjectReader
 from app.species.assortment import (
     ASSORTMENT_REVISION,
-    ASSORTMENT_SOURCE,
-    assortment_status,
 )
-from app.species.assortment_inventory import assortment_entry
 from app.species.catalog import get_species, list_species
-from app.species.site_profiles import site_profile, site_profile_inventory
-from app.species.site_suitability import assess_site
+from app.species.site_profiles import site_profile_inventory
 
 
 class RecommendationApplication:
@@ -93,34 +90,13 @@ class RecommendationApplication:
         for species in sorted(
             list_species(request.effective_plant_kind), key=lambda item: item.id
         ):
-            status = assortment_status(species.species_id, request.territory)
-            row = assortment_entry(species.species_id)
-            option = RecommendationSpeciesOption(
-                species_revision_id=species.id,
-                assortment_status=status,
-                source_url=ASSORTMENT_SOURCE if row else None,
-                source_page=row.page if row else None,
-                source_row=row.row if row else None,
-                source_row_id=row.id if row else None,
-                source_tier=row.tier if row else None,
-                notes=list(row.notes)
-                if row
-                else ["Строка этого вида ещё не квалифицирована"],
-                site_suitability=assess_site(
-                    request.site_conditions, site_profile(species.species_id)
-                )
-                if request.site_conditions is not None
-                else None,
+            option = RecommendationSpeciesOption.model_validate(
+                qualify_species(
+                    species.id, request.territory, request.site_conditions
+                ).model_dump()
             )
             options.append(option)
-            if status != "listed":
-                continue
-            if (
-                option.site_suitability is not None
-                and option.site_suitability.status != "documented_match"
-            ):
-                # Unknown is a review case, not a claim that the species is
-                # forbidden. Do not silently fall back to an unassessed plant.
+            if not eligible(option):
                 continue
             trial = self._preview_species(
                 project, request, species.id, cache_final=False

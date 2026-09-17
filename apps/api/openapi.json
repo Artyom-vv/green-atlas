@@ -13016,16 +13016,6 @@
             ],
             "title": "Assortment Status"
           },
-          "accepted_count": {
-            "type": "integer",
-            "title": "Accepted Count",
-            "default": 0
-          },
-          "crown_projection_sum_m2": {
-            "type": "number",
-            "title": "Crown Projection Sum M2",
-            "default": 0
-          },
           "source_url": {
             "anyOf": [
               {
@@ -13101,6 +13091,16 @@
                 "type": "null"
               }
             ]
+          },
+          "accepted_count": {
+            "type": "integer",
+            "title": "Accepted Count",
+            "default": 0
+          },
+          "crown_projection_sum_m2": {
+            "type": "number",
+            "title": "Crown Projection Sum M2",
+            "default": 0
           }
         },
         "type": "object",

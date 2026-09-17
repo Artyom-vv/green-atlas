@@ -4201,16 +4201,6 @@ export interface components {
              * @enum {string}
              */
             assortment_status: "listed" | "not_recommended" | "unreviewed" | "individual_review";
-            /**
-             * Accepted Count
-             * @default 0
-             */
-            accepted_count: number;
-            /**
-             * Crown Projection Sum M2
-             * @default 0
-             */
-            crown_projection_sum_m2: number;
             /** Source Url */
             source_url?: string | null;
             /** Source Page */
@@ -4224,6 +4214,16 @@ export interface components {
             /** Notes */
             notes?: string[];
             site_suitability?: components["schemas"]["SiteSuitability"] | null;
+            /**
+             * Accepted Count
+             * @default 0
+             */
+            accepted_count: number;
+            /**
+             * Crown Projection Sum M2
+             * @default 0
+             */
+            crown_projection_sum_m2: number;
         };
         /**
          * RegulatoryReleaseBasis

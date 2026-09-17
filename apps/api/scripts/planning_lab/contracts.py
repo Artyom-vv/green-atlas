@@ -5,6 +5,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from app.planning.composition_selection_contracts import CompositionSelectionRequest
 from app.planning.pattern_contracts import PatternPreviewRequest
 from app.planning.recommendation_contracts import RecommendationRequest
 from app.projects.contracts import Project
@@ -63,7 +64,14 @@ class RecommendationCase(PlanningSnapshot):
     request: RecommendationRequest
 
 
-def parse_case(content: bytes) -> PlanningCase | RecommendationCase:
+class CompositionSelectionCase(PlanningSnapshot):
+    scenario: Literal["composition_selection"] = "composition_selection"
+    request: CompositionSelectionRequest
+
+
+def parse_case(
+    content: bytes,
+) -> PlanningCase | RecommendationCase | CompositionSelectionCase:
     raw = json.loads(content)
     if not isinstance(raw, dict):
         raise ValueError("Expected an object containing a frozen case")
@@ -71,4 +79,6 @@ def parse_case(content: bytes) -> PlanningCase | RecommendationCase:
         return PlanningCase.model_validate(raw)
     if raw.get("scenario") == "recommendation":
         return RecommendationCase.model_validate(raw)
+    if raw.get("scenario") == "composition_selection":
+        return CompositionSelectionCase.model_validate(raw)
     raise ValueError("Unknown planning scenario")

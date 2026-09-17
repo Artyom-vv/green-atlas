@@ -103,6 +103,15 @@ apply. Снимки/отчёты могут быть большими: здес�
 
 ## Проверки
 
+Автоматический смешанный состав доступен как `scenario=composition_selection`;
+пример — `fixtures/planning-lab/automatic-mixed-courtyard.json`.
+`request.placement` задаёт mixed/count без species IDs, `territory` — категорию,
+`site_conditions` — известные условия, `objective` — критерий сравнения.
+Сравниваются все квалифицированные пары текущего каталога; результат содержит
+полный список пар, причины квалификации и один итоговый preview. На больших
+снимках время полного перебора ещё не подтверждено. Это независимый сценарий,
+пока не подключённый к HTTP/UI.
+
 ```powershell
 . ../../scripts/windows-env.ps1
 .venv/Scripts/python.exe -m pytest tests/test_planning_lab.py -o addopts= -q
