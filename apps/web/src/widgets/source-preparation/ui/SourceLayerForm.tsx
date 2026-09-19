@@ -1,6 +1,7 @@
 import type { FC } from 'react';
 import { Disclosure, InlineMessage } from '@green/ui';
 import { LayerMappingTable } from '@/entities/source-data/ui/LayerMappingTable';
+import { LayerMappingReview } from '@/entities/source-data/ui/LayerMappingReview';
 import { BoundaryCandidatePicker } from '@/entities/source-data/ui/BoundaryCandidatePicker';
 import { DataPassportPanel } from '@/entities/source-data/ui/DataPassportPanel';
 import { ProjectConflictNotice } from '@/entities/project/ui/ProjectConflictNotice';
@@ -69,14 +70,12 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
         </InlineMessage>
       )}
       {!reviewOnly && !!unconfirmedMappings.length && (
-        <section aria-label="Слои, требующие проверки">
-          <LayerMappingTable
-            readOnly={preparationBlocked}
-            layers={unconfirmedMappings}
-            mappings={mappings}
-            onChange={setMappings}
-          />
-        </section>
+        <LayerMappingReview
+          readOnly={preparationBlocked}
+          layers={unconfirmedMappings}
+          mappings={mappings}
+          onChange={setMappings}
+        />
       )}
       {!reviewOnly && !!unconfirmedMappings.length && !!otherLayers.length ? (
         <Disclosure
