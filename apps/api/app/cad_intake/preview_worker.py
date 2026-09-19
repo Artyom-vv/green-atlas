@@ -75,12 +75,15 @@ def _execute(work: PreviewWork, lifecycle: OperationLifecycle) -> None:
         PREPARE_POLICY,
     )
     entries = passport.entries or [passport.entry]
-    prepared_drawings = []
     imported_drawings = []
     publication_assets = {}
     prepared_sources = []
     aoi_sources = []
     warnings = list(sources.package_warnings)
+    primary_fragment = None
+    primary_imported = None
+    selected_entities = 0
+    unknown_bounds = 0
     for index, drawing_path in enumerate(entries, start=1):
         lifecycle.check_cancelled(operation.id)
         lifecycle.report(
@@ -115,7 +118,6 @@ def _execute(work: PreviewWork, lifecycle: OperationLifecycle) -> None:
         if prepared.drawing_path.stat().st_size > MAX_DXF_CONTENT_BYTES:
             raise ValueError("Подготовленная территория превышает бюджет исходника")
         imported = EzdxfReader().read_prepared_file(prepared.drawing_path)
-        prepared_drawings.append((drawing_path, prepared))
         imported_drawings.append(
             ImportedDrawing(
                 path=drawing_path,
@@ -144,12 +146,25 @@ def _execute(work: PreviewWork, lifecycle: OperationLifecycle) -> None:
                 unknown_bounds=prepared.manifest.unknown_bounds,
             )
         )
+        selected_entities += prepared.manifest.selected_modelspace_entities
+        unknown_bounds += prepared.manifest.unknown_bounds
+        if drawing_path == request.source.path:
+            primary_fragment = (
+                drawing_path,
+                prepared.drawing_path,
+                prepared.manifest.output_sha256,
+                prepared.manifest.output_bytes,
+                file_sha256(prepared.manifest_path),
+                prepared.manifest.source_units,
+                prepared.manifest.boundary_area_m2,
+            )
+            primary_imported = imported
         warnings.extend(f"{drawing_path}: {item}" for item in prepared.manifest.warnings)
+        del prepared
         gc.collect()
     lifecycle.check_cancelled(operation.id)
-    primary_index = entries.index(request.source.path)
-    primary_path, primary_prepared = prepared_drawings[primary_index]
-    primary_imported = imported_drawings[primary_index].imported
+    if primary_fragment is None or primary_imported is None:
+        raise ValueError("Выбранный основной DXF отсутствует в комплекте")
     if len(imported_drawings) == 1:
         imported = primary_imported
     else:
@@ -157,28 +172,25 @@ def _execute(work: PreviewWork, lifecycle: OperationLifecycle) -> None:
             update={"preview_provenance": primary_imported.preview_provenance}
         )
     warnings = list(dict.fromkeys(warnings))
+    (
+        primary_path,
+        drawing,
+        fragment_sha256,
+        fragment_bytes,
+        fragment_manifest_sha256,
+        source_units,
+        boundary_area_m2,
+    ) = primary_fragment
     fragment_name = (
         f"{Path(primary_path).stem}-aoi-{request.boundary.handle.upper()}.dxf"
     )
-    fragment_sha256 = primary_prepared.manifest.output_sha256
-    fragment_bytes = primary_prepared.manifest.output_bytes
-    fragment_manifest_sha256 = file_sha256(primary_prepared.manifest_path)
-    source_units = primary_prepared.manifest.source_units
-    boundary_area_m2 = primary_prepared.manifest.boundary_area_m2
-    selected_entities = sum(
-        item.manifest.selected_modelspace_entities for _, item in prepared_drawings
-    )
-    unknown_bounds = sum(
-        item.manifest.unknown_bounds for _, item in prepared_drawings
-    )
     # Large source-link manifests stay private and do not coexist with the
     # normalized geometry graph longer than necessary inside the bounded child.
-    drawing = primary_prepared.drawing_path
-    del prepared_drawings, imported_drawings
+    del imported_drawings, primary_fragment, primary_imported
     gc.collect()
     lifecycle.report(
         operation.id,
-        WorkProgress(stage="Готовим геометрию предварительной карты", fraction=None),
+        WorkProgress(stage="Готовим геометрию рабочей территории", fraction=None),
         0,
         99,
     )
