@@ -9,6 +9,8 @@ import ezdxf
 source, out = map(Path, sys.argv[1:])
 out.mkdir(exist_ok=False)
 doc=ezdxf.readfile(source)
+with source.open('rb') as stream:
+    source_sha256=hashlib.file_digest(stream, 'sha256').hexdigest()
 owners={b.block_record_handle:b.name for b in doc.blocks}
 acis=[]
 for e in doc.entitydb.values():
@@ -54,7 +56,7 @@ def visit(refs, parent, chain, ancestry):
                 instances.append(dict(block=name,chain=path,matrix=list(matrix)))
             visit(block_refs.get(name,[]),matrix,path,ancestry|{name})
 visit(inserts,Matrix44(),[],set())
-result=dict(source=str(source),dxf_units=doc.units,acis=acis,xrefs=xrefs,
+result=dict(source=str(source),source_sha256=source_sha256,dxf_units=doc.units,acis=acis,xrefs=xrefs,
             acis_instances=instances,
             modelspace_types=dict(Counter(e.dxftype() for e in doc.modelspace())),
             all_database_types=dict(Counter(e.dxftype() for e in doc.entitydb.values() if e.is_alive)),
@@ -63,4 +65,6 @@ result=dict(source=str(source),dxf_units=doc.units,acis=acis,xrefs=xrefs,
             mirrored_inserts=sum(e.dxf.xscale*e.dxf.yscale*e.dxf.zscale<0 for e in inserts),
             block_units=dict(Counter(b.block_record.dxf.get('units',0) for b in doc.blocks)))
 (out/'inventory.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n', encoding='utf8')
-print(json.dumps(result,ensure_ascii=False))
+print(json.dumps(dict(source=str(source), source_sha256=source_sha256,
+                     acis_definitions=len(acis), block_placements=len(instances),
+                     xrefs=len(xrefs), output=str(out/'inventory.json')),ensure_ascii=False))
