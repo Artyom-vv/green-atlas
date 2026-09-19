@@ -27,12 +27,12 @@ class CadPreviewApplication:
         self.invalidate_spatial = invalidate_spatial
 
     def start(self, project_id: str, request: CadPreviewRequest) -> ProjectOperation:
-        self.config.require_enabled()
         with self.lifecycle.lock:
             project = self.lifecycle.repository.get(project_id, lightweight=True)
             require_empty_preview_project(project)
             intake = self.lifecycle.get(project_id, request.intake_operation_id)
-            validate_preview_intake(intake, project_id, request)
+            passport = validate_preview_intake(intake, project_id, request)
+            self.config.require_enabled(passport.root_id)
             operation = self.lifecycle.start(
                 project_id,
                 OperationKind.PREPARE_CAD_PREVIEW,

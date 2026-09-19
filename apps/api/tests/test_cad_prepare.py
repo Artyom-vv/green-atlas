@@ -13,6 +13,7 @@ from app.cad_import.package_contracts import (
     PackageReference,
     SourcePackage,
 )
+from app.cad_intake.config import CadIntakeConfig
 from app.cad_intake.contracts import CadDrawingEntry
 from app.cad_intake.passport import make_passport
 from app.cad_intake.prepare_adapter import ProcessCadProjectPreparation
@@ -284,6 +285,36 @@ def test_full_worker_retains_far_geometry_original_bytes_and_editability(fixture
     )
     with pytest.raises(ValueError):
         app.start(project.id, request)
+
+
+def test_prepare_accepts_an_uploaded_root_without_static_server_roots(fixture):
+    root_id = "upload-0123456789abcdef0123456789abcdef"
+    uploaded = fixture.config.storage / "uploads" / root_id
+    uploaded.mkdir(parents=True)
+    (uploaded / "main.dxf").write_bytes(fixture.source.read_bytes())
+    (uploaded / "upload.json").write_text("{}", encoding="utf-8")
+    intake = fixture.lifecycle.operations.get(fixture.request.intake_operation_id)
+    assert intake.cad_intake is not None and intake.cad_intake.passport is not None
+    intake.cad_intake.request.root_id = root_id
+    intake.cad_intake.passport.root_id = root_id
+    fixture.lifecycle.operations.save(intake)
+    config = CadIntakeConfig((), fixture.config.storage, None)
+    app = CadPrepareApplication(
+        config,
+        fixture.lifecycle,
+        ProcessCadProjectPreparation(config, fixture.runtime.database_path),
+        lambda _: None,
+    )
+
+    operation = app.start(
+        fixture.project.id,
+        CadPrepareRequest(
+            intake_operation_id=fixture.request.intake_operation_id,
+            manifest_sha256=fixture.request.manifest_sha256,
+        ),
+    )
+
+    assert operation.status == OperationStatus.QUEUED
 
 
 def test_full_worker_discovers_native_snapshot_and_persists_receipt(fixture):

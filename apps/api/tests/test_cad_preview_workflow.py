@@ -5,7 +5,9 @@ import pytest
 from cad_preview_fixtures import fixture_preview
 
 from app.cad_import.cache import file_sha256
+from app.cad_intake.config import CadIntakeConfig
 from app.cad_intake.preview_adapter import ProcessCadPreviewPreparation
+from app.cad_intake.preview_application import CadPreviewApplication
 from app.cad_intake.preview_publication import SqliteCadPreviewPublication
 from app.cad_intake.preview_worker import execute
 from app.dxf_import.capacity import SourceCapacityExceeded
@@ -71,6 +73,30 @@ def test_real_bounded_worker_publishes_read_only_source_and_receipt_once(fixture
         )
     finally:
         reopened.close()
+
+
+def test_preview_accepts_an_uploaded_root_without_static_server_roots(fixture):
+    root_id = "upload-0123456789abcdef0123456789abcdef"
+    uploaded = fixture.config.storage / "uploads" / root_id
+    uploaded.mkdir(parents=True)
+    (uploaded / "main.dxf").write_bytes(fixture.source.read_bytes())
+    (uploaded / "upload.json").write_text("{}", encoding="utf-8")
+    intake = fixture.lifecycle.operations.get(fixture.request.intake_operation_id)
+    assert intake.cad_intake is not None and intake.cad_intake.passport is not None
+    intake.cad_intake.request.root_id = root_id
+    intake.cad_intake.passport.root_id = root_id
+    fixture.lifecycle.operations.save(intake)
+    config = CadIntakeConfig((), fixture.config.storage, None)
+    application = CadPreviewApplication(
+        config,
+        fixture.lifecycle,
+        ProcessCadPreviewPreparation(config, fixture.runtime.database_path),
+        lambda _: None,
+    )
+
+    operation = application.start(fixture.project.id, fixture.request)
+
+    assert operation.status == OperationStatus.QUEUED
 
 
 @pytest.mark.parametrize("change", ["manifest", "source", "selection"])

@@ -33,48 +33,43 @@ class CadPrepareApplication:
         self.invalidate_spatial = invalidate_spatial
 
     def start(self, project_id: str, request: CadPrepareRequest) -> ProjectOperation:
-        self.config.require_enabled()
         with self.lifecycle.lock:
             project = self.lifecycle.repository.get(project_id, lightweight=True)
             require_empty_source_project(project)
             intake = self.lifecycle.get(project_id, request.intake_operation_id)
-            if request.cad_snapshot is None:
-                passport = (
-                    intake.cad_intake.passport
-                    if intake.cad_intake is not None
-                    else None
-                )
-                if passport is not None:
-                    root = self.config.root(passport.root_id).path
-                    discovered = discover_adjacent_cad_snapshot(root, passport.entry)
-                    if discovered is not None:
-                        request = request.model_copy(
-                            update={"cad_snapshot": discovered}
-                        )
             passport = (
                 intake.cad_intake.passport if intake.cad_intake is not None else None
             )
-            if passport is not None:
-                entries = passport.entries or [passport.entry]
-                selected = {
-                    item.drawing_path: item for item in request.additional_snapshots
-                }
-                for drawing_path in entries:
-                    if drawing_path == passport.entry or drawing_path in selected:
-                        continue
-                    discovered = discover_adjacent_cad_snapshot(
-                        self.config.root(passport.root_id).path,
-                        drawing_path,
-                    )
-                    if discovered is not None:
-                        selected[drawing_path] = CadDrawingSnapshotSelection(
-                            drawing_path=drawing_path,
-                            snapshot=discovered,
-                        )
-                if list(selected.values()) != request.additional_snapshots:
+            if passport is None:
+                raise ValueError("Паспорт CAD-комплекта отсутствует")
+            self.config.require_enabled(passport.root_id)
+            if request.cad_snapshot is None:
+                root = self.config.root(passport.root_id).path
+                discovered = discover_adjacent_cad_snapshot(root, passport.entry)
+                if discovered is not None:
                     request = request.model_copy(
-                        update={"additional_snapshots": list(selected.values())}
+                        update={"cad_snapshot": discovered}
                     )
+            entries = passport.entries or [passport.entry]
+            selected = {
+                item.drawing_path: item for item in request.additional_snapshots
+            }
+            for drawing_path in entries:
+                if drawing_path == passport.entry or drawing_path in selected:
+                    continue
+                discovered = discover_adjacent_cad_snapshot(
+                    self.config.root(passport.root_id).path,
+                    drawing_path,
+                )
+                if discovered is not None:
+                    selected[drawing_path] = CadDrawingSnapshotSelection(
+                        drawing_path=drawing_path,
+                        snapshot=discovered,
+                    )
+            if list(selected.values()) != request.additional_snapshots:
+                request = request.model_copy(
+                    update={"additional_snapshots": list(selected.values())}
+                )
             validate_prepared_intake(
                 intake,
                 project_id,
