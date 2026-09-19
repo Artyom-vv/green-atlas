@@ -1,8 +1,12 @@
-from hashlib import sha256
 from pathlib import Path
 
 from app.cad_intake.prepare_contracts import CadPrepareResult, PreparedSourceProvenance
-from app.cad_intake.source_publication import SqliteSourcePublication
+from app.cad_intake.source_publication import (
+    SourcePublicationContent,
+    SqliteSourcePublication,
+    publication_sha256,
+    publication_size,
+)
 from app.dxf_import.contracts import ImportEditability, ImportMode
 from app.operations.contracts import OperationKind, ProjectOperation
 from app.projects.contracts import Project
@@ -45,10 +49,10 @@ class SqliteCadProjectPublication:
     def publish(
         self,
         project: Project,
-        source: bytes,
+        source: SourcePublicationContent,
         operation_id: str,
         result: CadPrepareResult,
-        source_components: dict[str, bytes] | None = None,
+        source_components: dict[str, SourcePublicationContent] | None = None,
     ) -> ProjectOperation:
         metadata = project.source_file
         provenance = metadata.prepared_provenance if metadata else None
@@ -63,19 +67,19 @@ class SqliteCadProjectPublication:
         if (
             metadata is None
             or provenance is None
-            or metadata.content_sha256 != sha256(source).hexdigest()
+            or metadata.content_sha256 != publication_sha256(source)
             or metadata.content_sha256 != result.source_sha256
             or provenance.source_sha256 != result.source_sha256
-            or metadata.size != len(source)
-            or result.source_bytes != len(source)
+            or metadata.size != publication_size(source)
+            or result.source_bytes != publication_size(source)
             or result.source_count != (len(drawings) if drawings else 1)
             or result.source_bytes_total
             != (sum(item.source_bytes for item in drawings) if drawings else len(source))
             or len(drawing_by_path) != len(drawings)
             or set(components) != set(expected_components)
             or any(
-                sha256(components[path]).hexdigest() != item.source_sha256
-                or len(components[path]) != item.source_bytes
+                publication_sha256(components[path]) != item.source_sha256
+                or publication_size(components[path]) != item.source_bytes
                 for path, item in expected_components.items()
             )
             or project.import_status.editability != ImportEditability.EDITABLE

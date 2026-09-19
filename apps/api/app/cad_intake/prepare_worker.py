@@ -32,6 +32,7 @@ from app.cad_intake.snapshot_source import (
     verify_cad_snapshot_dependencies,
     verify_cad_snapshot_fingerprint,
 )
+from app.cad_intake.source_publication import SourcePublicationAsset
 from app.cad_intake.work import CadWork
 from app.dxf_import.adapters import EzdxfReader
 from app.dxf_import.assembly import assemble_imported_project
@@ -143,6 +144,7 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
         99,
     )
     contents: dict[str, bytes] = {}
+    source_assets: dict[str, SourcePublicationAsset] = {}
     digests: dict[str, str] = {}
     imported_by_path = {}
     snapshot_sources = {}
@@ -184,6 +186,7 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
             snapshots[drawing_path] = snapshot
             verified_by_path[drawing_path] = verified_dependencies
         contents[drawing_path] = content
+        source_assets[drawing_path] = SourcePublicationAsset.checked(source.asset)
         digests[drawing_path] = digest
         imported_by_path[drawing_path] = imported_drawing
         lifecycle.report(
@@ -298,11 +301,11 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
     )
     receipt = SqliteCadProjectPublication(work.database).publish(
         project,
-        content,
+        source_assets[passport.entry],
         operation.id,
         result,
         source_components={
-            path: contents[path] for path in entries if path != passport.entry
+            path: source_assets[path] for path in entries if path != passport.entry
         },
     )
     work.receipt.write_text(
