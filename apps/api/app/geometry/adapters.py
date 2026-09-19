@@ -9,6 +9,7 @@ from shapely.geometry import GeometryCollection, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 
+from app.dxf_import.admission import require_confirmed_layer_mapping
 from app.dxf_import.layer_contracts import LayerKind
 from app.dxf_import.utility_mapping import (
     assign_utility_context,
@@ -225,6 +226,7 @@ class ShapelyGeometryEngine:
             return checker
 
     def calculate(self, project: Project, progress: ProgressReporter | None = None) -> GeometrySnapshot:
+        require_confirmed_layer_mapping(project)
         if project.source_geometry is None:
             raise ValueError("Сначала импортируйте DXF")
         mapping_by_layer = {layer.source_name: layer.mapped_kind for layer in project.layers}
