@@ -18,12 +18,24 @@ def _validate_operation(
     ):
         raise ValueError("Операция не соответствует подготовленному источнику")
     request = operation.cad_prepare.request
+    requested_snapshot_paths = {
+        item.drawing_path for item in request.additional_snapshots
+    }
+    if request.cad_snapshot is not None:
+        requested_snapshot_paths.add(provenance.entry)
+    published_snapshot_paths = {
+        item.path for item in provenance.drawings if item.cad_snapshot is not None
+    }
     if (
         request.intake_operation_id != provenance.intake_operation_id
         or request.manifest_sha256 != provenance.manifest_sha256
         or request.profile_version != provenance.profile_version
+        or requested_snapshot_paths != published_snapshot_paths
     ):
         raise ValueError("Источник не соответствует проверенному паспорту")
+    snapshot = project.source_file.cad_snapshot_provenance if project.source_file else None
+    if (request.cad_snapshot is None) != (snapshot is None):
+        raise ValueError("CAD snapshot не соответствует операции подготовки")
 
 
 class SqliteCadProjectPublication:
@@ -36,16 +48,36 @@ class SqliteCadProjectPublication:
         source: bytes,
         operation_id: str,
         result: CadPrepareResult,
+        source_components: dict[str, bytes] | None = None,
     ) -> ProjectOperation:
         metadata = project.source_file
+        provenance = metadata.prepared_provenance if metadata else None
+        drawings = provenance.drawings if provenance else []
+        components = source_components or {}
+        drawing_by_path = {item.path: item for item in drawings}
+        expected_components = {
+            item.path: item
+            for item in drawings
+            if provenance is not None and item.path != provenance.entry
+        }
         if (
             metadata is None
-            or metadata.prepared_provenance is None
+            or provenance is None
             or metadata.content_sha256 != sha256(source).hexdigest()
             or metadata.content_sha256 != result.source_sha256
-            or metadata.prepared_provenance.source_sha256 != result.source_sha256
+            or provenance.source_sha256 != result.source_sha256
             or metadata.size != len(source)
             or result.source_bytes != len(source)
+            or result.source_count != (len(drawings) if drawings else 1)
+            or result.source_bytes_total
+            != (sum(item.source_bytes for item in drawings) if drawings else len(source))
+            or len(drawing_by_path) != len(drawings)
+            or set(components) != set(expected_components)
+            or any(
+                sha256(components[path]).hexdigest() != item.source_sha256
+                or len(components[path]) != item.source_bytes
+                for path, item in expected_components.items()
+            )
             or project.import_status.editability != ImportEditability.EDITABLE
             or project.import_status.mode != ImportMode.SOURCE_DXF
             or project.source_review is None
@@ -56,9 +88,24 @@ class SqliteCadProjectPublication:
             or project.source_geometry is not None
             or result.feature_count
             != len(project.geometry.feature_collection["features"])
+            or (
+                metadata.cad_snapshot_provenance is None
+                and (
+                    result.cad_snapshot_payload_sha256 is not None
+                    or result.cad_snapshot_native_geometry is not None
+                )
+            )
+            or (
+                metadata.cad_snapshot_provenance is not None
+                and (
+                    result.cad_snapshot_payload_sha256
+                    != metadata.cad_snapshot_provenance.payload_sha256
+                    or result.cad_snapshot_native_geometry
+                    != metadata.cad_snapshot_provenance.native_geometry
+                )
+            )
         ):
             raise ValueError("Полный источник не соответствует контракту публикации")
-        provenance = metadata.prepared_provenance
         return self.publication.publish(
             project,
             source,
@@ -69,4 +116,5 @@ class SqliteCadProjectPublication:
             validate_operation=lambda operation: _validate_operation(
                 operation, project, provenance
             ),
+            source_components=components,
         )

@@ -3,6 +3,7 @@
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 
@@ -36,6 +37,7 @@ class SqliteSourcePublication:
         record_field: Literal["cad_preview", "cad_prepare"],
         stage: str,
         validate_operation: Callable[[ProjectOperation], None],
+        source_components: dict[str, bytes] | None = None,
     ) -> ProjectOperation:
         expected = project.state_version
         now = datetime.now(UTC).isoformat()
@@ -108,6 +110,17 @@ class SqliteSourcePublication:
                     expected,
                 ),
             )
+            if source_components is not None:
+                connection.execute(
+                    "DELETE FROM project_source_components WHERE project_id=?",
+                    (project.id,),
+                )
+                for path, component in sorted(source_components.items()):
+                    connection.execute(
+                        "INSERT INTO project_source_components "
+                        "(project_id, path, sha256, content) VALUES (?, ?, ?, ?)",
+                        (project.id, path, sha256(component).hexdigest(), component),
+                    )
             # SQLite's incremental I/O avoids binding another complete copy of
             # the large JSON. The temporary BLOB is private to this transaction;
             # the existing TEXT representation is restored before publication.

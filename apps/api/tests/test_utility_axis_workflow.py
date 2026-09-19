@@ -171,6 +171,7 @@ def test_release_roundtrip_preserves_source_binding_surface_trace_and_final_fres
     repository.get.return_value = restored
     repository.get_release.return_value = None
     repository.get_source.return_value = source
+    repository.get_source_components.return_value = {}
     writer.create.return_value = (None, source)
     export = ExportApplication(
         repository=repository, writer=writer, scene=lambda *_: scene

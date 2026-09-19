@@ -56,7 +56,10 @@ class CadAssetSource:
 
 
 def resolve_asset_source(
-    config: CadIntakeConfig, operation: ProjectOperation, project_id: str
+    config: CadIntakeConfig,
+    operation: ProjectOperation,
+    project_id: str,
+    drawing_path: str | None = None,
 ) -> CadAssetSource:
     if operation.project_id != project_id:
         raise KeyError("CAD operation not found")
@@ -70,9 +73,17 @@ def resolve_asset_source(
     record = operation.cad_intake
     request, passport = record.request, record.passport
     assert passport is not None
+    selected_sha256 = {
+        request.entry: request.entry_sha256,
+        **{item.path: item.sha256 for item in request.additional_entries},
+    }
+    drawing_path = drawing_path or request.entry
+    expected_sha256 = selected_sha256.get(drawing_path)
+    if expected_sha256 is None:
+        raise CadAssetUnavailable()
     root = config.root(request.root_id).path.resolve(strict=True)
     original = CadDiscovery(config).resolve(
-        request.root_id, request.entry, drawing=True
+        request.root_id, drawing_path, drawing=True
     )
     manifest = _inside(
         config.storage / "operations" / operation.id / "source-package.json",
@@ -85,23 +96,24 @@ def resolve_asset_source(
     if (
         Path(package.root).resolve() != root
         or package.entry != request.entry
+        or drawing_path not in (package.entries or [package.entry])
         or passport.root_id != request.root_id
         or passport.entry != request.entry
     ):
         raise CadAssetUnavailable()
     drawing = next(
-        (item for item in passport.drawings if item.path == request.entry), None
+        (item for item in passport.drawings if item.path == drawing_path), None
     )
     private = next(
-        (item for item in package.drawings if item.path == request.entry), None
+        (item for item in package.drawings if item.path == drawing_path), None
     )
     if (
         drawing is None
         or private is None
         or drawing.status != "readable"
         or private.status != "readable"
-        or drawing.source_sha256 != request.entry_sha256
-        or private.source_sha256 != request.entry_sha256
+        or drawing.source_sha256 != expected_sha256
+        or private.source_sha256 != expected_sha256
         or drawing.source_bytes != private.source_bytes
         or not _matches_public_inspection(drawing.inspection, private.inspection)
         or drawing.normalized_sha256 is None
@@ -125,7 +137,7 @@ def resolve_asset_source(
         # PackageInspector can refresh derived inspection (e.g. boundary catalog)
         # without rewriting immutable conversion evidence. Byte identities bind
         # the asset; current units/details come from the checked package passport.
-    elif asset != original or drawing.normalized_sha256 != request.entry_sha256:
+    elif asset != original or drawing.normalized_sha256 != expected_sha256:
         raise CadAssetUnavailable()
     size = asset.stat().st_size
     if (

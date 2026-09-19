@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from pathlib import Path
 import json
 import sqlite3
+from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
 from threading import RLock
 
+from app.projects.concurrency import (
+    ProjectVersionConflict,
+    advance_expected_project_version,
+    assert_project_version,
+    expected_project_version,
+)
 from app.projects.contracts import Project
 from app.projects.source_contracts import SourceContentInfo
-from app.projects.concurrency import ProjectVersionConflict, advance_expected_project_version, assert_project_version, expected_project_version
-
 
 EMPTY_FEATURE_COLLECTION = {"type": "FeatureCollection", "features": []}
 
@@ -29,6 +34,7 @@ class InMemoryProjectRepository:
     def __init__(self) -> None:
         self._projects: dict[str, Project] = {}
         self._sources: dict[str, bytes] = {}
+        self._source_components: dict[str, dict[str, bytes]] = {}
         self._exports: dict[tuple[str, str], bytes] = {}
         self._releases: dict[tuple[str, str], str] = {}
         self._mutation_receipts: dict[tuple[str, str, str], str] = {}
@@ -52,7 +58,13 @@ class InMemoryProjectRepository:
             assert_project_version(project_id, project.state_version)
             return project_projection(project) if lightweight else project
 
-    def save(self, project: Project, *, source: bytes | bytearray | None = None) -> Project:
+    def save(
+        self,
+        project: Project,
+        *,
+        source: bytes | bytearray | None = None,
+        source_components: dict[str, bytes] | None = None,
+    ) -> Project:
         with self._lock:
             if project.id not in self._projects:
                 raise KeyError(f"Project {project.id} not found")
@@ -69,6 +81,11 @@ class InMemoryProjectRepository:
                 # source-of-truth contract when the HTTP collector supplies a
                 # mutable bytearray.
                 self._sources[project.id] = bytes(source)
+            if source_components is not None:
+                self._source_components[project.id] = {
+                    path: bytes(content)
+                    for path, content in source_components.items()
+                }
             advance_expected_project_version(project.state_version)
             return project.model_copy(deep=True)
 
@@ -106,6 +123,7 @@ class InMemoryProjectRepository:
                 raise ProjectVersionConflict(project_id, expected, current)
             del self._projects[project_id]
             self._sources.pop(project_id, None)
+            self._source_components.pop(project_id, None)
             for key in [key for key in self._exports if key[0] == project_id]:
                 del self._exports[key]
             for key in [key for key in self._releases if key[0] == project_id]:
@@ -122,6 +140,12 @@ class InMemoryProjectRepository:
     def get_source(self, project_id: str) -> bytes | None:
         with self._lock:
             return self._sources.get(project_id)
+
+    def get_source_components(self, project_id: str) -> dict[str, bytes]:
+        with self._lock:
+            if project_id not in self._projects:
+                raise KeyError(f"Project {project_id} not found")
+            return dict(self._source_components.get(project_id, {}))
 
     def get_source_info(self, project_id: str, *, prefix_bytes: int) -> SourceContentInfo | None:
         with self._lock:
@@ -212,6 +236,7 @@ class SqliteProjectRepository:
             self._connection.execute("CREATE TABLE IF NOT EXISTS project_exports (project_id TEXT NOT NULL, artifact_id TEXT NOT NULL, content BLOB NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (project_id, artifact_id))")
             self._connection.execute("CREATE TABLE IF NOT EXISTS project_releases (project_id TEXT NOT NULL, release_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (project_id, release_id))")
             self._connection.execute("CREATE TABLE IF NOT EXISTS project_mutation_receipts (project_id TEXT NOT NULL, kind TEXT NOT NULL, mutation_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(project_id, kind, mutation_id))")
+            self._connection.execute("CREATE TABLE IF NOT EXISTS project_source_components (project_id TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, content BLOB NOT NULL, PRIMARY KEY(project_id, path))")
             self._connection.execute("CREATE INDEX IF NOT EXISTS idx_project_exports_project ON project_exports (project_id, created_at DESC)")
             columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(projects)").fetchall()}
             if "projection" not in columns:
@@ -269,7 +294,13 @@ class SqliteProjectRepository:
             projects.append(project)
         return projects
 
-    def save(self, project: Project, *, source: bytes | bytearray | None = None) -> Project:
+    def save(
+        self,
+        project: Project,
+        *,
+        source: bytes | bytearray | None = None,
+        source_components: dict[str, bytes] | None = None,
+    ) -> Project:
         original = project.state_version
         expected = expected_project_version() or original or 1
         project.state_version = expected + 1
@@ -280,6 +311,18 @@ class SqliteProjectRepository:
                 cursor = self._connection.execute("UPDATE projects SET payload=?, projection=?, updated_at=?, state_version=? WHERE id=? AND state_version=?", (payload, projection, project.updated_at, project.state_version, project.id, expected))
             else:
                 cursor = self._connection.execute("UPDATE projects SET payload=?, projection=?, source=?, updated_at=?, state_version=? WHERE id=? AND state_version=?", (payload, projection, source, project.updated_at, project.state_version, project.id, expected))
+            if cursor.rowcount and source_components is not None:
+                self._connection.execute(
+                    "DELETE FROM project_source_components WHERE project_id=?",
+                    (project.id,),
+                )
+                for path, content in sorted(source_components.items()):
+                    encoded = bytes(content)
+                    self._connection.execute(
+                        "INSERT INTO project_source_components "
+                        "(project_id, path, sha256, content) VALUES (?, ?, ?, ?)",
+                        (project.id, path, sha256(encoded).hexdigest(), encoded),
+                    )
         if cursor.rowcount == 0:
             project.state_version = original
             try:
@@ -334,6 +377,7 @@ class SqliteProjectRepository:
                 self._connection.execute("DELETE FROM project_exports WHERE project_id = ?", (project_id,))
                 self._connection.execute("DELETE FROM project_releases WHERE project_id = ?", (project_id,))
                 self._connection.execute("DELETE FROM project_mutation_receipts WHERE project_id = ?", (project_id,))
+                self._connection.execute("DELETE FROM project_source_components WHERE project_id = ?", (project_id,))
         if cursor.rowcount:
             return
         try:
@@ -354,6 +398,20 @@ class SqliteProjectRepository:
         if row is None:
             raise KeyError(f"Project {project_id} not found")
         return bytes(row["source"]) if row["source"] is not None else None
+
+    def get_source_components(self, project_id: str) -> dict[str, bytes]:
+        with self._lock:
+            exists = self._connection.execute(
+                "SELECT 1 FROM projects WHERE id=?", (project_id,)
+            ).fetchone()
+            if exists is None:
+                raise KeyError(f"Project {project_id} not found")
+            rows = self._connection.execute(
+                "SELECT path, content FROM project_source_components "
+                "WHERE project_id=? ORDER BY path",
+                (project_id,),
+            ).fetchall()
+        return {row["path"]: bytes(row["content"]) for row in rows}
 
     def get_source_info(self, project_id: str, *, prefix_bytes: int) -> SourceContentInfo | None:
         with self._lock:

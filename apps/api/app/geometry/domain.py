@@ -99,11 +99,18 @@ class PositionChecker:
             project.geometry.feature_collection.get("features", [])
             if project.source_review is None else []
         )
+        site_surface_features = [
+            feature
+            for feature in self.features
+            if feature.get("properties", {}).get("kind") == "site_surface"
+        ]
+        site_features = site_surface_features or [
+            feature
+            for feature in self.features
+            if feature.get("properties", {}).get("kind") == "site_border"
+        ]
         site_geometries: list[BaseGeometry] = []
-        for feature in self.features:
-            kind = feature.get("properties", {}).get("kind")
-            if kind != "site_border":
-                continue
+        for feature in site_features:
             try:
                 geometry = shape(feature["geometry"])
             except Exception:

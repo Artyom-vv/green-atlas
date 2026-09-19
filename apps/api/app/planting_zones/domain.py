@@ -24,7 +24,12 @@ def validate_planting_zones(
     supplied_zone_ids = {zone.id for zone in zones}
     if referenced_zone_ids - supplied_zone_ids:
         raise ValueError("Нельзя удалить участок, в котором уже есть посадки")
-    borders = [
+    site_surfaces = [
+        shape(feature["geometry"])
+        for feature in project.geometry.feature_collection.get("features", [])
+        if project.source_review is None and feature.get("properties", {}).get("kind") == "site_surface"
+    ]
+    borders = site_surfaces or [
         shape(feature["geometry"])
         for feature in project.geometry.feature_collection.get("features", [])
         if project.source_review is None and feature.get("properties", {}).get("kind") == "site_border"
@@ -60,7 +65,16 @@ def validate_planting_zones(
                 f"Участок «{zone.label}» должен быть полигоном площадью от 24 м²"
             )
         if site is not None and not site.covers(parsed):
-            raise ValueError(f"Участок «{zone.label}» выходит за границы территории")
+            # GEOS can report ``covers=False`` for a valid complex
+            # MultiPolygon whose exact set difference from the site is empty
+            # (observed on the calculated Kustanayskaya allowed area).  The
+            # set difference is the authoritative containment check here: it
+            # does not add a distance tolerance or admit any outside surface.
+            outside = parsed.difference(site)
+            if not outside.is_empty:
+                raise ValueError(
+                    f"Участок «{zone.label}» выходит за границы территории"
+                )
         for other_label, other_geometry in parsed_zones:
             overlap = parsed.intersection(other_geometry)
             # A local task may be carved inside a broad territory such as

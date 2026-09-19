@@ -15,7 +15,11 @@ class ProjectReader(Protocol):
 
 class ProjectSnapshotRepository(ProjectReader, Protocol):
     def save(
-        self, project: Project, *, source: bytes | bytearray | None = None
+        self,
+        project: Project,
+        *,
+        source: bytes | bytearray | None = None,
+        source_components: dict[str, bytes] | None = None,
     ) -> Project: ...
 
 
@@ -40,6 +44,7 @@ class ProjectRepository(ProjectSnapshotRepository, ProjectCatalogRepository, Pro
     ) -> None: ...
     def save_source(self, project_id: str, content: bytes | bytearray) -> None: ...
     def get_source(self, project_id: str) -> bytes | None: ...
+    def get_source_components(self, project_id: str) -> dict[str, bytes]: ...
     def get_source_info(
         self, project_id: str, *, prefix_bytes: int
     ) -> SourceContentInfo | None: ...

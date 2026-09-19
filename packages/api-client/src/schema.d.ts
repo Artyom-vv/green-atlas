@@ -1435,6 +1435,8 @@ export interface components {
         Body_upload_dxf_api_projects__project_id__source_dxf_post: {
             /** File */
             file: string;
+            /** Cad Snapshot */
+            cad_snapshot?: string | null;
         };
         /** Body_upload_release_bundle_api_projects__project_id__release_bundle_post */
         Body_upload_release_bundle_api_projects__project_id__release_bundle_post: {
@@ -1462,6 +1464,34 @@ export interface components {
             /** Planting Digest */
             planting_digest: string;
         };
+        /** BoundaryCandidate */
+        BoundaryCandidate: {
+            status: components["schemas"]["BoundaryCandidateStatus"];
+            /** Basis */
+            basis: string;
+            /**
+             * Area M2
+             * @default 0
+             */
+            area_m2: number;
+            /**
+             * Inset 1 5M Area M2
+             * @default 0
+             */
+            inset_1_5m_area_m2: number;
+            /**
+             * Component Count
+             * @default 0
+             */
+            component_count: number;
+            /** Issue */
+            issue?: string | null;
+        };
+        /**
+         * BoundaryCandidateStatus
+         * @enum {string}
+         */
+        BoundaryCandidateStatus: "usable" | "thin" | "invalid" | "unavailable";
         /** BrushPreview */
         BrushPreview: {
             /** Brush Id */
@@ -1645,6 +1675,13 @@ export interface components {
             /** Bytes */
             bytes?: number | null;
         };
+        /** CadDrawingEntry */
+        CadDrawingEntry: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+        };
         /** CadDrawingPassport */
         CadDrawingPassport: {
             /** Path */
@@ -1673,6 +1710,12 @@ export interface components {
             /** Normalized Sha256 */
             normalized_sha256: string;
         };
+        /** CadDrawingSnapshotSelection */
+        CadDrawingSnapshotSelection: {
+            /** Drawing Path */
+            drawing_path: string;
+            snapshot: components["schemas"]["CadSnapshotSelection"];
+        };
         /** CadFingerprint */
         CadFingerprint: {
             /** Root Id */
@@ -1697,6 +1740,8 @@ export interface components {
             entry: string;
             /** Entry Sha256 */
             entry_sha256: string;
+            /** Additional Entries */
+            additional_entries?: components["schemas"]["CadDrawingEntry"][];
             /** Overrides */
             overrides?: components["schemas"]["CadReferenceOverride"][];
         };
@@ -1706,6 +1751,8 @@ export interface components {
             root_id: string;
             /** Entry */
             entry: string;
+            /** Entries */
+            entries?: string[];
             /** Manifest Sha256 */
             manifest_sha256: string;
             /** Drawings */
@@ -1743,6 +1790,9 @@ export interface components {
              * @constant
              */
             profile_version: 1;
+            cad_snapshot?: components["schemas"]["CadSnapshotSelection"] | null;
+            /** Additional Snapshots */
+            additional_snapshots?: components["schemas"]["CadDrawingSnapshotSelection"][];
         };
         /** CadPrepareResult */
         CadPrepareResult: {
@@ -1754,8 +1804,19 @@ export interface components {
             source_sha256: string;
             /** Source Bytes */
             source_bytes: number;
+            /**
+             * Source Count
+             * @default 1
+             */
+            source_count: number;
+            /** Source Bytes Total */
+            source_bytes_total?: number | null;
             /** Feature Count */
             feature_count: number;
+            /** Cad Snapshot Payload Sha256 */
+            cad_snapshot_payload_sha256?: string | null;
+            /** Cad Snapshot Native Geometry */
+            cad_snapshot_native_geometry?: number | null;
         };
         /** CadPreviewProvenance */
         CadPreviewProvenance: {
@@ -1897,6 +1958,70 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+        };
+        /**
+         * CadSnapshotDependency
+         * @description A package-local file whose exact bytes contributed native geometry.
+         */
+        CadSnapshotDependency: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "xref";
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+            /** Bytes */
+            bytes: number;
+            /** Record Handle */
+            record_handle: string;
+            /** Block Name */
+            block_name: string;
+            /** Stored Path */
+            stored_path: string;
+        };
+        /** CadSnapshotProvenance */
+        CadSnapshotProvenance: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "green-atlas.autocad-snapshot/1";
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Payload Sha256 */
+            payload_sha256: string;
+            /** Autocad Version */
+            autocad_version: string;
+            /** Plugin Version */
+            plugin_version: string;
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "macos-arm64" | "windows-x86_64";
+            /** Source Instances */
+            source_instances: number;
+            /** Native Geometry */
+            native_geometry: number;
+            /** Unresolved Instances */
+            unresolved_instances: number;
+            /** Dependencies */
+            dependencies?: components["schemas"]["CadSnapshotDependency"][];
+        };
+        /**
+         * CadSnapshotSelection
+         * @description Exact native sidecar selected from the same allowlisted CAD root.
+         */
+        CadSnapshotSelection: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
         };
         /** CadSourceAsset */
         CadSourceAsset: {
@@ -2819,6 +2944,17 @@ export interface components {
              * @default true
              */
             geometry_complete: boolean;
+            /** Unsupported Geometry Types */
+            unsupported_geometry_types?: {
+                [key: string]: number;
+            };
+            /** Projected Geometry Types */
+            projected_geometry_types?: {
+                [key: string]: number;
+            };
+            /** Unreadable Geometry Count */
+            unreadable_geometry_count?: number;
+            boundary_candidate?: components["schemas"]["BoundaryCandidate"] | null;
             /**
              * Required
              * @default false
@@ -3667,6 +3803,16 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** PreparedDrawingProvenance */
+        PreparedDrawingProvenance: {
+            /** Path */
+            path: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Source Bytes */
+            source_bytes: number;
+            cad_snapshot?: components["schemas"]["CadSnapshotProvenance"] | null;
+        };
         /** PreparedSourceProvenance */
         PreparedSourceProvenance: {
             /** Intake Operation Id */
@@ -3683,6 +3829,8 @@ export interface components {
             entry: string;
             /** Source Sha256 */
             source_sha256: string;
+            /** Drawings */
+            drawings?: components["schemas"]["PreparedDrawingProvenance"][];
         };
         /** PreviewRefusal */
         PreviewRefusal: {
@@ -4699,6 +4847,7 @@ export interface components {
             warnings?: string[];
             preview_provenance?: components["schemas"]["CadPreviewProvenance"] | null;
             prepared_provenance?: components["schemas"]["PreparedSourceProvenance"] | null;
+            cad_snapshot_provenance?: components["schemas"]["CadSnapshotProvenance"] | null;
         };
         /** SourceReview */
         SourceReview: {

@@ -1,4 +1,5 @@
 MAX_DXF_CONTENT_BYTES = 50 * 1024 * 1024
+MAX_CAD_SNAPSHOT_BYTES = 128 * 1024 * 1024
 
 
 def dxf_size_error(limit: int | None = None) -> str:

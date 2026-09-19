@@ -13,7 +13,11 @@ class ImportProjectRepository(ProjectReader, Protocol):
     """Commit a source and its project metadata as one revision."""
 
     def save(
-        self, project: Project, *, source: bytes | bytearray | None = None
+        self,
+        project: Project,
+        *,
+        source: bytes | bytearray | None = None,
+        source_components: dict[str, bytes] | None = None,
     ) -> Project: ...
 
     def get_source(self, project_id: str) -> bytes | None: ...

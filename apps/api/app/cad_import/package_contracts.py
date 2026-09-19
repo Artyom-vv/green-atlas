@@ -41,6 +41,7 @@ class SourcePackage(BaseModel):
     )
     root: str
     entry: str
+    entries: list[str] = Field(default_factory=list)
     drawings: list[PackageDrawing] = Field(default_factory=list)
     references: list[PackageReference] = Field(default_factory=list)
     status: Literal["requires_review", "blocked"] = "requires_review"

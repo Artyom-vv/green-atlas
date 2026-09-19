@@ -91,6 +91,31 @@ def test_complete_graph_does_not_claim_conversion_fidelity(
     assert not manifest.calculation_ready
 
 
+def test_multiple_independent_dxf_entries_share_one_explicit_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "originals"
+    first = dxf(root / "base/site.dxf")
+    second = dxf(root / "networks/site.dxf")
+    originals = {path: path.read_bytes() for path in (first, second)}
+    converter = object.__new__(LibreDwgConverter)
+    converter.cache = tmp_path / "cache"
+    monkeypatch.setattr(converter, "inspect_dxf", inspect_drawing)
+
+    manifest = PackageInspector(converter).inspect_entries(
+        root,
+        [Path("base/site.dxf"), Path("networks/site.dxf")],
+    )
+
+    assert manifest.entry == "base/site.dxf"
+    assert manifest.entries == ["base/site.dxf", "networks/site.dxf"]
+    assert [item.path for item in manifest.drawings] == manifest.entries
+    assert manifest.references == []
+    assert manifest.status == "requires_review"
+    assert all(path.read_bytes() == content for path, content in originals.items())
+
+
 def test_package_cache_cannot_write_into_originals(tmp_path: Path) -> None:
     dxf(tmp_path / "main.dxf")
     converter = object.__new__(LibreDwgConverter)

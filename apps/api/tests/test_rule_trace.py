@@ -228,7 +228,8 @@ def test_manifest_trace_is_derived_without_duplicating_plan_or_zip_entries():
     files = {item.kind: artifacts[item.id] for item in package.artifacts}
     manifest = json.loads(files["manifest"])
     with ZipFile(BytesIO(files["bundle"])) as archive:
-        assert len(archive.namelist()) == 5
+        assert len(archive.namelist()) == 6
+        assert archive.read("source/source.dxf") == b"dxf"
     trace = manifest["planting_rule_traces"]["tree"]
     assert trace["basis"]["geometry_version"] == manifest["project"]["geometry_version"]
     assert trace["basis"]["plan_version"] == manifest["plan"]["version"]

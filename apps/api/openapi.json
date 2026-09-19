@@ -5339,6 +5339,18 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "cad_snapshot": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cad Snapshot"
           }
         },
         "type": "object",
@@ -5435,6 +5447,62 @@
           "planting_digest"
         ],
         "title": "BoundZoneIntent"
+      },
+      "BoundaryCandidate": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/BoundaryCandidateStatus"
+          },
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          },
+          "area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Area M2",
+            "default": 0
+          },
+          "inset_1_5m_area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Inset 1 5M Area M2",
+            "default": 0
+          },
+          "component_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Component Count",
+            "default": 0
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "basis"
+        ],
+        "title": "BoundaryCandidate"
+      },
+      "BoundaryCandidateStatus": {
+        "type": "string",
+        "enum": [
+          "usable",
+          "thin",
+          "invalid",
+          "unavailable"
+        ],
+        "title": "BoundaryCandidateStatus"
       },
       "BrushPreview": {
         "properties": {
@@ -5869,6 +5937,28 @@
         ],
         "title": "CadDirectoryEntry"
       },
+      "CadDrawingEntry": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "title": "CadDrawingEntry"
+      },
       "CadDrawingPassport": {
         "properties": {
           "path": {
@@ -5967,6 +6057,26 @@
         ],
         "title": "CadDrawingSelection"
       },
+      "CadDrawingSnapshotSelection": {
+        "properties": {
+          "drawing_path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Drawing Path"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/CadSnapshotSelection"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "drawing_path",
+          "snapshot"
+        ],
+        "title": "CadDrawingSnapshotSelection"
+      },
       "CadFingerprint": {
         "properties": {
           "root_id": {
@@ -6036,6 +6146,14 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Entry Sha256"
           },
+          "additional_entries": {
+            "items": {
+              "$ref": "#/components/schemas/CadDrawingEntry"
+            },
+            "type": "array",
+            "maxItems": 63,
+            "title": "Additional Entries"
+          },
           "overrides": {
             "items": {
               "$ref": "#/components/schemas/CadReferenceOverride"
@@ -6063,6 +6181,13 @@
           "entry": {
             "type": "string",
             "title": "Entry"
+          },
+          "entries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entries"
           },
           "manifest_sha256": {
             "type": "string",
@@ -6155,6 +6280,24 @@
             "const": 1,
             "title": "Profile Version",
             "default": 1
+          },
+          "cad_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadSnapshotSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "additional_snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/CadDrawingSnapshotSelection"
+            },
+            "type": "array",
+            "maxItems": 63,
+            "title": "Additional Snapshots"
           }
         },
         "additionalProperties": false,
@@ -6183,9 +6326,51 @@
             "type": "integer",
             "title": "Source Bytes"
           },
+          "source_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Count",
+            "default": 1
+          },
+          "source_bytes_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Bytes Total"
+          },
           "feature_count": {
             "type": "integer",
             "title": "Feature Count"
+          },
+          "cad_snapshot_payload_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cad Snapshot Payload Sha256"
+          },
+          "cad_snapshot_native_geometry": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cad Snapshot Native Geometry"
           }
         },
         "type": "object",
@@ -6570,6 +6755,160 @@
           "label"
         ],
         "title": "CadRoot"
+      },
+      "CadSnapshotDependency": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^xref/[0-9A-F]+$",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "xref",
+            "title": "Kind"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256"
+          },
+          "bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Bytes"
+          },
+          "record_handle": {
+            "type": "string",
+            "pattern": "^[0-9A-F]+$",
+            "title": "Record Handle"
+          },
+          "block_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Block Name"
+          },
+          "stored_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Stored Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "path",
+          "sha256",
+          "bytes",
+          "record_handle",
+          "block_name",
+          "stored_path"
+        ],
+        "title": "CadSnapshotDependency",
+        "description": "A package-local file whose exact bytes contributed native geometry."
+      },
+      "CadSnapshotProvenance": {
+        "properties": {
+          "schema": {
+            "type": "string",
+            "const": "green-atlas.autocad-snapshot/1",
+            "title": "Schema"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "payload_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Payload Sha256"
+          },
+          "autocad_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Autocad Version"
+          },
+          "plugin_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Plugin Version"
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "macos-arm64",
+              "windows-x86_64"
+            ],
+            "title": "Target"
+          },
+          "source_instances": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Source Instances"
+          },
+          "native_geometry": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Native Geometry"
+          },
+          "unresolved_instances": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unresolved Instances"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/CadSnapshotDependency"
+            },
+            "type": "array",
+            "title": "Dependencies"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema",
+          "source_sha256",
+          "payload_sha256",
+          "autocad_version",
+          "plugin_version",
+          "target",
+          "source_instances",
+          "native_geometry",
+          "unresolved_instances"
+        ],
+        "title": "CadSnapshotProvenance"
+      },
+      "CadSnapshotSelection": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "title": "CadSnapshotSelection",
+        "description": "Exact native sidecar selected from the same allowlisted CAD root."
       },
       "CadSourceAsset": {
         "properties": {
@@ -9005,6 +9344,35 @@
             "title": "Geometry Complete",
             "default": true
           },
+          "unsupported_geometry_types": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Unsupported Geometry Types"
+          },
+          "projected_geometry_types": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Projected Geometry Types"
+          },
+          "unreadable_geometry_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unreadable Geometry Count"
+          },
+          "boundary_candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundaryCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "required": {
             "type": "boolean",
             "title": "Required",
@@ -11413,6 +11781,44 @@
         ],
         "title": "PrepareTask"
       },
+      "PreparedDrawingProvenance": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "source_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Source Bytes"
+          },
+          "cad_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadSnapshotProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "source_sha256",
+          "source_bytes"
+        ],
+        "title": "PreparedDrawingProvenance"
+      },
       "PreparedSourceProvenance": {
         "properties": {
           "intake_operation_id": {
@@ -11436,6 +11842,13 @@
           "source_sha256": {
             "type": "string",
             "title": "Source Sha256"
+          },
+          "drawings": {
+            "items": {
+              "$ref": "#/components/schemas/PreparedDrawingProvenance"
+            },
+            "type": "array",
+            "title": "Drawings"
           }
         },
         "type": "object",
@@ -14341,6 +14754,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PreparedSourceProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cad_snapshot_provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadSnapshotProvenance"
               },
               {
                 "type": "null"

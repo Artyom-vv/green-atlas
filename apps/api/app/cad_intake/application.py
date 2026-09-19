@@ -39,6 +39,8 @@ class CadIntakeApplication:
     def start(self, project_id: str, request: CadIntakeRequest) -> ProjectOperation:
         self.config.require_enabled()
         self.discovery.resolve(request.root_id, request.entry, drawing=True)
+        for entry in request.additional_entries:
+            self.discovery.resolve(request.root_id, entry.path, drawing=True)
         for override in request.overrides:
             self.discovery.resolve(request.root_id, override.owner, drawing=True)
             self.discovery.resolve(request.root_id, override.target, drawing=True)

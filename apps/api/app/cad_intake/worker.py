@@ -23,33 +23,44 @@ class InspectionWork(BaseModel):
 
 
 def execute(work: InspectionWork) -> None:
-    entry = (work.root / work.request.entry).resolve(strict=True)
-    if not entry.is_relative_to(work.root.resolve()):
+    selected = [
+        (work.request.entry, work.request.entry_sha256),
+        *(
+            (item.path, item.sha256)
+            for item in work.request.additional_entries
+        ),
+    ]
+    entries = [(work.root / path).resolve(strict=True) for path, _ in selected]
+    if any(not entry.is_relative_to(work.root.resolve()) for entry in entries):
         raise ValueError("Выход за пределы исходного комплекта")
     policy = work.policy
     # Native DXF already is the parser input, not a compressed DWG awaiting
     # conversion. Use the existing DXF inspection budget, not the DWG budget.
-    entry_budget = (
-        policy.max_output_bytes
-        if entry.suffix.lower() == ".dxf"
-        else policy.max_source_bytes
-    )
-    if entry.stat().st_size > entry_budget:
-        raise ValueError("Исходный чертёж превышает бюджет чтения CAD")
-    if file_sha256(entry) != work.request.entry_sha256:
-        raise ValueError("Исходный чертёж изменился после выбора")
+    for entry, (_, expected_sha256) in zip(entries, selected, strict=True):
+        entry_budget = (
+            policy.max_output_bytes
+            if entry.suffix.lower() == ".dxf"
+            else policy.max_source_bytes
+        )
+        if entry.stat().st_size > entry_budget:
+            raise ValueError("Исходный чертёж превышает бюджет чтения CAD")
+        if file_sha256(entry) != expected_sha256:
+            raise ValueError("Исходный чертёж изменился после выбора")
     converter_path = work.converter
     inspector = PackageInspector(
         DxfInspector(work.cache, policy),
         converter_factory=(lambda: LibreDwgConverter(converter_path, work.cache, policy))
         if converter_path is not None else None,
     )
-    package = inspector.inspect(
-        work.root, Path(work.request.entry), list(work.request.overrides)
+    package = inspector.inspect_entries(
+        work.root,
+        [Path(path) for path, _ in selected],
+        list(work.request.overrides),
     )
-    # Verify the selected identity also after inspection, even when a reader rejected it.
-    if file_sha256(entry) != work.request.entry_sha256:
-        raise ValueError("Исходный чертёж изменился во время проверки")
+    # Verify every selected identity after inspection, even when a reader rejected it.
+    for entry, (_, expected_sha256) in zip(entries, selected, strict=True):
+        if file_sha256(entry) != expected_sha256:
+            raise ValueError("Исходный чертёж изменился во время проверки")
     write_package(package, work.output)
 
 

@@ -17,6 +17,7 @@ __pycache__/
 .DS_Store
 
 # Local runtime state
+.local/
 .runtime/
 apps/api/data/
 apps/web/.cache/plant-assets/

@@ -6,8 +6,13 @@ from app.cad_intake.prepare_admission import (
     require_empty_source_project,
     validate_prepared_intake,
 )
-from app.cad_intake.prepare_contracts import CadPrepareRecord, CadPrepareRequest
+from app.cad_intake.prepare_contracts import (
+    CadDrawingSnapshotSelection,
+    CadPrepareRecord,
+    CadPrepareRequest,
+)
 from app.cad_intake.prepare_ports import CadProjectPreparation
+from app.cad_intake.snapshot_source import discover_adjacent_cad_snapshot
 from app.operations.contracts import OperationKind, OperationStatus, ProjectOperation
 from app.operations.lifecycle import OperationLifecycle
 from app.operations.progress import OperationCancelled
@@ -32,8 +37,46 @@ class CadPrepareApplication:
         with self.lifecycle.lock:
             project = self.lifecycle.repository.get(project_id, lightweight=True)
             require_empty_source_project(project)
+            intake = self.lifecycle.get(project_id, request.intake_operation_id)
+            if request.cad_snapshot is None:
+                passport = (
+                    intake.cad_intake.passport
+                    if intake.cad_intake is not None
+                    else None
+                )
+                if passport is not None:
+                    root = self.config.root(passport.root_id).path
+                    discovered = discover_adjacent_cad_snapshot(root, passport.entry)
+                    if discovered is not None:
+                        request = request.model_copy(
+                            update={"cad_snapshot": discovered}
+                        )
+            passport = (
+                intake.cad_intake.passport if intake.cad_intake is not None else None
+            )
+            if passport is not None:
+                entries = passport.entries or [passport.entry]
+                selected = {
+                    item.drawing_path: item for item in request.additional_snapshots
+                }
+                for drawing_path in entries:
+                    if drawing_path == passport.entry or drawing_path in selected:
+                        continue
+                    discovered = discover_adjacent_cad_snapshot(
+                        self.config.root(passport.root_id).path,
+                        drawing_path,
+                    )
+                    if discovered is not None:
+                        selected[drawing_path] = CadDrawingSnapshotSelection(
+                            drawing_path=drawing_path,
+                            snapshot=discovered,
+                        )
+                if list(selected.values()) != request.additional_snapshots:
+                    request = request.model_copy(
+                        update={"additional_snapshots": list(selected.values())}
+                    )
             validate_prepared_intake(
-                self.lifecycle.get(project_id, request.intake_operation_id),
+                intake,
                 project_id,
                 request,
             )

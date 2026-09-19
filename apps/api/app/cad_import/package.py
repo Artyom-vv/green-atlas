@@ -33,15 +33,33 @@ class PackageInspector:
     def inspect(
         self, root: Path, entry: Path, overrides: list[ReferenceOverride] | None = None
     ) -> SourcePackage:
+        return self.inspect_entries(root, [entry], overrides)
+
+    def inspect_entries(
+        self,
+        root: Path,
+        entries: list[Path],
+        overrides: list[ReferenceOverride] | None = None,
+    ) -> SourcePackage:
+        if not entries:
+            raise CadConversionError("Выберите хотя бы один самостоятельный DXF")
         paths = PackagePaths(root)
         if self.converter.cache.is_relative_to(paths.root):
             raise CadConversionError(
                 "Кэш CAD должен находиться вне исходного комплекта"
             )
-        source = (paths.root / entry).resolve(strict=True)
-        manifest = SourcePackage(root=str(paths.root), entry=paths.relative(source))
+        sources = [(paths.root / entry).resolve(strict=True) for entry in entries]
+        relative_entries = [paths.relative(source) for source in sources]
+        if len(relative_entries) != len(set(relative_entries)):
+            raise CadConversionError("Самостоятельный DXF выбран повторно")
+        manifest = SourcePackage(
+            root=str(paths.root),
+            entry=relative_entries[0],
+            entries=relative_entries,
+        )
         resolver = ReferenceOverrides(overrides or [])
-        self._visit(source, paths, manifest, set(), resolver)
+        for source in sources:
+            self._visit(source, paths, manifest, set(), resolver)
         if resolver.unused_count:
             manifest.blockers.append(
                 f"Не применено назначений ссылок: {resolver.unused_count}"

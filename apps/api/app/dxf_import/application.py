@@ -5,6 +5,9 @@ from copy import deepcopy
 from datetime import datetime
 from hashlib import sha256
 
+from app.cad_bridge import CadSnapshot
+from app.cad_bridge.provider import apply_cad_snapshot
+from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
 from app.dxf_import import limits
 from app.dxf_import.admission import cad_preview_status
 from app.dxf_import.assembly import assemble_imported_project
@@ -57,7 +60,11 @@ class ImportApplication:
         return saved
 
     def import_dxf(
-        self, project_id: str, filename: str, content: bytes | bytearray
+        self,
+        project_id: str,
+        filename: str,
+        content: bytes | bytearray,
+        cad_snapshot: bytes | bytearray | None = None,
     ) -> Project:
         project = self.repository.get(project_id)
         if project.plan is not None:
@@ -71,6 +78,13 @@ class ImportApplication:
         if len(content) > limits.MAX_DXF_CONTENT_BYTES:
             raise ValueError(limits.dxf_size_error())
         imported = self.dxf_reader.read(filename, content)
+        if cad_snapshot is not None:
+            snapshot = CadSnapshot.model_validate_json(cad_snapshot)
+            imported = apply_cad_snapshot(
+                imported,
+                snapshot,
+                source_sha256=sha256(content).hexdigest(),
+            )
         project = assemble_imported_project(
             project, filename, content, imported, self.now().isoformat()
         )
@@ -100,7 +114,28 @@ class ImportApplication:
             )
         if not parsed.source_content:
             raise ValueError("Пакет выпуска не содержит исходного DXF")
-        imported = self.dxf_reader.read(parsed.source_filename, parsed.source_content)
+        imported_drawings = [
+            ImportedDrawing(
+                path=parsed.source_path,
+                source=parsed.source_content,
+                imported=self.dxf_reader.read(
+                    parsed.source_path, parsed.source_content
+                ),
+            ),
+            *[
+                ImportedDrawing(
+                    path=path,
+                    source=drawing,
+                    imported=self.dxf_reader.read(path, drawing),
+                )
+                for path, drawing in sorted(parsed.source_components.items())
+            ],
+        ]
+        imported = (
+            imported_drawings[0].imported
+            if len(imported_drawings) == 1
+            else compose_dxf_imports(imported_drawings).imported
+        )
         editable = parsed.editable and imported.preview_provenance is None
         manifest = parsed.manifest
         project_payload = manifest.get("project")
@@ -125,8 +160,35 @@ class ImportApplication:
             prepared_provenance=source_meta.get("prepared_provenance"),
         )
         provenance = project.source_file.prepared_provenance
-        if provenance is not None and provenance.source_sha256 != project.source_file.content_sha256:
-            raise ValueError("Происхождение подготовленного исходника не совпадает с его содержимым")
+        if provenance is not None:
+            if (
+                provenance.entry != parsed.source_path
+                or provenance.source_sha256
+                != project.source_file.content_sha256
+            ):
+                raise ValueError(
+                    "Происхождение подготовленного исходника не совпадает "
+                    "с его содержимым"
+                )
+            source_files = {
+                parsed.source_path: parsed.source_content,
+                **parsed.source_components,
+            }
+            expected_drawings = {item.path: item for item in provenance.drawings}
+            if provenance.drawings and (
+                len(expected_drawings) != len(provenance.drawings)
+                or set(source_files) != set(expected_drawings)
+                or any(
+                    len(source_files[path]) != item.source_bytes
+                    or sha256(source_files[path]).hexdigest()
+                    != item.source_sha256
+                    for path, item in expected_drawings.items()
+                )
+            ):
+                raise ValueError(
+                    "Комплект исходных DXF не совпадает с его "
+                    "происхождением"
+                )
         project.layers = imported.layers
         mappings = manifest.get("layer_mappings")
         if isinstance(mappings, list):
@@ -244,7 +306,11 @@ class ImportApplication:
             if editable and parsed.plan is not None
             else ProjectStatus.IMPORTED
         )
-        saved = self.repository.save(project, source=parsed.source_content)
+        saved = self.repository.save(
+            project,
+            source=parsed.source_content,
+            source_components=parsed.source_components,
+        )
         self.invalidate_spatial(project.id)
         self.history.clear(project.id)
         return saved

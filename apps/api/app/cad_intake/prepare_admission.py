@@ -32,9 +32,38 @@ def validate_prepared_intake(
         raise ValueError(
             "Подготовьте полный DXF вне сервиса; исходный DWG остаётся неизменным"
         )
+    entries = passport.entries or [passport.entry]
+    if len(entries) != len(set(entries)) or passport.entry not in entries:
+        raise ValueError("Паспорт содержит противоречивый список самостоятельных DXF")
+    drawings = {item.path: item for item in passport.drawings}
+    for path in entries:
+        drawing = drawings.get(path)
+        if (
+            drawing is None
+            or drawing.status != "readable"
+            or drawing.inspection is None
+            or not path.lower().endswith(".dxf")
+        ):
+            raise ValueError("Каждый самостоятельный источник должен быть прочитанным DXF")
+    additional_snapshots = {
+        item.drawing_path: item.snapshot for item in request.additional_snapshots
+    }
+    if any(path == passport.entry or path not in entries for path in additional_snapshots):
+        raise ValueError("CAD snapshot выбран для постороннего чертежа")
     if entry.inspection.xrefs or passport.references:
+        unresolved = [item for item in passport.references if item.status != "resolved"]
+        if unresolved:
+            raise ValueError(
+                "DXF-комплект содержит неразрешённые внешние ссылки"
+            )
+        snapshots = {
+            **additional_snapshots,
+            **({passport.entry: request.cad_snapshot} if request.cad_snapshot else {}),
+        }
+        if all(path in snapshots for path in entries):
+            return passport
         raise ValueError(
-            "DXF содержит внешние ссылки. Для полного импорта нужен подготовленный "
-            "чертёж со всеми подключёнными источниками; один корневой файл не заменяет комплект."
+            "DXF содержит внешние ссылки. Приложите нативный CAD snapshot, "
+            "который привязывает расчётную геометрию ко всему DXF-комплекту."
         )
     return passport

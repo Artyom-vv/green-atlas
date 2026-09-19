@@ -104,18 +104,17 @@ def test_no_roots_remains_disabled(tmp_path):
 
 
 @pytest.mark.parametrize("stale_converter", [False, True])
-def test_worker_uses_native_dxf_budget_not_dwg_budget(tmp_path, monkeypatch, stale_converter):
+def test_worker_uses_native_dxf_budget_not_dwg_budget(tmp_path, stale_converter):
     """Different tiny budgets reproduce the former 128/512 MiB mismatch."""
     source = write_dxf(tmp_path / "originals/main.dxf")
-    monkeypatch.setattr(
-        "app.cad_intake.worker.ConversionPolicy",
-        lambda: ConversionPolicy(max_source_bytes=1, max_output_bytes=source.stat().st_size),
-    )
     work = InspectionWork(
         root=source.parent,
         cache=tmp_path / "cache",
         output=tmp_path / "package.json",
         converter=tmp_path / "absent-dwg-converter.exe" if stale_converter else None,
+        policy=ConversionPolicy(
+            max_source_bytes=1, max_output_bytes=source.stat().st_size
+        ),
         request=CadIntakeRequest(
             root_id="source", entry=source.name, entry_sha256=file_sha256(source)
         ),
@@ -124,9 +123,8 @@ def test_worker_uses_native_dxf_budget_not_dwg_budget(tmp_path, monkeypatch, sta
     package = SourcePackage.model_validate_json(work.output.read_bytes())
     assert package.drawings[0].status == "readable"
     assert package.drawings[0].normalized_path == str(source)
-    monkeypatch.setattr(
-        "app.cad_intake.worker.ConversionPolicy",
-        lambda: ConversionPolicy(max_output_bytes=1),
+    work = work.model_copy(
+        update={"policy": ConversionPolicy(max_output_bytes=1)}
     )
     with pytest.raises(ValueError, match="бюджет"):
         execute(work)

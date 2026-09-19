@@ -1,6 +1,7 @@
 """Publication use cases with atomic repository publication and stable identities."""
 
 from collections.abc import Callable
+from hashlib import sha256
 
 from app.exporting.contracts import (
     ExportArtifact,
@@ -9,6 +10,7 @@ from app.exporting.contracts import (
     ReleasePackage,
 )
 from app.exporting.ports import DxfWriterPort, ExportProjectRepository
+from app.projects.contracts import Project
 from app.releases.service import build_release, release_identity
 from app.scene.contracts import SceneSnapshot
 from app.validation.networks import release_network_issues
@@ -26,12 +28,45 @@ class ExportApplication:
         self.writer = writer
         self.scene = scene
 
+    def _source_components(
+        self, project: Project, source_content: bytes
+    ) -> dict[str, bytes]:
+        components = self.repository.get_source_components(project.id)
+        source_file = project.source_file
+        provenance = source_file.prepared_provenance if source_file else None
+        if provenance is None or not provenance.drawings:
+            if components:
+                raise ValueError(
+                    "Дополнительные DXF не связаны с проверенным комплектом"
+                )
+            return components
+        files = {provenance.entry: source_content, **components}
+        expected = {item.path: item for item in provenance.drawings}
+        if (
+            len(expected) != len(provenance.drawings)
+            or set(files) != set(expected)
+            or any(
+                len(files[path]) != item.source_bytes
+                or sha256(files[path]).hexdigest() != item.source_sha256
+                for path, item in expected.items()
+            )
+        ):
+            raise ValueError(
+                "Исходные DXF не совпадают с проверенным комплектом"
+            )
+        return components
+
     def export(self, project_id: str) -> ExportArtifact:
         project = self.repository.get(project_id)
         source_content = self.repository.get_source(project.id)
         if source_content is None:
             raise ValueError("Исходный DXF недоступен для экспорта")
-        artifact, content = self.writer.create(project, source_content)
+        source_components = self._source_components(project, source_content)
+        artifact, content = self.writer.create(
+            project,
+            source_content,
+            source_components,
+        )
         artifact.download_url = (
             f"/api/projects/{project.id}/exports/{artifact.id}/download"
         )
@@ -97,10 +132,19 @@ class ExportApplication:
         source_content = self.repository.get_source(project.id)
         if source_content is None:
             raise ValueError("Исходный DXF недоступен для выпуска")
-        _legacy_artifact, dxf_content = self.writer.create(project, source_content)
+        source_components = self._source_components(project, source_content)
+        _legacy_artifact, dxf_content = self.writer.create(
+            project, source_content, source_components
+        )
         scene = self.scene(project.id, request.scene_horizon)
         package, artifacts = build_release(
-            project, request, release_id, dxf_content, scene, source_content
+            project,
+            request,
+            release_id,
+            dxf_content,
+            scene,
+            source_content,
+            source_components,
         )
         self.repository.publish_release(
             project, release_id, package.model_dump_json(), artifacts
