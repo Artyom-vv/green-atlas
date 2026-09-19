@@ -1,11 +1,17 @@
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
 from threading import Event
 
+import ezdxf
 import pytest
 from cad_preview_fixtures import fixture_preview
 
 from app.cad_import.cache import file_sha256
+from app.cad_import.contracts import DrawingInspection
+from app.cad_import.package_contracts import PackageDrawing, SourcePackage
 from app.cad_intake.config import CadIntakeConfig
+from app.cad_intake.contracts import CadDrawingEntry
+from app.cad_intake.passport import make_passport
 from app.cad_intake.preview_adapter import ProcessCadPreviewPreparation
 from app.cad_intake.preview_application import CadPreviewApplication
 from app.cad_intake.preview_publication import SqliteCadPreviewPublication
@@ -73,6 +79,73 @@ def test_real_bounded_worker_publishes_read_only_source_and_receipt_once(fixture
         )
     finally:
         reopened.close()
+
+
+def test_bounded_worker_composes_every_dxf_in_the_checked_package(fixture):
+    child = fixture.source.parent / "networks.dxf"
+    document = ezdxf.new("R2018")
+    document.units = 6
+    document.layers.add("NETWORKS")
+    document.modelspace().add_line(
+        (1, 1), (9, 9), dxfattribs={"layer": "NETWORKS"}
+    )
+    document.saveas(child)
+    digest = sha256(child.read_bytes()).hexdigest()
+    intake = fixture.lifecycle.operations.get(fixture.request.intake_operation_id)
+    assert intake.cad_intake is not None
+    manifest = (
+        fixture.config.storage / "operations" / intake.id / "source-package.json"
+    )
+    package = SourcePackage.model_validate_json(manifest.read_bytes())
+    package.entries = [package.entry, child.name]
+    package.drawings.append(
+        PackageDrawing(
+            path=child.name,
+            source_sha256=digest,
+            source_bytes=child.stat().st_size,
+            normalized_path=str(child),
+            status="readable",
+            inspection=DrawingInspection(
+                dxf_version=document.dxfversion,
+                units=6,
+                modelspace_entities={"LINE": 1},
+                layer_names=["0", "NETWORKS"],
+                xrefs={},
+            ),
+        )
+    )
+    manifest.write_text(package.model_dump_json(), encoding="utf-8")
+    manifest_digest = sha256(manifest.read_bytes()).hexdigest()
+    intake.cad_intake.request.additional_entries = [
+        CadDrawingEntry(path=child.name, sha256=digest)
+    ]
+    intake.cad_intake.passport = make_passport(
+        package,
+        "test",
+        manifest_digest,
+        {"main.dxf": file_sha256(fixture.source), child.name: digest},
+    )
+    fixture.lifecycle.operations.save(intake)
+    fixture.request = fixture.request.model_copy(
+        update={"manifest_sha256": manifest_digest}
+    )
+    application = fixture.application(
+        ProcessCadPreviewPreparation(fixture.config, fixture.runtime.database_path)
+    )
+
+    operation = application.start(fixture.project.id, fixture.request)
+    application.run(operation.id)
+
+    record = fixture.lifecycle.operations.get(operation.id)
+    assert record.status == OperationStatus.COMPLETED, record.error
+    project = fixture.runtime.project_repository.get(fixture.project.id)
+    assert any(
+        layer.source_name == "[networks.dxf] NETWORKS" for layer in project.layers
+    )
+    assert any(
+        feature["properties"].get("source_drawing_path") == "networks.dxf"
+        for feature in project.source_geometry.feature_collection["features"]
+    )
 
 
 def test_preview_accepts_an_uploaded_root_without_static_server_roots(fixture):
@@ -148,7 +221,9 @@ def test_cancel_or_conflict_before_publication_leaves_project_empty(
         def reject(*_):
             raise SourceCapacityExceeded("source capacity fixture")
 
-        monkeypatch.setattr("app.cad_intake.preview_worker.EzdxfReader.read", reject)
+        monkeypatch.setattr(
+            "app.cad_intake.preview_worker.EzdxfReader.read_prepared_file", reject
+        )
     else:
         monkeypatch.setattr(SqliteCadPreviewPublication, "publish", intercept)
     with pytest.raises((OperationCancelled, ProjectVersionConflict, ValueError)):

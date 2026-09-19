@@ -7,7 +7,12 @@ from pathlib import Path
 from threading import RLock
 
 from app.cad_import.aoi import prepare_aoi
+from app.cad_import.aoi_contracts import AoiRequest, AoiSource
 from app.cad_import.cache import file_sha256
+from app.cad_intake.asset_sources import resolve_asset_source
+from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
+from app.cad_intake.config import AllowedCadRoot, CadIntakeConfig
+from app.cad_intake.prepare_policy import PREPARE_POLICY
 from app.cad_intake.preview_admission import require_empty_preview_project
 from app.cad_intake.preview_contracts import CadPreviewResult
 from app.cad_intake.preview_publication import SqliteCadPreviewPublication
@@ -50,33 +55,93 @@ def _execute(work: PreviewWork, lifecycle: OperationLifecycle) -> None:
         0,
         99,
     )
-    prepared = prepare_aoi(sources.request, work.storage / "previews")
-    lifecycle.check_cancelled(operation.id)
-    if prepared.manifest.request != sources.request:
-        raise ValueError("Рабочая территория не совпадает с выбранными источниками")
-    drawing = prepared.drawing_path
-    if drawing.stat().st_size > MAX_DXF_CONTENT_BYTES:
-        raise ValueError("Подготовленная территория превышает бюджет исходника")
-    warnings = list(
-        dict.fromkeys([*sources.package_warnings, *prepared.manifest.warnings])
+    if intake.cad_intake is None or intake.cad_intake.passport is None:
+        raise ValueError("Паспорт исходного комплекта отсутствует")
+    passport = intake.cad_intake.passport
+    config = CadIntakeConfig(
+        (AllowedCadRoot(passport.root_id, passport.root_id, work.root),),
+        work.storage,
+        None,
+        PREPARE_POLICY,
     )
+    entries = passport.entries or [passport.entry]
+    prepared_drawings = []
+    imported_drawings = []
+    warnings = list(sources.package_warnings)
+    for index, drawing_path in enumerate(entries, start=1):
+        lifecycle.check_cancelled(operation.id)
+        lifecycle.report(
+            operation.id,
+            WorkProgress(
+                stage=f"Выделяем территорию: {index} из {len(entries)}",
+                fraction=None,
+            ),
+            0,
+            99,
+        )
+        source = resolve_asset_source(config, intake, project.id, drawing_path)
+        drawing = source.drawing
+        if drawing.source_sha256 is None or drawing.normalized_sha256 is None:
+            raise ValueError("Для DXF не зафиксированы контрольные суммы")
+        aoi_request = AoiRequest(
+            source=AoiSource(
+                original_path=source.original,
+                original_sha256=drawing.source_sha256,
+                converted_path=source.asset,
+                converted_sha256=drawing.normalized_sha256,
+            ),
+            boundary_source=sources.request.boundary_source,
+            boundary_handle=request.boundary.handle,
+        )
+        prepared = prepare_aoi(aoi_request, work.storage / "previews")
+        if prepared.manifest.request != aoi_request:
+            raise ValueError("Рабочая территория не совпадает с выбранными источниками")
+        if prepared.drawing_path.stat().st_size > MAX_DXF_CONTENT_BYTES:
+            raise ValueError("Подготовленная территория превышает бюджет исходника")
+        imported = EzdxfReader().read_prepared_file(prepared.drawing_path)
+        prepared_drawings.append((drawing_path, prepared))
+        imported_drawings.append(
+            ImportedDrawing(
+                path=drawing_path,
+                imported=imported,
+                source_sha256=drawing.source_sha256,
+                source_bytes=drawing.source_bytes,
+            )
+        )
+        warnings.extend(f"{drawing_path}: {item}" for item in prepared.manifest.warnings)
+        gc.collect()
+    lifecycle.check_cancelled(operation.id)
+    primary_index = entries.index(request.source.path)
+    primary_path, primary_prepared = prepared_drawings[primary_index]
+    primary_imported = imported_drawings[primary_index].imported
+    if len(imported_drawings) == 1:
+        imported = primary_imported
+    else:
+        imported = compose_dxf_imports(imported_drawings).imported.model_copy(
+            update={"preview_provenance": primary_imported.preview_provenance}
+        )
+    warnings = list(dict.fromkeys(warnings))
     result = CadPreviewResult(
         published_state_version=project.state_version + 1,
         geometry_version=project.geometry_version + 1,
-        source_name=f"{Path(request.source.path).stem}-aoi-{request.boundary.handle.upper()}.dxf",
-        output_sha256=prepared.manifest.output_sha256,
-        output_bytes=prepared.manifest.output_bytes,
-        manifest_sha256=file_sha256(prepared.manifest_path),
-        source_units=prepared.manifest.source_units,
-        boundary_mask_area_m2=prepared.manifest.boundary_area_m2,
-        selected_entities=prepared.manifest.selected_modelspace_entities,
-        unknown_bounds=prepared.manifest.unknown_bounds,
+        source_name=f"{Path(primary_path).stem}-aoi-{request.boundary.handle.upper()}.dxf",
+        output_sha256=primary_prepared.manifest.output_sha256,
+        output_bytes=primary_prepared.manifest.output_bytes,
+        manifest_sha256=file_sha256(primary_prepared.manifest_path),
+        source_units=primary_prepared.manifest.source_units,
+        boundary_mask_area_m2=primary_prepared.manifest.boundary_area_m2,
+        selected_entities=sum(
+            item.manifest.selected_modelspace_entities
+            for _, item in prepared_drawings
+        ),
+        unknown_bounds=sum(item.manifest.unknown_bounds for _, item in prepared_drawings),
         warnings=warnings[:50],
         warning_count=len(warnings),
     )
     # Large source-link manifests stay private and do not coexist with the
     # normalized geometry graph longer than necessary inside the bounded child.
-    del prepared
+    drawing = primary_prepared.drawing_path
+    del prepared_drawings, imported_drawings
     gc.collect()
     lifecycle.report(
         operation.id,
@@ -88,7 +153,6 @@ def _execute(work: PreviewWork, lifecycle: OperationLifecycle) -> None:
         content = stream.read(MAX_DXF_CONTENT_BYTES + 1)
     if len(content) > MAX_DXF_CONTENT_BYTES:
         raise ValueError("Рабочая территория превышает бюджет чтения")
-    imported = EzdxfReader().read(result.source_name, content)
     project = assemble_imported_project(
         project, result.source_name, content, imported, utc_now().isoformat()
     )
