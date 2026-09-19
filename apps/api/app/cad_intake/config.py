@@ -2,11 +2,14 @@
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.cad_import.policy import ConversionPolicy
 from app.cad_intake.prepare_policy import PREPARE_POLICY
+
+UPLOADED_ROOT = re.compile(r"^upload-[a-f0-9]{32}$")
 
 
 @dataclass(frozen=True)
@@ -53,8 +56,24 @@ class CadIntakeConfig:
         for root in self.roots:
             if root.id == root_id:
                 return root
+        if UPLOADED_ROOT.fullmatch(root_id):
+            uploads = (self.storage / "uploads").resolve()
+            try:
+                candidate = (uploads / root_id).resolve(strict=True)
+                if (
+                    candidate.is_dir()
+                    and candidate.is_relative_to(uploads)
+                    and (candidate / "upload.json").is_file()
+                ):
+                    return AllowedCadRoot(
+                        root_id, "Загруженный комплект", candidate
+                    )
+            except OSError:
+                pass
         raise ValueError("Каталог CAD не разрешён на сервере")
 
-    def require_enabled(self) -> None:
-        if not self.roots:
+    def require_enabled(self, root_id: str | None = None) -> None:
+        if root_id is not None:
+            self.root(root_id)
+        elif not self.roots:
             raise ValueError("Приём CAD-комплектов не настроен на сервере")

@@ -82,6 +82,12 @@ class CadFingerprint(BaseModel):
     bytes: int
 
 
+class CadUploadPackage(BaseModel):
+    root_id: str = Field(pattern=r"^upload-[a-f0-9]{32}$")
+    entries: list[CadFingerprint] = Field(min_length=1, max_length=64)
+    total_bytes: int = Field(gt=0)
+
+
 class CadDrawingPassport(BaseModel):
     path: str
     source_sha256: str | None = None
