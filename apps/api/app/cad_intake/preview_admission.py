@@ -7,7 +7,7 @@ from app.projects.contracts import Project
 def require_empty_preview_project(project: Project) -> None:
     if project.source_file is not None or project.plan is not None:
         raise ValueError(
-            "Для предварительной карты создайте новый проект без исходника"
+            "Для рабочей территории создайте новый проект без исходника"
         )
 
 
@@ -56,6 +56,6 @@ def validate_preview_intake(
     )
     if candidate is None or not candidate.available_for_preview:
         raise ValueError(
-            "Выбранный авторский контур недоступен для предварительного просмотра"
+            "Выбранный авторский контур недоступен для подготовки территории"
         )
     return passport

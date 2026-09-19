@@ -43,7 +43,7 @@ class CadPreviewApplication:
                 or operation.cad_preview.request != request
             ):
                 raise ValueError(
-                    "В проекте уже готовится другой предварительный фрагмент"
+                    "В проекте уже готовится другая рабочая территория"
                 )
             return operation
 
@@ -92,10 +92,10 @@ class CadPreviewApplication:
         except Exception:
             self.lifecycle.fail(
                 operation.id,
-                "Подготовка предварительной карты остановлена",
+                "Подготовка рабочей территории остановлена",
                 "CAD_PREVIEW_FAILED",
                 ValueError(
-                    "Не удалось подготовить предварительную карту. Исходный проект сохранён; диагностика доступна на сервере"
+                    "Не удалось подготовить рабочую территорию. Исходный проект сохранён; диагностика доступна на сервере"
                 ),
             )
         finally:

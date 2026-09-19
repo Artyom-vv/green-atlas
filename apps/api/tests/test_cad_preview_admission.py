@@ -104,7 +104,9 @@ def test_bundle_editability_cannot_override_derived_dxf_gate(
     parsed = ParsedReleaseBundle(
         manifest={"project": {"name": "Claimed editable"}},
         source_filename="derived.dxf",
+        source_path="derived.dxf",
         source_content=drawing_content(),
+        source_components={},
         dxf_content=None,
         plan=Plan(objects=[]),
         geometry=GeometrySnapshot(

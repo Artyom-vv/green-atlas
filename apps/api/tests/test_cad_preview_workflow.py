@@ -37,7 +37,7 @@ def fixture(tmp_path):
         result.runtime.close()
 
 
-def test_real_bounded_worker_publishes_read_only_source_and_receipt_once(fixture):
+def test_real_bounded_worker_publishes_editable_aoi_and_full_source_once(fixture):
     application = fixture.application(
         ProcessCadPreviewPreparation(fixture.config, fixture.runtime.database_path)
     )
@@ -47,10 +47,11 @@ def test_real_bounded_worker_publishes_read_only_source_and_receipt_once(fixture
     assert record.status == OperationStatus.COMPLETED, record.error
     project = fixture.runtime.project_repository.get(fixture.project.id)
     assert project.state_version == fixture.project.state_version + 1
-    assert project.import_status.mode == ImportMode.CAD_PREVIEW
-    assert project.import_status.editability == ImportEditability.READ_ONLY
-    assert project.source_geometry is not None
-    assert project.geometry is None and project.plan is None and not project.map_ready
+    assert project.import_status.mode == ImportMode.SOURCE_DXF
+    assert project.import_status.editability == ImportEditability.EDITABLE
+    assert project.source_geometry is None
+    assert project.geometry is not None and project.plan is None and project.map_ready
+    assert project.source_review is not None
     assert not project.planting_zones
     assert (
         project.site_area_m2
@@ -60,11 +61,14 @@ def test_real_bounded_worker_publishes_read_only_source_and_receipt_once(fixture
     )
     result = record.cad_preview.result
     assert result.boundary_mask_area_m2 == 100 and not result.calculation_ready
-    assert project.source_file.content_sha256 == result.output_sha256
+    assert project.source_file.content_sha256 == result.source_sha256
+    assert project.source_file.prepared_provenance is not None
+    assert project.source_file.prepared_provenance.aoi is not None
+    assert fixture.runtime.project_repository.get_source(project.id) == (
+        fixture.source.read_bytes()
+    )
     assert file_sha256(fixture.source) == fixture.request.source.source_sha256
     assert str(fixture.source.parent) not in record.model_dump_json()
-    with pytest.raises(ValueError):
-        fixture.runtime.application.create_manual_plan(project.id)
     application.run(operation.id)
     assert (
         fixture.runtime.project_repository.get(project.id).state_version
@@ -144,7 +148,7 @@ def test_bounded_worker_composes_every_dxf_in_the_checked_package(fixture):
     )
     assert any(
         feature["properties"].get("source_drawing_path") == "networks.dxf"
-        for feature in project.source_geometry.feature_collection["features"]
+            for feature in project.geometry.feature_collection["features"]
     )
 
 
@@ -209,12 +213,12 @@ def test_cancel_or_conflict_before_publication_leaves_project_empty(
     work = fixture.start_work()
     original = SqliteCadPreviewPublication.publish
 
-    def intercept(self, project, content, operation_id, result):
+    def intercept(self, project, content, operation_id, result, **kwargs):
         if reason == "cancel":
             fixture.lifecycle.cancel(project.id, operation_id)
         else:
             fixture.runtime.project_repository.save(fixture.project)
-        return original(self, project, content, operation_id, result)
+        return original(self, project, content, operation_id, result, **kwargs)
 
     if reason == "reader":
 
@@ -243,8 +247,8 @@ def test_cancel_or_conflict_before_publication_leaves_project_empty(
 def test_commit_wins_lost_worker_response_and_late_progress(fixture, monkeypatch):
     original = SqliteCadPreviewPublication.publish
 
-    def publish_then_crash(self, *args):
-        committed = original(self, *args)
+    def publish_then_crash(self, *args, **kwargs):
+        committed = original(self, *args, **kwargs)
         fixture.lifecycle.cancel(committed.project_id, committed.id)
         raise RuntimeError("worker crashed after commit")
 
@@ -337,12 +341,12 @@ def test_recovery_stale_read_cannot_overwrite_atomic_publication(fixture, monkey
     original_interrupted = adapters.interrupted
     recovered = []
 
-    def publish_during_recovery(self, *args):
+    def publish_during_recovery(self, *args, **kwargs):
         journal = SqliteOperationRepository(work.database, recover=False)
         committed = []
 
         def interrupt_after_commit(operation):
-            committed.append(original_publish(self, *args))
+            committed.append(original_publish(self, *args, **kwargs))
             return original_interrupted(operation)
 
         monkeypatch.setattr(adapters, "interrupted", interrupt_after_commit)

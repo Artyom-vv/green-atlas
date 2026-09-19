@@ -77,6 +77,33 @@ class PreparedDrawingProvenance(BaseModel):
     _relative_path = field_validator("path")(relative_path)
 
 
+class PreparedAoiDrawingProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1, max_length=2048)
+    original_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    converted_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fragment_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fragment_bytes: int = Field(gt=0)
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    selected_entities: int = Field(ge=0)
+    unknown_bounds: int = Field(ge=0)
+
+    _relative_path = field_validator("path")(relative_path)
+
+
+class PreparedAoiProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    boundary_path: str = Field(min_length=1, max_length=2048)
+    boundary_original_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    boundary_converted_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    boundary_handle: str = Field(pattern=r"^[A-Fa-f0-9]+$", max_length=32)
+    drawings: list[PreparedAoiDrawingProvenance] = Field(min_length=1)
+
+    _relative_boundary_path = field_validator("boundary_path")(relative_path)
+
+
 class PreparedSourceProvenance(BaseModel):
     intake_operation_id: str
     manifest_sha256: str
@@ -84,3 +111,4 @@ class PreparedSourceProvenance(BaseModel):
     entry: str
     source_sha256: str
     drawings: list[PreparedDrawingProvenance] = Field(default_factory=list)
+    aoi: PreparedAoiProvenance | None = None

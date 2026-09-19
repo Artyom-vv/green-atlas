@@ -6613,9 +6613,9 @@
         "properties": {
           "status": {
             "type": "string",
-            "const": "preview_only",
+            "const": "requires_review",
             "title": "Status",
-            "default": "preview_only"
+            "default": "requires_review"
           },
           "calculation_ready": {
             "type": "boolean",
@@ -6636,6 +6636,36 @@
           "source_name": {
             "type": "string",
             "title": "Source Name"
+          },
+          "source_original_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Original Sha256"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "source_bytes": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Bytes"
+          },
+          "source_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Count"
+          },
+          "source_bytes_total": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Bytes Total"
+          },
+          "feature_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Feature Count"
           },
           "output_sha256": {
             "type": "string",
@@ -6690,6 +6720,12 @@
           "published_state_version",
           "geometry_version",
           "source_name",
+          "source_original_sha256",
+          "source_sha256",
+          "source_bytes",
+          "source_count",
+          "source_bytes_total",
+          "feature_count",
           "output_sha256",
           "output_bytes",
           "manifest_sha256",
@@ -11946,6 +11982,108 @@
         ],
         "title": "PrepareTask"
       },
+      "PreparedAoiDrawingProvenance": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Original Sha256"
+          },
+          "converted_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Converted Sha256"
+          },
+          "fragment_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Fragment Sha256"
+          },
+          "fragment_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Fragment Bytes"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifest Sha256"
+          },
+          "selected_entities": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Selected Entities"
+          },
+          "unknown_bounds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unknown Bounds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "original_sha256",
+          "converted_sha256",
+          "fragment_sha256",
+          "fragment_bytes",
+          "manifest_sha256",
+          "selected_entities",
+          "unknown_bounds"
+        ],
+        "title": "PreparedAoiDrawingProvenance"
+      },
+      "PreparedAoiProvenance": {
+        "properties": {
+          "boundary_path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Boundary Path"
+          },
+          "boundary_original_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Boundary Original Sha256"
+          },
+          "boundary_converted_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Boundary Converted Sha256"
+          },
+          "boundary_handle": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[A-Fa-f0-9]+$",
+            "title": "Boundary Handle"
+          },
+          "drawings": {
+            "items": {
+              "$ref": "#/components/schemas/PreparedAoiDrawingProvenance"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Drawings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "boundary_path",
+          "boundary_original_sha256",
+          "boundary_converted_sha256",
+          "boundary_handle",
+          "drawings"
+        ],
+        "title": "PreparedAoiProvenance"
+      },
       "PreparedDrawingProvenance": {
         "properties": {
           "path": {
@@ -12014,6 +12152,16 @@
             },
             "type": "array",
             "title": "Drawings"
+          },
+          "aoi": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreparedAoiProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

@@ -1,66 +1,107 @@
-"""Atomic publication on the existing project and operation journal tables."""
+"""Atomic publication of a bounded editable view and its full DXF sources."""
 
-from hashlib import sha256
 from pathlib import Path
 
+from app.cad_intake.prepare_contracts import PreparedSourceProvenance
 from app.cad_intake.preview_contracts import CadPreviewResult
-from app.cad_intake.source_publication import SqliteSourcePublication
+from app.cad_intake.source_publication import (
+    SourcePublicationContent,
+    SqliteSourcePublication,
+    publication_sha256,
+    publication_size,
+)
 from app.dxf_import.contracts import ImportEditability, ImportMode
-from app.dxf_import.preview_contracts import CadPreviewProvenance
 from app.operations.contracts import OperationKind, ProjectOperation
 from app.projects.contracts import Project
 
 
 def _validate_publication(
-    project: Project, source: bytes, result: CadPreviewResult
-) -> CadPreviewProvenance:
-    source_file = project.source_file
+    project: Project,
+    source: SourcePublicationContent,
+    result: CadPreviewResult,
+    source_components: dict[str, SourcePublicationContent],
+) -> PreparedSourceProvenance:
+    metadata = project.source_file
+    provenance = metadata.prepared_provenance if metadata else None
+    drawings = provenance.drawings if provenance else []
+    expected = {
+        item.path: item
+        for item in drawings
+        if provenance is not None and item.path != provenance.entry
+    }
+    aoi_drawings = {item.path: item for item in provenance.aoi.drawings} if provenance and provenance.aoi else {}
     if (
-        source_file is None
-        or source_file.preview_provenance is None
-        or source_file.content_sha256 != sha256(source).hexdigest()
-        or source_file.content_sha256 != result.output_sha256
-        or source_file.size != len(source)
-        or result.output_bytes != len(source)
-        or project.import_status.mode != ImportMode.CAD_PREVIEW
-        or project.import_status.editability != ImportEditability.READ_ONLY
-        or project.plan is not None
-        or project.geometry is not None
-        or project.map_ready
-        or project.planting_zones
+        metadata is None
+        or provenance is None
+        or provenance.aoi is None
+        or metadata.preview_provenance is not None
+        or metadata.name != result.source_name
+        or metadata.content_sha256 != publication_sha256(source)
+        or metadata.content_sha256 != result.source_sha256
+        or provenance.entry != result.source_name
+        or provenance.source_sha256 != result.source_sha256
+        or metadata.size != publication_size(source)
+        or result.source_bytes != publication_size(source)
+        or result.source_count != len(drawings)
+        or result.source_bytes_total != sum(item.source_bytes for item in drawings)
+        or len({item.path for item in drawings}) != len(drawings)
+        or set(aoi_drawings) != {item.path for item in drawings}
+        or aoi_drawings[provenance.entry].original_sha256
+        != result.source_original_sha256
+        or set(source_components) != set(expected)
         or any(
-            area is not None
-            for area in (
-                project.site_area_m2,
-                project.planning_area_m2,
-                project.allowed_area_m2,
-            )
+            publication_sha256(source_components[path]) != item.source_sha256
+            or publication_size(source_components[path]) != item.source_bytes
+            for path, item in expected.items()
         )
+        or project.import_status.mode != ImportMode.SOURCE_DXF
+        or project.import_status.editability != ImportEditability.EDITABLE
+        or project.source_review is None
+        or project.plan is not None
+        or project.source_geometry is not None
+        or project.geometry is None
+        or not project.map_ready
+        or project.planting_zones
+        or result.feature_count
+        != len(project.geometry.feature_collection.get("features", []))
     ):
-        raise ValueError("Предварительная карта не соответствует контракту публикации")
-    assert source_file is not None and source_file.preview_provenance is not None
-    return source_file.preview_provenance
+        raise ValueError("Рабочая территория не соответствует контракту публикации")
+    return provenance
 
 
 def _validate_operation(
     operation: ProjectOperation,
     project: Project,
-    provenance: CadPreviewProvenance,
+    provenance: PreparedSourceProvenance,
+    result: CadPreviewResult,
 ) -> None:
     if (
         operation.kind != OperationKind.PREPARE_CAD_PREVIEW
         or operation.project_id != project.id
         or operation.cad_preview is None
+        or provenance.aoi is None
     ):
-        raise ValueError("Операция не соответствует предварительной карте")
+        raise ValueError("Операция не соответствует рабочей территории")
     request = operation.cad_preview.request
+    aoi = provenance.aoi
+    selected = next(
+        (item for item in aoi.drawings if item.path == request.source.path), None
+    )
     if (
-        provenance.original_sha256 != request.source.source_sha256
-        or provenance.converted_sha256 != request.source.normalized_sha256
-        or provenance.boundary_original_sha256 != request.boundary.source_sha256
-        or provenance.boundary_handle.upper() != request.boundary.handle.upper()
+        provenance.intake_operation_id != request.intake_operation_id
+        or provenance.manifest_sha256 != request.manifest_sha256
+        or aoi.boundary_path != request.boundary.path
+        or aoi.boundary_original_sha256 != request.boundary.source_sha256
+        or aoi.boundary_converted_sha256 != request.boundary.normalized_sha256
+        or aoi.boundary_handle.upper() != request.boundary.handle.upper()
+        or selected is None
+        or selected.original_sha256 != request.source.source_sha256
+        or selected.converted_sha256 != request.source.normalized_sha256
+        or selected.fragment_sha256 != result.output_sha256
+        or selected.fragment_bytes != result.output_bytes
+        or selected.manifest_sha256 != result.manifest_sha256
     ):
-        raise ValueError("Происхождение карты не соответствует выбранным источникам")
+        raise ValueError("Происхождение территории не соответствует операции")
 
 
 class SqliteCadPreviewPublication:
@@ -70,19 +111,22 @@ class SqliteCadPreviewPublication:
     def publish(
         self,
         project: Project,
-        source: bytes,
+        source: SourcePublicationContent,
         operation_id: str,
         result: CadPreviewResult,
+        source_components: dict[str, SourcePublicationContent] | None = None,
     ) -> ProjectOperation:
-        provenance = _validate_publication(project, source, result)
+        components = source_components or {}
+        provenance = _validate_publication(project, source, result, components)
         return self.publication.publish(
             project,
             source,
             operation_id,
             result,
             record_field="cad_preview",
-            stage="Предварительная карта открыта только для просмотра",
+            stage="Рабочая территория открыта; назначения слоёв требуют проверки",
             validate_operation=lambda operation: _validate_operation(
-                operation, project, provenance
+                operation, project, provenance, result
             ),
+            source_components=components,
         )

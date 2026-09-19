@@ -33,8 +33,7 @@ export function useOpenCadPreview(
           ('source_sha256' in receipt
             ? receipt.source_sha256
             : receipt.output_sha256) ||
-        project.import_status?.mode !==
-          (prepared ? 'source_dxf' : 'cad_preview')
+        project.import_status?.mode !== 'source_dxf'
       )
         throw new Error(
           'Источник проекта изменился. Обновите страницу, чтобы открыть текущие данные.',

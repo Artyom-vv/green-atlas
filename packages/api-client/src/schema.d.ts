@@ -1901,10 +1901,10 @@ export interface components {
         CadPreviewResult: {
             /**
              * Status
-             * @default preview_only
+             * @default requires_review
              * @constant
              */
-            status: "preview_only";
+            status: "requires_review";
             /**
              * Calculation Ready
              * @default false
@@ -1917,6 +1917,18 @@ export interface components {
             geometry_version: number;
             /** Source Name */
             source_name: string;
+            /** Source Original Sha256 */
+            source_original_sha256: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Source Bytes */
+            source_bytes: number;
+            /** Source Count */
+            source_count: number;
+            /** Source Bytes Total */
+            source_bytes_total: number;
+            /** Feature Count */
+            feature_count: number;
             /** Output Sha256 */
             output_sha256: string;
             /** Output Bytes */
@@ -3848,6 +3860,38 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** PreparedAoiDrawingProvenance */
+        PreparedAoiDrawingProvenance: {
+            /** Path */
+            path: string;
+            /** Original Sha256 */
+            original_sha256: string;
+            /** Converted Sha256 */
+            converted_sha256: string;
+            /** Fragment Sha256 */
+            fragment_sha256: string;
+            /** Fragment Bytes */
+            fragment_bytes: number;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** Selected Entities */
+            selected_entities: number;
+            /** Unknown Bounds */
+            unknown_bounds: number;
+        };
+        /** PreparedAoiProvenance */
+        PreparedAoiProvenance: {
+            /** Boundary Path */
+            boundary_path: string;
+            /** Boundary Original Sha256 */
+            boundary_original_sha256: string;
+            /** Boundary Converted Sha256 */
+            boundary_converted_sha256: string;
+            /** Boundary Handle */
+            boundary_handle: string;
+            /** Drawings */
+            drawings: components["schemas"]["PreparedAoiDrawingProvenance"][];
+        };
         /** PreparedDrawingProvenance */
         PreparedDrawingProvenance: {
             /** Path */
@@ -3876,6 +3920,7 @@ export interface components {
             source_sha256: string;
             /** Drawings */
             drawings?: components["schemas"]["PreparedDrawingProvenance"][];
+            aoi?: components["schemas"]["PreparedAoiProvenance"] | null;
         };
         /** PreviewRefusal */
         PreviewRefusal: {
