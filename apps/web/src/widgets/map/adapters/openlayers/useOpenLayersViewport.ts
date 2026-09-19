@@ -76,9 +76,7 @@ import { createEmpty } from 'ol/extent';
 import GeoJSON from 'ol/format/GeoJSON';
 import Circle from 'ol/geom/Circle';
 import LineString from 'ol/geom/LineString';
-import MultiPolygon from 'ol/geom/MultiPolygon';
 import Point from 'ol/geom/Point';
-import Polygon from 'ol/geom/Polygon';
 import type DragBox from 'ol/interaction/DragBox';
 import DragPan from 'ol/interaction/DragPan';
 import Draw from 'ol/interaction/Draw';
@@ -696,12 +694,12 @@ export function useOpenLayersViewport(
       }).extend([mouseWheelZoom, temporaryPan]),
       view,
     });
-    const hitFeatures = (pixel: number[]) => {
+    const hitFeatures = (pixel: number[], pixelTolerance = 6) => {
       const candidates = new Set<Feature>();
       const coordinate = map.getCoordinateFromPixel(pixel);
       if (!coordinate || !coordinate.every(Number.isFinite)) return [];
       const resolution = map.getView().getResolution() ?? 1;
-      const tolerance = resolution * 8;
+      const tolerance = resolution * pixelTolerance;
       const searchExtent: Extent = [
         coordinate[0] - tolerance,
         coordinate[1] - tolerance,
@@ -717,9 +715,10 @@ export function useOpenLayersViewport(
       const isWithinTolerance = (feature: Feature) => {
         const geometry = feature.getGeometry();
         if (!geometry) return false;
-        if (geometry instanceof Polygon || geometry instanceof MultiPolygon) {
-          if (geometry.intersectsCoordinate(coordinate)) return true;
-        }
+        if (
+          polygonAtCoordinate(geometry, [coordinate[0], coordinate[1]], false)
+        )
+          return true;
         const closest = geometry.getClosestPoint(coordinate);
         return (
           Math.hypot(closest[0] - coordinate[0], closest[1] - coordinate[1]) <=
@@ -921,8 +920,13 @@ export function useOpenLayersViewport(
                     'planting_area',
                     'site_border',
                   ].includes(kind) &&
-                  (candidateGeometry instanceof Polygon ||
-                    candidateGeometry instanceof MultiPolygon)
+                  Boolean(
+                    polygonAtCoordinate(
+                      candidateGeometry,
+                      clickCoordinate,
+                      false,
+                    ),
+                  )
                 );
               })
             : undefined;
@@ -1076,16 +1080,15 @@ export function useOpenLayersViewport(
           // serialize a point as a non-selectable map area and is misleading.
           hoverItems = [];
         } else if (!hoveredFeature) {
-          const candidates = hitFeatures(event.pixel);
+          const candidates = hitFeatures(event.pixel, 3);
           hoveredFeature = resolveHoverFeature(undefined, candidates).feature;
           hoverItems = mapHoverItems(candidates, coordinate);
         }
       }
       const sourceGeometry = hoveredFeature?.getGeometry();
       const hoverGeometry =
-        sourceGeometry instanceof MultiPolygon
-          ? polygonAtCoordinate(sourceGeometry, coordinate, false)
-          : sourceGeometry;
+        polygonAtCoordinate(sourceGeometry, coordinate, false) ??
+        sourceGeometry;
       const hoverGeometryKey = hoverGeometry
         ? `${String(hoveredFeature?.getId())}:${hoveredFeature?.getRevision()}:${hoverGeometry.getExtent().join(':')}`
         : undefined;

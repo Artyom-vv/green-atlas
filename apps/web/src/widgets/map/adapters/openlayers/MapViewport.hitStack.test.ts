@@ -66,7 +66,7 @@ describe('map hit stack', () => {
         unrelated,
         allowed,
       ]),
-    ).toEqual([occupied, reference, unrelated, allowed]);
+    ).toEqual([reference, unrelated, occupied, allowed]);
   });
 
   it('prefers an uncommon source object over the aggregate project area', () => {
@@ -85,6 +85,26 @@ describe('map hit stack', () => {
     sourceObject.setId('small-object-42');
 
     expect(mapHitStack([aggregate, sourceObject])[0]).toBe(sourceObject);
+  });
+
+  it('prefers local detail over a much larger semantic source zone', () => {
+    const broadRestriction = new Feature({
+      geometry: square(500),
+      kind: 'restricted',
+      source_layer: 'PROTECTION_ZONE',
+    });
+    broadRestriction.setId('protection-zone');
+    const localContour = new Feature({
+      geometry: square(4),
+      kind: 'ignore',
+      source_layer: 'SURVEY_DETAIL',
+    });
+    localContour.setId('survey-detail');
+
+    expect(mapHitStack([broadRestriction, localContour])).toEqual([
+      localContour,
+      broadRestriction,
+    ]);
   });
 
   it('keeps a planted tree above the area picker and exposes it as the hover target', () => {
@@ -132,6 +152,11 @@ describe('map hit stack', () => {
     expect(
       contextualConstraintHits([buildingSetback, roadSetback, building]),
     ).toEqual([buildingSetback, building]);
+    expect(
+      mapHitStack(
+        contextualConstraintHits([buildingSetback, roadSetback, building]),
+      ),
+    ).toEqual([building, buildingSetback]);
     expect(contextualConstraintHits([buildingSetback, roadSetback])).toEqual(
       [],
     );

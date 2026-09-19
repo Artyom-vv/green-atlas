@@ -168,6 +168,7 @@ it('keeps explorer navigation and layer input when its dock is collapsed and res
         visibility={{}}
         onSelect={vi.fn()}
         onVisibility={vi.fn()}
+        onGroupVisibility={vi.fn()}
       />
     ),
   });

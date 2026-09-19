@@ -11,13 +11,18 @@ import {
 } from '@green/ui';
 import { Eye, EyeOff, Search } from 'lucide-react';
 import { useMemo, useState, type FC } from 'react';
-import { filterProjectLayers, layerDisplayLabel } from '../model/explorerModel';
+import {
+  filterProjectLayers,
+  layerDisplayLabel,
+  projectLayerGroups,
+} from '../model/explorerModel';
 
 export interface ProjectLayersProps {
   layers: Layer[];
   visibility: Record<string, boolean>;
   activeLayerId?: string;
   onVisibility: (layerId: string, visible: boolean) => void;
+  onGroupVisibility: (layerIds: string[], visible: boolean) => void;
   onSelect: (layerId: string) => void;
 }
 export const ProjectLayers: FC<ProjectLayersProps> = ({
@@ -25,6 +30,7 @@ export const ProjectLayers: FC<ProjectLayersProps> = ({
   visibility,
   activeLayerId,
   onVisibility,
+  onGroupVisibility,
   onSelect,
 }) => {
   const [query, setQuery] = useState('');
@@ -32,10 +38,45 @@ export const ProjectLayers: FC<ProjectLayersProps> = ({
     () => filterProjectLayers(layers, query),
     [layers, query],
   );
+  const groups = useMemo(() => projectLayerGroups(layers), [layers]);
   return (
     <ControlProvider size="compact">
       <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-        <div className="shrink-0 p-2">
+        <div className="grid shrink-0 gap-1 border-b border-gray-200 p-2">
+          {groups.map((group) => {
+            const visibleCount = group.layers.filter(
+              (layer) => visibility[layer.id] !== false,
+            ).length;
+            const visible = visibleCount > 0;
+            return (
+              <div
+                key={group.id}
+                className="rounded-control grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1"
+              >
+                <div className="grid min-w-0 px-2 py-1">
+                  <Text variant="label">{group.label}</Text>
+                  <Text variant="caption">
+                    {visibleCount} из {group.layers.length}
+                  </Text>
+                </div>
+                <IconButton
+                  icon={visible ? <Eye /> : <EyeOff />}
+                  label={
+                    visible
+                      ? `Скрыть: ${group.label}`
+                      : `Показать: ${group.label}`
+                  }
+                  variant="ghost"
+                  onClick={() =>
+                    onGroupVisibility(
+                      group.layers.map((layer) => layer.id),
+                      !visible,
+                    )
+                  }
+                />
+              </div>
+            );
+          })}
           <TextInput
             startIcon={<Search />}
             aria-label="Найти слой"
@@ -44,7 +85,7 @@ export const ProjectLayers: FC<ProjectLayersProps> = ({
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        <ScrollArea className="flex-1" contentClassName="grid gap-1 px-2 pb-2">
+        <ScrollArea className="flex-1" contentClassName="grid gap-1 p-2">
           {visibleLayers.map((layer) => {
             const visible = visibility[layer.id] !== false;
             return (

@@ -44,6 +44,7 @@ it('filters by role or source name without changing selection or layer visibilit
       activeLayerId="building"
       onSelect={onSelect}
       onVisibility={onVisibility}
+      onGroupVisibility={vi.fn()}
     />,
   );
   const search = screen.getByRole('textbox', { name: 'Найти слой' });
@@ -72,5 +73,35 @@ it('filters by role or source name without changing selection or layer visibilit
   expect(screen.getByRole('button', { name: /Здание/ })).toHaveAttribute(
     'aria-pressed',
     'true',
+  );
+});
+
+it('toggles coarse source groups without changing individual selection', () => {
+  const projectLayer: Layer = {
+    ...layers[1],
+    id: 'dendro',
+    source_name: '!!!_1. Дендра_сохранить',
+  };
+  const baseLayer: Layer = {
+    ...layers[0],
+    id: 'topography',
+    source_name: 'ЮАО$0$00.1_Топография$0$Рельеф',
+  };
+  const onGroupVisibility = vi.fn();
+  render(
+    <ProjectLayers
+      layers={[projectLayer, baseLayer]}
+      visibility={{}}
+      onVisibility={vi.fn()}
+      onGroupVisibility={onGroupVisibility}
+      onSelect={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('Проектные слои')).toBeVisible();
+  expect(screen.getByText('Геоподоснова')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Скрыть: Геоподоснова' }));
+  expect(onGroupVisibility).toHaveBeenCalledExactlyOnceWith(
+    ['topography'],
+    false,
   );
 });

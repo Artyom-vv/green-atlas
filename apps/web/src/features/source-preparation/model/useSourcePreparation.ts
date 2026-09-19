@@ -92,6 +92,17 @@ export function useSourcePreparation({
     () => layers.filter((layer) => layer.required),
     [layers],
   );
+  const usableBoundaryCandidates = useMemo(
+    () =>
+      layers.filter(
+        (layer) => layer.boundary_candidate?.status === 'usable',
+      ),
+    [layers],
+  );
+  const selectedBoundary = useMemo(
+    () => layers.some((layer) => mappings[layer.id]?.kind === 'site_border'),
+    [layers, mappings],
+  );
   const requiredReady = useMemo(
     () =>
       requiredLayers.every((layer) => {
@@ -110,12 +121,15 @@ export function useSourcePreparation({
       ),
     [layers, mappings],
   );
-  const readinessBlockedReason = !requiredReady
-    ? 'Назначьте роль обязательным слоям границы перед подготовкой карты.'
-    : incompleteConstraintLayers.length
-      ? 'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.'
-      : undefined;
-  const hasPlanningBoundary = requiredLayers.length > 0;
+  const readinessBlockedReason =
+    usableBoundaryCandidates.length > 0 && !selectedBoundary
+      ? 'Выберите один контур территории для расчёта.'
+      : !requiredReady
+        ? 'Назначьте роль обязательным слоям границы перед подготовкой карты.'
+        : incompleteConstraintLayers.length
+          ? 'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.'
+          : undefined;
+  const hasPlanningBoundary = selectedBoundary;
   const latestOperationQuery = useQuery({
     queryKey: [
       'latest-operation',

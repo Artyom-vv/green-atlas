@@ -31,6 +31,67 @@ const source: Project = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('source preparation form recovery', () => {
+  it('requires an explicit territory choice when several usable contours exist', async () => {
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue({
+      ...source,
+      layers: [
+        ...(source.layers ?? []),
+        {
+          id: 'order-boundary',
+          source_name: 'Граница заказа',
+          suggested_kind: 'ignore',
+          mapped_kind: 'ignore',
+          color: '#000',
+          object_count: 1,
+          geometry_complete: true,
+          linetype: 'CONTINUOUS',
+          required: false,
+          visible: true,
+          boundary_candidate: {
+            status: 'usable',
+            basis: 'polygonized_linework',
+            area_m2: 10_000,
+            inset_1_5m_area_m2: 9_409,
+            component_count: 1,
+          },
+        },
+      ],
+    });
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const Wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() =>
+      expect(result.current.readinessBlockedReason).toBe(
+        'Выберите один контур территории для расчёта.',
+      ),
+    );
+    act(() =>
+      result.current.setMappings({
+        road: { layer_id: 'road', kind: 'road', visible: true },
+        'order-boundary': {
+          layer_id: 'order-boundary',
+          kind: 'site_border',
+          visible: true,
+        },
+      }),
+    );
+    expect(result.current.readinessBlockedReason).toBeUndefined();
+    unmount();
+    client.clear();
+  });
+
   it('keeps CAD preview navigation independent of calculation status', async () => {
     vi.spyOn(preparationApi, 'getProject').mockResolvedValue({
       ...source,

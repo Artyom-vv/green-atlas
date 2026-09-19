@@ -10,18 +10,36 @@ import Feature from 'ol/Feature';
 import { polygonAtCoordinate, polygonSnapshot } from './polygonTargets';
 
 export const mapHitPriority: Record<string, number> = {
-  forbidden: 0,
-  restricted: 1,
-  water: 2,
-  building: 3,
-  road: 4,
-  utility: 5,
-  existing_green: 6,
-  ignore: 7,
-  planting_area: 8,
+  restricted: 0,
+  water: 1,
+  building: 2,
+  road: 3,
+  utility: 4,
+  existing_green: 5,
+  ignore: 6,
+  planting_area: 7,
+  forbidden: 8,
   allowed: 9,
   site_border: 10,
 };
+
+const backgroundKinds = new Set([
+  'planting_area',
+  'forbidden',
+  'allowed',
+  'site_border',
+]);
+
+const hitFootprint = (feature: Feature) => {
+  const extent = feature.getGeometry()?.getExtent();
+  if (!extent) return Number.POSITIVE_INFINITY;
+  return (
+    Math.max(0, extent[2] - extent[0]) * Math.max(0, extent[3] - extent[1])
+  );
+};
+
+const hitLayer = (feature: Feature) =>
+  backgroundKinds.has(String(feature.get('kind'))) ? 1 : 0;
 
 /**
  * Keep hit ordering in one place for both hover and click handling.
@@ -56,14 +74,22 @@ export function mapHitStack(features: readonly Feature[]): Feature[] {
       return true;
     })
     .sort((left, right) => {
-      // Unclassified source geometry is still a concrete DXF object. Keep it
-      // ahead of aggregate `planting_area` and `allowed` polygons; otherwise
-      // a click on an annotation or uncommon CAD layer resolves to the whole
-      // project area and highlights every contour as one object.
-      const leftPriority = mapHitPriority[String(left.get('kind'))] ?? 7.5;
-      const rightPriority = mapHitPriority[String(right.get('kind'))] ?? 7.5;
+      // Local CAD detail wins before broad source zones and calculated masks.
+      // Semantic kind only resolves objects of comparable spatial scope: a
+      // city-scale restricted polygon must not hide a small contour merely
+      // because `restricted` is important to the calculation.
+      const layerDifference = hitLayer(left) - hitLayer(right);
+      if (layerDifference) return layerDifference;
+      if (hitLayer(left) === 0) {
+        const footprintDifference = hitFootprint(left) - hitFootprint(right);
+        if (footprintDifference) return footprintDifference;
+      }
+      const leftPriority = mapHitPriority[String(left.get('kind'))] ?? 6.5;
+      const rightPriority = mapHitPriority[String(right.get('kind'))] ?? 6.5;
       const priorityDifference = leftPriority - rightPriority;
       if (priorityDifference) return priorityDifference;
+      const footprintDifference = hitFootprint(left) - hitFootprint(right);
+      if (footprintDifference) return footprintDifference;
       return String(left.getId() ?? '').localeCompare(
         String(right.getId() ?? ''),
       );
