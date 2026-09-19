@@ -737,6 +737,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cad/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Package */
+        post: operations["upload_package_api_cad_uploads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cad/roots/{root_id}/entries": {
         parameters: {
             query?: never;
@@ -1438,6 +1455,11 @@ export interface components {
             /** Cad Snapshot */
             cad_snapshot?: string | null;
         };
+        /** Body_upload_package_api_cad_uploads_post */
+        Body_upload_package_api_cad_uploads_post: {
+            /** Files */
+            files: string[];
+        };
         /** Body_upload_release_bundle_api_projects__project_id__release_bundle_post */
         Body_upload_release_bundle_api_projects__project_id__release_bundle_post: {
             /** File */
@@ -2077,6 +2099,15 @@ export interface components {
              * @constant
              */
             calculation_ready: false;
+        };
+        /** CadUploadPackage */
+        CadUploadPackage: {
+            /** Root Id */
+            root_id: string;
+            /** Entries */
+            entries: components["schemas"]["CadFingerprint"][];
+            /** Total Bytes */
+            total_bytes: number;
         };
         /** CandidateReasonSummary */
         CandidateReasonSummary: {
@@ -6926,6 +6957,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CadRoot"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_package_api_cad_uploads_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_package_api_cad_uploads_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CadUploadPackage"];
                 };
             };
             /** @description Validation Error */

@@ -57,6 +57,27 @@ describe('CAD intake command', () => {
       expectedStateVersion: 7,
     });
   });
+  it('uses immutable upload hashes and includes every additional DXF', async () => {
+    const mocks = setup();
+    const uploaded = {
+      rootId: 'upload-0123456789abcdef0123456789abcdef',
+      path: 'genplan.dxf',
+      sha256: 'b'.repeat(64),
+      additionalEntries: [{ path: 'geobase.dxf', sha256: 'c'.repeat(64) }],
+    };
+    await startIntake(uploaded, 'project', vi.fn());
+    expect(mocks.fingerprint).not.toHaveBeenCalled();
+    expect(mocks.start).toHaveBeenCalledWith(
+      'project',
+      {
+        root_id: uploaded.rootId,
+        entry: uploaded.path,
+        entry_sha256: uploaded.sha256,
+        additional_entries: uploaded.additionalEntries,
+      },
+      { expectedStateVersion: 7 },
+    );
+  });
   it('does not create an empty project when the selected file cannot be verified', async () => {
     const mocks = setup();
     mocks.fingerprint.mockRejectedValue(new Error('Файл изменился'));

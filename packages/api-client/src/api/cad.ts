@@ -6,6 +6,7 @@ import type {
   CadPrepareRequest,
   CadRoot,
   CadSourceAsset,
+  CadUploadPackage,
   ProjectOperation,
   ProjectWriteOptions,
 } from '../contracts';
@@ -19,6 +20,14 @@ const assetPath = (projectId: string, operationId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/operations/${encodeURIComponent(operationId)}/cad-asset`;
 
 export const cadApi = {
+  uploadCadPackage: (files: File[]) => {
+    const body = new FormData();
+    files.forEach((file) => body.append('files', file));
+    return request<CadUploadPackage>('/api/cad/uploads', {
+      method: 'POST',
+      body,
+    });
+  },
   startCadPrepare: (
     projectId: string,
     prepared: CadPrepareRequest,
