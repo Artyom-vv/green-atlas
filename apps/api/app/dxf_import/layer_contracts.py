@@ -27,6 +27,12 @@ class BoundaryCandidateStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class LayerSuggestionConfidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class BoundaryCandidate(BaseModel):
     status: BoundaryCandidateStatus
     basis: str
@@ -40,6 +46,11 @@ class Layer(BaseModel):
     id: str
     source_name: str
     suggested_kind: LayerKind
+    # Optional on persisted legacy projects; every fresh DXF import sets it.
+    suggestion_confidence: LayerSuggestionConfidence | None = None
+    suggestion_reasons: list[str] = Field(default_factory=list)
+    mapping_review_required: bool | None = None
+    mapping_confirmed: bool | None = None
     mapped_kind: LayerKind | None = None
     object_count: int
     # Full normalized source extent, independent of the current viewport/LOD.
@@ -71,6 +82,9 @@ class Layer(BaseModel):
 class LayerMapping(BaseModel):
     layer_id: str
     kind: LayerKind
+    # Missing means a legacy client explicitly submitted the old mapping
+    # form. The new UI sends False for an untouched uncertain suggestion.
+    confirmed: bool | None = None
     visible: bool = True
     utility_context: UtilityContext | None = None
     utility_axis_bindings: list[UtilityAxisBinding] = Field(default_factory=list)

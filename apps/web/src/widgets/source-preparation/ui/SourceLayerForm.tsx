@@ -8,6 +8,7 @@ import { isProjectConflict } from '@/entities/project/model/projectConflict';
 import type { SourceLayerFormProps } from './SourceLayerForm.props';
 export const SourceLayerForm: FC<SourceLayerFormProps> = ({
   sourceWarnings,
+  unconfirmedMappings,
   incompleteConstraintLayers,
   hasPlanningBoundary,
   reviewOnly,
@@ -23,6 +24,8 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
   const hasBoundaryCandidates = layers.some(
     (layer) => layer.boundary_candidate?.status === 'usable',
   );
+  const unconfirmedIds = new Set(unconfirmedMappings.map((layer) => layer.id));
+  const otherLayers = layers.filter((layer) => !unconfirmedIds.has(layer.id));
   return (
     <>
       {!reviewOnly && (
@@ -65,7 +68,31 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
           останутся видны.
         </InlineMessage>
       )}
-      {hasBoundaryCandidates && !reviewOnly ? (
+      {!reviewOnly && !!unconfirmedMappings.length && (
+        <section aria-label="Слои, требующие проверки">
+          <LayerMappingTable
+            readOnly={preparationBlocked}
+            layers={unconfirmedMappings}
+            mappings={mappings}
+            onChange={setMappings}
+          />
+        </section>
+      )}
+      {!reviewOnly && !!unconfirmedMappings.length && !!otherLayers.length ? (
+        <Disclosure
+          variant="plain"
+          title={`Остальные слои (${otherLayers.length})`}
+        >
+          <LayerMappingTable
+            readOnly={preparationBlocked}
+            layers={otherLayers}
+            mappings={mappings}
+            onChange={setMappings}
+          />
+        </Disclosure>
+      ) : !unconfirmedMappings.length &&
+        hasBoundaryCandidates &&
+        !reviewOnly ? (
         <Disclosure variant="plain" title={`Другие слои (${layers.length})`}>
           <LayerMappingTable
             readOnly={preparationBlocked}
@@ -74,14 +101,14 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
             onChange={setMappings}
           />
         </Disclosure>
-      ) : (
+      ) : !unconfirmedMappings.length || reviewOnly ? (
         <LayerMappingTable
           readOnly={reviewOnly || preparationBlocked}
           layers={layers}
           mappings={mappings}
           onChange={setMappings}
         />
-      )}
+      ) : null}
       {dataPassportQuery.data && (
         <Disclosure variant="plain" title="Полнота исходных данных">
           <DataPassportPanel passport={dataPassportQuery.data} header={null} />

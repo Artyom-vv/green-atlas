@@ -211,6 +211,10 @@ class ImportApplication:
                     ) from error
                 if "visible" in item:
                     layer.visible = bool(item["visible"])
+                if "mapping_confirmed" in item:
+                    layer.mapping_confirmed = bool(
+                        item["mapping_confirmed"]
+                    )
                 if (
                     layer.mapped_kind == LayerKind.UTILITY
                     and item.get("utility_context") is not None
@@ -350,6 +354,7 @@ class ImportApplication:
                 axis_bindings_changed = axis_bindings_changed or binding_changed
                 layer.utility_axis_bindings = bindings
                 layer.mapped_kind = mapping.kind
+                layer.mapping_confirmed = mapping.confirmed is not False
                 layer.visible = mapping.visible
         missing = [
             layer.source_name
@@ -362,6 +367,18 @@ class ImportApplication:
         ]
         if missing:
             raise ValueError(f"Не сопоставлены обязательные слои: {', '.join(missing)}")
+        unconfirmed = [
+            layer.source_name
+            for layer in project.layers
+            if layer.mapping_review_required
+            and layer.mapped_kind not in {None, LayerKind.IGNORE}
+            and not layer.mapping_confirmed
+        ]
+        if unconfirmed:
+            raise ValueError(
+                "Подтвердите предложенные роли слоёв: "
+                + ", ".join(unconfirmed)
+            )
         if axis_bindings_changed and any(
             layer.utility_axis_bindings for layer in project.layers
         ):

@@ -67,7 +67,11 @@ describe('BoundaryCandidatePicker', () => {
     });
     expect(onChange).toHaveBeenCalledWith({
       thin: mappings.thin,
-      order: { ...mappings.order, kind: 'site_border' },
+      order: {
+        ...mappings.order,
+        kind: 'site_border',
+        confirmed: true,
+      },
     });
   });
 });

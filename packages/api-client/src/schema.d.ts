@@ -2916,6 +2916,13 @@ export interface components {
             /** Source Name */
             source_name: string;
             suggested_kind: components["schemas"]["LayerKind"];
+            suggestion_confidence?: components["schemas"]["LayerSuggestionConfidence"] | null;
+            /** Suggestion Reasons */
+            suggestion_reasons?: string[];
+            /** Mapping Review Required */
+            mapping_review_required?: boolean | null;
+            /** Mapping Confirmed */
+            mapping_confirmed?: boolean | null;
             mapped_kind?: components["schemas"]["LayerKind"] | null;
             /** Object Count */
             object_count: number;
@@ -2979,6 +2986,8 @@ export interface components {
             /** Layer Id */
             layer_id: string;
             kind: components["schemas"]["LayerKind"];
+            /** Confirmed */
+            confirmed?: boolean | null;
             /**
              * Visible
              * @default true
@@ -2993,6 +3002,11 @@ export interface components {
             /** Mappings */
             mappings: components["schemas"]["LayerMapping"][];
         };
+        /**
+         * LayerSuggestionConfidence
+         * @enum {string}
+         */
+        LayerSuggestionConfidence: "high" | "medium" | "low";
         /** LegacyImport */
         LegacyImport: {
             /** Source Id */

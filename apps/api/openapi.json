@@ -9271,6 +9271,45 @@
           "suggested_kind": {
             "$ref": "#/components/schemas/LayerKind"
           },
+          "suggestion_confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LayerSuggestionConfidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suggestion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggestion Reasons"
+          },
+          "mapping_review_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Review Required"
+          },
+          "mapping_confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Confirmed"
+          },
           "mapped_kind": {
             "anyOf": [
               {
@@ -9434,6 +9473,17 @@
           "kind": {
             "$ref": "#/components/schemas/LayerKind"
           },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed"
+          },
           "visible": {
             "type": "boolean",
             "title": "Visible",
@@ -9479,6 +9529,15 @@
           "mappings"
         ],
         "title": "LayerMappingRequest"
+      },
+      "LayerSuggestionConfidence": {
+        "type": "string",
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "LayerSuggestionConfidence"
       },
       "LegacyImport": {
         "properties": {

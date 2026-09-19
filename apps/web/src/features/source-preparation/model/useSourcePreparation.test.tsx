@@ -31,6 +31,61 @@ const source: Project = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('source preparation form recovery', () => {
+  it('blocks calculation until an uncertain automatic role is confirmed', async () => {
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue({
+      ...source,
+      layers: [
+        {
+          ...source.layers![0],
+          id: 'network',
+          source_name: 'СУЩ_СЕТИ',
+          suggested_kind: 'utility',
+          mapped_kind: 'utility',
+          suggestion_confidence: 'medium',
+          suggestion_reasons: ['Есть линейная геометрия'],
+          mapping_review_required: true,
+          mapping_confirmed: false,
+        },
+      ],
+    });
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const Wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() =>
+      expect(result.current.readinessBlockedReason).toBe(
+        'Проверьте предложенные роли слоёв.',
+      ),
+    );
+    expect(result.current.unconfirmedMappings.map((layer) => layer.id)).toEqual(
+      ['network'],
+    );
+    act(() =>
+      result.current.setMappings({
+        network: {
+          layer_id: 'network',
+          kind: 'utility',
+          confirmed: true,
+          visible: true,
+        },
+      }),
+    );
+    expect(result.current.readinessBlockedReason).toBeUndefined();
+    unmount();
+    client.clear();
+  });
+
   it('requires an explicit territory choice when several usable contours exist', async () => {
     vi.spyOn(preparationApi, 'getProject').mockResolvedValue({
       ...source,

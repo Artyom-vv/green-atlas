@@ -577,6 +577,14 @@ def build_release(
                 "layer_id": layer.id,
                 "source_name": layer.source_name,
                 "kind": layer.mapped_kind,
+                "suggested_kind": layer.suggested_kind,
+                "suggestion_confidence": layer.suggestion_confidence,
+                "suggestion_reasons": layer.suggestion_reasons,
+                "mapping_review_required": layer.mapping_review_required,
+                "mapping_confirmed": bool(
+                    layer.mapping_confirmed
+                    or not layer.mapping_review_required
+                ),
                 "parsing_status": "complete" if layer.geometry_complete else "partial",
                 "semantic_status": "excluded" if str(layer.mapped_kind) == "LayerKind.IGNORE" or getattr(layer.mapped_kind, "value", layer.mapped_kind) == "ignore" else "classified",
                 "used_in_calculation": bool(project.source_review is None and layer.geometry_complete and getattr(layer.mapped_kind, "value", layer.mapped_kind) not in {None, "ignore", "unclassified"}),

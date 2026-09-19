@@ -94,9 +94,7 @@ export function useSourcePreparation({
   );
   const usableBoundaryCandidates = useMemo(
     () =>
-      layers.filter(
-        (layer) => layer.boundary_candidate?.status === 'usable',
-      ),
+      layers.filter((layer) => layer.boundary_candidate?.status === 'usable'),
     [layers],
   );
   const selectedBoundary = useMemo(
@@ -121,14 +119,29 @@ export function useSourcePreparation({
       ),
     [layers, mappings],
   );
+  const unconfirmedMappings = useMemo(
+    () =>
+      layers.filter((layer) => {
+        const mapping = mappings[layer.id];
+        return Boolean(
+          layer.mapping_review_required &&
+          mapping?.kind &&
+          mapping.kind !== 'ignore' &&
+          !mapping.confirmed,
+        );
+      }),
+    [layers, mappings],
+  );
   const readinessBlockedReason =
     usableBoundaryCandidates.length > 0 && !selectedBoundary
       ? 'Выберите один контур территории для расчёта.'
       : !requiredReady
         ? 'Назначьте роль обязательным слоям границы перед подготовкой карты.'
-        : incompleteConstraintLayers.length
-          ? 'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.'
-          : undefined;
+        : unconfirmedMappings.length
+          ? 'Проверьте предложенные роли слоёв.'
+          : incompleteConstraintLayers.length
+            ? 'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.'
+            : undefined;
   const hasPlanningBoundary = selectedBoundary;
   const latestOperationQuery = useQuery({
     queryKey: [
@@ -343,6 +356,7 @@ export function useSourcePreparation({
     cadPreview,
     sourceReviewMessage: projectQuery.data?.import_status?.message,
     readinessBlockedReason,
+    unconfirmedMappings,
     incompleteConstraintLayers,
     hasPlanningBoundary,
     operation,

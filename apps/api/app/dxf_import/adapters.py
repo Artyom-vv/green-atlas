@@ -32,8 +32,10 @@ from app.dxf_import.layer_contracts import (
     BoundaryCandidateStatus,
     Layer,
     LayerKind,
+    LayerSuggestionConfidence,
 )
 from app.dxf_import.layer_suggestions import (
+    assess_layer_suggestion,
     is_boundary_candidate_name,
     suggest_layer_kind,
 )
@@ -1751,11 +1753,26 @@ class EzdxfReader:
                 and boundary_candidate.status != BoundaryCandidateStatus.USABLE
             ):
                 kind = LayerKind.IGNORE
+            geometry_complete = not (
+                unrenderable_geometry_count_by_layer[name]
+                or unsupported_by_layer.get(name)
+            )
+            confidence, reasons, review_required = assess_layer_suggestion(
+                kind,
+                entity_types=dict(entity_types_by_layer[name]),
+                has_polygon=name in polygon_layers,
+                geometry_complete=geometry_complete,
+                boundary_candidate=boundary_candidate,
+            )
             style = styles.layer(name, LAYER_COLORS[index % len(LAYER_COLORS)])
             layers.append(Layer(
                 id=str(uuid5(NAMESPACE_URL, f"dxf-layer:{name}")),
                 source_name=name,
                 suggested_kind=kind,
+                suggestion_confidence=confidence,
+                suggestion_reasons=reasons,
+                mapping_review_required=review_required,
+                mapping_confirmed=not review_required,
                 mapped_kind=kind,
                 object_count=count,
                 bounds=_geometry_bounds(features_by_layer.get(name, [])),
@@ -1763,10 +1780,7 @@ class EzdxfReader:
                 linetype=style.linetype,
                 lineweight_mm=style.lineweight_mm,
                 entity_types=dict(entity_types_by_layer[name]),
-                geometry_complete=not (
-                    unrenderable_geometry_count_by_layer[name]
-                    or unsupported_by_layer.get(name)
-                ),
+                geometry_complete=geometry_complete,
                 unsupported_geometry_types=dict(unsupported_by_layer.get(name, {})),
                 unreadable_geometry_count=unrenderable_geometry_count_by_layer[name],
                 boundary_candidate=boundary_candidate,
@@ -1788,6 +1802,16 @@ class EzdxfReader:
                 if layer.suggested_kind == LayerKind.SITE_BORDER:
                     layer.suggested_kind = LayerKind.IGNORE
                     layer.mapped_kind = LayerKind.IGNORE
+                    layer.suggestion_confidence = (
+                        LayerSuggestionConfidence.LOW
+                    )
+                    layer.suggestion_reasons = [
+                        "Найдено несколько подходящих контуров территории"
+                    ]
+                    # Choosing one contour is handled by the dedicated
+                    # boundary control; excluded alternatives are safe.
+                    layer.mapping_review_required = False
+                    layer.mapping_confirmed = True
                     layer.required = False
 
         kind_by_layer = {layer.source_name: layer.suggested_kind for layer in layers}

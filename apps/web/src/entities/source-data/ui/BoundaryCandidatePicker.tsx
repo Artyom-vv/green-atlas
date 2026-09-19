@@ -38,7 +38,11 @@ export const BoundaryCandidatePicker: FC<BoundaryCandidatePickerProps> = ({
   return (
     <section className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
       <label className="block">
-        <Text as="span" variant="body" className="mb-2 block font-semibold text-neutral-950">
+        <Text
+          as="span"
+          variant="body"
+          className="mb-2 block font-semibold text-neutral-950"
+        >
           Территория расчёта
         </Text>
         <Select
@@ -51,14 +55,18 @@ export const BoundaryCandidatePicker: FC<BoundaryCandidatePickerProps> = ({
               Object.entries(mappings).map(([id, mapping]) => [
                 id,
                 mapping.kind === 'site_border'
-                  ? { ...mapping, kind: 'ignore' as const }
+                  ? { ...mapping, kind: 'ignore' as const, confirmed: true }
                   : mapping,
               ]),
             );
             if (selectedId) {
               const mapping = mappings[selectedId];
               if (mapping)
-                next[selectedId] = { ...mapping, kind: 'site_border' };
+                next[selectedId] = {
+                  ...mapping,
+                  kind: 'site_border',
+                  confirmed: true,
+                };
             }
             onChange(next);
           }}
@@ -76,7 +84,10 @@ export const BoundaryCandidatePicker: FC<BoundaryCandidatePickerProps> = ({
         <Text as="p" variant="caption" className="mt-2 text-neutral-600">
           {number.format(metrics.area_m2)} м²
           {' · '}
-          после внутреннего отступа {number.format(metrics.inset_1_5m_area_m2)} м²
+          после внутреннего отступа {number.format(
+            metrics.inset_1_5m_area_m2,
+          )}{' '}
+          м²
         </Text>
       )}
     </section>

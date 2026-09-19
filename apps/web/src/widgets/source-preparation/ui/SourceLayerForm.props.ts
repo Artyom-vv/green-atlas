@@ -2,6 +2,7 @@ import type { SourcePreparationState } from '../model/sourcePreparation';
 export interface SourceLayerFormProps extends Pick<
   SourcePreparationState,
   | 'sourceWarnings'
+  | 'unconfirmedMappings'
   | 'incompleteConstraintLayers'
   | 'hasPlanningBoundary'
   | 'reviewOnly'
@@ -18,6 +19,7 @@ export const SourceLayerFormPropsFor = (
   state: Pick<
     SourcePreparationState,
     | 'sourceWarnings'
+    | 'unconfirmedMappings'
     | 'incompleteConstraintLayers'
     | 'hasPlanningBoundary'
     | 'reviewOnly'
@@ -32,6 +34,7 @@ export const SourceLayerFormPropsFor = (
   >,
 ) => ({
   sourceWarnings: state.sourceWarnings,
+  unconfirmedMappings: state.unconfirmedMappings,
   incompleteConstraintLayers: state.incompleteConstraintLayers,
   hasPlanningBoundary: state.hasPlanningBoundary,
   reviewOnly: state.reviewOnly,

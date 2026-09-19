@@ -5,7 +5,11 @@ import pytest
 from shapely.geometry import box, mapping
 
 from app.dxf_import.adapters import EzdxfReader
-from app.dxf_import.layer_contracts import BoundaryCandidateStatus, LayerKind
+from app.dxf_import.layer_contracts import (
+    BoundaryCandidateStatus,
+    LayerKind,
+    LayerSuggestionConfidence,
+)
 from app.dxf_import.layer_suggestions import suggest_layer_kind
 from app.geometry.adapters import ShapelyGeometryEngine
 from app.planting_zones.contracts import PlantingZoneAssignment
@@ -62,6 +66,10 @@ def test_reader_retains_full_source_names_and_coordinates():
     layers = {layer.source_name: layer for layer in imported.layers}
     assert layers[names[0]].suggested_kind == LayerKind.BUILDING
     assert layers[names[1]].suggested_kind == LayerKind.UTILITY
+    assert layers[names[0]].suggestion_confidence == LayerSuggestionConfidence.LOW
+    assert layers[names[0]].mapping_review_required
+    assert layers[names[1]].suggestion_confidence == LayerSuggestionConfidence.MEDIUM
+    assert layers[names[1]].mapping_review_required
     assert layers[names[0]].bounds == (10, 20, 30, 40)
     assert layers[names[1]].bounds == (10, 20, 30, 40)
     features = imported.geometry.feature_collection["features"]
@@ -94,6 +102,9 @@ def test_wide_closed_boundary_uses_authored_center_ring_for_calculation():
         "coordinates": [[[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0], [0.0, 0.0]]],
     }
     assert imported_layer.suggested_kind == LayerKind.SITE_BORDER
+    assert imported_layer.suggestion_confidence == LayerSuggestionConfidence.MEDIUM
+    assert imported_layer.mapping_review_required
+    assert not imported_layer.mapping_confirmed
     assert imported_layer.boundary_candidate is not None
     assert imported_layer.boundary_candidate.status == BoundaryCandidateStatus.USABLE
     assert imported_layer.boundary_candidate.area_m2 == 10_000.0
@@ -181,4 +192,5 @@ def test_multiple_usable_boundaries_require_an_explicit_choice():
         for layer in imported.layers
     )
     assert all(layer.suggested_kind == LayerKind.IGNORE for layer in imported.layers)
+    assert all(layer.mapping_confirmed for layer in imported.layers)
     assert all(layer.required is False for layer in imported.layers)
