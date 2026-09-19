@@ -34,8 +34,23 @@ class ComposedDrawingProvenance(BaseModel):
 @dataclass(frozen=True)
 class ImportedDrawing:
     path: str
-    source: bytes
     imported: DxfImportResult
+    source: bytes | None = None
+    source_sha256: str | None = None
+    source_bytes: int | None = None
+
+    def identity(self) -> tuple[str, int]:
+        if self.source is not None:
+            digest, size = sha256(self.source).hexdigest(), len(self.source)
+            if self.source_sha256 not in {None, digest} or self.source_bytes not in {
+                None,
+                size,
+            }:
+                raise ValueError("Идентификатор DXF не совпадает с его содержимым")
+            return digest, size
+        if self.source_sha256 is None or self.source_bytes is None:
+            raise ValueError("Для DXF не зафиксированы SHA-256 и размер")
+        return self.source_sha256, self.source_bytes
 
 
 @dataclass(frozen=True)
@@ -123,7 +138,7 @@ def compose_dxf_imports(
     units_assumed = False
 
     for drawing in drawings:
-        digest = sha256(drawing.source).hexdigest()
+        digest, source_bytes = drawing.identity()
         prefix = _prefix(drawing.path, digest)
         imported = drawing.imported
         versions.add(imported.dxf_version)
@@ -134,7 +149,7 @@ def compose_dxf_imports(
             ComposedDrawingProvenance(
                 path=drawing.path,
                 source_sha256=digest,
-                source_bytes=len(drawing.source),
+                source_bytes=source_bytes,
                 dxf_version=imported.dxf_version,
                 units=imported.units,
                 units_assumed=imported.units_assumed,

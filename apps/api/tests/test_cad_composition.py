@@ -119,6 +119,22 @@ def test_rejects_duplicate_drawing_path() -> None:
         compose_dxf_imports([drawing, drawing])
 
 
+def test_accepts_verified_identity_without_source_bytes() -> None:
+    drawing = imported("context.dxf")
+    assert drawing.source is not None
+    detached = ImportedDrawing(
+        path=drawing.path,
+        imported=drawing.imported,
+        source_sha256=sha256(drawing.source).hexdigest(),
+        source_bytes=len(drawing.source),
+    )
+
+    composed = compose_dxf_imports([detached])
+
+    assert composed.drawings[0].source_sha256 == sha256(drawing.source).hexdigest()
+    assert composed.drawings[0].source_bytes == len(drawing.source)
+
+
 def test_applies_capacity_to_the_combined_geometry() -> None:
     with pytest.raises(SourceCapacityExceeded, match="объектов 2 > 1"):
         compose_dxf_imports(

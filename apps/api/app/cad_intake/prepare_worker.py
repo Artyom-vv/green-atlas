@@ -207,8 +207,9 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
             [
                 ImportedDrawing(
                     path=path,
-                    source=contents[path],
                     imported=imported_by_path[path],
+                    source_sha256=digests[path],
+                    source_bytes=len(contents[path]),
                 )
                 for path in entries
             ],
