@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import green_atlas_autocad_mcp
-from green_atlas_autocad_mcp import TOOLS, _bridge_status, _handle
+from green_atlas_autocad_mcp import TOOLS, _bridge_status, _compiler_python, _handle
 
 
 def test_initialize_and_list_tools() -> None:
@@ -59,3 +60,14 @@ def test_bridge_status_accepts_sandboxed_process_probe(tmp_path, monkeypatch) ->
     assert status["ready"] is True
     assert status["process_alive"] is None
     assert status["process_check"] == "permission-denied"
+
+
+def test_compiler_uses_project_api_environment(tmp_path, monkeypatch) -> None:
+    interpreter = tmp_path / "apps" / "api" / ".venv" / "bin" / "python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    monkeypatch.setattr(green_atlas_autocad_mcp, "ROOT", tmp_path)
+    monkeypatch.delenv("GREEN_ATLAS_API_PYTHON", raising=False)
+
+    assert _compiler_python() == interpreter.absolute()
+    assert _compiler_python().is_symlink()

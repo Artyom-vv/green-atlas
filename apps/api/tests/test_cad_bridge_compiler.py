@@ -223,6 +223,20 @@ def test_compiles_native_curve_and_point_without_portable_reader() -> None:
     assert snapshot.summary.native == 3
 
 
+def test_compiles_latest_autocad_bridge_contract() -> None:
+    probe = probe_with_native_primitives()
+    probe["plugin_version"] = "0.1.17"
+
+    snapshot = compile(probe)
+
+    assert snapshot.extraction.plugin_version == "0.1.17"
+    assert [geometry.kind for geometry in snapshot.geometry] == [
+        "region",
+        "path",
+        "point",
+    ]
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

@@ -9,6 +9,8 @@
 #include "dbsymtb.h"
 #include "dbents.h"
 #include "dbcurve.h"
+#include "dbdim.h"
+#include "dbmline.h"
 #include "dbpl.h"
 #include "dbhatch.h"
 #include "dbregion.h"
@@ -45,7 +47,7 @@
 namespace {
 
 constexpr const ACHAR* kCommandGroup = _T("GREEN_ATLAS");
-constexpr const char* kPluginVersion = "0.1.14";
+constexpr const char* kPluginVersion = "0.1.17";
 constexpr double kRequestedToleranceMetres = 0.0001;
 constexpr int kMaximumSamplingDepth = 24;
 bool gSideDatabaseCapture = false;
@@ -165,8 +167,11 @@ struct NativePath {
     std::vector<Point3> coordinates;
     bool closed = false;
     bool resolved = false;
+    bool calculationContext = false;
     int errorStatus = 0;
     double sampledMaximumDeviation = 0.0;
+    std::string method;
+    std::string reason;
 };
 
 struct NativePoint {
@@ -199,7 +204,12 @@ struct XrefDependency {
     std::string status;
 };
 
-bool isNonCalculationContext(const std::string& entityType) {
+bool isNonCalculationContext(const AcDbEntity* entity) {
+    if (entity == nullptr) return false;
+    if (entity->isKindOf(AcDbDimension::desc())) {
+        return true;
+    }
+    const std::string entityType = utf8(entity->isA()->name());
     static const char* const types[] = {
         "AcDbAttribute",
         "AcDbAttributeDefinition",
@@ -215,6 +225,7 @@ bool isNonCalculationContext(const std::string& entityType) {
         "AcDbText",
         "AcDbUnderlayReference",
         "AcDbViewport",
+        "AcDbWipeout",
     };
     return std::find_if(
                std::begin(types), std::end(types),
@@ -261,6 +272,17 @@ double pointDistance(const Point3& left, const Point3& right) {
     const double dy = left.y - right.y;
     const double dz = left.z - right.z;
     return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+double projectedPointDistance(const Point3& left, const Point3& right) {
+    const double dx = left.x - right.x;
+    const double dy = left.y - right.y;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+bool finitePoint(const Point3& point) {
+    return std::isfinite(point.x) && std::isfinite(point.y) &&
+        std::isfinite(point.z);
 }
 
 double pointSegmentDistance(const Point3& point, const Point3& start, const Point3& end) {
@@ -471,13 +493,92 @@ bool extractLightweightPolyline(const AcDbPolyline* polyline,
     return true;
 }
 
+bool extractMlineAxis(const AcDbMline* mline,
+                      const AcGeMatrix3d& transform,
+                      const double tolerance,
+                      NativePath& result) {
+    result.method = "autodesk-acdbmline-axis-vertices";
+    const int vertexCount = mline->numVertices();
+    if (vertexCount < 2) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        result.reason = "AcDbMline has fewer than two axis vertices";
+        return false;
+    }
+    for (int index = 0; index < vertexCount; ++index) {
+        AcGePoint3d vertex = mline->vertexAt(index);
+        vertex.transformBy(transform);
+        const Point3 transformed = point3(vertex);
+        if (!finitePoint(transformed)) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            result.reason = "native AcDbMline axis vertex is not finite";
+            return false;
+        }
+        if (result.coordinates.empty() ||
+            projectedPointDistance(result.coordinates.back(), transformed) > tolerance) {
+            result.coordinates.push_back(transformed);
+        }
+    }
+    result.closed = mline->closedMline();
+    if (result.closed) {
+        if (result.coordinates.size() < 3) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            result.reason = "closed AcDbMline axis has fewer than three vertices";
+            return false;
+        }
+        if (projectedPointDistance(result.coordinates.front(),
+                                   result.coordinates.back()) > tolerance) {
+            result.coordinates.push_back(result.coordinates.front());
+        } else {
+            result.coordinates.back() = result.coordinates.front();
+        }
+        if (result.coordinates.size() < 4) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            result.reason = "closed AcDbMline axis does not form a path";
+            return false;
+        }
+    } else if (result.coordinates.size() < 2) {
+        result.calculationContext = true;
+        result.reason = "AcDbMline axis has no length in the admitted WCS XY projection";
+        return false;
+    }
+    result.resolved = true;
+    return true;
+}
+
 bool extractDatabaseCurve(const AcDbCurve* curve,
                           const AcGeMatrix3d& transform,
                           const double tolerance,
                           NativePath& result) {
     if (const AcDbPolyline* polyline = AcDbPolyline::cast(curve)) {
+        result.method = "autodesk-acdbpolyline-segments";
         return extractLightweightPolyline(polyline, transform, tolerance, result);
     }
+    if (const AcDbLine* line = AcDbLine::cast(curve)) {
+        AcGePoint3d transformedStart = line->startPoint();
+        AcGePoint3d transformedEnd = line->endPoint();
+        transformedStart.transformBy(transform);
+        transformedEnd.transformBy(transform);
+        const Point3 startPoint = point3(transformedStart);
+        const Point3 endPoint = point3(transformedEnd);
+        result.method = "autodesk-acdbline-endpoints";
+        if (!finitePoint(startPoint) || !finitePoint(endPoint)) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            result.reason = "native AcDbLine endpoints are not finite";
+            return false;
+        }
+        if (projectedPointDistance(startPoint, endPoint) <= tolerance) {
+            result.calculationContext = true;
+            result.method = "autodesk-acdbline-degenerate-wcs-xy";
+            result.reason =
+                "AcDbLine has no length in the admitted WCS XY projection";
+            return false;
+        }
+        result.coordinates = {startPoint, endPoint};
+        result.closed = false;
+        result.resolved = true;
+        return true;
+    }
+    result.method = "autodesk-acdbcurve-adaptive-sampling";
     double startParameter = 0.0;
     double endParameter = 0.0;
     if (curve->getStartParam(startParameter) != Acad::eOk ||
@@ -982,6 +1083,7 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                 : topology.sourceLayer;
             topology.instanceChain = instanceChain;
             AcDbRegion* region = hatch->getRegionArea();
+            const bool regionAvailable = region != nullptr;
             if (region != nullptr) {
                 extractRegionTopology(
                     region, accumulatedTransform, tolerance, topology);
@@ -998,10 +1100,68 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                 ? "autodesk-hatch-region-acbr-local-affine"
                 : "autodesk-hatch-region-acbr-local-affine-failed";
             if (!topology.resolved) {
-                record.reason = "native HATCH topology extraction failed";
+                double hatchArea = 0.0;
+                const Acad::ErrorStatus areaStatus = hatch->getArea(hatchArea);
+                std::size_t openLoops = 0;
+                std::size_t selfIntersectingLoops = 0;
+                std::size_t polylineLoops = 0;
+                std::size_t textLoops = 0;
+                const int loopCount = hatch->numLoops();
+                for (int loopIndex = 0; loopIndex < loopCount; ++loopIndex) {
+                    const Adesk::Int32 loopType = hatch->loopTypeAt(loopIndex);
+                    if ((loopType & AcDbHatch::kNotClosed) != 0) ++openLoops;
+                    if ((loopType & AcDbHatch::kSelfIntersecting) != 0) {
+                        ++selfIntersectingLoops;
+                    }
+                    if ((loopType & AcDbHatch::kPolyline) != 0) ++polylineLoops;
+                    if ((loopType & (AcDbHatch::kTextbox |
+                                     AcDbHatch::kTextIsland)) != 0) {
+                        ++textLoops;
+                    }
+                }
+                record.reason =
+                    "native HATCH topology extraction failed: region=" +
+                    std::string(regionAvailable ? "available" : "null") +
+                    ", topology_status=" + std::to_string(topology.errorStatus) +
+                    ", area_status=" + std::to_string(static_cast<int>(areaStatus)) +
+                    ", area=" +
+                    (areaStatus == Acad::eOk && std::isfinite(hatchArea)
+                        ? std::to_string(hatchArea)
+                        : std::string("unavailable")) +
+                    ", loops=" + std::to_string(loopCount) +
+                    ", polyline_loops=" + std::to_string(polylineLoops) +
+                    ", open_loops=" + std::to_string(openLoops) +
+                    ", self_intersecting_loops=" +
+                    std::to_string(selfIntersectingLoops) +
+                    ", text_loops=" + std::to_string(textLoops);
             }
             coverage.push_back(std::move(record));
             regions.push_back(std::move(topology));
+        } else if (AcDbMline* mline = AcDbMline::cast(entity)) {
+            NativePath path;
+            path.handle = entityHandle(mline);
+            path.sourceLayer = utf8(mline->layer());
+            path.layer = path.sourceLayer == "0" ? inheritedLayer : path.sourceLayer;
+            path.instanceChain = instanceChain;
+            extractMlineAxis(mline, accumulatedTransform, tolerance, path);
+            EntityCoverage record;
+            record.handle = path.handle;
+            record.entityType = utf8(entity->isA()->name());
+            record.sourceLayer = path.sourceLayer;
+            record.layer = path.layer;
+            record.instanceChain = instanceChain;
+            record.status = path.resolved
+                ? "native"
+                : (path.calculationContext ? "context" : "unresolved");
+            record.method = path.method +
+                (path.resolved || path.calculationContext ? "" : "-failed");
+            if (!path.resolved) {
+                record.reason = path.reason.empty()
+                    ? "native AcDbMline axis extraction failed"
+                    : path.reason;
+            }
+            coverage.push_back(std::move(record));
+            if (path.resolved) paths.push_back(std::move(path));
         } else if (AcDbCurve* curve = AcDbCurve::cast(entity)) {
             NativePath path;
             path.handle = entityHandle(curve);
@@ -1015,12 +1175,15 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             record.sourceLayer = path.sourceLayer;
             record.layer = path.layer;
             record.instanceChain = instanceChain;
-            record.status = path.resolved ? "native" : "unresolved";
-            record.method = path.resolved
-                ? "autodesk-acdbcurve-adaptive-sampling"
-                : "autodesk-acdbcurve-adaptive-sampling-failed";
+            record.status = path.resolved
+                ? "native"
+                : (path.calculationContext ? "context" : "unresolved");
+            record.method = path.method +
+                (path.resolved || path.calculationContext ? "" : "-failed");
             if (!path.resolved) {
-                record.reason = "native finite curve extraction failed";
+                record.reason = path.reason.empty()
+                    ? "native finite curve extraction failed"
+                    : path.reason;
             }
             coverage.push_back(std::move(record));
             if (path.resolved) paths.push_back(std::move(path));
@@ -1052,7 +1215,7 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             record.sourceLayer = utf8(entity->layer());
             record.layer = record.sourceLayer == "0" ? inheritedLayer : record.sourceLayer;
             record.instanceChain = instanceChain;
-            if (isNonCalculationContext(record.entityType)) {
+            if (isNonCalculationContext(entity)) {
                 record.status = "context";
                 record.method = "autodesk-non-calculation-context";
                 record.reason =

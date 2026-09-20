@@ -20,12 +20,32 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPILER = ROOT / "scripts" / "cad-lab" / "compile_autocad_region_probe.py"
-PLUGIN_VERSION = "0.1.14"
+PLUGIN_VERSION = "0.1.17"
 PROTOCOL_VERSION = "2025-06-18"
 
 
 class ToolFailure(RuntimeError):
     pass
+
+
+def _compiler_python() -> Path:
+    configured = os.environ.get("GREEN_ATLAS_API_PYTHON")
+    candidates = [Path(configured).expanduser()] if configured else []
+    candidates.extend(
+        [
+            ROOT / "apps" / "api" / ".venv" / "bin" / "python",
+            ROOT / "apps" / "api" / ".venv" / "Scripts" / "python.exe",
+            Path(sys.executable),
+        ]
+    )
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            # A venv interpreter is commonly a symlink. Resolving it would
+            # execute the base Python without the virtualenv site-packages.
+            return candidate.absolute()
+    raise ToolFailure(
+        "Green Atlas API Python is unavailable; install apps/api dependencies"
+    )
 
 
 def _queue_directory() -> Path:
@@ -147,7 +167,7 @@ def _prepare_dxf(arguments: dict[str, Any]) -> dict[str, Any]:
     native = _request_native_export(source, timeout)
     probe = Path(native["output_path"])
     command = [
-        sys.executable,
+        str(_compiler_python()),
         str(COMPILER),
         str(probe),
         "--autocad-version",
