@@ -51,9 +51,10 @@ def validate_prepared_intake(
     if any(path == passport.entry or path not in entries for path in additional_snapshots):
         raise ValueError("CAD snapshot выбран для постороннего чертежа")
     declared_xrefs = {
-        (path, block)
-        for path in entries
-        for block in (drawings[path].inspection.xrefs or {})
+        (drawing.path, block)
+        for drawing in passport.drawings
+        if drawing.inspection is not None
+        for block in (drawing.inspection.xrefs or {})
     }
     recorded_xrefs = {(item.owner, item.block) for item in passport.references}
     if declared_xrefs or passport.references:

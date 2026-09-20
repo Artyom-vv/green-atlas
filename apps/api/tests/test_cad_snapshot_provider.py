@@ -11,6 +11,7 @@ from app.cad_bridge.provider import (
     CadSnapshotProviderError,
     apply_cad_snapshot,
     build_dxf_import_from_snapshot,
+    build_dxf_import_from_snapshot_path,
 )
 from app.dxf_import.application import ImportApplication
 from app.dxf_import.contracts import DxfImportResult
@@ -281,6 +282,33 @@ def test_snapshot_only_builder_creates_layers_without_portable_reader() -> None:
         "TREES",
     }
     assert all(layer.geometry_complete for layer in result.layers)
+
+
+def test_streaming_provider_matches_in_memory_provider(tmp_path) -> None:
+    native = snapshot(with_dependency=True, with_primitives=True)
+    path = tmp_path / "source.dxf.green-atlas.snapshot.json"
+    path.write_text(
+        native.model_dump_json(by_alias=True, exclude_none=True), encoding="utf-8"
+    )
+    verified = {item.path: item.sha256 for item in native.dependencies or []}
+
+    expected = build_dxf_import_from_snapshot(
+        native,
+        source_sha256=native.source.sha256,
+        verified_dependencies=verified,
+    )
+    streamed = build_dxf_import_from_snapshot_path(
+        path,
+        source=native.source,
+        extraction=native.extraction,
+        dependencies=tuple(native.dependencies or []),
+        summary=native.summary,
+        source_sha256=native.source.sha256,
+        scratch_root=tmp_path / "scratch",
+        verified_dependencies=verified,
+    )
+
+    assert streamed == expected
 
 
 def test_self_intersecting_closed_path_stays_reviewable_linework() -> None:

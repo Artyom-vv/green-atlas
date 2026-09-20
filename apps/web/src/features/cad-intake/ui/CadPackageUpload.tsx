@@ -11,8 +11,8 @@ import {
 import type { IntakeSelection } from '../api/startIntake';
 
 const MAX_FILES = 128;
-const MAX_FILE_BYTES = 512 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+const MAX_FILE_BYTES = 768 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const ACCEPT = {
   'application/octet-stream': ['.dxf'],
   'application/json': ['.json'],
@@ -58,7 +58,7 @@ export function CadPackageUpload({
   const acceptFiles: DropzoneProps['onFilesAccepted'] = (files) => {
     if (busy || upload.isPending) return;
     if (files.reduce((sum, file) => sum + file.size, 0) > MAX_TOTAL_BYTES) {
-      setClientError('Комплект должен быть не больше 1 ГБ.');
+      setClientError('Комплект должен быть не больше 2 ГБ.');
       return;
     }
     setClientError(undefined);

@@ -7,8 +7,7 @@ from hashlib import sha256
 from pathlib import Path
 from threading import RLock
 
-from app.cad_bridge import CadSnapshot
-from app.cad_bridge.provider import build_dxf_import_from_snapshot
+from app.cad_bridge.provider import build_dxf_import_from_snapshot_path
 from app.cad_import.cache import file_sha256
 from app.cad_intake.asset_sources import resolve_asset_source
 from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
@@ -29,11 +28,12 @@ from app.cad_intake.prepare_policy import PREPARE_POLICY
 from app.cad_intake.prepare_publication import SqliteCadProjectPublication
 from app.cad_intake.snapshot_source import (
     resolve_cad_snapshot,
-    verify_cad_snapshot_dependencies,
+    verify_cad_snapshot_dependency_records,
     verify_cad_snapshot_fingerprint,
 )
 from app.cad_intake.source_publication import SourcePublicationAsset
 from app.cad_intake.work import CadWork
+from app.cad_intake.worker import SnapshotInventory, _read_snapshot
 from app.dxf_import.assembly import assemble_imported_project
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.editor_source import open_source_editor
@@ -147,7 +147,7 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
     digests: dict[str, str] = {}
     imported_by_path = {}
     snapshot_sources = {}
-    snapshots: dict[str, CadSnapshot] = {}
+    snapshots: dict[str, SnapshotInventory] = {}
     verified_by_path: dict[str, dict[str, str]] = {}
     for index, drawing_path in enumerate(entries, start=1):
         lifecycle.check_cancelled(operation.id)
@@ -160,15 +160,20 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
         if selection is None:
             raise ValueError("Для каждого DXF нужен проверенный AutoCAD snapshot")
         snapshot_source = resolve_cad_snapshot(canonical_root, selection)
-        snapshot = CadSnapshot.model_validate_json(snapshot_source.content)
-        verified_dependencies = verify_cad_snapshot_dependencies(
-            canonical_root, snapshot
+        snapshot = _read_snapshot(snapshot_source.path, work.storage / "cache")
+        verified_dependencies = verify_cad_snapshot_dependency_records(
+            canonical_root, snapshot.dependencies
         )
         if verified_dependencies != expected_dependencies:
             raise ValueError("CAD snapshot не покрывает точный набор XREF из паспорта")
-        imported_drawing = build_dxf_import_from_snapshot(
-            snapshot,
+        imported_drawing = build_dxf_import_from_snapshot_path(
+            snapshot_source.path,
+            source=snapshot.source,
+            extraction=snapshot.extraction,
+            dependencies=snapshot.dependencies,
+            summary=snapshot.summary,
             source_sha256=digest,
+            scratch_root=work.storage / "cache",
             capacity=SourceGeometryCapacity.process_bounded(),
             verified_dependencies=verified_dependencies,
         )
@@ -271,8 +276,8 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
         snapshot_source = snapshot_sources.get(drawing_path)
         if snapshot_source is None or current_snapshot_sha256 != snapshot_source.sha256:
             raise ValueError("CAD snapshot изменился во время подготовки")
-        current_dependencies = verify_cad_snapshot_dependencies(
-            canonical_root, snapshots[drawing_path]
+        current_dependencies = verify_cad_snapshot_dependency_records(
+            canonical_root, snapshots[drawing_path].dependencies
         )
         if current_dependencies != verified_by_path[drawing_path]:
             raise ValueError("XREF-комплект изменился во время подготовки")

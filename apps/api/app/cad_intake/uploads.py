@@ -17,7 +17,7 @@ from app.dxf_import.limits import MAX_CAD_SNAPSHOT_BYTES
 
 MAX_CAD_DRAWINGS = 64
 MAX_CAD_UPLOAD_FILES = MAX_CAD_DRAWINGS * 2
-MAX_CAD_UPLOAD_TOTAL_BYTES = 1024 * 1024 * 1024
+MAX_CAD_UPLOAD_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 SNAPSHOT_SUFFIX = ".dxf.green-atlas.snapshot.json"
 
@@ -101,7 +101,7 @@ async def store_uploaded_package(
                             f"{limit // 1024 // 1024} МБ"
                         )
                     if total > MAX_CAD_UPLOAD_TOTAL_BYTES:
-                        raise ValueError("Комплект DXF должен быть не больше 1 ГБ")
+                        raise ValueError("Комплект DXF должен быть не больше 2 ГБ")
                     digest.update(chunk)
                     stream.write(chunk)
             if size == 0:

@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from collections import Counter
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
+import ijson
+from pydantic import TypeAdapter
 from shapely.errors import GEOSException
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, mapping
 from shapely.ops import polygonize, unary_union
@@ -13,10 +18,15 @@ from shapely.ops import polygonize, unary_union
 from app.cad_bridge.contracts import (
     CadGeometry,
     CadSnapshot,
+    CadSnapshotDependency,
     CadSnapshotProvenance,
+    CoverageRecord,
+    ExtractionEvidence,
     PathGeometry,
     PointGeometry,
     RegionGeometry,
+    SnapshotSource,
+    SnapshotSummary,
 )
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.contracts import DxfImportResult
@@ -72,19 +82,26 @@ _LAYER_COLORS = (
     "#4D7C0F",
 )
 
+_CAD_GEOMETRY_ADAPTER = TypeAdapter(CadGeometry)
 
-def _canonical_sha256(value: Any) -> str:
-    payload = json.dumps(
+
+def _canonical_bytes(value: Any) -> bytes:
+    return json.dumps(
         value,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
 
 
-def _verify_integrity(snapshot: CadSnapshot) -> None:
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+def verify_cad_snapshot_integrity(snapshot: CadSnapshot) -> None:
+    """Verify every native geometry hash and the complete snapshot payload."""
+
     for geometry in snapshot.geometry:
         payload = geometry.model_dump(mode="json", exclude={"content_sha256"})
         if _canonical_sha256(payload) != geometry.content_sha256:
@@ -309,6 +326,322 @@ def build_dxf_import_from_snapshot(
     )
 
 
+def build_dxf_import_from_snapshot_path(
+    path: Path,
+    *,
+    source: SnapshotSource,
+    extraction: ExtractionEvidence,
+    dependencies: tuple[CadSnapshotDependency, ...],
+    summary: SnapshotSummary,
+    source_sha256: str,
+    scratch_root: Path,
+    capacity: SourceGeometryCapacity | None = None,
+    verified_dependencies: dict[str, str] | None = None,
+) -> DxfImportResult:
+    """Build the project graph without materialising the complete snapshot.
+
+    The caller must first run the streaming snapshot integrity admission. This
+    second bounded pass keeps only the publishable GeoJSON graph in memory;
+    coverage-to-geometry joins live in a disposable SQLite ledger.
+    """
+
+    if source.sha256 != source_sha256:
+        raise CadSnapshotProviderError("CAD snapshot belongs to a different DXF")
+    expected_dependencies = {item.path: item.sha256 for item in dependencies}
+    if expected_dependencies and verified_dependencies != expected_dependencies:
+        raise CadSnapshotProviderError(
+            "verified XREF package differs from CAD snapshot dependencies"
+        )
+    units_entry = DXF_UNIT_FACTORS.get(source.units_code)
+    if units_entry is None:
+        raise CadSnapshotProviderError("CAD snapshot uses unsupported drawing units")
+    units, factor = units_entry
+    result = DxfImportResult(
+        layers=[],
+        geometry=GeometrySnapshot(
+            feature_collection={"type": "FeatureCollection", "features": []}
+        ),
+        dxf_version=f"AutoCAD {extraction.autocad_version}",
+        units=units,
+        entity_count=summary.source_instances,
+        coordinate_reference=CoordinateReference(
+            status="unknown",
+            source="none",
+            evidence=(
+                "AutoCAD подтвердил WCS и единицы; геодезическая система "
+                "координат в snapshot не объявлена"
+            ),
+        ),
+    )
+    features = result.geometry.feature_collection["features"]
+    assert isinstance(features, list)
+    capacity = capacity or SourceGeometryCapacity()
+    total_coordinates = 0
+    instance_types_by_layer: dict[str, Counter[str]] = {}
+    unresolved_types_by_layer: dict[str, Counter[str]] = {}
+    native_types_by_layer: dict[str, Counter[str]] = {}
+    native_shapes_by_layer: dict[str, list[Any]] = {}
+    has_polygon_by_layer: dict[str, bool] = {}
+    bounds_by_layer: dict[str, tuple[float, float, float, float]] = {}
+    geometry_count = 0
+
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix="snapshot-project-", dir=scratch_root) as temporary:
+        ledger = sqlite3.connect(Path(temporary) / "coverage.sqlite3")
+        ledger.execute("PRAGMA journal_mode=OFF")
+        ledger.execute("PRAGMA synchronous=OFF")
+        ledger.execute("PRAGMA temp_store=FILE")
+        ledger.execute(
+            "CREATE TABLE geometry_ref ("
+            "id TEXT PRIMARY KEY, identity TEXT NOT NULL, layer TEXT NOT NULL, "
+            "entity_type TEXT NOT NULL) WITHOUT ROWID"
+        )
+        try:
+            with path.open("rb") as stream:
+                for raw in ijson.items(stream, "coverage.item", use_float=True):
+                    record = CoverageRecord.model_validate(raw)
+                    entity_type = DXF_TYPE_BY_AUTOCAD_CLASS.get(
+                        record.entity_type, f"AUTOCAD:{record.entity_type}"
+                    )
+                    instance_types_by_layer.setdefault(record.layer, Counter())[
+                        entity_type
+                    ] += 1
+                    if record.status == "unresolved":
+                        unresolved_types_by_layer.setdefault(record.layer, Counter())[
+                            entity_type
+                        ] += 1
+                    identity = _canonical_bytes(
+                        record.identity.model_dump(mode="json")
+                    ).decode("utf-8")
+                    try:
+                        ledger.executemany(
+                            "INSERT INTO geometry_ref"
+                            "(id, identity, layer, entity_type) VALUES (?, ?, ?, ?)",
+                            (
+                                (
+                                    geometry_id,
+                                    identity,
+                                    record.layer,
+                                    entity_type,
+                                )
+                                for geometry_id in record.geometry_ids
+                            ),
+                        )
+                    except sqlite3.IntegrityError as error:
+                        raise CadSnapshotProviderError(
+                            "CAD snapshot repeats a geometry reference"
+                        ) from error
+
+            with path.open("rb") as stream:
+                for raw in ijson.items(stream, "geometry.item", use_float=True):
+                    geometry = _CAD_GEOMETRY_ADAPTER.validate_python(raw)
+                    normalized = geometry.model_dump(mode="json", exclude_none=True)
+                    content = {
+                        key: value
+                        for key, value in normalized.items()
+                        if key != "content_sha256"
+                    }
+                    if _canonical_sha256(content) != geometry.content_sha256:
+                        raise CadSnapshotProviderError(
+                            f"CAD snapshot geometry hash differs: {geometry.id}"
+                        )
+                    row = ledger.execute(
+                        "SELECT identity, layer, entity_type FROM geometry_ref "
+                        "WHERE id = ?",
+                        (geometry.id,),
+                    ).fetchone()
+                    if row is None:
+                        raise CadSnapshotProviderError(
+                            f"CAD snapshot geometry lacks coverage: {geometry.id}"
+                        )
+                    identity = _canonical_bytes(
+                        geometry.identity.model_dump(mode="json")
+                    ).decode("utf-8")
+                    if row[0] != identity:
+                        raise CadSnapshotProviderError(
+                            f"CAD snapshot geometry provenance differs: {geometry.id}"
+                        )
+                    layer_name, entity_type = str(row[1]), str(row[2])
+                    ledger.execute(
+                        "DELETE FROM geometry_ref WHERE id = ?", (geometry.id,)
+                    )
+
+                    shape = _native_shape(geometry, factor)
+                    geojson = mapping(shape)
+                    native_types_by_layer.setdefault(layer_name, Counter())[
+                        entity_type
+                    ] += 1
+                    has_polygon = shape.geom_type in {"Polygon", "MultiPolygon"}
+                    has_polygon_by_layer[layer_name] = (
+                        has_polygon_by_layer.get(layer_name, False) or has_polygon
+                    )
+                    if is_boundary_candidate_name(layer_name):
+                        native_shapes_by_layer.setdefault(layer_name, []).append(shape)
+                    shape_bounds = tuple(float(value) for value in shape.bounds)
+                    previous = bounds_by_layer.get(layer_name)
+                    if previous is None:
+                        bounds_by_layer[layer_name] = shape_bounds
+                    else:
+                        bounds_by_layer[layer_name] = (
+                            min(previous[0], shape_bounds[0]),
+                            min(previous[1], shape_bounds[1]),
+                            max(previous[2], shape_bounds[2]),
+                            max(previous[3], shape_bounds[3]),
+                        )
+                    properties = {
+                        "source_layer": layer_name,
+                        "kind": suggest_layer_kind(layer_name).value,
+                        "entity_type": entity_type,
+                        "source_handle": geometry.identity.handle,
+                        "source_instance_chain": geometry.identity.instance_chain,
+                        "source_geometry_provider": "autocad_snapshot_v1",
+                        "source_native_geometry": True,
+                        "source_geometry_content_sha256": geometry.content_sha256,
+                    }
+                    if isinstance(geometry, (RegionGeometry, PathGeometry)):
+                        properties["source_sampling_tolerance_m"] = (
+                            geometry.achieved_tolerance_m
+                        )
+                    if isinstance(geometry, PathGeometry):
+                        properties["source_closed_path"] = geometry.closed
+                        properties["source_polygon_projection"] = has_polygon
+                    if isinstance(geometry, RegionGeometry):
+                        properties.update(
+                            {
+                                "source_native_area_units2": (
+                                    geometry.native_area_units2
+                                ),
+                                "source_native_perimeter_units": (
+                                    geometry.native_perimeter_units
+                                ),
+                            }
+                        )
+                    feature = {
+                        "type": "Feature",
+                        "id": f"cad-snapshot-{geometry.content_sha256}",
+                        "properties": properties,
+                        "geometry": geojson,
+                    }
+                    feature_coordinates = coordinate_count(geojson)
+                    capacity.check(
+                        features=len(features) + 1,
+                        coordinates=total_coordinates + feature_coordinates,
+                        feature_coordinates=feature_coordinates,
+                        layer=layer_name,
+                    )
+                    features.append(feature)
+                    total_coordinates += feature_coordinates
+                    geometry_count += 1
+            if ledger.execute("SELECT 1 FROM geometry_ref LIMIT 1").fetchone():
+                raise CadSnapshotProviderError(
+                    "CAD snapshot misses referenced native geometry"
+                )
+        finally:
+            ledger.close()
+
+    for layer_index, (layer_name, instance_types) in enumerate(
+        instance_types_by_layer.items()
+    ):
+        kind = suggest_layer_kind(layer_name)
+        unresolved_types = unresolved_types_by_layer.get(layer_name, Counter())
+        candidate = (
+            _boundary_candidate(native_shapes_by_layer.get(layer_name, []))
+            if is_boundary_candidate_name(layer_name)
+            else None
+        )
+        if kind == LayerKind.SITE_BORDER and (
+            candidate is None or candidate.status != BoundaryCandidateStatus.USABLE
+        ):
+            kind = LayerKind.IGNORE
+        confidence, reasons, review_required = assess_layer_suggestion(
+            kind,
+            entity_types=dict(instance_types),
+            has_polygon=has_polygon_by_layer.get(layer_name, False),
+            geometry_complete=not unresolved_types,
+            boundary_candidate=candidate,
+        )
+        result.layers.append(
+            Layer(
+                id=str(uuid5(NAMESPACE_URL, f"dxf-layer:{layer_name}")),
+                source_name=layer_name,
+                suggested_kind=kind,
+                mapped_kind=kind,
+                object_count=sum(instance_types.values()),
+                color=_LAYER_COLORS[layer_index % len(_LAYER_COLORS)],
+                entity_types=dict(instance_types),
+                projected_geometry_types=dict(
+                    native_types_by_layer.get(layer_name, Counter())
+                ),
+                unsupported_geometry_types=dict(unresolved_types),
+                unreadable_geometry_count=0,
+                geometry_complete=not unresolved_types,
+                bounds=list(bounds_by_layer[layer_name])
+                if layer_name in bounds_by_layer
+                else None,
+                suggestion_confidence=confidence,
+                suggestion_reasons=reasons,
+                mapping_review_required=review_required,
+                mapping_confirmed=not review_required,
+                boundary_candidate=candidate,
+                required=kind == LayerKind.SITE_BORDER,
+            )
+        )
+
+    usable_boundaries = [
+        layer
+        for layer in result.layers
+        if layer.boundary_candidate is not None
+        and layer.boundary_candidate.status == BoundaryCandidateStatus.USABLE
+    ]
+    if len(usable_boundaries) > 1:
+        for layer in usable_boundaries:
+            if layer.suggested_kind != LayerKind.SITE_BORDER:
+                continue
+            layer.suggested_kind = LayerKind.IGNORE
+            layer.mapped_kind = LayerKind.IGNORE
+            layer.suggestion_confidence = LayerSuggestionConfidence.LOW
+            layer.suggestion_reasons = [
+                "Найдено несколько подходящих контуров территории"
+            ]
+            layer.mapping_review_required = False
+            layer.mapping_confirmed = True
+            layer.required = False
+
+    kind_by_layer = {
+        layer.source_name: layer.suggested_kind.value for layer in result.layers
+    }
+    for feature in features:
+        source_layer = feature.get("properties", {}).get("source_layer")
+        if source_layer in kind_by_layer:
+            feature["properties"]["kind"] = kind_by_layer[source_layer]
+    remaining_unsupported: Counter[str] = Counter()
+    for layer in result.layers:
+        remaining_unsupported.update(layer.unsupported_geometry_types)
+    if remaining_unsupported:
+        labels = ", ".join(
+            f"{name}: {count}" for name, count in sorted(remaining_unsupported.items())
+        )
+        result.warnings.append(
+            f"Часть типов доступна только в исходном файле: {labels}. "
+            "Если такой слой назначен физическим ограничением, расчёт будет остановлен; "
+            "проверьте назначение слоя и подготовьте расчётное представление его физических объектов."
+        )
+    result.bounds = list(_bounds(features) or ()) or None
+    result.cad_snapshot_provenance = CadSnapshotProvenance(
+        schema="green-atlas.autocad-snapshot/1",
+        source_sha256=source.sha256,
+        payload_sha256=summary.payload_sha256,
+        autocad_version=extraction.autocad_version,
+        plugin_version=extraction.plugin_version,
+        target=extraction.target,
+        source_instances=summary.source_instances,
+        native_geometry=geometry_count,
+        unresolved_instances=summary.unresolved,
+        dependencies=[item.model_copy(deep=True) for item in dependencies],
+    )
+    return result
+
+
 def apply_cad_snapshot(
     imported: DxfImportResult,
     snapshot: CadSnapshot,
@@ -327,7 +660,7 @@ def apply_cad_snapshot(
 
     if snapshot.source.sha256 != source_sha256:
         raise CadSnapshotProviderError("CAD snapshot belongs to a different DXF")
-    _verify_integrity(snapshot)
+    verify_cad_snapshot_integrity(snapshot)
     dependencies = snapshot.dependencies or []
     if dependencies:
         if verified_dependencies is None:

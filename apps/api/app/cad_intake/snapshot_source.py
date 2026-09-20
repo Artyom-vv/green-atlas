@@ -1,10 +1,11 @@
 """Read an explicitly selected AutoCAD snapshot without escaping its CAD root."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from hashlib import sha256
 from pathlib import Path
 
 from app.cad_bridge import CadSnapshot
+from app.cad_bridge.contracts import CadSnapshotDependency
 from app.cad_import.cache import file_sha256
 from app.cad_intake.prepare_contracts import CadSnapshotSelection
 from app.dxf_import.limits import MAX_CAD_SNAPSHOT_BYTES
@@ -13,7 +14,6 @@ from app.dxf_import.limits import MAX_CAD_SNAPSHOT_BYTES
 @dataclass(frozen=True)
 class CadSnapshotSource:
     path: Path
-    content: bytes
     sha256: str
 
 
@@ -61,9 +61,7 @@ def discover_adjacent_cad_snapshot(
     return CadSnapshotSelection(path=relative, sha256=digest)
 
 
-def verify_cad_snapshot_fingerprint(
-    root: Path, selection: CadSnapshotSelection
-) -> str:
+def verify_cad_snapshot_fingerprint(root: Path, selection: CadSnapshotSelection) -> str:
     """Recheck immutable sidecar evidence without loading its payload again."""
 
     path = _snapshot_path(root, selection.path)
@@ -86,32 +84,32 @@ def resolve_cad_snapshot(
 ) -> CadSnapshotSource:
     path = _snapshot_path(root, selection.path)
     before = path.stat()
-    with path.open("rb") as stream:
-        content = stream.read(MAX_CAD_SNAPSHOT_BYTES + 1)
-    after = path.stat()
-    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-        raise ValueError("CAD snapshot изменился во время чтения")
-    if not content or len(content) > MAX_CAD_SNAPSHOT_BYTES:
+    if not 0 < before.st_size <= MAX_CAD_SNAPSHOT_BYTES:
         raise ValueError(
             f"CAD snapshot должен быть не больше {MAX_CAD_SNAPSHOT_BYTES // 1024 // 1024} МБ"
         )
-    digest = sha256(content).hexdigest()
+    digest = file_sha256(path)
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise ValueError("CAD snapshot изменился во время чтения")
     if digest != selection.sha256:
         raise ValueError("CAD snapshot изменился после выбора")
-    return CadSnapshotSource(path=path, content=content, sha256=digest)
+    return CadSnapshotSource(path=path, sha256=digest)
 
 
-def verify_cad_snapshot_dependencies(
-    root: Path, snapshot: CadSnapshot
+def verify_cad_snapshot_dependency_records(
+    root: Path, dependencies: Iterable[CadSnapshotDependency]
 ) -> dict[str, str]:
-    """Bind every native XREF geometry contribution to package-local bytes."""
+    """Bind native XREF geometry contributions to package-local bytes."""
 
     canonical_root = root.resolve(strict=True)
     verified: dict[str, str] = {}
-    for dependency in snapshot.dependencies or []:
+    for dependency in dependencies:
         unresolved = canonical_root / dependency.path
         if unresolved.is_symlink():
-            raise ValueError("XREF из CAD snapshot не должен быть символической ссылкой")
+            raise ValueError(
+                "XREF из CAD snapshot не должен быть символической ссылкой"
+            )
         try:
             path = unresolved.resolve(strict=True)
         except OSError as error:
@@ -131,3 +129,9 @@ def verify_cad_snapshot_dependencies(
             raise ValueError("XREF изменился после создания CAD snapshot")
         verified[dependency.path] = digest
     return verified
+
+
+def verify_cad_snapshot_dependencies(
+    root: Path, snapshot: CadSnapshot
+) -> dict[str, str]:
+    return verify_cad_snapshot_dependency_records(root, snapshot.dependencies or [])

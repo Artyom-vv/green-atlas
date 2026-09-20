@@ -20,12 +20,14 @@ export function CadPreparedSource({
   const passport = intake?.cad_intake?.passport;
   const intakeId = intake?.id;
   const entry = passport?.drawings.find((item) => item.path === passport.entry);
+  const referencesResolved =
+    passport?.references.every((reference) => reference.status === 'resolved') ??
+    false;
   const eligible =
     passport?.entry.toLowerCase().endsWith('.dxf') &&
     entry?.status === 'readable' &&
     entry.inspection &&
-    !Object.keys(entry.inspection.xrefs).length &&
-    !passport.references.length;
+    referencesResolved;
   if (!eligible && !state.operation && !state.error) return null;
   const completed = state.operation?.status === 'completed';
   return (

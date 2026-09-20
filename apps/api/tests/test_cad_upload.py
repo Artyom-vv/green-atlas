@@ -65,7 +65,7 @@ def test_upload_rejects_paths_duplicates_and_total_overflow(
         asyncio.run(store_uploaded_package(config, [upload("site.dxf", b"x")]))
 
     monkeypatch.setattr("app.cad_intake.uploads.MAX_CAD_UPLOAD_TOTAL_BYTES", 5)
-    with pytest.raises(ValueError, match="не больше 1 ГБ"):
+    with pytest.raises(ValueError, match="не больше 2 ГБ"):
         asyncio.run(
             store_uploaded_package(
                 config,
