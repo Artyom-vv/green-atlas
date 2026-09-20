@@ -23,8 +23,10 @@
 #include "brfltrav.h"
 #include "brloop.h"
 #include "brletrav.h"
+#include "gecurv2d.h"
 #include "gecurv3d.h"
 #include "geintrvl.h"
+#include "geplane.h"
 #include "core_rxmfcapi.h"
 
 #include <CommonCrypto/CommonDigest.h>
@@ -47,9 +49,10 @@
 namespace {
 
 constexpr const ACHAR* kCommandGroup = _T("GREEN_ATLAS");
-constexpr const char* kPluginVersion = "0.1.17";
+constexpr const char* kPluginVersion = "0.1.19";
 constexpr double kRequestedToleranceMetres = 0.0001;
 constexpr int kMaximumSamplingDepth = 24;
+constexpr std::size_t kMaximumSampledPointsPerLoop = 16384;
 bool gSideDatabaseCapture = false;
 std::string gSideDatabaseSourcePath;
 bool gLastTopologyExportSucceeded = false;
@@ -143,6 +146,10 @@ struct Point3 {
     double y = 0.0;
     double z = 0.0;
 };
+
+bool samplingBudgetExhausted(const std::vector<Point3>& coordinates) {
+    return coordinates.size() >= kMaximumSampledPointsPerLoop;
+}
 
 struct RegionLoop {
     std::string role;
@@ -315,6 +322,7 @@ bool sampleCurveInterval(const AcGeCurve3d& curve,
                          const int depth,
                          std::vector<Point3>& output,
                          double& sampledMaximumDeviation) {
+    if (output.size() >= kMaximumSampledPointsPerLoop) return false;
     const double span = endParameter - startParameter;
     const double quarterParameter = startParameter + span * 0.25;
     const double middleParameter = startParameter + span * 0.5;
@@ -335,6 +343,7 @@ bool sampleCurveInterval(const AcGeCurve3d& curve,
     });
 
     if (deviation <= tolerance) {
+        if (output.size() >= kMaximumSampledPointsPerLoop) return false;
         sampledMaximumDeviation = std::max(sampledMaximumDeviation, deviation);
         output.push_back(endPoint);
         return true;
@@ -357,6 +366,7 @@ bool appendSampledCurve(const AcGeCurve3d& curve,
                         const double tolerance,
                         std::vector<Point3>& output,
                         double& sampledMaximumDeviation) {
+    if (output.size() >= kMaximumSampledPointsPerLoop) return false;
     AcGeInterval interval;
     curve.getInterval(interval);
     if (!interval.isBounded()) {
@@ -384,6 +394,98 @@ bool appendSampledCurve(const AcGeCurve3d& curve,
                                output, sampledMaximumDeviation);
 }
 
+Point3 hatchPlanePoint(const AcGePlane& plane,
+                       const AcGePoint2d& point,
+                       const AcGeMatrix3d& transform) {
+    AcGePoint3d origin;
+    AcGeVector3d axisU;
+    AcGeVector3d axisV;
+    plane.getCoordSystem(origin, axisU, axisV);
+    AcGePoint3d lifted = origin + axisU * point.x + axisV * point.y;
+    lifted.transformBy(transform);
+    return point3(lifted);
+}
+
+bool sampleCurve2dInterval(const AcGeCurve2d& curve,
+                           const AcGePlane& plane,
+                           const AcGeMatrix3d& transform,
+                           const double startParameter,
+                           const double endParameter,
+                           const Point3& startPoint,
+                           const Point3& endPoint,
+                           const double tolerance,
+                           const int depth,
+                           std::vector<Point3>& output,
+                           double& sampledMaximumDeviation) {
+    if (output.size() >= kMaximumSampledPointsPerLoop) return false;
+    const double span = endParameter - startParameter;
+    const double parameters[] = {
+        startParameter + span * 0.25,
+        startParameter + span * 0.5,
+        startParameter + span * 0.75,
+    };
+    Point3 sampled[3];
+    for (int index = 0; index < 3; ++index) {
+        sampled[index] = hatchPlanePoint(
+            plane, curve.evalPoint(parameters[index]), transform);
+        if (!finitePoint(sampled[index])) return false;
+    }
+    const double deviation = std::max({
+        pointSegmentDistance(sampled[0], startPoint, endPoint),
+        pointSegmentDistance(sampled[1], startPoint, endPoint),
+        pointSegmentDistance(sampled[2], startPoint, endPoint),
+    });
+    if (deviation <= tolerance) {
+        if (output.size() >= kMaximumSampledPointsPerLoop) return false;
+        sampledMaximumDeviation = std::max(sampledMaximumDeviation, deviation);
+        output.push_back(endPoint);
+        return true;
+    }
+    if (depth >= kMaximumSamplingDepth) {
+        sampledMaximumDeviation = std::max(sampledMaximumDeviation, deviation);
+        return false;
+    }
+    return sampleCurve2dInterval(
+               curve, plane, transform, startParameter, parameters[1],
+               startPoint, sampled[1], tolerance, depth + 1, output,
+               sampledMaximumDeviation) &&
+           sampleCurve2dInterval(
+               curve, plane, transform, parameters[1], endParameter,
+               sampled[1], endPoint, tolerance, depth + 1, output,
+               sampledMaximumDeviation);
+}
+
+bool appendSampledCurve2d(const AcGeCurve2d& curve,
+                          const AcGePlane& plane,
+                          const AcGeMatrix3d& transform,
+                          const double tolerance,
+                          std::vector<Point3>& output,
+                          double& sampledMaximumDeviation) {
+    if (output.size() >= kMaximumSampledPointsPerLoop) return false;
+    AcGeInterval interval;
+    curve.getInterval(interval);
+    if (!interval.isBounded()) return false;
+    const double startParameter = interval.lowerBound();
+    const double endParameter = interval.upperBound();
+    if (!std::isfinite(startParameter) || !std::isfinite(endParameter) ||
+        startParameter == endParameter) {
+        return false;
+    }
+    const Point3 startPoint = hatchPlanePoint(
+        plane, curve.evalPoint(startParameter), transform);
+    const Point3 endPoint = hatchPlanePoint(
+        plane, curve.evalPoint(endParameter), transform);
+    if (!finitePoint(startPoint) || !finitePoint(endPoint)) return false;
+    if (output.empty()) {
+        output.push_back(startPoint);
+    } else if (pointDistance(output.back(), startPoint) > tolerance) {
+        return false;
+    }
+    return sampleCurve2dInterval(
+        curve, plane, transform, startParameter, endParameter, startPoint,
+        endPoint, tolerance, 0, output, sampledMaximumDeviation);
+}
+
 bool sampleDatabaseCurveInterval(const AcDbCurve* curve,
                                  const AcGeMatrix3d& transform,
                                  const double startParameter,
@@ -394,6 +496,7 @@ bool sampleDatabaseCurveInterval(const AcDbCurve* curve,
                                  const int depth,
                                  std::vector<Point3>& output,
                                  double& sampledMaximumDeviation) {
+    if (output.size() >= kMaximumSampledPointsPerLoop) return false;
     const double span = endParameter - startParameter;
     const double parameters[] = {
         startParameter + span * 0.25,
@@ -415,6 +518,7 @@ bool sampleDatabaseCurveInterval(const AcDbCurve* curve,
         pointSegmentDistance(sampled[2], startPoint, endPoint),
     });
     if (deviation <= tolerance) {
+        if (output.size() >= kMaximumSampledPointsPerLoop) return false;
         sampledMaximumDeviation = std::max(sampledMaximumDeviation, deviation);
         output.push_back(endPoint);
         return true;
@@ -467,7 +571,13 @@ bool extractLightweightPolyline(const AcDbPolyline* polyline,
             continue;
         }
         if (!sampled) {
-            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            result.errorStatus = static_cast<int>(
+                samplingBudgetExhausted(result.coordinates)
+                    ? Acad::eOutOfRange
+                    : Acad::eInvalidInput);
+            if (samplingBudgetExhausted(result.coordinates)) {
+                result.reason = "native curve exceeded the bounded sampling budget";
+            }
             return false;
         }
     }
@@ -604,7 +714,13 @@ bool extractDatabaseCurve(const AcDbCurve* curve,
             curve, transform, startParameter, endParameter, startPoint,
             endPoint, tolerance, 0, result.coordinates,
             result.sampledMaximumDeviation)) {
-        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        result.errorStatus = static_cast<int>(
+            samplingBudgetExhausted(result.coordinates)
+                ? Acad::eOutOfRange
+                : Acad::eInvalidInput);
+        if (samplingBudgetExhausted(result.coordinates)) {
+            result.reason = "native curve exceeded the bounded sampling budget";
+        }
         return false;
     }
     result.closed = curve->isClosed() ||
@@ -785,6 +901,169 @@ bool extractRegionTopology(AcDbRegion* region,
             : static_cast<int>(status);
         return false;
     }
+    result.resolved = true;
+    return true;
+}
+
+double projectedLoopArea(const std::vector<Point3>& coordinates) {
+    double doubledArea = 0.0;
+    for (std::size_t index = 1; index < coordinates.size(); ++index) {
+        const Point3& previous = coordinates[index - 1];
+        const Point3& current = coordinates[index];
+        doubledArea += previous.x * current.y - current.x * previous.y;
+    }
+    return std::abs(doubledArea) * 0.5;
+}
+
+double loopPerimeter(const std::vector<Point3>& coordinates) {
+    double perimeter = 0.0;
+    for (std::size_t index = 1; index < coordinates.size(); ++index) {
+        perimeter += pointDistance(coordinates[index - 1], coordinates[index]);
+    }
+    return perimeter;
+}
+
+bool extractHatchLoopTopology(const AcDbHatch* hatch,
+                              const AcGeMatrix3d& transform,
+                              const double tolerance,
+                              RegionTopology& result) {
+    const int loopCount = hatch->numLoops();
+    if (loopCount < 1) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    AcGePlane plane;
+    AcDb::Planarity planarity = AcDb::kNonPlanar;
+    if (hatch->getPlane(plane, planarity) != Acad::eOk ||
+        planarity != AcDb::kPlanar) {
+        result.errorStatus = static_cast<int>(Acad::eNonPlanarEntity);
+        return false;
+    }
+
+    std::size_t outerCount = 0;
+    double area = 0.0;
+    double perimeter = 0.0;
+    for (int loopIndex = 0; loopIndex < loopCount; ++loopIndex) {
+        const Adesk::Int32 declaredType = hatch->loopTypeAt(loopIndex);
+        if ((declaredType & (AcDbHatch::kNotClosed |
+                             AcDbHatch::kSelfIntersecting |
+                             AcDbHatch::kTextbox |
+                             AcDbHatch::kTextIsland)) != 0) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            return false;
+        }
+        RegionLoop loop;
+        // kExternal describes an associative boundary made from database
+        // entities; it does not mean geometrically outer. Only kOutermost is
+        // a topological role in Autodesk's contract.
+        const bool declaredOuter =
+            (declaredType & AcDbHatch::kOutermost) != 0;
+        loop.role = declaredOuter ? "outer" : "hole";
+        if (declaredOuter) ++outerCount;
+
+        bool extracted = false;
+        if ((declaredType & AcDbHatch::kPolyline) != 0) {
+            Adesk::Int32 returnedType = 0;
+            AcGePoint2dArray vertices;
+            AcGeDoubleArray bulges;
+            if (hatch->getLoopAt(
+                    loopIndex, returnedType, vertices, bulges) == Acad::eOk &&
+                vertices.length() >= 2) {
+                unsigned int vertexCount = vertices.length();
+                if (vertexCount > 2) {
+                    const AcGePoint2d& first = vertices[0];
+                    const AcGePoint2d& last = vertices[vertexCount - 1];
+                    const double dx = first.x - last.x;
+                    const double dy = first.y - last.y;
+                    if (std::sqrt(dx * dx + dy * dy) <= tolerance) {
+                        --vertexCount;
+                    }
+                }
+                AcDbPolyline boundary(vertexCount);
+                boundary.setNormal(hatch->normal());
+                boundary.setElevation(hatch->elevation());
+                bool verticesAdded = vertexCount >= 2;
+                for (unsigned int vertexIndex = 0;
+                     vertexIndex < vertexCount && verticesAdded; ++vertexIndex) {
+                    const double bulge = vertexIndex < bulges.length()
+                        ? bulges[vertexIndex]
+                        : 0.0;
+                    verticesAdded = boundary.addVertexAt(
+                        vertexIndex, vertices[vertexIndex], bulge) == Acad::eOk;
+                }
+                boundary.setClosed(Adesk::kTrue);
+                NativePath sampled;
+                extracted = verticesAdded && extractLightweightPolyline(
+                    &boundary, transform, tolerance, sampled);
+                if (extracted) {
+                    loop.coordinates = std::move(sampled.coordinates);
+                    loop.sampledMaximumDeviation = sampled.sampledMaximumDeviation;
+                }
+            }
+        } else {
+            Adesk::Int32 returnedType = 0;
+            AcGeVoidPointerArray edgePointers;
+            AcGeIntArray edgeTypes;
+            const Acad::ErrorStatus loopStatus = hatch->getLoopAt(
+                loopIndex, returnedType, edgePointers, edgeTypes);
+            extracted = loopStatus == Acad::eOk &&
+                edgePointers.length() > 0 &&
+                edgePointers.length() == edgeTypes.length();
+            for (unsigned int edgeIndex = 0;
+                 edgeIndex < edgePointers.length(); ++edgeIndex) {
+                AcGeCurve2d* edge = static_cast<AcGeCurve2d*>(
+                    edgePointers[edgeIndex]);
+                if (edge == nullptr || !extracted ||
+                    !appendSampledCurve2d(
+                        *edge, plane, transform, tolerance, loop.coordinates,
+                        loop.sampledMaximumDeviation)) {
+                    extracted = false;
+                }
+                delete edge;
+            }
+        }
+        if (!extracted || loop.coordinates.size() < 4 ||
+            pointDistance(loop.coordinates.front(), loop.coordinates.back()) >
+                tolerance) {
+            result.errorStatus = static_cast<int>(
+                samplingBudgetExhausted(loop.coordinates)
+                    ? Acad::eOutOfRange
+                    : Acad::eInvalidInput);
+            return false;
+        }
+        loop.coordinates.back() = loop.coordinates.front();
+        const double loopArea = projectedLoopArea(loop.coordinates);
+        if (!std::isfinite(loopArea) || loopArea <= 0.0) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            return false;
+        }
+        area += declaredOuter ? loopArea : -loopArea;
+        perimeter += loopPerimeter(loop.coordinates);
+        result.loops.push_back(std::move(loop));
+    }
+    if (outerCount == 0) {
+        if (result.loops.size() != 1) {
+            result.errorStatus = static_cast<int>(Acad::eAmbiguousInput);
+            return false;
+        }
+        result.loops[0].role = "outer";
+        area = projectedLoopArea(result.loops[0].coordinates);
+        outerCount = 1;
+    }
+    if (outerCount != 1) {
+        result.errorStatus = static_cast<int>(Acad::eAmbiguousInput);
+        return false;
+    }
+    if (!std::isfinite(area) || area <= 0.0 ||
+        !std::isfinite(perimeter) || perimeter <= 0.0) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    result.measurement.area = area;
+    result.measurement.perimeter = perimeter;
+    result.measurement.areaValid = true;
+    result.measurement.perimeterValid = true;
+    result.errorStatus = 0;
     result.resolved = true;
     return true;
 }
@@ -1089,6 +1368,22 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                     region, accumulatedTransform, tolerance, topology);
                 delete region;
             }
+            const int regionTopologyStatus = topology.errorStatus;
+            bool usedLoopFallback = false;
+            int loopFallbackStatus = 0;
+            if (!topology.resolved) {
+                RegionTopology fallback;
+                fallback.measurement.handle = topology.measurement.handle;
+                fallback.measurement.layer = topology.measurement.layer;
+                fallback.sourceLayer = topology.sourceLayer;
+                fallback.instanceChain = topology.instanceChain;
+                usedLoopFallback = extractHatchLoopTopology(
+                    hatch, accumulatedTransform, tolerance, fallback);
+                loopFallbackStatus = fallback.errorStatus;
+                if (usedLoopFallback) {
+                    topology = std::move(fallback);
+                }
+            }
             EntityCoverage record;
             record.handle = topology.measurement.handle;
             record.entityType = utf8(entity->isA()->name());
@@ -1097,8 +1392,10 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             record.instanceChain = instanceChain;
             record.status = topology.resolved ? "native" : "unresolved";
             record.method = topology.resolved
-                ? "autodesk-hatch-region-acbr-local-affine"
-                : "autodesk-hatch-region-acbr-local-affine-failed";
+                ? (usedLoopFallback
+                    ? "autodesk-hatch-getloopat-native"
+                    : "autodesk-hatch-region-acbr-local-affine")
+                : "autodesk-hatch-native-topology-failed";
             if (!topology.resolved) {
                 double hatchArea = 0.0;
                 const Acad::ErrorStatus areaStatus = hatch->getArea(hatchArea);
@@ -1122,7 +1419,10 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                 record.reason =
                     "native HATCH topology extraction failed: region=" +
                     std::string(regionAvailable ? "available" : "null") +
-                    ", topology_status=" + std::to_string(topology.errorStatus) +
+                    ", topology_status=" +
+                    std::to_string(regionTopologyStatus) +
+                    ", loop_fallback_status=" +
+                    std::to_string(loopFallbackStatus) +
                     ", area_status=" + std::to_string(static_cast<int>(areaStatus)) +
                     ", area=" +
                     (areaStatus == Acad::eOk && std::isfinite(hatchArea)

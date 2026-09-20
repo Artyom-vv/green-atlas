@@ -26,6 +26,7 @@ SUPPORTED_PLUGIN_VERSIONS = {
     "0.1.15",
     "0.1.16",
     "0.1.17",
+    "0.1.19",
 }
 XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.6",
@@ -40,6 +41,7 @@ XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.15",
     "0.1.16",
     "0.1.17",
+    "0.1.19",
 }
 BLOCKING_DIAGNOSTICS = (
     "cyclic_block_references",
@@ -333,6 +335,7 @@ def compile_region_probe(
         "0.1.15",
         "0.1.16",
         "0.1.17",
+        "0.1.19",
     }:
         if summary.get("paths") != len(raw_paths):
             raise CadSnapshotAdmissionError("native path count differs from geometry")

@@ -225,11 +225,11 @@ def test_compiles_native_curve_and_point_without_portable_reader() -> None:
 
 def test_compiles_latest_autocad_bridge_contract() -> None:
     probe = probe_with_native_primitives()
-    probe["plugin_version"] = "0.1.17"
+    probe["plugin_version"] = "0.1.19"
 
     snapshot = compile(probe)
 
-    assert snapshot.extraction.plugin_version == "0.1.17"
+    assert snapshot.extraction.plugin_version == "0.1.19"
     assert [geometry.kind for geometry in snapshot.geometry] == [
         "region",
         "path",
@@ -243,6 +243,10 @@ def test_compiles_latest_autocad_bridge_contract() -> None:
         (lambda value: value.update(capture_mode="live_document"), "side-database"),
         (
             lambda value: value.update(plugin_version="0.1.3"),
+            "unsupported native probe plugin version",
+        ),
+        (
+            lambda value: value.update(plugin_version="0.1.18"),
             "unsupported native probe plugin version",
         ),
         (
