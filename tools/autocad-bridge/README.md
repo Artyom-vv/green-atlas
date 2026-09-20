@@ -154,6 +154,35 @@ publication. A missing or invalid native snapshot blocks import; it does not
 fall back to `ezdxf`. The browser upload requires one adjacent snapshot for
 every DXF.
 
+## Sequential real-file matrix
+
+`scripts/cad-lab/audit_autocad_native_matrix.py` runs the same MCP preparation
+implementation over a manifest, strictly one DXF at a time. It never reads DXF
+geometry itself and has no `ezdxf` fallback. After every source it atomically
+writes source/snapshot hashes, native admission counts, elapsed time and the
+exact rejection reason, so a later failure does not erase earlier evidence.
+
+```json
+{
+  "schema": "green-atlas.autocad-native-matrix-input/1",
+  "drawings": [
+    {
+      "id": "street",
+      "source_path": "/absolute/path/street.dxf",
+      "package_root": "/absolute/path/full-package",
+      "timeout_seconds": 900
+    }
+  ]
+}
+```
+
+```sh
+apps/api/.venv/bin/python scripts/cad-lab/audit_autocad_native_matrix.py \
+  manifest.json report.json
+```
+
+The runner refuses a stale loaded plugin version before submitting any source.
+
 ## Commands
 
 - `GAEXPORTPROBE`: early root inventory/measurement diagnostic.

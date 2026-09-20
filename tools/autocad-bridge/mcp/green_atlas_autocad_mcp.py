@@ -212,6 +212,13 @@ def _prepare_dxf(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Read-only Python entry points for repository diagnostics. Production callers
+# still cross the MCP tool boundary below; the matrix runner uses these names
+# to exercise exactly the same implementation without duplicating transport.
+bridge_status = _bridge_status
+prepare_dxf = _prepare_dxf
+
+
 TOOLS = [
     {
         "name": "autocad_bridge_status",
