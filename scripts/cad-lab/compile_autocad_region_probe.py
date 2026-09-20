@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compile an admitted ObjectARX REGION probe into snapshot-v1."""
+"""Compile admitted ObjectARX geometry evidence into snapshot-v1.
+
+The filename is retained temporarily for existing automation; it no longer
+means that the product contract is REGION-only.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +24,9 @@ def main() -> int:
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--autocad-version", required=True)
     parser.add_argument(
-        "--target", choices=("macos-arm64", "windows-x86_64"), required=True
+        "--target",
+        choices=("macos-arm64", "macos-x86_64", "windows-x86_64"),
+        required=True,
     )
     parser.add_argument(
         "--package-root",

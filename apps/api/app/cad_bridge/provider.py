@@ -6,9 +6,16 @@ import json
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
-from shapely.geometry import MultiPolygon, Polygon, mapping
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon, mapping
 
-from app.cad_bridge.contracts import CadSnapshot, CadSnapshotProvenance, RegionGeometry
+from app.cad_bridge.contracts import (
+    CadGeometry,
+    CadSnapshot,
+    CadSnapshotProvenance,
+    PathGeometry,
+    PointGeometry,
+    RegionGeometry,
+)
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.contracts import DxfImportResult
 from app.dxf_import.layer_contracts import Layer
@@ -18,7 +25,7 @@ from app.geometry.geojson_size import coordinate_count
 
 
 class CadSnapshotProviderError(ValueError):
-    """An admitted snapshot cannot be combined with this exact DXF import."""
+    """An admitted snapshot cannot authorize this exact source geometry."""
 
 
 DXF_TYPE_BY_AUTOCAD_CLASS = {
@@ -35,7 +42,9 @@ DXF_TYPE_BY_AUTOCAD_CLASS = {
     "AcDbPoint": "POINT",
     "AcDbPolyline": "LWPOLYLINE",
     "AcDb2dPolyline": "POLYLINE",
+    "AcDb3dPolyline": "POLYLINE",
     "AcDbRegion": "REGION",
+    "AcDbSpline": "SPLINE",
     "AcDbText": "TEXT",
 }
 
@@ -104,9 +113,7 @@ def _region_shape(region: RegionGeometry, factor: float) -> Polygon | MultiPolyg
         raise CadSnapshotProviderError(f"REGION {region.id} has no outer ring")
 
     outer_polygons = [Polygon(ring) for ring in outer_rings]
-    holes_by_outer: list[list[list[tuple[float, float]]]] = [
-        [] for _ in outer_polygons
-    ]
+    holes_by_outer: list[list[list[tuple[float, float]]]] = [[] for _ in outer_polygons]
     for hole in hole_rings:
         hole_polygon = Polygon(hole)
         point = hole_polygon.representative_point()
@@ -126,9 +133,45 @@ def _region_shape(region: RegionGeometry, factor: float) -> Polygon | MultiPolyg
         Polygon(outer_rings[index], holes_by_outer[index])
         for index in range(len(outer_rings))
     ]
-    if any(polygon.is_empty or not polygon.is_valid or polygon.area <= 0 for polygon in polygons):
-        raise CadSnapshotProviderError(f"REGION {region.id} is not a valid planar polygon")
+    if any(
+        polygon.is_empty or not polygon.is_valid or polygon.area <= 0
+        for polygon in polygons
+    ):
+        raise CadSnapshotProviderError(
+            f"REGION {region.id} is not a valid planar polygon"
+        )
     return polygons[0] if len(polygons) == 1 else MultiPolygon(polygons)
+
+
+def _native_shape(
+    geometry: CadGeometry, factor: float
+) -> Point | LineString | Polygon | MultiPolygon:
+    if isinstance(geometry, RegionGeometry):
+        return _region_shape(geometry, factor)
+    if isinstance(geometry, PointGeometry):
+        return Point(
+            round(geometry.coordinates[0] * factor, 6),
+            round(geometry.coordinates[1] * factor, 6),
+        )
+    if isinstance(geometry, PathGeometry):
+        coordinates = [
+            (round(point[0] * factor, 6), round(point[1] * factor, 6))
+            for point in geometry.coordinates
+        ]
+        if geometry.closed:
+            polygon = Polygon(coordinates)
+            if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
+                raise CadSnapshotProviderError(
+                    f"native path {geometry.id} is not a valid planar polygon"
+                )
+            return polygon
+        line = LineString(coordinates)
+        if line.is_empty or not line.is_valid or line.length <= 0:
+            raise CadSnapshotProviderError(
+                f"native path {geometry.id} is not a valid planar line"
+            )
+        return line
+    raise CadSnapshotProviderError(f"unsupported native geometry: {geometry.id}")
 
 
 def apply_cad_snapshot(
@@ -139,11 +182,12 @@ def apply_cad_snapshot(
     capacity: SourceGeometryCapacity | None = None,
     verified_dependencies: dict[str, str] | None = None,
 ) -> DxfImportResult:
-    """Merge admitted native geometry while preserving the normal DXF result.
+    """Project admitted native geometry into the temporary project result.
 
-    The original reader remains authoritative for every type it supports.  The
-    snapshot only fills exact identities that carry admitted native geometry;
-    unresolved coverage never becomes empty or inferred ground.
+    This compatibility entry point still receives an existing result while the
+    snapshot-only project builder is being connected. Native geometry always
+    replaces the corresponding source type; unresolved coverage never becomes
+    empty or inferred ground and must not fall back to another parser.
     """
 
     if snapshot.source.sha256 != source_sha256:
@@ -164,12 +208,32 @@ def apply_cad_snapshot(
         raise CadSnapshotProviderError("CAD snapshot uses unsupported drawing units")
     units, factor = DXF_UNIT_FACTORS[snapshot.source.units_code]
     if imported.units != units:
-        raise CadSnapshotProviderError("CAD snapshot units differ from DXF reader units")
+        raise CadSnapshotProviderError(
+            "CAD snapshot units differ from DXF reader units"
+        )
 
     result = imported.model_copy(deep=True)
     features = result.geometry.feature_collection.setdefault("features", [])
     if not isinstance(features, list):
         raise CadSnapshotProviderError("DXF feature collection is invalid")
+    native_identity_keys = {
+        (geometry.identity.handle, tuple(geometry.identity.instance_chain))
+        for geometry in snapshot.geometry
+    }
+
+    def source_identity(feature: dict[str, Any]) -> tuple[str, tuple[str, ...]]:
+        properties = feature.get("properties", {})
+        chain = properties.get("source_instance_chain", [])
+        return str(properties.get("source_handle", "")), tuple(chain or [])
+
+    # During migration the caller can still carry a portable-reader graph.
+    # Native evidence replaces matching source instances instead of being
+    # layered over them and creating two conflicting geometries.
+    features[:] = [
+        feature
+        for feature in features
+        if source_identity(feature) not in native_identity_keys
+    ]
     capacity = capacity or SourceGeometryCapacity()
     total_coordinates = sum(
         coordinate_count(feature.get("geometry", {})) for feature in features
@@ -180,6 +244,7 @@ def apply_cad_snapshot(
         for record in snapshot.coverage
     }
     native_counts: Counter[str] = Counter()
+    native_types_by_layer: dict[str, Counter[str]] = {}
     instance_types_by_layer: dict[str, Counter[str]] = {}
     for record in snapshot.coverage:
         entity_type = DXF_TYPE_BY_AUTOCAD_CLASS.get(
@@ -194,25 +259,36 @@ def apply_cad_snapshot(
             raise CadSnapshotProviderError(
                 f"CAD snapshot geometry lacks matching coverage: {geometry.id}"
             )
-        shape = _region_shape(geometry, factor)
+        shape = _native_shape(geometry, factor)
         geojson = mapping(shape)
         native_counts[coverage.layer] += 1
+        entity_type = DXF_TYPE_BY_AUTOCAD_CLASS.get(
+            coverage.entity_type, f"AUTOCAD:{coverage.entity_type}"
+        )
+        native_types_by_layer.setdefault(coverage.layer, Counter())[entity_type] += 1
+        properties = {
+            "source_layer": coverage.layer,
+            "kind": suggest_layer_kind(coverage.layer).value,
+            "entity_type": entity_type,
+            "source_handle": geometry.identity.handle,
+            "source_instance_chain": geometry.identity.instance_chain,
+            "source_geometry_provider": "autocad_snapshot_v1",
+            "source_native_geometry": True,
+            "source_geometry_content_sha256": geometry.content_sha256,
+        }
+        if isinstance(geometry, (RegionGeometry, PathGeometry)):
+            properties["source_sampling_tolerance_m"] = geometry.achieved_tolerance_m
+        if isinstance(geometry, RegionGeometry):
+            properties.update(
+                {
+                    "source_native_area_units2": geometry.native_area_units2,
+                    "source_native_perimeter_units": (geometry.native_perimeter_units),
+                }
+            )
         feature = {
             "type": "Feature",
             "id": f"cad-snapshot-{geometry.content_sha256}",
-            "properties": {
-                "source_layer": coverage.layer,
-                "kind": suggest_layer_kind(coverage.layer).value,
-                "entity_type": "REGION",
-                "source_handle": geometry.identity.handle,
-                "source_instance_chain": geometry.identity.instance_chain,
-                "source_geometry_provider": "autocad_snapshot_v1",
-                "source_native_geometry": True,
-                "source_geometry_content_sha256": geometry.content_sha256,
-                "source_native_area_units2": geometry.native_area_units2,
-                "source_native_perimeter_units": geometry.native_perimeter_units,
-                "source_sampling_tolerance_m": geometry.achieved_tolerance_m,
-            },
+            "properties": properties,
             "geometry": geojson,
         }
         feature_coordinates = coordinate_count(geojson)
@@ -251,8 +327,11 @@ def apply_cad_snapshot(
             layer.entity_types = dict(instance_types)
             layer.object_count = sum(instance_types.values())
         if count:
-            layer.projected_geometry_types["REGION"] = count
-            layer.unsupported_geometry_types.pop("REGION", None)
+            for entity_type, entity_count in native_types_by_layer.get(
+                layer_name, Counter()
+            ).items():
+                layer.projected_geometry_types[entity_type] = entity_count
+                layer.unsupported_geometry_types.pop(entity_type, None)
         if layer.geometry_complete or may_resolve_region_only:
             layer.geometry_complete = (
                 not layer.unsupported_geometry_types

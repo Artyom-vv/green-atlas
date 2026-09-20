@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -51,7 +51,7 @@ class CadSnapshotDependency(BaseModel):
 class ExtractionEvidence(BaseModel):
     autocad_version: str = Field(min_length=1)
     plugin_version: str = Field(min_length=1)
-    target: Literal["macos-arm64", "windows-x86_64"]
+    target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"]
     projection: Literal["wcs-xy-planar"]
     requested_tolerance_m: float = Field(gt=0, allow_inf_nan=False)
 
@@ -106,6 +106,51 @@ class RegionGeometry(BaseModel):
         return self
 
 
+class PathGeometry(BaseModel):
+    """A finite native AutoCAD curve sampled in WCS.
+
+    Closed paths stay distinct from REGION/HATCH topology: they are authored
+    boundaries and may become areas only after the operator assigns a physical
+    layer role.  The bridge, not the web service, owns curve evaluation and
+    nested instance transforms.
+    """
+
+    id: str = Field(min_length=1)
+    identity: SourceIdentity
+    kind: Literal["path"]
+    closed: bool
+    coordinates: list[tuple[float, float, float]] = Field(min_length=2)
+    achieved_tolerance_m: float = Field(ge=0, allow_inf_nan=False)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def require_consistent_closure(self) -> PathGeometry:
+        if self.closed:
+            if len(self.coordinates) < 4:
+                raise ValueError("closed path must contain at least four coordinates")
+            if self.coordinates[0] != self.coordinates[-1]:
+                raise ValueError("closed path endpoints differ")
+        elif self.coordinates[0] == self.coordinates[-1]:
+            raise ValueError("open path endpoints must differ")
+        return self
+
+
+class PointGeometry(BaseModel):
+    """A native AutoCAD point transformed into WCS."""
+
+    id: str = Field(min_length=1)
+    identity: SourceIdentity
+    kind: Literal["point"]
+    coordinates: tuple[float, float, float]
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+CadGeometry = Annotated[
+    RegionGeometry | PathGeometry | PointGeometry,
+    Field(discriminator="kind"),
+]
+
+
 class SnapshotSummary(BaseModel):
     source_instances: int = Field(ge=0)
     native: int = Field(ge=0)
@@ -122,7 +167,7 @@ class CadSnapshotProvenance(BaseModel):
     payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     autocad_version: str = Field(min_length=1)
     plugin_version: str = Field(min_length=1)
-    target: Literal["macos-arm64", "windows-x86_64"]
+    target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"]
     source_instances: int = Field(ge=0)
     native_geometry: int = Field(ge=0)
     unresolved_instances: int = Field(ge=0)
@@ -137,7 +182,7 @@ class CadSnapshot(BaseModel):
     extraction: ExtractionEvidence
     dependencies: list[CadSnapshotDependency] | None = None
     coverage: list[CoverageRecord]
-    geometry: list[RegionGeometry]
+    geometry: list[CadGeometry]
     summary: SnapshotSummary
 
     model_config = {"populate_by_name": True}
@@ -155,9 +200,7 @@ class CadSnapshot(BaseModel):
             raise ValueError("duplicate geometry id")
         referenced: list[str] = []
         coverage_by_key = {identity_key(item.identity): item for item in self.coverage}
-        dependencies_by_id = {
-            item.id: item for item in (self.dependencies or [])
-        }
+        dependencies_by_id = {item.id: item for item in (self.dependencies or [])}
         if len(dependencies_by_id) != len(self.dependencies or []):
             raise ValueError("duplicate CAD dependency id")
         referenced_dependencies: list[str] = []
@@ -165,7 +208,9 @@ class CadSnapshot(BaseModel):
             for geometry_id in item.geometry_ids:
                 geometry = geometry_by_id.get(geometry_id)
                 if geometry is None:
-                    raise ValueError(f"coverage references missing geometry: {geometry_id}")
+                    raise ValueError(
+                        f"coverage references missing geometry: {geometry_id}"
+                    )
                 if identity_key(geometry.identity) != identity_key(item.identity):
                     raise ValueError(f"geometry provenance mismatch: {geometry_id}")
                 referenced.append(geometry_id)

@@ -1,4 +1,4 @@
-"""Contracts and admission for geometry snapshots from an optional CAD host."""
+"""Contracts and admission for authoritative geometry snapshots from AutoCAD."""
 
 from .compiler import CadSnapshotAdmissionError, compile_region_probe
 from .contracts import CadSnapshot, CadSnapshotProvenance

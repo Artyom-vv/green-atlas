@@ -113,16 +113,36 @@ def test_http_upload_package_can_start_multi_dxf_intake(service):
         "/api/cad/uploads",
         files=[
             ("files", ("genplan.dxf", b"AC1032 genplan", "application/dxf")),
+            (
+                "files",
+                (
+                    "genplan.dxf.green-atlas.snapshot.json",
+                    b"native genplan",
+                    "application/json",
+                ),
+            ),
             ("files", ("geobase.dxf", b"AC1032 geobase", "application/dxf")),
+            (
+                "files",
+                (
+                    "geobase.dxf.green-atlas.snapshot.json",
+                    b"native geobase",
+                    "application/json",
+                ),
+            ),
         ],
     )
     assert uploaded.status_code == 201, uploaded.text
     package = uploaded.json()
-    assert package["total_bytes"] == 28
+    assert package["total_bytes"] == 56
     assert package["root_id"].startswith("upload-")
     assert [entry["path"] for entry in package["entries"]] == [
         "genplan.dxf",
         "geobase.dxf",
+    ]
+    assert [entry["path"] for entry in package["snapshots"]] == [
+        "genplan.dxf.green-atlas.snapshot.json",
+        "geobase.dxf.green-atlas.snapshot.json",
     ]
 
     listed = client.get(f"/api/cad/roots/{package['root_id']}/entries")

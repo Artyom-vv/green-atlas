@@ -10,10 +10,13 @@ import {
 } from '@green/ui';
 import type { IntakeSelection } from '../api/startIntake';
 
-const MAX_FILES = 64;
+const MAX_FILES = 128;
 const MAX_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
-const ACCEPT = { 'application/octet-stream': ['.dxf'] };
+const ACCEPT = {
+  'application/octet-stream': ['.dxf'],
+  'application/json': ['.json'],
+};
 
 type DropzoneProps = ComponentProps<typeof FileDropzone>;
 
@@ -107,7 +110,7 @@ export function CadPackageUpload({
   return (
     <div className="grid gap-2">
       <FileDropzone
-        label="Загрузить комплект DXF"
+        label="Загрузить DXF и AutoCAD snapshot"
         accept={ACCEPT}
         maxSize={MAX_FILE_BYTES}
         maxFiles={MAX_FILES}
@@ -115,7 +118,7 @@ export function CadPackageUpload({
         disabled={busy || upload.isPending}
         onFilesAccepted={acceptFiles}
         onFilesRejected={() =>
-          setClientError('Только DXF: до 64 файлов, 512 МБ каждый.')
+          setClientError('Выберите DXF и парные AutoCAD snapshot.')
         }
         error={
           clientError || upload.error ? (
@@ -124,10 +127,10 @@ export function CadPackageUpload({
             </InlineMessage>
           ) : undefined
         }
-        message="Генплан, геоподоснова и сети можно выбрать вместе."
+        message="Для каждого DXF выберите соседний .snapshot.json."
       >
         <strong className="text-sm leading-5 font-semibold">
-          Перетащите DXF сюда
+          Перетащите комплект сюда
         </strong>
       </FileDropzone>
       {upload.isPending && <Progress label="Сохраняем комплект" />}

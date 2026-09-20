@@ -8,6 +8,8 @@
 #include "dbapserv.h"
 #include "dbsymtb.h"
 #include "dbents.h"
+#include "dbcurve.h"
+#include "dbhatch.h"
 #include "dbregion.h"
 #include "acdbxref.h"
 #include "gemat3d.h"
@@ -20,27 +22,37 @@
 #include "brletrav.h"
 #include "gecurv3d.h"
 #include "geintrvl.h"
+#include "core_rxmfcapi.h"
 
 #include <CommonCrypto/CommonDigest.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cmath>
+#include <dirent.h>
 #include <fstream>
 #include <iomanip>
 #include <map>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 namespace {
 
 constexpr const ACHAR* kCommandGroup = _T("GREEN_ATLAS");
-constexpr const char* kPluginVersion = "0.1.6";
+constexpr const char* kPluginVersion = "0.1.8";
 constexpr double kRequestedToleranceMetres = 0.0001;
 constexpr int kMaximumSamplingDepth = 24;
 bool gSideDatabaseCapture = false;
 std::string gSideDatabaseSourcePath;
+bool gLastTopologyExportSucceeded = false;
+std::string gLastTopologyExportPath;
+std::string gLastTopologyExportError;
+bool gMcpRequestInProgress = false;
 
 std::string utf8(const ACHAR* value) {
     return value == nullptr ? std::string() : AcString(value).utf8Str();
@@ -144,6 +156,26 @@ struct RegionTopology {
     int errorStatus = 0;
 };
 
+struct NativePath {
+    std::string handle;
+    std::string sourceLayer;
+    std::string layer;
+    std::vector<std::string> instanceChain;
+    std::vector<Point3> coordinates;
+    bool closed = false;
+    bool resolved = false;
+    int errorStatus = 0;
+    double sampledMaximumDeviation = 0.0;
+};
+
+struct NativePoint {
+    std::string handle;
+    std::string sourceLayer;
+    std::string layer;
+    std::vector<std::string> instanceChain;
+    Point3 coordinates;
+};
+
 struct EntityCoverage {
     std::string handle;
     std::string entityType;
@@ -165,6 +197,29 @@ struct XrefDependency {
     std::size_t bytes = 0;
     std::string status;
 };
+
+bool isNonCalculationContext(const std::string& entityType) {
+    static const char* const types[] = {
+        "AcDbAttribute",
+        "AcDbAttributeDefinition",
+        "AcDbDimension",
+        "AcDbFcf",
+        "AcDbGeoPositionMarker",
+        "AcDbImage",
+        "AcDbMLeader",
+        "AcDbMText",
+        "AcDbOle2Frame",
+        "AcDbRasterImage",
+        "AcDbTable",
+        "AcDbText",
+        "AcDbUnderlayReference",
+        "AcDbViewport",
+    };
+    return std::find_if(
+               std::begin(types), std::end(types),
+               [&entityType](const char* value) { return entityType == value; }) !=
+        std::end(types);
+}
 
 double unitToMetres(const AcDb::UnitsValue units) {
     switch (units) {
@@ -304,6 +359,109 @@ bool appendSampledCurve(const AcGeCurve3d& curve,
     return sampleCurveInterval(curve, transform, startParameter, endParameter,
                                startPoint, endPoint, tolerance, 0,
                                output, sampledMaximumDeviation);
+}
+
+bool sampleDatabaseCurveInterval(const AcDbCurve* curve,
+                                 const AcGeMatrix3d& transform,
+                                 const double startParameter,
+                                 const double endParameter,
+                                 const Point3& startPoint,
+                                 const Point3& endPoint,
+                                 const double tolerance,
+                                 const int depth,
+                                 std::vector<Point3>& output,
+                                 double& sampledMaximumDeviation) {
+    const double span = endParameter - startParameter;
+    const double parameters[] = {
+        startParameter + span * 0.25,
+        startParameter + span * 0.5,
+        startParameter + span * 0.75,
+    };
+    Point3 sampled[3];
+    for (int index = 0; index < 3; ++index) {
+        AcGePoint3d value;
+        if (curve->getPointAtParam(parameters[index], value) != Acad::eOk) {
+            return false;
+        }
+        value.transformBy(transform);
+        sampled[index] = point3(value);
+    }
+    const double deviation = std::max({
+        pointSegmentDistance(sampled[0], startPoint, endPoint),
+        pointSegmentDistance(sampled[1], startPoint, endPoint),
+        pointSegmentDistance(sampled[2], startPoint, endPoint),
+    });
+    if (deviation <= tolerance) {
+        sampledMaximumDeviation = std::max(sampledMaximumDeviation, deviation);
+        output.push_back(endPoint);
+        return true;
+    }
+    if (depth >= kMaximumSamplingDepth) {
+        sampledMaximumDeviation = std::max(sampledMaximumDeviation, deviation);
+        return false;
+    }
+    return sampleDatabaseCurveInterval(
+               curve, transform, startParameter, parameters[1], startPoint,
+               sampled[1], tolerance, depth + 1, output,
+               sampledMaximumDeviation) &&
+           sampleDatabaseCurveInterval(
+               curve, transform, parameters[1], endParameter, sampled[1],
+               endPoint, tolerance, depth + 1, output,
+               sampledMaximumDeviation);
+}
+
+bool extractDatabaseCurve(const AcDbCurve* curve,
+                          const AcGeMatrix3d& transform,
+                          const double tolerance,
+                          NativePath& result) {
+    double startParameter = 0.0;
+    double endParameter = 0.0;
+    if (curve->getStartParam(startParameter) != Acad::eOk ||
+        curve->getEndParam(endParameter) != Acad::eOk ||
+        !std::isfinite(startParameter) || !std::isfinite(endParameter) ||
+        startParameter == endParameter) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    AcGePoint3d start;
+    AcGePoint3d end;
+    if (curve->getPointAtParam(startParameter, start) != Acad::eOk ||
+        curve->getPointAtParam(endParameter, end) != Acad::eOk) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    start.transformBy(transform);
+    end.transformBy(transform);
+    const Point3 startPoint = point3(start);
+    const Point3 endPoint = point3(end);
+    result.coordinates.push_back(startPoint);
+    if (!sampleDatabaseCurveInterval(
+            curve, transform, startParameter, endParameter, startPoint,
+            endPoint, tolerance, 0, result.coordinates,
+            result.sampledMaximumDeviation)) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    result.closed = curve->isClosed();
+    if (result.closed) {
+        if (pointDistance(result.coordinates.front(), result.coordinates.back()) >
+            tolerance) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            return false;
+        }
+        result.coordinates.back() = result.coordinates.front();
+        if (result.coordinates.size() < 4) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            return false;
+        }
+    } else if (result.coordinates.size() < 2 ||
+               pointDistance(result.coordinates.front(), result.coordinates.back()) <=
+                   tolerance) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    result.resolved = true;
+    return true;
 }
 
 bool transformedAreaScale(AcDbRegion* region,
@@ -554,10 +712,10 @@ void collectAttachedAttributes(AcDbBlockReference* blockReference,
             ? effectiveLayer
             : attributeRecord.sourceLayer;
         attributeRecord.instanceChain = instanceChain;
-        attributeRecord.status = "unresolved";
-        attributeRecord.method = "not-emitted-by-region-probe";
+        attributeRecord.status = "context";
+        attributeRecord.method = "autodesk-non-calculation-context";
         attributeRecord.reason =
-            "attribute instance is inventoried but geometry is not emitted by this probe";
+            "attribute instance is preserved as non-calculation annotation context";
         coverage.push_back(std::move(attributeRecord));
         attribute->close();
     }
@@ -575,6 +733,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                             const double tolerance,
                             std::vector<AcDbObjectId>& activeRecords,
                             std::vector<RegionTopology>& regions,
+                            std::vector<NativePath>& paths,
+                            std::vector<NativePoint>& points,
                             std::vector<EntityCoverage>& coverage,
                             RegionTraversalDiagnostics& diagnostics) {
     if (recordId.isNull() || objectIdIn(activeRecords, recordId)) {
@@ -706,7 +866,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                         ++diagnostics.traversedBlockReferences;
                         collectRegionInstances(nestedRecordId, cellTransform, cellChain,
                                                effectiveLayer, tolerance, activeRecords,
-                                               regions, coverage, diagnostics);
+                                               regions, paths, points, coverage,
+                                               diagnostics);
                     }
                 }
             } else {
@@ -715,7 +876,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                 ++diagnostics.traversedBlockReferences;
                 collectRegionInstances(nestedRecordId, nestedTransform, nestedChain,
                                        effectiveLayer, tolerance, activeRecords,
-                                       regions, coverage, diagnostics);
+                                       regions, paths, points, coverage,
+                                       diagnostics);
             }
             entity->close();
             continue;
@@ -745,6 +907,78 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             }
             coverage.push_back(std::move(record));
             regions.push_back(std::move(topology));
+        } else if (AcDbHatch* hatch = AcDbHatch::cast(entity)) {
+            RegionTopology topology;
+            topology.measurement.handle = entityHandle(hatch);
+            topology.sourceLayer = utf8(hatch->layer());
+            topology.measurement.layer = topology.sourceLayer == "0"
+                ? inheritedLayer
+                : topology.sourceLayer;
+            topology.instanceChain = instanceChain;
+            AcDbRegion* region = hatch->getRegionArea();
+            if (region != nullptr) {
+                extractRegionTopology(
+                    region, accumulatedTransform, tolerance, topology);
+                delete region;
+            }
+            EntityCoverage record;
+            record.handle = topology.measurement.handle;
+            record.entityType = utf8(entity->isA()->name());
+            record.sourceLayer = topology.sourceLayer;
+            record.layer = topology.measurement.layer;
+            record.instanceChain = instanceChain;
+            record.status = topology.resolved ? "native" : "unresolved";
+            record.method = topology.resolved
+                ? "autodesk-hatch-region-acbr-local-affine"
+                : "autodesk-hatch-region-acbr-local-affine-failed";
+            if (!topology.resolved) {
+                record.reason = "native HATCH topology extraction failed";
+            }
+            coverage.push_back(std::move(record));
+            regions.push_back(std::move(topology));
+        } else if (AcDbCurve* curve = AcDbCurve::cast(entity)) {
+            NativePath path;
+            path.handle = entityHandle(curve);
+            path.sourceLayer = utf8(curve->layer());
+            path.layer = path.sourceLayer == "0" ? inheritedLayer : path.sourceLayer;
+            path.instanceChain = instanceChain;
+            extractDatabaseCurve(curve, accumulatedTransform, tolerance, path);
+            EntityCoverage record;
+            record.handle = path.handle;
+            record.entityType = utf8(entity->isA()->name());
+            record.sourceLayer = path.sourceLayer;
+            record.layer = path.layer;
+            record.instanceChain = instanceChain;
+            record.status = path.resolved ? "native" : "unresolved";
+            record.method = path.resolved
+                ? "autodesk-acdbcurve-adaptive-sampling"
+                : "autodesk-acdbcurve-adaptive-sampling-failed";
+            if (!path.resolved) {
+                record.reason = "native finite curve extraction failed";
+            }
+            coverage.push_back(std::move(record));
+            if (path.resolved) paths.push_back(std::move(path));
+        } else if (AcDbPoint* point = AcDbPoint::cast(entity)) {
+            NativePoint nativePoint;
+            nativePoint.handle = entityHandle(point);
+            nativePoint.sourceLayer = utf8(point->layer());
+            nativePoint.layer = nativePoint.sourceLayer == "0"
+                ? inheritedLayer
+                : nativePoint.sourceLayer;
+            nativePoint.instanceChain = instanceChain;
+            AcGePoint3d position = point->position();
+            position.transformBy(accumulatedTransform);
+            nativePoint.coordinates = point3(position);
+            EntityCoverage record;
+            record.handle = nativePoint.handle;
+            record.entityType = utf8(entity->isA()->name());
+            record.sourceLayer = nativePoint.sourceLayer;
+            record.layer = nativePoint.layer;
+            record.instanceChain = instanceChain;
+            record.status = "native";
+            record.method = "autodesk-acdbpoint-wcs";
+            coverage.push_back(std::move(record));
+            points.push_back(std::move(nativePoint));
         } else {
             EntityCoverage record;
             record.handle = entityHandle(entity);
@@ -752,9 +986,17 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             record.sourceLayer = utf8(entity->layer());
             record.layer = record.sourceLayer == "0" ? inheritedLayer : record.sourceLayer;
             record.instanceChain = instanceChain;
-            record.status = "unresolved";
-            record.method = "not-emitted-by-region-probe";
-            record.reason = "entity instance is inventoried but geometry is not emitted by this probe";
+            if (isNonCalculationContext(record.entityType)) {
+                record.status = "context";
+                record.method = "autodesk-non-calculation-context";
+                record.reason =
+                    "known annotation or presentation entity is not calculation geometry";
+            } else {
+                record.status = "unresolved";
+                record.method = "autodesk-native-geometry-not-implemented";
+                record.reason =
+                    "entity instance is inventoried but native geometry is not implemented";
+            }
             coverage.push_back(std::move(record));
         }
         entity->close();
@@ -933,8 +1175,12 @@ void exportProbe() {
 }
 
 void exportRegionTopologyProbe() {
+    gLastTopologyExportSucceeded = false;
+    gLastTopologyExportPath.clear();
+    gLastTopologyExportError = "native topology export did not complete";
     AcDbDatabase* database = acdbHostApplicationServices()->workingDatabase();
     if (database == nullptr) {
+        gLastTopologyExportError = "no active AutoCAD database";
         acutPrintf(_T("\nGreen Atlas: no active drawing."));
         return;
     }
@@ -947,6 +1193,7 @@ void exportRegionTopologyProbe() {
         ? 0
         : (databaseModificationKnown ? databaseModification.resval.rint : -1);
     if (!databaseModificationKnown) {
+        gLastTopologyExportError = "DBMOD is unavailable";
         acutPrintf(_T("\nGreen Atlas: DBMOD is unavailable; topology provenance cannot be recorded."));
         return;
     }
@@ -955,6 +1202,7 @@ void exportRegionTopologyProbe() {
     if (!gSideDatabaseCapture &&
         (database->getFilename(sourceName) != Acad::eOk ||
          sourceName == nullptr || *sourceName == 0)) {
+        gLastTopologyExportError = "drawing must be saved before export";
         acutPrintf(_T("\nGreen Atlas: save the drawing before exporting topology."));
         return;
     }
@@ -963,12 +1211,14 @@ void exportRegionTopologyProbe() {
         : utf8(sourceName);
     const std::string sourceHash = sha256File(sourcePath);
     if (sourceHash.empty()) {
+        gLastTopologyExportError = "saved source file cannot be read";
         acutPrintf(_T("\nGreen Atlas: cannot read the saved source file."));
         return;
     }
 
     const double metresPerUnit = unitToMetres(database->insunits());
     if (metresPerUnit <= 0.0) {
+        gLastTopologyExportError = "drawing units are undefined";
         acutPrintf(_T("\nGreen Atlas: drawing units are undefined; topology tolerance cannot be proven."));
         return;
     }
@@ -976,6 +1226,7 @@ void exportRegionTopologyProbe() {
 
     AcDbBlockTable* blockTable = nullptr;
     if (database->getBlockTable(blockTable, AcDb::kForRead) != Acad::eOk) {
+        gLastTopologyExportError = "block table cannot be opened";
         acutPrintf(_T("\nGreen Atlas: cannot open the block table."));
         return;
     }
@@ -984,19 +1235,22 @@ void exportRegionTopologyProbe() {
         blockTable->getAt(ACDB_MODEL_SPACE, modelSpaceId);
     blockTable->close();
     if (modelStatus != Acad::eOk || modelSpaceId.isNull()) {
+        gLastTopologyExportError = "model space cannot be opened";
         acutPrintf(_T("\nGreen Atlas: cannot open model space."));
         return;
     }
 
     std::vector<RegionTopology> regions;
+    std::vector<NativePath> paths;
+    std::vector<NativePoint> points;
     std::vector<EntityCoverage> coverage;
     RegionTraversalDiagnostics traversal;
     const AcGeMatrix3d rootTransform = AcGeMatrix3d::kIdentity;
     std::vector<std::string> instanceChain;
     std::vector<AcDbObjectId> activeRecords;
     collectRegionInstances(modelSpaceId, rootTransform, instanceChain, "0",
-                           toleranceUnits, activeRecords, regions, coverage,
-                           traversal);
+                           toleranceUnits, activeRecords, regions, paths, points,
+                           coverage, traversal);
 
     std::size_t resolvedCount = 0;
     std::size_t loopCount = 0;
@@ -1013,10 +1267,11 @@ void exportRegionTopologyProbe() {
 
     AcString revision;
     database->getVersionGuid(revision);
-    const std::string outputPath = sourcePath + ".green-atlas.regions.json";
+    const std::string outputPath = sourcePath + ".green-atlas.geometry.json";
     const std::string temporaryPath = outputPath + ".tmp";
     std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
     if (!output) {
+        gLastTopologyExportError = "topology sidecar cannot be created";
         acutPrintf(_T("\nGreen Atlas: cannot create the topology sidecar file."));
         return;
     }
@@ -1123,11 +1378,61 @@ void exportRegionTopologyProbe() {
     }
     if (!regions.empty()) output << '\n';
     output << "  ],\n"
+           << "  \"paths\": [";
+    for (std::size_t pathIndex = 0; pathIndex < paths.size(); ++pathIndex) {
+        const NativePath& path = paths[pathIndex];
+        output << (pathIndex == 0 ? "\n" : ",\n")
+               << "    {\"handle\": \"" << jsonEscape(path.handle)
+               << "\", \"source_layer\": \"" << jsonEscape(path.sourceLayer)
+               << "\", \"layer\": \"" << jsonEscape(path.layer)
+               << "\", \"instance_chain\": [";
+        for (std::size_t chainIndex = 0;
+             chainIndex < path.instanceChain.size(); ++chainIndex) {
+            output << (chainIndex == 0 ? "" : ",")
+                   << "\"" << jsonEscape(path.instanceChain[chainIndex]) << "\"";
+        }
+        output << "], \"status\": \"native\", \"error_status\": null"
+               << ", \"closed\": " << (path.closed ? "true" : "false")
+               << ", \"sampled_max_deviation_units\": "
+               << path.sampledMaximumDeviation
+               << ", \"coordinates\": [";
+        for (std::size_t pointIndex = 0;
+             pointIndex < path.coordinates.size(); ++pointIndex) {
+            const Point3& point = path.coordinates[pointIndex];
+            output << (pointIndex == 0 ? "" : ",")
+                   << '[' << point.x << ',' << point.y << ',' << point.z << ']';
+        }
+        output << "]}";
+    }
+    if (!paths.empty()) output << '\n';
+    output << "  ],\n"
+           << "  \"points\": [";
+    for (std::size_t pointIndex = 0; pointIndex < points.size(); ++pointIndex) {
+        const NativePoint& point = points[pointIndex];
+        output << (pointIndex == 0 ? "\n" : ",\n")
+               << "    {\"handle\": \"" << jsonEscape(point.handle)
+               << "\", \"source_layer\": \"" << jsonEscape(point.sourceLayer)
+               << "\", \"layer\": \"" << jsonEscape(point.layer)
+               << "\", \"instance_chain\": [";
+        for (std::size_t chainIndex = 0;
+             chainIndex < point.instanceChain.size(); ++chainIndex) {
+            output << (chainIndex == 0 ? "" : ",")
+                   << "\"" << jsonEscape(point.instanceChain[chainIndex]) << "\"";
+        }
+        output << "], \"status\": \"native\", \"error_status\": null"
+               << ", \"coordinates\": ["
+               << point.coordinates.x << ',' << point.coordinates.y << ','
+               << point.coordinates.z << "]}";
+    }
+    if (!points.empty()) output << '\n';
+    output << "  ],\n"
            << "  \"summary\": {\"regions\": " << regions.size()
+           << ", \"paths\": " << paths.size()
+           << ", \"points\": " << points.size()
            << ", \"resolved\": " << resolvedCount
            << ", \"unresolved\": " << (regions.size() - resolvedCount)
            << ", \"loops\": " << loopCount
-           << ", \"points\": " << pointCount
+           << ", \"region_sampled_points\": " << pointCount
            << ", \"block_references\": " << traversal.blockReferences
            << ", \"traversed_block_references\": " << traversal.traversedBlockReferences
            << ", \"cyclic_block_references\": " << traversal.cyclicBlockReferences
@@ -1150,7 +1455,7 @@ void exportRegionTopologyProbe() {
            << ", \"unresolved_instances\": " << coverageStatusCounts["unresolved"]
            << "},\n"
            << "  \"limitations\": ["
-              "\"only AcDbRegion topology is emitted by this probe\", "
+              "\"REGION, HATCH area, finite curves and points are emitted; other non-context entities remain explicit unresolved coverage\", "
               "\"resolved XREF files are hashed and unresolved references fail admission\", "
               "\"nonzero DBMOD makes the live snapshot diagnostic-only\", "
               "\"adaptive chord checks require independent admission verification\"]\n"
@@ -1159,9 +1464,14 @@ void exportRegionTopologyProbe() {
 
     if (!output || std::rename(temporaryPath.c_str(), outputPath.c_str()) != 0) {
         std::remove(temporaryPath.c_str());
+        gLastTopologyExportError = "topology sidecar could not be published atomically";
         acutPrintf(_T("\nGreen Atlas: failed to publish the topology sidecar atomically."));
         return;
     }
+
+    gLastTopologyExportSucceeded = true;
+    gLastTopologyExportPath = outputPath;
+    gLastTopologyExportError.clear();
 
     const AcString regionCountText(std::to_string(regions.size()).c_str());
     const AcString resolvedCountText(std::to_string(resolvedCount).c_str());
@@ -1176,23 +1486,15 @@ void exportRegionTopologyProbe() {
     acutPrintf(_T("\n%s"), AcString(outputPath.c_str()).kwszPtr());
 }
 
-void exportRegionTopologyFromSourceFile() {
-    AcDbDatabase* liveDatabase = acdbHostApplicationServices()->workingDatabase();
-    if (liveDatabase == nullptr) {
-        acutPrintf(_T("\nGreen Atlas: no active drawing."));
-        return;
-    }
-    const ACHAR* sourceName = nullptr;
-    if (liveDatabase->getFilename(sourceName) != Acad::eOk ||
-        sourceName == nullptr || *sourceName == 0) {
-        acutPrintf(_T("\nGreen Atlas: open a saved DXF before file-based export."));
-        return;
-    }
-    const std::string sourcePath = utf8(sourceName);
+bool exportRegionTopologyFromPath(const std::string& sourcePath) {
+    gLastTopologyExportSucceeded = false;
+    gLastTopologyExportPath.clear();
+    gLastTopologyExportError.clear();
     if (sourcePath.size() < 4 ||
         sourcePath.substr(sourcePath.size() - 4) != ".dxf") {
+        gLastTopologyExportError = "only saved DXF sources are accepted";
         acutPrintf(_T("\nGreen Atlas: file-based topology export currently accepts DXF only."));
-        return;
+        return false;
     }
 
     AcDbDatabase sourceDatabase(false, true);
@@ -1200,10 +1502,13 @@ void exportRegionTopologyFromSourceFile() {
     const Acad::ErrorStatus importStatus = sourceDatabase.dxfIn(
         AcString(sourcePath.c_str()).kwszPtr(), AcString(logPath.c_str()).kwszPtr());
     if (importStatus != Acad::eOk) {
+        gLastTopologyExportError =
+            "isolated AutoCAD DXF import failed with status " +
+            std::to_string(static_cast<int>(importStatus));
         const AcString statusText(std::to_string(static_cast<int>(importStatus)).c_str());
         acutPrintf(_T("\nGreen Atlas: isolated DXF import failed (status=%s)."),
                    statusText.kwszPtr());
-        return;
+        return false;
     }
 
     // Resolve package-local XREF databases in memory. The root DXF and every
@@ -1220,6 +1525,137 @@ void exportRegionTopologyFromSourceFile() {
     gSideDatabaseSourcePath.clear();
     gSideDatabaseCapture = false;
     services->setWorkingDatabase(previousDatabase);
+    return gLastTopologyExportSucceeded;
+}
+
+void exportRegionTopologyFromSourceFile() {
+    AcDbDatabase* liveDatabase = acdbHostApplicationServices()->workingDatabase();
+    if (liveDatabase == nullptr) {
+        acutPrintf(_T("\nGreen Atlas: no active drawing."));
+        return;
+    }
+    const ACHAR* sourceName = nullptr;
+    if (liveDatabase->getFilename(sourceName) != Acad::eOk ||
+        sourceName == nullptr || *sourceName == 0) {
+        acutPrintf(_T("\nGreen Atlas: open a saved DXF before file-based export."));
+        return;
+    }
+    exportRegionTopologyFromPath(utf8(sourceName));
+}
+
+std::string mcpDirectory() {
+    return "/tmp/green-atlas-autocad-mcp-" +
+        std::to_string(static_cast<unsigned long>(getuid()));
+}
+
+bool ensureMcpDirectory() {
+    const std::string directory = mcpDirectory();
+    if (mkdir(directory.c_str(), 0700) != 0 && errno != EEXIST) {
+        return false;
+    }
+    return chmod(directory.c_str(), 0700) == 0;
+}
+
+bool writeAtomicText(const std::string& path, const std::string& payload) {
+    const std::string temporary = path + ".tmp";
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    output << payload;
+    output.close();
+    if (!output || std::rename(temporary.c_str(), path.c_str()) != 0) {
+        std::remove(temporary.c_str());
+        return false;
+    }
+    return true;
+}
+
+void publishMcpStatus(const bool ready) {
+    if (!ensureMcpDirectory()) return;
+    const std::string payload =
+        std::string("{\"schema\":\"green-atlas.autocad-mcp-status/1\",") +
+        "\"ready\":" + (ready ? "true" : "false") +
+        ",\"plugin_version\":\"" + kPluginVersion +
+        "\",\"pid\":" + std::to_string(static_cast<long>(getpid())) + "}\n";
+    writeAtomicText(mcpDirectory() + "/status.json", payload);
+}
+
+bool isMcpRequestName(const std::string& name) {
+    constexpr const char* prefix = "request-";
+    constexpr const char* suffix = ".txt";
+    if (name.size() != 8 + 32 + 4 || name.compare(0, 8, prefix) != 0 ||
+        name.compare(name.size() - 4, 4, suffix) != 0) {
+        return false;
+    }
+    return std::all_of(
+        name.begin() + 8, name.begin() + 40,
+        [](const unsigned char value) {
+            return (value >= '0' && value <= '9') ||
+                   (value >= 'a' && value <= 'f');
+        });
+}
+
+void processMcpRequestsOnIdle() {
+    static auto nextPoll = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    if (gMcpRequestInProgress || now < nextPoll) return;
+    nextPoll = now + std::chrono::milliseconds(200);
+    if (!ensureMcpDirectory()) return;
+
+    DIR* directory = opendir(mcpDirectory().c_str());
+    if (directory == nullptr) return;
+    std::string requestName;
+    while (const dirent* entry = readdir(directory)) {
+        const std::string candidate = entry->d_name;
+        if (isMcpRequestName(candidate) &&
+            (requestName.empty() || candidate < requestName)) {
+            requestName = candidate;
+        }
+    }
+    closedir(directory);
+    if (requestName.empty()) return;
+
+    const std::string requestId = requestName.substr(8, 32);
+    const std::string requestPath = mcpDirectory() + "/" + requestName;
+    const std::string processingPath =
+        mcpDirectory() + "/processing-" + requestId + ".txt";
+    if (std::rename(requestPath.c_str(), processingPath.c_str()) != 0) return;
+
+    gMcpRequestInProgress = true;
+    std::ifstream request(processingPath, std::ios::binary);
+    std::ostringstream requestBuffer;
+    requestBuffer << request.rdbuf();
+    const bool requestReadable = request.good() || request.eof();
+    request.close();
+    std::string sourcePath = requestBuffer.str();
+    if (!sourcePath.empty() && sourcePath.back() == '\n') sourcePath.pop_back();
+    if (!sourcePath.empty() && sourcePath.back() == '\r') sourcePath.pop_back();
+
+    bool succeeded = false;
+    if (!requestReadable || sourcePath.empty() || sourcePath.front() != '/' ||
+        sourcePath.find('\n') != std::string::npos ||
+        sourcePath.find('\r') != std::string::npos) {
+        gLastTopologyExportError = "invalid MCP request payload";
+    } else {
+        succeeded = exportRegionTopologyFromPath(sourcePath);
+    }
+
+    std::ostringstream response;
+    response << "{\"schema\":\"green-atlas.autocad-mcp-response/1\","
+             << "\"request_id\":\"" << requestId << "\","
+             << "\"success\":" << (succeeded ? "true" : "false") << ","
+             << "\"source_path\":\"" << jsonEscape(sourcePath) << "\","
+             << "\"output_path\":";
+    if (succeeded) response << "\"" << jsonEscape(gLastTopologyExportPath) << "\"";
+    else response << "null";
+    response << ",\"error\":";
+    if (succeeded) response << "null";
+    else response << "\"" << jsonEscape(gLastTopologyExportError) << "\"";
+    response << "}\n";
+    writeAtomicText(
+        mcpDirectory() + "/response-" + requestId + ".json",
+        response.str());
+    std::remove(processingPath.c_str());
+    publishMcpStatus(true);
+    gMcpRequestInProgress = false;
 }
 
 void initialize() {
@@ -1228,12 +1664,16 @@ void initialize() {
     acedRegCmds->addCommand(kCommandGroup, _T("GAEXPORTREGIONPROBE"),
                             _T("GAEXPORTREGIONPROBE"), ACRX_CMD_MODAL,
                             exportRegionTopologyProbe);
-    acedRegCmds->addCommand(kCommandGroup, _T("GAEXPORTREGIONFILE"),
-                            _T("GAEXPORTREGIONFILE"), ACRX_CMD_MODAL,
+    acedRegCmds->addCommand(kCommandGroup, _T("GAEXPORTSNAPSHOTFILE"),
+                            _T("GAEXPORTSNAPSHOTFILE"), ACRX_CMD_MODAL,
                             exportRegionTopologyFromSourceFile);
+    acedRegisterOnIdleWinMsg(processMcpRequestsOnIdle);
+    publishMcpStatus(true);
 }
 
 void unload() {
+    acedRemoveOnIdleWinMsg(processMcpRequestsOnIdle);
+    publishMcpStatus(false);
     acedRegCmds->removeGroup(kCommandGroup);
 }
 

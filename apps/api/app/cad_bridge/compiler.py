@@ -7,12 +7,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from .contracts import CadSnapshot, RegionGeometry
+from .contracts import CadSnapshot, PathGeometry, PointGeometry, RegionGeometry
 
 REGION_PROBE_SCHEMA = "green-atlas.autocad-region-topology-probe/1"
 SNAPSHOT_SCHEMA = "green-atlas.autocad-snapshot/1"
-SUPPORTED_PLUGIN_VERSIONS = {"0.1.4", "0.1.5", "0.1.6"}
-XREF_DEPENDENCY_PLUGIN_VERSIONS = {"0.1.6"}
+SUPPORTED_PLUGIN_VERSIONS = {"0.1.4", "0.1.5", "0.1.6", "0.1.7", "0.1.8"}
+XREF_DEPENDENCY_PLUGIN_VERSIONS = {"0.1.6", "0.1.7", "0.1.8"}
 BLOCKING_DIAGNOSTICS = (
     "cyclic_block_references",
     "unloaded_xref_block_references",
@@ -58,10 +58,10 @@ def _identity_key(record: dict[str, Any]) -> tuple[str, tuple[str, ...]]:
     return identity["handle"], tuple(identity["instance_chain"])
 
 
-def _geometry_id(record: dict[str, Any]) -> str:
+def _geometry_id(record: dict[str, Any], kind: str = "region") -> str:
     identity = _identity(record)
     path = "/".join([*identity["instance_chain"], identity["handle"]])
-    return f"region/{path}"
+    return f"{kind}/{path}"
 
 
 def _signed_xy_area(coordinates: list[list[float]]) -> float:
@@ -136,10 +136,14 @@ def _compile_xref_dependencies(
             or not isinstance(claimed_bytes, int)
             or claimed_bytes <= 0
         ):
-            raise CadSnapshotAdmissionError("native XREF dependency metadata is incomplete")
+            raise CadSnapshotAdmissionError(
+                "native XREF dependency metadata is incomplete"
+            )
         candidate = Path(resolved_path)
         if candidate.is_symlink():
-            raise CadSnapshotAdmissionError("native XREF dependency cannot be a symlink")
+            raise CadSnapshotAdmissionError(
+                "native XREF dependency cannot be a symlink"
+            )
         try:
             resolved = candidate.resolve(strict=True)
         except OSError as error:
@@ -180,14 +184,15 @@ def compile_region_probe(
     probe: dict[str, Any],
     *,
     autocad_version: str,
-    target: Literal["macos-arm64", "windows-x86_64"],
+    target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
     package_root: Path | None = None,
 ) -> CadSnapshot:
-    """Compile admitted native REGION evidence into the stable API contract.
+    """Compile admitted native AutoCAD evidence into the stable API contract.
 
     ``complete`` in snapshot-v1 means that every reachable source instance is
     represented in the coverage ledger.  It does not pretend that every entity
-    has calculation geometry: unsupported entities remain ``unresolved``.
+    has calculation geometry: unsupported entities remain ``unresolved`` and
+    cannot be silently delegated to another parser.
     """
 
     if probe.get("schema") != REGION_PROBE_SCHEMA:
@@ -200,9 +205,13 @@ def compile_region_probe(
     if source.get("database_modified_flags") != 0:
         raise CadSnapshotAdmissionError("native database reports unsaved modifications")
     if source.get("live_database_matches_disk") is not True:
-        raise CadSnapshotAdmissionError("native database is not proven equal to source DXF")
+        raise CadSnapshotAdmissionError(
+            "native database is not proven equal to source DXF"
+        )
     metres_per_unit = source.get("metres_per_unit")
-    if not isinstance(metres_per_unit, (int, float)) or not math.isfinite(metres_per_unit):
+    if not isinstance(metres_per_unit, (int, float)) or not math.isfinite(
+        metres_per_unit
+    ):
         raise CadSnapshotAdmissionError("source unit conversion is missing")
     if metres_per_unit <= 0:
         raise CadSnapshotAdmissionError("source unit conversion must be positive")
@@ -222,7 +231,11 @@ def compile_region_probe(
         raise CadSnapshotAdmissionError(
             f"native summary misses traversal diagnostics: {missing_diagnostics}"
         )
-    blockers = {field: summary.get(field) for field in BLOCKING_DIAGNOSTICS if summary.get(field) != 0}
+    blockers = {
+        field: summary.get(field)
+        for field in BLOCKING_DIAGNOSTICS
+        if summary.get(field) != 0
+    }
     if blockers:
         raise CadSnapshotAdmissionError(f"native traversal is incomplete: {blockers}")
 
@@ -230,39 +243,84 @@ def compile_region_probe(
 
     raw_coverage = probe.get("coverage")
     raw_regions = probe.get("regions")
-    if not isinstance(raw_coverage, list) or not isinstance(raw_regions, list):
-        raise CadSnapshotAdmissionError("coverage and regions must be arrays")
+    raw_paths = probe.get("paths", [])
+    raw_points = probe.get("points", [])
+    if (
+        not isinstance(raw_coverage, list)
+        or not isinstance(raw_regions, list)
+        or not isinstance(raw_paths, list)
+        or not isinstance(raw_points, list)
+    ):
+        raise CadSnapshotAdmissionError(
+            "coverage, regions, paths and points must be arrays"
+        )
     coverage_keys = [_identity_key(record) for record in raw_coverage]
     if len(coverage_keys) != len(set(coverage_keys)):
         raise CadSnapshotAdmissionError("duplicate source instance in native coverage")
     if summary.get("source_instances") != len(raw_coverage):
-        raise CadSnapshotAdmissionError("native source instance count differs from coverage")
+        raise CadSnapshotAdmissionError(
+            "native source instance count differs from coverage"
+        )
 
     raw_regions_by_key = {_identity_key(region): region for region in raw_regions}
     if len(raw_regions_by_key) != len(raw_regions):
         raise CadSnapshotAdmissionError("duplicate REGION instance in native geometry")
+    raw_paths_by_key = {_identity_key(path): path for path in raw_paths}
+    raw_points_by_key = {_identity_key(point): point for point in raw_points}
+    if len(raw_paths_by_key) != len(raw_paths):
+        raise CadSnapshotAdmissionError("duplicate path instance in native geometry")
+    if len(raw_points_by_key) != len(raw_points):
+        raise CadSnapshotAdmissionError("duplicate point instance in native geometry")
+    geometry_keys = (
+        set(raw_regions_by_key) | set(raw_paths_by_key) | set(raw_points_by_key)
+    )
+    if len(geometry_keys) != len(raw_regions_by_key) + len(raw_paths_by_key) + len(
+        raw_points_by_key
+    ):
+        raise CadSnapshotAdmissionError(
+            "one source instance emitted multiple native geometry records"
+        )
     native_coverage_keys = {
-        _identity_key(record) for record in raw_coverage if record.get("status") == "native"
+        _identity_key(record)
+        for record in raw_coverage
+        if record.get("status") == "native"
     }
-    if native_coverage_keys != set(raw_regions_by_key):
-        raise CadSnapshotAdmissionError("native coverage does not match REGION geometry")
+    if native_coverage_keys != geometry_keys:
+        raise CadSnapshotAdmissionError(
+            "native coverage does not match emitted AutoCAD geometry"
+        )
     if summary.get("regions") != len(raw_regions):
         raise CadSnapshotAdmissionError("native REGION count differs from geometry")
     if summary.get("resolved") != len(raw_regions) or summary.get("unresolved") != 0:
         raise CadSnapshotAdmissionError("not every REGION instance was resolved")
+    if probe.get("plugin_version") in {"0.1.7", "0.1.8"}:
+        if summary.get("paths") != len(raw_paths):
+            raise CadSnapshotAdmissionError("native path count differs from geometry")
+        if summary.get("points") != len(raw_points):
+            raise CadSnapshotAdmissionError("native point count differs from geometry")
 
     geometry: list[dict[str, Any]] = []
     maximum_achieved_tolerance_m = 0.0
     tolerance_units = requested_tolerance_m / metres_per_unit
     for region in raw_regions:
         if region.get("status") != "native" or region.get("error_status") is not None:
-            raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} is unresolved")
+            raise CadSnapshotAdmissionError(
+                f"REGION {_geometry_id(region)} is unresolved"
+            )
         area = region.get("native_area_units2")
         perimeter = region.get("native_perimeter_units")
         if not isinstance(area, (int, float)) or not math.isfinite(area) or area <= 0:
-            raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} has invalid area")
-        if not isinstance(perimeter, (int, float)) or not math.isfinite(perimeter) or perimeter <= 0:
-            raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} has invalid perimeter")
+            raise CadSnapshotAdmissionError(
+                f"REGION {_geometry_id(region)} has invalid area"
+            )
+        if (
+            not isinstance(perimeter, (int, float))
+            or not math.isfinite(perimeter)
+            or perimeter <= 0
+        ):
+            raise CadSnapshotAdmissionError(
+                f"REGION {_geometry_id(region)} has invalid perimeter"
+            )
 
         loops: list[dict[str, Any]] = []
         achieved_tolerance_m = 0.0
@@ -273,15 +331,20 @@ def compile_region_probe(
         for loop in region.get("loops", []):
             coordinates = loop.get("coordinates")
             if not isinstance(coordinates, list) or len(coordinates) < 4:
-                raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} has a short loop")
+                raise CadSnapshotAdmissionError(
+                    f"REGION {_geometry_id(region)} has a short loop"
+                )
             if coordinates[0] != coordinates[-1]:
-                raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} has an open loop")
+                raise CadSnapshotAdmissionError(
+                    f"REGION {_geometry_id(region)} has an open loop"
+                )
             for point in coordinates:
-                if len(point) != 3 or not all(isinstance(value, (int, float)) and math.isfinite(value) for value in point):
-                    raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} has invalid coordinates")
-                if abs(point[2]) * metres_per_unit > requested_tolerance_m:
+                if len(point) != 3 or not all(
+                    isinstance(value, (int, float)) and math.isfinite(value)
+                    for value in point
+                ):
                     raise CadSnapshotAdmissionError(
-                        f"REGION {_geometry_id(region)} is not admitted by wcs-xy-planar projection"
+                        f"REGION {_geometry_id(region)} has invalid coordinates"
                     )
             sampled_deviation = loop.get("sampled_max_deviation_units")
             if (
@@ -289,7 +352,9 @@ def compile_region_probe(
                 or not math.isfinite(sampled_deviation)
                 or sampled_deviation < 0
             ):
-                raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} has invalid deviation")
+                raise CadSnapshotAdmissionError(
+                    f"REGION {_geometry_id(region)} has invalid deviation"
+                )
             loop_tolerance_m = sampled_deviation * metres_per_unit
             achieved_tolerance_m = max(achieved_tolerance_m, loop_tolerance_m)
             loop_area = abs(_signed_xy_area(coordinates))
@@ -311,7 +376,9 @@ def compile_region_probe(
                 }
             )
         if not loops:
-            raise CadSnapshotAdmissionError(f"REGION {_geometry_id(region)} has no loops")
+            raise CadSnapshotAdmissionError(
+                f"REGION {_geometry_id(region)} has no loops"
+            )
         if outer_count != 1:
             raise CadSnapshotAdmissionError(
                 f"REGION {_geometry_id(region)} must have exactly one outer loop"
@@ -333,7 +400,9 @@ def compile_region_probe(
             raise CadSnapshotAdmissionError(
                 f"REGION {_geometry_id(region)} exceeds requested sampling tolerance"
             )
-        maximum_achieved_tolerance_m = max(maximum_achieved_tolerance_m, achieved_tolerance_m)
+        maximum_achieved_tolerance_m = max(
+            maximum_achieved_tolerance_m, achieved_tolerance_m
+        )
         geometry_payload = {
             "id": _geometry_id(region),
             "identity": _identity(region),
@@ -356,7 +425,126 @@ def compile_region_probe(
         )
         geometry.append(normalized_geometry)
 
-    geometry_ids_by_key = {_identity_key(region): _geometry_id(region) for region in raw_regions}
+    for path in raw_paths:
+        geometry_id = _geometry_id(path, "path")
+        coordinates = path.get("coordinates")
+        closed = path.get("closed")
+        if path.get("status") != "native" or path.get("error_status") is not None:
+            raise CadSnapshotAdmissionError(f"path {geometry_id} is unresolved")
+        if not isinstance(closed, bool):
+            raise CadSnapshotAdmissionError(f"path {geometry_id} misses closure state")
+        if not isinstance(coordinates, list) or len(coordinates) < (4 if closed else 2):
+            raise CadSnapshotAdmissionError(
+                f"path {geometry_id} has too few coordinates"
+            )
+        if closed and coordinates[0] != coordinates[-1]:
+            raise CadSnapshotAdmissionError(f"path {geometry_id} is not closed")
+        if not closed and coordinates[0] == coordinates[-1]:
+            raise CadSnapshotAdmissionError(
+                f"path {geometry_id} has equal open endpoints"
+            )
+        for point in coordinates:
+            if (
+                not isinstance(point, list)
+                or len(point) != 3
+                or not all(
+                    isinstance(value, (int, float)) and math.isfinite(value)
+                    for value in point
+                )
+            ):
+                raise CadSnapshotAdmissionError(
+                    f"path {geometry_id} has invalid coordinates"
+                )
+        projected_length = sum(
+            math.dist(left[:2], right[:2])
+            for left, right in zip(coordinates, coordinates[1:], strict=False)
+        )
+        if projected_length * metres_per_unit <= requested_tolerance_m:
+            raise CadSnapshotAdmissionError(
+                f"path {geometry_id} degenerates under WCS XY projection"
+            )
+        if closed and abs(_signed_xy_area(coordinates)) * metres_per_unit**2 <= (
+            requested_tolerance_m**2
+        ):
+            raise CadSnapshotAdmissionError(
+                f"closed path {geometry_id} has no WCS XY area"
+            )
+        sampled_deviation = path.get("sampled_max_deviation_units")
+        if (
+            not isinstance(sampled_deviation, (int, float))
+            or not math.isfinite(sampled_deviation)
+            or sampled_deviation < 0
+        ):
+            raise CadSnapshotAdmissionError(f"path {geometry_id} has invalid deviation")
+        achieved_tolerance_m = sampled_deviation * metres_per_unit
+        if achieved_tolerance_m > requested_tolerance_m * (1 + 1e-12):
+            raise CadSnapshotAdmissionError(
+                f"path {geometry_id} exceeds requested sampling tolerance"
+            )
+        maximum_achieved_tolerance_m = max(
+            maximum_achieved_tolerance_m, achieved_tolerance_m
+        )
+        geometry_payload = {
+            "id": geometry_id,
+            "identity": _identity(path),
+            "kind": "path",
+            "closed": closed,
+            "coordinates": coordinates,
+            "achieved_tolerance_m": achieved_tolerance_m,
+            "content_sha256": "0" * 64,
+        }
+        normalized_geometry = PathGeometry.model_validate(geometry_payload).model_dump(
+            mode="json"
+        )
+        normalized_geometry["content_sha256"] = _canonical_sha256(
+            {
+                key: value
+                for key, value in normalized_geometry.items()
+                if key != "content_sha256"
+            }
+        )
+        geometry.append(normalized_geometry)
+
+    for point in raw_points:
+        geometry_id = _geometry_id(point, "point")
+        coordinates = point.get("coordinates")
+        if point.get("status") != "native" or point.get("error_status") is not None:
+            raise CadSnapshotAdmissionError(f"point {geometry_id} is unresolved")
+        if (
+            not isinstance(coordinates, list)
+            or len(coordinates) != 3
+            or not all(
+                isinstance(value, (int, float)) and math.isfinite(value)
+                for value in coordinates
+            )
+        ):
+            raise CadSnapshotAdmissionError(
+                f"point {geometry_id} has invalid coordinates"
+            )
+        geometry_payload = {
+            "id": geometry_id,
+            "identity": _identity(point),
+            "kind": "point",
+            "coordinates": coordinates,
+            "content_sha256": "0" * 64,
+        }
+        normalized_geometry = PointGeometry.model_validate(geometry_payload).model_dump(
+            mode="json"
+        )
+        normalized_geometry["content_sha256"] = _canonical_sha256(
+            {
+                key: value
+                for key, value in normalized_geometry.items()
+                if key != "content_sha256"
+            }
+        )
+        geometry.append(normalized_geometry)
+
+    geometry_ids_by_key = {
+        **{_identity_key(region): _geometry_id(region) for region in raw_regions},
+        **{_identity_key(path): _geometry_id(path, "path") for path in raw_paths},
+        **{_identity_key(point): _geometry_id(point, "point") for point in raw_points},
+    }
     coverage: list[dict[str, Any]] = []
     referenced_dependency_ids: set[str] = set()
     xref_coverage_count = 0
@@ -434,11 +622,7 @@ def compile_region_probe(
         by_alias=True, mode="json", exclude_none=True
     )
     normalized_snapshot["summary"]["payload_sha256"] = _canonical_sha256(
-        {
-            key: value
-            for key, value in normalized_snapshot.items()
-            if key != "summary"
-        }
+        {key: value for key, value in normalized_snapshot.items() if key != "summary"}
     )
     admitted = CadSnapshot.model_validate(normalized_snapshot)
     if maximum_achieved_tolerance_m > admitted.extraction.requested_tolerance_m:

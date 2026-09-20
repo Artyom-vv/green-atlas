@@ -7141,6 +7141,14 @@
             "minItems": 1,
             "title": "Entries"
           },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/CadFingerprint"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Snapshots"
+          },
           "total_bytes": {
             "type": "integer",
             "exclusiveMinimum": 0.0,

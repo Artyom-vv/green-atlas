@@ -11,6 +11,20 @@ it('uploads all DXFs and lets the operator choose the main drawing', async () =>
   vi.spyOn(api, 'uploadCadPackage').mockResolvedValue({
     root_id: rootId,
     total_bytes: 6,
+    snapshots: [
+      {
+        root_id: rootId,
+        path: 'genplan.dxf.green-atlas.snapshot.json',
+        sha256: 'c'.repeat(64),
+        bytes: 1,
+      },
+      {
+        root_id: rootId,
+        path: 'geobase.dxf.green-atlas.snapshot.json',
+        sha256: 'd'.repeat(64),
+        bytes: 1,
+      },
+    ],
     entries: [
       {
         root_id: rootId,
@@ -37,7 +51,9 @@ it('uploads all DXFs and lets the operator choose the main drawing', async () =>
   );
   const files = [
     new File(['one'], 'genplan.dxf'),
+    new File(['{}'], 'genplan.dxf.green-atlas.snapshot.json'),
     new File(['two'], 'geobase.dxf'),
+    new File(['{}'], 'geobase.dxf.green-atlas.snapshot.json'),
   ];
   fireEvent.change(view.container.querySelector('input[type="file"]')!, {
     target: { files },

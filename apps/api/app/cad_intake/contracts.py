@@ -85,6 +85,7 @@ class CadFingerprint(BaseModel):
 class CadUploadPackage(BaseModel):
     root_id: str = Field(pattern=r"^upload-[a-f0-9]{32}$")
     entries: list[CadFingerprint] = Field(min_length=1, max_length=64)
+    snapshots: list[CadFingerprint] = Field(default_factory=list, max_length=64)
     total_bytes: int = Field(gt=0)
 
 

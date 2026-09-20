@@ -19,14 +19,23 @@ def test_uploaded_package_becomes_an_immutable_discovery_root(tmp_path: Path) ->
     package = asyncio.run(
         store_uploaded_package(
             config,
-            [upload("genplan.dxf", b"first"), upload("geobase.dxf", b"second")],
+            [
+                upload("genplan.dxf", b"first"),
+                upload("genplan.dxf.green-atlas.snapshot.json", b"native-1"),
+                upload("geobase.dxf", b"second"),
+                upload("geobase.dxf.green-atlas.snapshot.json", b"native-2"),
+            ],
         )
     )
 
-    assert package.total_bytes == 11
+    assert package.total_bytes == 27
     assert [entry.path for entry in package.entries] == [
         "genplan.dxf",
         "geobase.dxf",
+    ]
+    assert [entry.path for entry in package.snapshots] == [
+        "genplan.dxf.green-atlas.snapshot.json",
+        "geobase.dxf.green-atlas.snapshot.json",
     ]
     config.require_enabled(package.root_id)
     directory = CadDiscovery(config).directory(package.root_id)
@@ -52,8 +61,19 @@ def test_upload_rejects_paths_duplicates_and_total_overflow(
             )
         )
 
-    monkeypatch.setattr("app.cad_intake.uploads.MAX_CAD_UPLOAD_TOTAL_BYTES", 3)
+    with pytest.raises(ValueError, match="нужен точный AutoCAD snapshot"):
+        asyncio.run(store_uploaded_package(config, [upload("site.dxf", b"x")]))
+
+    monkeypatch.setattr("app.cad_intake.uploads.MAX_CAD_UPLOAD_TOTAL_BYTES", 5)
     with pytest.raises(ValueError, match="не больше 1 ГБ"):
-        asyncio.run(store_uploaded_package(config, [upload("site.dxf", b"four")]))
+        asyncio.run(
+            store_uploaded_package(
+                config,
+                [
+                    upload("site.dxf", b"four"),
+                    upload("site.dxf.green-atlas.snapshot.json", b"two"),
+                ],
+            )
+        )
     uploads = config.storage / "uploads"
     assert not uploads.exists() or not list(uploads.iterdir())

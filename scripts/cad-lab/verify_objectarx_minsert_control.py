@@ -59,7 +59,7 @@ def verify(
     baseline_probe_path: Path, control_source: Path, manifest_path: Path
 ) -> dict[str, Any]:
     baseline_probe = load(baseline_probe_path)
-    probe_path = Path(f"{control_source}.green-atlas.regions.json")
+    probe_path = Path(f"{control_source}.green-atlas.geometry.json")
     probe = load(probe_path)
     manifest = load(manifest_path)
     if digest(control_source) != manifest["control_sha256"]:

@@ -1,15 +1,16 @@
 # Green Atlas AutoCAD bridge
 
-Read-only ObjectARX 2027 bridge for extracting geometry that the portable DXF
-reader cannot project reliably. AutoCAD is an optional offline preparation
-tool and an independent verifier; it is not a Linux service dependency.
+Read-only ObjectARX 2027 bridge for making AutoCAD the authoritative geometry
+provider for Green Atlas imports. The web service consumes a verified native
+snapshot; it must not reinterpret calculation geometry with a second DXF
+parser.
 
-## Current state: 0.1.6
+## Current state: 0.1.8
 
 The macOS arm64 bundle is implemented and exercised in AutoCAD 2027.0.1. The
 admitted path is:
 
-1. `GAEXPORTREGIONFILE` opens the exact saved DXF in an isolated side database.
+1. `GAEXPORTSNAPSHOTFILE` opens the exact saved DXF in an isolated side database.
 2. The native traversal records every model-space entity instance, including
    nested `INSERT` descendants and attached `ATTRIB`, with a handle and complete
    instance chain.
@@ -23,18 +24,23 @@ admitted path is:
    generated inventories.
 5. `compile_autocad_region_probe.py` admits the raw probe into the hashed
    `green-atlas.autocad-snapshot/1` contract.
-6. Green Atlas merges only the admitted native geometry into the ordinary DXF
-   result. All other objects keep using the portable reader.
+6. Green Atlas admits only geometry carried by the native snapshot. Version
+   0.1.8 emits REGION/HATCH topology, finite `AcDbCurve` paths and `AcDbPoint`
+   coordinates. Remaining calculation-relevant types must be added here,
+   rather than delegated to a second importer.
+7. The local `green-atlas-autocad` MCP server submits preparation requests to
+   the ObjectARX plugin running in full AutoCAD and then invokes the admission
+   compiler. MCP does not parse or approximate CAD geometry.
 
 Unsupported geometry is not treated as empty space. Unreadable block
 records/entities, malformed MINSERT data and unresolved/unloaded XREFs are
 explicit traversal blockers. The
 compiler rejects such a probe instead of publishing partial native evidence.
 
-The compiler admits raw probes from safe bridge versions 0.1.4, 0.1.5 and
-0.1.6. It requires every known traversal diagnostic and independently
+The compiler admits historical probes from safe bridge versions 0.1.4 through
+0.1.8. It requires every known traversal diagnostic and independently
 reconstructs area and perimeter from the emitted loops before producing a
-snapshot. Only 0.1.6 can admit an XREF traversal: each contributing drawing is
+snapshot. Versions 0.1.6 through 0.1.8 can admit an XREF traversal: each contributing drawing is
 recorded by package-relative path, byte size and SHA-256, referenced from the
 coverage ledger and re-hashed by the service before publication.
 
@@ -51,17 +57,45 @@ Output:
 
 ```text
 .runtime/autocad-bridge/macos/GreenAtlasBridge.bundle
+.runtime/autocad-bridge/macos/GreenAtlasBridge.package.bundle
 ```
 
-The build is arm64, C++17 and ad-hoc signed. `PackageContents.xml` and the
-bundle metadata are pinned to AutoCAD R26.0 / plugin 0.1.6.
+The build is universal arm64/x86_64, C++17 and ad-hoc signed.
+`PackageContents.xml` and the bundle metadata are pinned to AutoCAD R26.0 /
+plugin 0.1.8. The package loads at AutoCAD startup because it also owns the
+local MCP request queue.
+
+## Local MCP installation
+
+Install the generated package for the current user:
+
+```sh
+ditto .runtime/autocad-bridge/macos/GreenAtlasBridge.package.bundle \
+  "$HOME/Library/Application Support/Autodesk/ApplicationPlugins/GreenAtlasBridge.bundle"
+```
+
+Register the stdio server in Codex:
+
+```sh
+codex mcp add green-atlas-autocad -- \
+  "$PWD/apps/api/.venv/bin/python" \
+  "$PWD/tools/autocad-bridge/mcp/green_atlas_autocad_mcp.py"
+```
+
+Restart AutoCAD once so the plugin is loaded, then start a new Codex task so
+its MCP tool inventory includes `autocad_bridge_status` and
+`autocad_prepare_dxf`. The official Autodesk AutoCAD MCP Tech Preview is
+Windows-only and currently targets Autodesk Assistant; the community servers
+audited for this task also require Windows COM/.NET. This local adapter exists
+to give Codex the same structured tool boundary on AutoCAD for Mac without
+introducing another geometry reader.
 
 ## Extract and compile a snapshot
 
 Load the bundle in AutoCAD, open the saved DXF and run:
 
 ```text
-GAEXPORTREGIONFILE
+GAEXPORTSNAPSHOTFILE
 ```
 
 The command does not traverse the potentially modified live document. It
@@ -69,7 +103,7 @@ imports the DXF into a separate `AcDbDatabase`, requires known drawing units,
 hashes the source bytes and writes atomically:
 
 ```text
-<source>.dxf.green-atlas.regions.json
+<source>.dxf.green-atlas.geometry.json
 ```
 
 Compile and revalidate the probe:
@@ -77,7 +111,7 @@ Compile and revalidate the probe:
 ```sh
 PYTHONPATH=apps/api apps/api/.venv/bin/python \
   scripts/cad-lab/compile_autocad_region_probe.py \
-  '<source>.dxf.green-atlas.regions.json' \
+  '<source>.dxf.green-atlas.geometry.json' \
   --autocad-version 2027.0.1 \
   --target macos-arm64 \
   --package-root '<directory containing the full CAD package>'
@@ -92,16 +126,16 @@ With no output argument, the compiler writes the deterministic adjacent file:
 The full prepared-import flow discovers that exact name automatically. It
 binds the sidecar by path, file SHA-256, embedded source SHA-256 and payload /
 per-geometry hashes, then rechecks the sidecar immediately before atomic
-publication. A missing sidecar leaves the portable Linux/Docker path unchanged.
-The ordinary upload endpoint also accepts the same snapshot as the optional
-`cad_snapshot` multipart part.
+publication. A missing or invalid native snapshot blocks import; it does not
+fall back to `ezdxf`. The browser upload requires one adjacent snapshot for
+every DXF.
 
 ## Commands
 
 - `GAEXPORTPROBE`: early root inventory/measurement diagnostic.
 - `GAEXPORTREGIONPROBE`: topology from the current live database. A non-zero
   `DBMOD` makes it diagnostic only; the compiler will not admit it.
-- `GAEXPORTREGIONFILE`: product preparation path using an isolated DXF side
+- `GAEXPORTSNAPSHOTFILE`: product preparation path using an isolated DXF side
   database. This is the only currently admissible native capture mode.
 
 The raw REGION file intentionally has `complete: false`: it is evidence to be
@@ -123,9 +157,11 @@ For source SHA-256
 
 Receipts are under
 `.runtime/kustanayskaya-mac-ready-20260917/` and are intentionally local.
-The 104,835 `unresolved` native coverage records are not 104,835 lost objects:
-version 0.1.6 emits native geometry only for REGION, while the ordinary reader
-continues to handle standard LINE, ARC, HATCH, text and other supported types.
+These numbers document the superseded 0.1.6 migration experiment: its 104,835
+`unresolved` records were temporarily supplied by the portable reader. They do
+not describe the 0.1.8 product path and must not be used to justify a fallback.
+The current bridge must emit every calculation-relevant object itself or reject
+the drawing with explicit coverage evidence.
 
 The figures above were first established with 0.1.3 and reproduced with 0.1.4
 and 0.1.6 on the same source SHA. The 0.1.6 run again yields 92,945 features
@@ -158,7 +194,7 @@ PYTHONPATH=apps/api apps/api/.venv/bin/python \
   .runtime/objectarx-native-controls-20260917/resolved-xref-dwg-positive/verification-v016.json
 ```
 
-Verified through 0.1.6:
+Historical native controls verified through 0.1.6:
 
 - root REGION and a nested REGION with a hole are both admitted;
 - the nested instance combines parent/child rotation and non-uniform scale;
@@ -166,8 +202,8 @@ Verified through 0.1.6:
   differs in area by less than `4e-12`;
 - provider merge adds both REGION geometries and leaves no incomplete layer;
 - MINSERT 2×2 expands four cell-specific provenance chains; its rotated grid
-  offsets remain unscaled by block scale and match an independent ezdxf model
-  within `5.69e-14` source units;
+  offsets remain unscaled by block scale and matched the independent migration
+  oracle within `5.69e-14` source units;
 - an unresolved XREF fails closed even when `isUnloaded()` is false;
 - a loaded DWG XREF contributes two REGION instances with exact dependency
   SHA/size/path provenance; independent affine verification has maximum
@@ -175,7 +211,9 @@ Verified through 0.1.6:
 
 ## Honest boundary
 
-- Native geometry output currently covers REGION only.
+- Native geometry output currently covers REGION, HATCH areas that AutoCAD can
+  convert to a native region, finite AcDbCurve instances and AcDbPoint. Other
+  non-context calculation entities remain explicit incomplete coverage.
 - Valid MINSERT grids are expanded per cell; malformed row/column/spacing data
   fails admission closed.
 - Unloaded XREF contents cannot be recovered without the referenced files.

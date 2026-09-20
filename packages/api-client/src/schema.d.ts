@@ -2118,6 +2118,8 @@ export interface components {
             root_id: string;
             /** Entries */
             entries: components["schemas"]["CadFingerprint"][];
+            /** Snapshots */
+            snapshots?: components["schemas"]["CadFingerprint"][];
             /** Total Bytes */
             total_bytes: number;
         };

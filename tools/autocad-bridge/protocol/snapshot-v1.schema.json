@@ -25,7 +25,7 @@
       "properties": {
         "autocad_version": {"type": "string", "minLength": 1},
         "plugin_version": {"type": "string", "minLength": 1},
-        "target": {"enum": ["macos-arm64", "windows-x86_64"]},
+        "target": {"enum": ["macos-arm64", "macos-x86_64", "windows-x86_64"]},
         "projection": {"enum": ["wcs-xy-planar"]},
         "requested_tolerance_m": {"type": "number", "exclusiveMinimum": 0}
       }
@@ -108,13 +108,31 @@
       }
     },
     "geometry": {
+      "oneOf": [
+        {"$ref": "#/$defs/regionGeometry"},
+        {"$ref": "#/$defs/pathGeometry"},
+        {"$ref": "#/$defs/pointGeometry"}
+      ]
+    },
+    "geometryIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "identity", "kind", "content_sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "identity": {"$ref": "#/$defs/identity"},
+        "kind": {"enum": ["region", "path", "point"]},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "regionGeometry": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "identity", "kind", "loops", "native_area_units2", "native_perimeter_units", "achieved_tolerance_m", "content_sha256"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "identity": {"$ref": "#/$defs/identity"},
-        "kind": {"enum": ["region"]},
+        "kind": {"const": "region"},
         "loops": {
           "type": "array",
           "minItems": 1,
@@ -142,6 +160,48 @@
         "native_area_units2": {"type": "number", "minimum": 0},
         "native_perimeter_units": {"type": "number", "minimum": 0},
         "achieved_tolerance_m": {"type": "number", "minimum": 0},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "pathGeometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "identity", "kind", "closed", "coordinates", "achieved_tolerance_m", "content_sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "identity": {"$ref": "#/$defs/identity"},
+        "kind": {"const": "path"},
+        "closed": {"type": "boolean"},
+        "coordinates": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "array",
+            "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}],
+            "items": false,
+            "minItems": 3,
+            "maxItems": 3
+          }
+        },
+        "achieved_tolerance_m": {"type": "number", "minimum": 0},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "pointGeometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "identity", "kind", "coordinates", "content_sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "identity": {"$ref": "#/$defs/identity"},
+        "kind": {"const": "point"},
+        "coordinates": {
+          "type": "array",
+          "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        },
         "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       }
     }

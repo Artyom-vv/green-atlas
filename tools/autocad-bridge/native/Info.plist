@@ -14,9 +14,17 @@
   <string>Green Atlas Bridge</string>
   <key>CFBundlePackageType</key>
   <string>BNDL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleSupportedPlatforms</key>
+  <array>
+    <string>MacOSX</string>
+  </array>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.6</string>
+  <string>0.1.8</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <key>NSPrincipalClass</key>
+  <string></string>
 </dict>
 </plist>

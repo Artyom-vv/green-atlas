@@ -141,6 +141,60 @@ def probe_with_xref(package_root: Path) -> dict:
     return probe
 
 
+def probe_with_native_primitives() -> dict:
+    probe = valid_probe()
+    probe["plugin_version"] = "0.1.7"
+    probe["coverage"].extend(
+        [
+            {
+                "handle": "C1",
+                "instance_chain": [],
+                "entity_type": "AcDbPolyline",
+                "layer": "ROAD",
+                "status": "native",
+                "method": "autodesk-acdbcurve-adaptive-sampling",
+                "reason": None,
+            },
+            {
+                "handle": "D1",
+                "instance_chain": ["10"],
+                "entity_type": "AcDbPoint",
+                "layer": "TREE",
+                "status": "native",
+                "method": "autodesk-acdbpoint-wcs",
+                "reason": None,
+            },
+        ]
+    )
+    probe["paths"] = [
+        {
+            "handle": "C1",
+            "instance_chain": [],
+            "status": "native",
+            "error_status": None,
+            "closed": True,
+            "sampled_max_deviation_units": 0.00025,
+            "coordinates": [
+                [0, 0, 150],
+                [20, 0, 150.1],
+                [20, 5, 150.2],
+                [0, 0, 150],
+            ],
+        }
+    ]
+    probe["points"] = [
+        {
+            "handle": "D1",
+            "instance_chain": ["10"],
+            "status": "native",
+            "error_status": None,
+            "coordinates": [4, 3, 151.25],
+        }
+    ]
+    probe["summary"].update(source_instances=5, native=3, paths=1, points=1)
+    return probe
+
+
 def test_compiles_complete_ledger_without_claiming_unsupported_geometry() -> None:
     snapshot = compile(valid_probe())
     assert snapshot.summary.source_instances == 3
@@ -153,6 +207,22 @@ def test_compiles_complete_ledger_without_claiming_unsupported_geometry() -> Non
     assert snapshot.coverage[2].geometry_ids == []
 
 
+def test_compiles_native_curve_and_point_without_portable_reader() -> None:
+    snapshot = compile(probe_with_native_primitives())
+
+    assert [geometry.kind for geometry in snapshot.geometry] == [
+        "region",
+        "path",
+        "point",
+    ]
+    path = snapshot.geometry[1]
+    assert path.id == "path/C1"
+    assert path.closed is True
+    assert path.achieved_tolerance_m == 0.00025
+    assert snapshot.geometry[2].id == "point/10/D1"
+    assert snapshot.summary.native == 3
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -162,9 +232,7 @@ def test_compiles_complete_ledger_without_claiming_unsupported_geometry() -> Non
             "unsupported native probe plugin version",
         ),
         (
-            lambda value: value["summary"].pop(
-                "unresolved_xref_block_references"
-            ),
+            lambda value: value["summary"].pop("unresolved_xref_block_references"),
             "misses traversal diagnostics",
         ),
         (
@@ -172,9 +240,7 @@ def test_compiles_complete_ledger_without_claiming_unsupported_geometry() -> Non
             "traversal is incomplete",
         ),
         (
-            lambda value: value["summary"].update(
-                unresolved_xref_block_references=1
-            ),
+            lambda value: value["summary"].update(unresolved_xref_block_references=1),
             "traversal is incomplete",
         ),
         (
@@ -185,9 +251,9 @@ def test_compiles_complete_ledger_without_claiming_unsupported_geometry() -> Non
         ),
         (
             lambda value: value["regions"][0]["loops"][0]["coordinates"][1].__setitem__(
-                2, 0.1
+                0, float("nan")
             ),
-            "wcs-xy-planar",
+            "invalid coordinates",
         ),
         (
             lambda value: value["coverage"].pop(),

@@ -31,7 +31,7 @@ def load(path: Path) -> dict[str, Any]:
 
 
 def verify(positive_source: Path, negative_manifest: Path) -> dict[str, Any]:
-    positive_probe_path = Path(f"{positive_source}.green-atlas.regions.json")
+    positive_probe_path = Path(f"{positive_source}.green-atlas.geometry.json")
     positive_probe = load(positive_probe_path)
     if positive_probe["source"]["sha256"] != digest(positive_source):
         raise ValueError("positive probe source hash differs")
@@ -75,7 +75,7 @@ def verify(positive_source: Path, negative_manifest: Path) -> dict[str, Any]:
         source = Path(control["path"])
         if digest(source) != control["sha256"]:
             raise ValueError(f"{name} control source hash differs")
-        probe = load(Path(f"{source}.green-atlas.regions.json"))
+        probe = load(Path(f"{source}.green-atlas.geometry.json"))
         blocker = control["expected_blocker"]
         count = probe["summary"].get(blocker)
         if not isinstance(count, int) or count <= 0:
