@@ -11,8 +11,30 @@ from .contracts import CadSnapshot, PathGeometry, PointGeometry, RegionGeometry
 
 REGION_PROBE_SCHEMA = "green-atlas.autocad-region-topology-probe/1"
 SNAPSHOT_SCHEMA = "green-atlas.autocad-snapshot/1"
-SUPPORTED_PLUGIN_VERSIONS = {"0.1.4", "0.1.5", "0.1.6", "0.1.7", "0.1.8"}
-XREF_DEPENDENCY_PLUGIN_VERSIONS = {"0.1.6", "0.1.7", "0.1.8"}
+SUPPORTED_PLUGIN_VERSIONS = {
+    "0.1.4",
+    "0.1.5",
+    "0.1.6",
+    "0.1.7",
+    "0.1.8",
+    "0.1.9",
+    "0.1.10",
+    "0.1.11",
+    "0.1.12",
+    "0.1.13",
+    "0.1.14",
+}
+XREF_DEPENDENCY_PLUGIN_VERSIONS = {
+    "0.1.6",
+    "0.1.7",
+    "0.1.8",
+    "0.1.9",
+    "0.1.10",
+    "0.1.11",
+    "0.1.12",
+    "0.1.13",
+    "0.1.14",
+}
 BLOCKING_DIAGNOSTICS = (
     "cyclic_block_references",
     "unloaded_xref_block_references",
@@ -293,7 +315,16 @@ def compile_region_probe(
         raise CadSnapshotAdmissionError("native REGION count differs from geometry")
     if summary.get("resolved") != len(raw_regions) or summary.get("unresolved") != 0:
         raise CadSnapshotAdmissionError("not every REGION instance was resolved")
-    if probe.get("plugin_version") in {"0.1.7", "0.1.8"}:
+    if probe.get("plugin_version") in {
+        "0.1.7",
+        "0.1.8",
+        "0.1.9",
+        "0.1.10",
+        "0.1.11",
+        "0.1.12",
+        "0.1.13",
+        "0.1.14",
+    }:
         if summary.get("paths") != len(raw_paths):
             raise CadSnapshotAdmissionError("native path count differs from geometry")
         if summary.get("points") != len(raw_points):

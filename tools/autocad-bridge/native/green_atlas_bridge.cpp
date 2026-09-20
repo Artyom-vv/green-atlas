@@ -9,6 +9,7 @@
 #include "dbsymtb.h"
 #include "dbents.h"
 #include "dbcurve.h"
+#include "dbpl.h"
 #include "dbhatch.h"
 #include "dbregion.h"
 #include "acdbxref.h"
@@ -44,7 +45,7 @@
 namespace {
 
 constexpr const ACHAR* kCommandGroup = _T("GREEN_ATLAS");
-constexpr const char* kPluginVersion = "0.1.8";
+constexpr const char* kPluginVersion = "0.1.14";
 constexpr double kRequestedToleranceMetres = 0.0001;
 constexpr int kMaximumSamplingDepth = 24;
 bool gSideDatabaseCapture = false;
@@ -410,10 +411,73 @@ bool sampleDatabaseCurveInterval(const AcDbCurve* curve,
                sampledMaximumDeviation);
 }
 
+bool extractLightweightPolyline(const AcDbPolyline* polyline,
+                                const AcGeMatrix3d& transform,
+                                const double tolerance,
+                                NativePath& result) {
+    const unsigned int vertexCount = polyline->numVerts();
+    if (vertexCount < 2) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    const bool authoredClosed = polyline->isClosed();
+    const unsigned int segmentCount = authoredClosed ? vertexCount : vertexCount - 1;
+    for (unsigned int index = 0; index < segmentCount; ++index) {
+        const AcDbPolyline::SegType segmentType = polyline->segType(index);
+        bool sampled = false;
+        if (segmentType == AcDbPolyline::kLine) {
+            AcGeLineSeg3d segment;
+            if (polyline->getLineSegAt(index, segment) == Acad::eOk) {
+                sampled = appendSampledCurve(
+                    segment, transform, tolerance, result.coordinates,
+                    result.sampledMaximumDeviation);
+            }
+        } else if (segmentType == AcDbPolyline::kArc) {
+            AcGeCircArc3d segment;
+            if (polyline->getArcSegAt(index, segment) == Acad::eOk) {
+                sampled = appendSampledCurve(
+                    segment, transform, tolerance, result.coordinates,
+                    result.sampledMaximumDeviation);
+            }
+        } else if (segmentType == AcDbPolyline::kCoincident ||
+                   segmentType == AcDbPolyline::kPoint ||
+                   segmentType == AcDbPolyline::kEmpty) {
+            continue;
+        }
+        if (!sampled) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            return false;
+        }
+    }
+    result.closed = authoredClosed ||
+        (result.coordinates.size() >= 2 &&
+         pointDistance(result.coordinates.front(), result.coordinates.back()) <=
+             tolerance);
+    if (result.closed) {
+        if (result.coordinates.size() < 4 ||
+            pointDistance(result.coordinates.front(), result.coordinates.back()) >
+                tolerance) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            return false;
+        }
+        result.coordinates.back() = result.coordinates.front();
+    } else if (result.coordinates.size() < 2 ||
+               pointDistance(result.coordinates.front(), result.coordinates.back()) <=
+                   tolerance) {
+        result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    result.resolved = true;
+    return true;
+}
+
 bool extractDatabaseCurve(const AcDbCurve* curve,
                           const AcGeMatrix3d& transform,
                           const double tolerance,
                           NativePath& result) {
+    if (const AcDbPolyline* polyline = AcDbPolyline::cast(curve)) {
+        return extractLightweightPolyline(polyline, transform, tolerance, result);
+    }
     double startParameter = 0.0;
     double endParameter = 0.0;
     if (curve->getStartParam(startParameter) != Acad::eOk ||
@@ -442,7 +506,9 @@ bool extractDatabaseCurve(const AcDbCurve* curve,
         result.errorStatus = static_cast<int>(Acad::eInvalidInput);
         return false;
     }
-    result.closed = curve->isClosed();
+    result.closed = curve->isClosed() ||
+        pointDistance(result.coordinates.front(), result.coordinates.back()) <=
+            tolerance;
     if (result.closed) {
         if (pointDistance(result.coordinates.front(), result.coordinates.back()) >
             tolerance) {

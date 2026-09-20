@@ -5,7 +5,7 @@ provider for Green Atlas imports. The web service consumes a verified native
 snapshot; it must not reinterpret calculation geometry with a second DXF
 parser.
 
-## Current state: 0.1.8
+## Current state: 0.1.14
 
 The macOS arm64 bundle is implemented and exercised in AutoCAD 2027.0.1. The
 admitted path is:
@@ -25,7 +25,7 @@ admitted path is:
 5. `compile_autocad_region_probe.py` admits the raw probe into the hashed
    `green-atlas.autocad-snapshot/1` contract.
 6. Green Atlas admits only geometry carried by the native snapshot. Version
-   0.1.8 emits REGION/HATCH topology, finite `AcDbCurve` paths and `AcDbPoint`
+   0.1.14 emits REGION/HATCH topology, finite `AcDbCurve` paths and `AcDbPoint`
    coordinates. Remaining calculation-relevant types must be added here,
    rather than delegated to a second importer.
 7. The local `green-atlas-autocad` MCP server submits preparation requests to
@@ -38,9 +38,9 @@ explicit traversal blockers. The
 compiler rejects such a probe instead of publishing partial native evidence.
 
 The compiler admits historical probes from safe bridge versions 0.1.4 through
-0.1.8. It requires every known traversal diagnostic and independently
+0.1.14. It requires every known traversal diagnostic and independently
 reconstructs area and perimeter from the emitted loops before producing a
-snapshot. Versions 0.1.6 through 0.1.8 can admit an XREF traversal: each contributing drawing is
+snapshot. Versions 0.1.6 through 0.1.14 can admit an XREF traversal: each contributing drawing is
 recorded by package-relative path, byte size and SHA-256, referenced from the
 coverage ledger and re-hashed by the service before publication.
 
@@ -62,8 +62,10 @@ Output:
 
 The build is universal arm64/x86_64, C++17 and ad-hoc signed.
 `PackageContents.xml` and the bundle metadata are pinned to AutoCAD R26.0 /
-plugin 0.1.8. The package loads at AutoCAD startup because it also owns the
-local MCP request queue.
+plugin 0.1.14. The package owns the local MCP request queue. AutoCAD for Mac's
+Autoloader loads `green_atlas_loader.lsp` for each document and the idempotent
+bootstrap resolves and loads the adjacent ObjectARX bundle once per process.
+It does not read or transform CAD geometry.
 
 ## Local MCP installation
 
@@ -71,8 +73,12 @@ Install the generated package for the current user:
 
 ```sh
 ditto .runtime/autocad-bridge/macos/GreenAtlasBridge.package.bundle \
-  "$HOME/Library/Application Support/Autodesk/ApplicationPlugins/GreenAtlasBridge.bundle"
+  "$HOME/Library/Application Support/Autodesk/ApplicationAddins/GreenAtlasBridge.bundle"
 ```
+
+`ApplicationAddins` is the AutoCAD for Mac autoloader directory. The similarly
+named `ApplicationPlugins` user directory is the Windows deployment convention
+and is not scanned by AutoCAD for Mac.
 
 Register the stdio server in Codex:
 
@@ -159,7 +165,7 @@ Receipts are under
 `.runtime/kustanayskaya-mac-ready-20260917/` and are intentionally local.
 These numbers document the superseded 0.1.6 migration experiment: its 104,835
 `unresolved` records were temporarily supplied by the portable reader. They do
-not describe the 0.1.8 product path and must not be used to justify a fallback.
+not describe the current product path and must not be used to justify a fallback.
 The current bridge must emit every calculation-relevant object itself or reject
 the drawing with explicit coverage evidence.
 

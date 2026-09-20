@@ -57,6 +57,8 @@ rm -rf "$package_root"
 mkdir -p "$package_root/Contents/MacOS"
 cp "$repo_root/tools/autocad-bridge/PackageContents.xml" \
   "$package_root/PackageContents.xml"
+cp "$source_root/green_atlas_loader.lsp" \
+  "$package_root/Contents/green_atlas_loader.lsp"
 ditto "$bundle_root" "$package_root/Contents/MacOS/GreenAtlasBridge.bundle"
 echo "$bundle_root"
 echo "$package_root"

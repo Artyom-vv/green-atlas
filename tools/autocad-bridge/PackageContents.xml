@@ -1,22 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ApplicationPackage SchemaVersion="1.0"
-                    AppVersion="0.1.8"
+                    AppVersion="0.1.14"
                     ProductCode="{5A77DEBF-6BBC-4A18-8B4D-0DCB277F3F76}"
                     Name="Green Atlas Native Snapshot"
                     Author="Green Atlas">
   <CompanyDetails Name="Green Atlas" />
-  <RuntimeRequirements OS="Mac" Platform="AutoCAD*" SeriesMin="R26.0" SeriesMax="R26.0" />
+  <RuntimeRequirements OS="Mac" Platform="AutoCAD*" SeriesMin="R26.0"
+                       SeriesMax="R26.0" SupportPath="./Contents" />
   <Components>
     <ComponentEntry AppName="GreenAtlasBridge"
                     AppDescription="Read-only native CAD probe exporter"
                     ModuleName="./Contents/MacOS/GreenAtlasBridge.bundle"
                     AppType="Arx"
-                    LoadReasons="LoadOnAutoCADStartup">
-      <Commands GroupName="GREEN_ATLAS">
-        <Command Global="GAEXPORTPROBE" Local="GAEXPORTPROBE" />
-        <Command Global="GAEXPORTREGIONPROBE" Local="GAEXPORTREGIONPROBE" />
-        <Command Global="GAEXPORTSNAPSHOTFILE" Local="GAEXPORTSNAPSHOTFILE" />
-      </Commands>
-    </ComponentEntry>
+                    LoadOnAutoCADStartup="False"
+                    LoadOnCommandInvocation="False" />
+    <ComponentEntry AppName="GreenAtlasBridgeBootstrap"
+                    AppDescription="Loads the native bridge once per AutoCAD session"
+                    ModuleName="./Contents/green_atlas_loader.lsp"
+                    AppType="Lisp"
+                    PerDocument="True" />
   </Components>
 </ApplicationPackage>

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 
-from green_atlas_autocad_mcp import TOOLS, _handle
+import green_atlas_autocad_mcp
+from green_atlas_autocad_mcp import TOOLS, _bridge_status, _handle
 
 
 def test_initialize_and_list_tools() -> None:
@@ -38,3 +39,23 @@ def test_unknown_tool_is_a_tool_error() -> None:
     )
     assert response is not None
     assert response["result"]["isError"] is True
+
+
+def test_bridge_status_accepts_sandboxed_process_probe(tmp_path, monkeypatch) -> None:
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    (queue / "status.json").write_text(
+        json.dumps({"ready": True, "plugin_version": "test", "pid": 42})
+    )
+    monkeypatch.setattr(green_atlas_autocad_mcp, "_queue_directory", lambda: queue)
+
+    def deny_process_probe(pid: int, signal: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(green_atlas_autocad_mcp.os, "kill", deny_process_probe)
+
+    status = _bridge_status()
+
+    assert status["ready"] is True
+    assert status["process_alive"] is None
+    assert status["process_check"] == "permission-denied"

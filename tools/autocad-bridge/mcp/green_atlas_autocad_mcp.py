@@ -20,7 +20,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPILER = ROOT / "scripts" / "cad-lab" / "compile_autocad_region_probe.py"
-PLUGIN_VERSION = "0.1.8"
+PLUGIN_VERSION = "0.1.14"
 PROTOCOL_VERSION = "2025-06-18"
 
 
@@ -57,18 +57,30 @@ def _bridge_status() -> dict[str, Any]:
             "status_path": str(status_path),
         }
     pid = status.get("pid")
-    process_alive = False
+    process_alive: bool | None = False
+    process_check = "missing-pid"
     if isinstance(pid, int) and pid > 0:
         try:
             os.kill(pid, 0)
             process_alive = True
+            process_check = "confirmed"
+        except PermissionError:
+            # A sandboxed MCP host may be forbidden from probing an unrelated
+            # GUI process even when that process belongs to the same user.
+            # Treat EPERM as indeterminate; the queue request itself is the
+            # authoritative liveness check.
+            process_alive = None
+            process_check = "permission-denied"
+        except ProcessLookupError:
+            process_check = "not-found"
         except OSError:
-            pass
-    ready = bool(status.get("ready")) and process_alive
+            process_check = "unavailable"
+    ready = bool(status.get("ready")) and process_alive is not False
     return {
         **status,
         "ready": ready,
         "process_alive": process_alive,
+        "process_check": process_check,
         "status_path": str(status_path),
         "reason": None if ready else "AutoCAD plugin is not active",
     }
@@ -187,7 +199,11 @@ TOOLS = [
             "Check whether the installed Green Atlas ObjectARX bridge is active "
             "inside full AutoCAD for Mac. This is read-only."
         ),
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
     },
     {
         "name": "autocad_prepare_dxf",
@@ -281,7 +297,10 @@ def main() -> int:
             message = json.loads(line)
             response = _handle(message)
             if response is not None:
-                print(json.dumps(response, ensure_ascii=False, separators=(",", ":")), flush=True)
+                print(
+                    json.dumps(response, ensure_ascii=False, separators=(",", ":")),
+                    flush=True,
+                )
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             print(f"green-atlas-autocad MCP error: {exc}", file=sys.stderr, flush=True)
     return 0
