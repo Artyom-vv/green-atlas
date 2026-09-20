@@ -5,7 +5,7 @@ provider for Green Atlas imports. The web service consumes a verified native
 snapshot; it must not reinterpret calculation geometry with a second DXF
 parser.
 
-## Current state: 0.1.19
+## Current state: 0.1.20
 
 The macOS arm64 bundle is implemented and exercised in AutoCAD 2027.0.1. The
 admitted path is:
@@ -25,7 +25,7 @@ admitted path is:
 5. `compile_autocad_region_probe.py` admits the raw probe into the hashed
    `green-atlas.autocad-snapshot/1` contract.
 6. Green Atlas admits only geometry carried by the native snapshot. Version
-   0.1.19 emits REGION/HATCH topology, finite `AcDbCurve` paths, native
+   0.1.20 emits REGION/HATCH topology, finite `AcDbCurve` paths, native
    `AcDbMline` axis paths and `AcDbPoint`
    coordinates. Remaining calculation-relevant types must be added here,
    rather than delegated to a second importer.
@@ -37,6 +37,10 @@ admitted path is:
    Adaptive sampling is capped at 16,384 points per loop; geometry that cannot
    meet the tolerance within that budget remains explicitly unresolved instead
    of monopolising the AutoCAD process.
+   Repeated HATCH definitions inside INSERT/MINSERT are extracted once per
+   ObjectId and linear transform, then translated for each instance. This
+   preserves per-instance provenance and coordinates without repeating the
+   same native topology work hundreds of times.
    Lightweight polylines are sampled from AutoCAD's authored line/arc
    segments, `AcDbLine` uses its exact transformed endpoints and `AcDbMline`
    uses its exact axis vertices as the setback centreline. A line with
@@ -52,9 +56,9 @@ explicit traversal blockers. The
 compiler rejects such a probe instead of publishing partial native evidence.
 
 The compiler admits historical probes from safe bridge versions 0.1.4 through
-0.1.19. It requires every known traversal diagnostic and independently
+0.1.20. It requires every known traversal diagnostic and independently
 reconstructs area and perimeter from the emitted loops before producing a
-snapshot. Versions 0.1.6 through 0.1.19 can admit an XREF traversal: each contributing drawing is
+snapshot. Versions 0.1.6 through 0.1.20 can admit an XREF traversal: each contributing drawing is
 recorded by package-relative path, byte size and SHA-256, referenced from the
 coverage ledger and re-hashed by the service before publication.
 
@@ -76,7 +80,7 @@ Output:
 
 The build is universal arm64/x86_64, C++17 and ad-hoc signed.
 `PackageContents.xml` and the bundle metadata are pinned to AutoCAD R26.0 /
-plugin 0.1.19. The package owns the local MCP request queue. AutoCAD for Mac's
+plugin 0.1.20. The package owns the local MCP request queue. AutoCAD for Mac's
 Autoloader loads `green_atlas_loader.lsp` for each document and the idempotent
 bootstrap resolves and loads the adjacent ObjectARX bundle once per process.
 It does not read or transform CAD geometry.

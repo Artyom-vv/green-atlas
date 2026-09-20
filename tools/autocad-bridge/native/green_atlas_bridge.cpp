@@ -49,7 +49,7 @@
 namespace {
 
 constexpr const ACHAR* kCommandGroup = _T("GREEN_ATLAS");
-constexpr const char* kPluginVersion = "0.1.19";
+constexpr const char* kPluginVersion = "0.1.20";
 constexpr double kRequestedToleranceMetres = 0.0001;
 constexpr int kMaximumSamplingDepth = 24;
 constexpr std::size_t kMaximumSampledPointsPerLoop = 16384;
@@ -200,6 +200,16 @@ struct EntityCoverage {
     std::string reason;
     std::string xrefDependencyId;
 };
+
+struct HatchTopologyCacheEntry {
+    RegionTopology topology;
+    bool regionAvailable = false;
+    int regionTopologyStatus = 0;
+    bool usedLoopFallback = false;
+    int loopFallbackStatus = 0;
+};
+
+using HatchTopologyCache = std::map<std::string, HatchTopologyCacheEntry>;
 
 struct XrefDependency {
     std::string recordHandle;
@@ -1172,6 +1182,29 @@ bool objectIdIn(const std::vector<AcDbObjectId>& values, const AcDbObjectId& can
     return std::find(values.begin(), values.end(), candidate) != values.end();
 }
 
+std::string hatchTopologyCacheKey(const AcDbHatch* hatch,
+                                  const AcGeMatrix3d& transform) {
+    std::ostringstream key;
+    key << hatch->objectId().asOldId() << std::hexfloat;
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            key << '|' << transform.entry[row][column];
+        }
+    }
+    return key.str();
+}
+
+void translateTopology(RegionTopology& topology,
+                       const AcGeVector3d& translation) {
+    for (RegionLoop& loop : topology.loops) {
+        for (Point3& point : loop.coordinates) {
+            point.x += translation.x;
+            point.y += translation.y;
+            point.z += translation.z;
+        }
+    }
+}
+
 void collectRegionInstances(const AcDbObjectId& recordId,
                             const AcGeMatrix3d& accumulatedTransform,
                             const std::vector<std::string>& instanceChain,
@@ -1182,6 +1215,7 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                             std::vector<NativePath>& paths,
                             std::vector<NativePoint>& points,
                             std::vector<EntityCoverage>& coverage,
+                            HatchTopologyCache& hatchTopologyCache,
                             RegionTraversalDiagnostics& diagnostics) {
     if (recordId.isNull() || objectIdIn(activeRecords, recordId)) {
         ++diagnostics.cyclicBlockReferences;
@@ -1313,6 +1347,7 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                         collectRegionInstances(nestedRecordId, cellTransform, cellChain,
                                                effectiveLayer, tolerance, activeRecords,
                                                regions, paths, points, coverage,
+                                               hatchTopologyCache,
                                                diagnostics);
                     }
                 }
@@ -1323,6 +1358,7 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                 collectRegionInstances(nestedRecordId, nestedTransform, nestedChain,
                                        effectiveLayer, tolerance, activeRecords,
                                        regions, paths, points, coverage,
+                                       hatchTopologyCache,
                                        diagnostics);
             }
             entity->close();
@@ -1354,36 +1390,52 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             coverage.push_back(std::move(record));
             regions.push_back(std::move(topology));
         } else if (AcDbHatch* hatch = AcDbHatch::cast(entity)) {
-            RegionTopology topology;
-            topology.measurement.handle = entityHandle(hatch);
-            topology.sourceLayer = utf8(hatch->layer());
-            topology.measurement.layer = topology.sourceLayer == "0"
-                ? inheritedLayer
-                : topology.sourceLayer;
-            topology.instanceChain = instanceChain;
-            AcDbRegion* region = hatch->getRegionArea();
-            const bool regionAvailable = region != nullptr;
-            if (region != nullptr) {
-                extractRegionTopology(
-                    region, accumulatedTransform, tolerance, topology);
-                delete region;
-            }
-            const int regionTopologyStatus = topology.errorStatus;
-            bool usedLoopFallback = false;
-            int loopFallbackStatus = 0;
-            if (!topology.resolved) {
-                RegionTopology fallback;
-                fallback.measurement.handle = topology.measurement.handle;
-                fallback.measurement.layer = topology.measurement.layer;
-                fallback.sourceLayer = topology.sourceLayer;
-                fallback.instanceChain = topology.instanceChain;
-                usedLoopFallback = extractHatchLoopTopology(
-                    hatch, accumulatedTransform, tolerance, fallback);
-                loopFallbackStatus = fallback.errorStatus;
-                if (usedLoopFallback) {
-                    topology = std::move(fallback);
+            const std::string handle = entityHandle(hatch);
+            const std::string sourceLayer = utf8(hatch->layer());
+            const std::string cacheKey = hatchTopologyCacheKey(
+                hatch, accumulatedTransform);
+            auto cached = hatchTopologyCache.find(cacheKey);
+            if (cached == hatchTopologyCache.end()) {
+                HatchTopologyCacheEntry entry;
+                entry.topology.measurement.handle = handle;
+                entry.topology.sourceLayer = sourceLayer;
+                AcGeMatrix3d linearTransform = accumulatedTransform;
+                linearTransform.setTranslation(AcGeVector3d(0.0, 0.0, 0.0));
+                AcDbRegion* region = hatch->getRegionArea();
+                entry.regionAvailable = region != nullptr;
+                if (region != nullptr) {
+                    extractRegionTopology(
+                        region, linearTransform, tolerance, entry.topology);
+                    delete region;
                 }
+                entry.regionTopologyStatus = entry.topology.errorStatus;
+                if (!entry.topology.resolved) {
+                    RegionTopology fallback;
+                    fallback.measurement.handle = handle;
+                    fallback.sourceLayer = sourceLayer;
+                    entry.usedLoopFallback = extractHatchLoopTopology(
+                        hatch, linearTransform, tolerance, fallback);
+                    entry.loopFallbackStatus = fallback.errorStatus;
+                    if (entry.usedLoopFallback) {
+                        entry.topology = std::move(fallback);
+                    }
+                }
+                cached = hatchTopologyCache.emplace(
+                    cacheKey, std::move(entry)).first;
             }
+            RegionTopology topology = cached->second.topology;
+            translateTopology(topology, accumulatedTransform.translation());
+            topology.measurement.handle = handle;
+            topology.sourceLayer = sourceLayer;
+            topology.measurement.layer = sourceLayer == "0"
+                ? inheritedLayer
+                : sourceLayer;
+            topology.instanceChain = instanceChain;
+            const bool regionAvailable = cached->second.regionAvailable;
+            const int regionTopologyStatus =
+                cached->second.regionTopologyStatus;
+            const bool usedLoopFallback = cached->second.usedLoopFallback;
+            const int loopFallbackStatus = cached->second.loopFallbackStatus;
             EntityCoverage record;
             record.handle = topology.measurement.handle;
             record.entityType = utf8(entity->isA()->name());
@@ -1773,13 +1825,14 @@ void exportRegionTopologyProbe() {
     std::vector<NativePath> paths;
     std::vector<NativePoint> points;
     std::vector<EntityCoverage> coverage;
+    HatchTopologyCache hatchTopologyCache;
     RegionTraversalDiagnostics traversal;
     const AcGeMatrix3d rootTransform = AcGeMatrix3d::kIdentity;
     std::vector<std::string> instanceChain;
     std::vector<AcDbObjectId> activeRecords;
     collectRegionInstances(modelSpaceId, rootTransform, instanceChain, "0",
                            toleranceUnits, activeRecords, regions, paths, points,
-                           coverage, traversal);
+                           coverage, hatchTopologyCache, traversal);
 
     std::size_t resolvedCount = 0;
     std::size_t loopCount = 0;
