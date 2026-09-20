@@ -199,35 +199,28 @@ class PositionChecker:
         for kind in CONSTRAINT_KINDS:
             distance = rule_distance(kind, plant_kind)
             window = safe.buffer(distance)
-            geometry = self._constraint(kind, window)
-            if geometry is not None:
-                # Municipal drawings may contain thousands of roads and
-                # buildings far outside the operator's current work frame.
-                # Buffering that complete union dominated every preview.
-                # Clip to the selected area's influence envelope first; an
-                # obstacle farther away than the statutory distance cannot
-                # affect this result. Individual candidates are still passed
-                # through ``check`` afterwards, so this is only a safe spatial
-                # acceleration and never a weaker validation path.
-                nearby = geometry.intersection(window)
-                if not nearby.is_empty:
-                    safe = safe.difference(nearby.buffer(distance))
+            # Municipal drawings may contain thousands of roads and
+            # buildings far outside the operator's current work frame.
+            # Buffer only exact source fragments inside the influence window;
+            # ``buffer(union(parts)) == union(buffer(part) for part in parts)``
+            # for positive distances, so this changes cost, not semantics.
+            buffered = self._constraint_index(kind).buffered_union(window, distance)
+            if buffered is not None:
+                safe = safe.difference(buffered)
         for group in self.networks.groups:
             distance = group.distance(plant_kind)
             if distance is None:
                 continue
             distance += group.axis_radius_m
             window = safe.buffer(distance)
-            geometry = group.index.union(window)
-            if geometry is not None:
-                safe = safe.difference(geometry.intersection(window).buffer(distance))
+            buffered = group.index.buffered_union(window, distance)
+            if buffered is not None:
+                safe = safe.difference(buffered)
         for kind in OCCUPIED_KINDS:
             window = safe.buffer(radius)
-            geometry = self._constraint(kind, window)
-            if geometry is not None:
-                nearby = geometry.intersection(window)
-                if not nearby.is_empty:
-                    safe = safe.difference(nearby.buffer(radius))
+            buffered = self._constraint_index(kind).buffered_union(window, radius)
+            if buffered is not None:
+                safe = safe.difference(buffered)
         return safe
 
     def automatic_safe_area(
@@ -296,18 +289,13 @@ class PositionChecker:
         for kind, distance in future_buffers.items():
             min_x, min_y, max_x, max_y = safe.bounds
             window = box(min_x - distance, min_y - distance, max_x + distance, max_y + distance)
-            geometry = self._constraint(kind, window)
-            if geometry is not None:
-                # Only obstacles within this distance can affect the current
-                # safe area. Use an expanded rectangle (not a rounded buffer)
-                # so corner neighbours are never lost to buffer approximation.
-                # Clip before buffering: a city-wide road union can otherwise
-                # dominate even a small planting preview. Final point/growth
-                # validation remains independent and authoritative.
-                nearby = geometry.intersection(window)
-                if nearby.is_empty:
-                    continue
-                safe = safe.difference(nearby.buffer(distance))
+            # Only obstacles within this distance can affect the current safe
+            # area. Use an expanded rectangle (not a rounded buffer) so corner
+            # neighbours are never lost to approximation. Final point/growth
+            # validation remains independent and authoritative.
+            buffered = self._constraint_index(kind).buffered_union(window, distance)
+            if buffered is not None:
+                safe = safe.difference(buffered)
                 if safe.is_empty:
                     return safe
         return safe
