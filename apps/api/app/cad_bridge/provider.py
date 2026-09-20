@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections import Counter
 import hashlib
 import json
+from collections import Counter
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
+from shapely.errors import GEOSException
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, mapping
+from shapely.ops import polygonize, unary_union
 
 from app.cad_bridge.contracts import (
     CadGeometry,
@@ -18,9 +20,20 @@ from app.cad_bridge.contracts import (
 )
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.contracts import DxfImportResult
-from app.dxf_import.layer_contracts import Layer
-from app.dxf_import.layer_suggestions import suggest_layer_kind
+from app.dxf_import.layer_contracts import (
+    BoundaryCandidate,
+    BoundaryCandidateStatus,
+    Layer,
+    LayerKind,
+    LayerSuggestionConfidence,
+)
+from app.dxf_import.layer_suggestions import (
+    assess_layer_suggestion,
+    is_boundary_candidate_name,
+    suggest_layer_kind,
+)
 from app.dxf_import.units import DXF_UNIT_FACTORS
+from app.geometry.contracts import CoordinateReference, GeometrySnapshot
 from app.geometry.geojson_size import coordinate_count
 
 
@@ -47,6 +60,17 @@ DXF_TYPE_BY_AUTOCAD_CLASS = {
     "AcDbSpline": "SPLINE",
     "AcDbText": "TEXT",
 }
+
+_LAYER_COLORS = (
+    "#475569",
+    "#2563EB",
+    "#0F766E",
+    "#B45309",
+    "#7C3AED",
+    "#BE123C",
+    "#0369A1",
+    "#4D7C0F",
+)
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -160,11 +184,17 @@ def _native_shape(
         ]
         if geometry.closed:
             polygon = Polygon(coordinates)
-            if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
-                raise CadSnapshotProviderError(
-                    f"native path {geometry.id} is not a valid planar polygon"
-                )
-            return polygon
+            if not polygon.is_empty and polygon.is_valid and polygon.area > 0:
+                return polygon
+            # A closed CAD path may self-touch or contain repeated segments.
+            # Preserve the exact authored linework for display/review, but do
+            # not repair it into an invented calculation surface.
+            line = LineString(coordinates)
+            if not line.is_empty and line.is_valid and line.length > 0:
+                return line
+            raise CadSnapshotProviderError(
+                f"native path {geometry.id} is not valid planar linework"
+            )
         line = LineString(coordinates)
         if line.is_empty or not line.is_valid or line.length <= 0:
             raise CadSnapshotProviderError(
@@ -172,6 +202,111 @@ def _native_shape(
             )
         return line
     raise CadSnapshotProviderError(f"unsupported native geometry: {geometry.id}")
+
+
+def _polygon_parts(geometry: Any) -> list[Polygon]:
+    if geometry.is_empty:
+        return []
+    if geometry.geom_type == "Polygon":
+        return [geometry]
+    if geometry.geom_type in {"MultiPolygon", "GeometryCollection"}:
+        return [part for child in geometry.geoms for part in _polygon_parts(child)]
+    return []
+
+
+def _boundary_candidate(shapes: list[Any]) -> BoundaryCandidate:
+    polygons = [part for shape in shapes for part in _polygon_parts(shape)]
+    lines = [shape for shape in shapes if shape.geom_type == "LineString"]
+    basis = "source_surface"
+    surfaces: list[Any] = polygons
+    if not surfaces and lines:
+        surfaces = list(polygonize(lines))
+        basis = "polygonized_linework"
+    if not surfaces:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.UNAVAILABLE,
+            basis=basis,
+            issue="Слой не образует замкнутую поверхность",
+        )
+    try:
+        surface = unary_union(surfaces)
+    except GEOSException:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.INVALID,
+            basis=basis,
+            issue="Контуры слоя конфликтуют при объединении",
+        )
+    if surface.is_empty or not surface.is_valid:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.INVALID,
+            basis=basis,
+            issue="Объединённая поверхность слоя некорректна",
+        )
+    inset = surface.buffer(-1.5)
+    area = float(surface.area)
+    inset_area = float(inset.area)
+    status = (
+        BoundaryCandidateStatus.USABLE
+        if inset_area >= 24.0
+        else BoundaryCandidateStatus.THIN
+    )
+    return BoundaryCandidate(
+        status=status,
+        basis=basis,
+        area_m2=round(area, 3),
+        inset_1_5m_area_m2=round(inset_area, 3),
+        component_count=len(_polygon_parts(surface)),
+        issue=(
+            None
+            if status == BoundaryCandidateStatus.USABLE
+            else "После внутреннего отступа 1,5 м не остаётся рабочей площади"
+        ),
+    )
+
+
+def build_dxf_import_from_snapshot(
+    snapshot: CadSnapshot,
+    *,
+    source_sha256: str,
+    capacity: SourceGeometryCapacity | None = None,
+    verified_dependencies: dict[str, str] | None = None,
+) -> DxfImportResult:
+    """Build the normalized project source from AutoCAD evidence alone.
+
+    No portable DXF parser participates in this path.  The complete coverage
+    ledger is authoritative: native geometry is projected, presentation
+    context remains inventory-only, and unresolved calculation geometry is
+    exposed on its exact layer for operator review.
+    """
+
+    units_entry = DXF_UNIT_FACTORS.get(snapshot.source.units_code)
+    if units_entry is None:
+        raise CadSnapshotProviderError("CAD snapshot uses unsupported drawing units")
+    units, _ = units_entry
+    imported = DxfImportResult(
+        layers=[],
+        geometry=GeometrySnapshot(
+            feature_collection={"type": "FeatureCollection", "features": []}
+        ),
+        dxf_version=f"AutoCAD {snapshot.extraction.autocad_version}",
+        units=units,
+        entity_count=snapshot.summary.source_instances,
+        coordinate_reference=CoordinateReference(
+            status="unknown",
+            source="none",
+            evidence=(
+                "AutoCAD подтвердил WCS и единицы; геодезическая система "
+                "координат в snapshot не объявлена"
+            ),
+        ),
+    )
+    return apply_cad_snapshot(
+        imported,
+        snapshot,
+        source_sha256=source_sha256,
+        capacity=capacity,
+        verified_dependencies=verified_dependencies,
+    )
 
 
 def apply_cad_snapshot(
@@ -216,9 +351,9 @@ def apply_cad_snapshot(
     features = result.geometry.feature_collection.setdefault("features", [])
     if not isinstance(features, list):
         raise CadSnapshotProviderError("DXF feature collection is invalid")
-    native_identity_keys = {
-        (geometry.identity.handle, tuple(geometry.identity.instance_chain))
-        for geometry in snapshot.geometry
+    covered_identity_keys = {
+        (record.identity.handle, tuple(record.identity.instance_chain))
+        for record in snapshot.coverage
     }
 
     def source_identity(feature: dict[str, Any]) -> tuple[str, tuple[str, ...]]:
@@ -226,13 +361,14 @@ def apply_cad_snapshot(
         chain = properties.get("source_instance_chain", [])
         return str(properties.get("source_handle", "")), tuple(chain or [])
 
-    # During migration the caller can still carry a portable-reader graph.
-    # Native evidence replaces matching source instances instead of being
-    # layered over them and creating two conflicting geometries.
+    # The complete AutoCAD ledger is authoritative.  A compatibility caller
+    # may still carry a portable-reader graph, but no covered source instance
+    # may survive as fallback geometry when AutoCAD classified it as context
+    # or unresolved.
     features[:] = [
         feature
         for feature in features
-        if source_identity(feature) not in native_identity_keys
+        if source_identity(feature) not in covered_identity_keys
     ]
     capacity = capacity or SourceGeometryCapacity()
     total_coordinates = sum(
@@ -246,11 +382,17 @@ def apply_cad_snapshot(
     native_counts: Counter[str] = Counter()
     native_types_by_layer: dict[str, Counter[str]] = {}
     instance_types_by_layer: dict[str, Counter[str]] = {}
+    unresolved_types_by_layer: dict[str, Counter[str]] = {}
+    native_shapes_by_layer: dict[str, list[Any]] = {}
     for record in snapshot.coverage:
         entity_type = DXF_TYPE_BY_AUTOCAD_CLASS.get(
             record.entity_type, f"AUTOCAD:{record.entity_type}"
         )
         instance_types_by_layer.setdefault(record.layer, Counter())[entity_type] += 1
+        if record.status == "unresolved":
+            unresolved_types_by_layer.setdefault(record.layer, Counter())[
+                entity_type
+            ] += 1
 
     for geometry in snapshot.geometry:
         key = (geometry.identity.handle, tuple(geometry.identity.instance_chain))
@@ -260,6 +402,7 @@ def apply_cad_snapshot(
                 f"CAD snapshot geometry lacks matching coverage: {geometry.id}"
             )
         shape = _native_shape(geometry, factor)
+        native_shapes_by_layer.setdefault(coverage.layer, []).append(shape)
         geojson = mapping(shape)
         native_counts[coverage.layer] += 1
         entity_type = DXF_TYPE_BY_AUTOCAD_CLASS.get(
@@ -278,6 +421,12 @@ def apply_cad_snapshot(
         }
         if isinstance(geometry, (RegionGeometry, PathGeometry)):
             properties["source_sampling_tolerance_m"] = geometry.achieved_tolerance_m
+        if isinstance(geometry, PathGeometry):
+            properties["source_closed_path"] = geometry.closed
+            properties["source_polygon_projection"] = shape.geom_type in {
+                "Polygon",
+                "MultiPolygon",
+            }
         if isinstance(geometry, RegionGeometry):
             properties.update(
                 {
@@ -300,10 +449,11 @@ def apply_cad_snapshot(
         )
         features.append(feature)
         total_coordinates += feature_coordinates
-    for layer_name, instance_types in instance_types_by_layer.items():
+    for layer_index, (layer_name, instance_types) in enumerate(
+        instance_types_by_layer.items()
+    ):
         count = native_counts[layer_name]
         layer = layer_by_name.get(layer_name)
-        may_resolve_region_only = False
         if layer is None:
             kind = suggest_layer_kind(layer_name)
             layer = Layer(
@@ -312,37 +462,85 @@ def apply_cad_snapshot(
                 suggested_kind=kind,
                 mapped_kind=kind,
                 object_count=sum(instance_types.values()),
-                color="#64748B",
+                color=_LAYER_COLORS[layer_index % len(_LAYER_COLORS)],
                 entity_types=dict(instance_types),
             )
             result.layers.append(layer)
             layer_by_name[layer_name] = layer
-        else:
-            may_resolve_region_only = (
-                not layer.geometry_complete
-                and bool(layer.unsupported_geometry_types)
-                and set(layer.unsupported_geometry_types) <= {"REGION"}
-                and layer.unreadable_geometry_count == 0
-            )
-            layer.entity_types = dict(instance_types)
-            layer.object_count = sum(instance_types.values())
+        layer.entity_types = dict(instance_types)
+        layer.object_count = sum(instance_types.values())
+        unresolved_types = unresolved_types_by_layer.get(layer_name, Counter())
+        layer.unsupported_geometry_types = dict(unresolved_types)
+        layer.unreadable_geometry_count = 0
         if count:
             for entity_type, entity_count in native_types_by_layer.get(
                 layer_name, Counter()
             ).items():
                 layer.projected_geometry_types[entity_type] = entity_count
-                layer.unsupported_geometry_types.pop(entity_type, None)
-        if layer.geometry_complete or may_resolve_region_only:
-            layer.geometry_complete = (
-                not layer.unsupported_geometry_types
-                and layer.unreadable_geometry_count == 0
-            )
+        layer.geometry_complete = not unresolved_types
         combined_layer_features = [
             feature
             for feature in features
             if feature.get("properties", {}).get("source_layer") == layer_name
         ]
         layer.bounds = _bounds(combined_layer_features)
+        shapes = native_shapes_by_layer.get(layer_name, [])
+        has_polygon = any(
+            shape.geom_type in {"Polygon", "MultiPolygon"} for shape in shapes
+        )
+        candidate = (
+            _boundary_candidate(shapes)
+            if is_boundary_candidate_name(layer_name)
+            else None
+        )
+        kind = suggest_layer_kind(layer_name)
+        if kind == LayerKind.SITE_BORDER and (
+            candidate is None or candidate.status != BoundaryCandidateStatus.USABLE
+        ):
+            kind = LayerKind.IGNORE
+        confidence, reasons, review_required = assess_layer_suggestion(
+            kind,
+            entity_types=dict(instance_types),
+            has_polygon=has_polygon,
+            geometry_complete=layer.geometry_complete,
+            boundary_candidate=candidate,
+        )
+        layer.suggested_kind = kind
+        layer.mapped_kind = kind
+        layer.suggestion_confidence = confidence
+        layer.suggestion_reasons = reasons
+        layer.mapping_review_required = review_required
+        layer.mapping_confirmed = not review_required
+        layer.boundary_candidate = candidate
+        layer.required = kind == LayerKind.SITE_BORDER
+
+    usable_boundaries = [
+        layer
+        for layer in result.layers
+        if layer.boundary_candidate is not None
+        and layer.boundary_candidate.status == BoundaryCandidateStatus.USABLE
+    ]
+    if len(usable_boundaries) > 1:
+        for layer in usable_boundaries:
+            if layer.suggested_kind != LayerKind.SITE_BORDER:
+                continue
+            layer.suggested_kind = LayerKind.IGNORE
+            layer.mapped_kind = LayerKind.IGNORE
+            layer.suggestion_confidence = LayerSuggestionConfidence.LOW
+            layer.suggestion_reasons = [
+                "Найдено несколько подходящих контуров территории"
+            ]
+            layer.mapping_review_required = False
+            layer.mapping_confirmed = True
+            layer.required = False
+
+    kind_by_layer = {
+        layer.source_name: layer.suggested_kind.value for layer in result.layers
+    }
+    for feature in features:
+        source_layer = feature.get("properties", {}).get("source_layer")
+        if source_layer in kind_by_layer:
+            feature["properties"]["kind"] = kind_by_layer[source_layer]
 
     result.warnings = [
         warning

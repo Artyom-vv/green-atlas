@@ -6,7 +6,7 @@ from datetime import datetime
 from hashlib import sha256
 
 from app.cad_bridge import CadSnapshot
-from app.cad_bridge.provider import apply_cad_snapshot
+from app.cad_bridge.provider import build_dxf_import_from_snapshot
 from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
 from app.dxf_import import limits
 from app.dxf_import.admission import cad_preview_status
@@ -77,11 +77,11 @@ class ImportApplication:
         limits.validate_dxf_filename(filename)
         if len(content) > limits.MAX_DXF_CONTENT_BYTES:
             raise ValueError(limits.dxf_size_error())
-        imported = self.dxf_reader.read(filename, content)
-        if cad_snapshot is not None:
+        if cad_snapshot is None:
+            imported = self.dxf_reader.read(filename, content)
+        else:
             snapshot = CadSnapshot.model_validate_json(cad_snapshot)
-            imported = apply_cad_snapshot(
-                imported,
+            imported = build_dxf_import_from_snapshot(
                 snapshot,
                 source_sha256=sha256(content).hexdigest(),
             )
@@ -163,8 +163,7 @@ class ImportApplication:
         if provenance is not None:
             if (
                 provenance.entry != parsed.source_path
-                or provenance.source_sha256
-                != project.source_file.content_sha256
+                or provenance.source_sha256 != project.source_file.content_sha256
             ):
                 raise ValueError(
                     "Происхождение подготовленного исходника не совпадает "
@@ -180,14 +179,12 @@ class ImportApplication:
                 or set(source_files) != set(expected_drawings)
                 or any(
                     len(source_files[path]) != item.source_bytes
-                    or sha256(source_files[path]).hexdigest()
-                    != item.source_sha256
+                    or sha256(source_files[path]).hexdigest() != item.source_sha256
                     for path, item in expected_drawings.items()
                 )
             ):
                 raise ValueError(
-                    "Комплект исходных DXF не совпадает с его "
-                    "происхождением"
+                    "Комплект исходных DXF не совпадает с его происхождением"
                 )
         project.layers = imported.layers
         mappings = manifest.get("layer_mappings")
@@ -212,9 +209,7 @@ class ImportApplication:
                 if "visible" in item:
                     layer.visible = bool(item["visible"])
                 if "mapping_confirmed" in item:
-                    layer.mapping_confirmed = bool(
-                        item["mapping_confirmed"]
-                    )
+                    layer.mapping_confirmed = bool(item["mapping_confirmed"])
                 if (
                     layer.mapped_kind == LayerKind.UTILITY
                     and item.get("utility_context") is not None
@@ -258,7 +253,11 @@ class ImportApplication:
             ),
         )
         review_payload = project_meta.get("source_review")
-        project.source_review = SourceReview.model_validate(review_payload) if review_payload is not None else None
+        project.source_review = (
+            SourceReview.model_validate(review_payload)
+            if review_payload is not None
+            else None
+        )
         if imported.preview_provenance is not None:
             project.import_status = cad_preview_status()
         if not editable:
@@ -376,8 +375,7 @@ class ImportApplication:
         ]
         if unconfirmed:
             raise ValueError(
-                "Подтвердите предложенные роли слоёв: "
-                + ", ".join(unconfirmed)
+                "Подтвердите предложенные роли слоёв: " + ", ".join(unconfirmed)
             )
         if axis_bindings_changed and any(
             layer.utility_axis_bindings for layer in project.layers
@@ -414,7 +412,9 @@ class ImportApplication:
             project.site_area_m2 = None
             project.planning_area_m2 = None
             project.allowed_area_m2 = None
-            if (project.plan is not None or project.source_review is not None) and project.source_geometry is None:
+            if (
+                project.plan is not None or project.source_review is not None
+            ) and project.source_geometry is None:
                 if project.geometry is None:
                     raise ValueError("Сохранённая карта недоступна для уточнения слоёв")
                 source_features = [
@@ -429,7 +429,7 @@ class ImportApplication:
                     feature_collection={
                         "type": "FeatureCollection",
                         "features": source_features,
-                    }
+                    },
                 )
             project.geometry = None
             project.geometry_version += 1

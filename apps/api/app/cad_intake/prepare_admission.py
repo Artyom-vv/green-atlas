@@ -50,9 +50,15 @@ def validate_prepared_intake(
     }
     if any(path == passport.entry or path not in entries for path in additional_snapshots):
         raise ValueError("CAD snapshot выбран для постороннего чертежа")
-    if entry.inspection.xrefs or passport.references:
+    declared_xrefs = {
+        (path, block)
+        for path in entries
+        for block in (drawings[path].inspection.xrefs or {})
+    }
+    recorded_xrefs = {(item.owner, item.block) for item in passport.references}
+    if declared_xrefs or passport.references:
         unresolved = [item for item in passport.references if item.status != "resolved"]
-        if unresolved:
+        if declared_xrefs != recorded_xrefs or unresolved:
             raise ValueError(
                 "DXF-комплект содержит неразрешённые внешние ссылки"
             )

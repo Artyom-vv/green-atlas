@@ -7,7 +7,11 @@ import pytest
 
 from app.cad_bridge import CadSnapshot
 from app.cad_bridge.compiler import _canonical_sha256
-from app.cad_bridge.provider import CadSnapshotProviderError, apply_cad_snapshot
+from app.cad_bridge.provider import (
+    CadSnapshotProviderError,
+    apply_cad_snapshot,
+    build_dxf_import_from_snapshot,
+)
 from app.dxf_import.application import ImportApplication
 from app.dxf_import.contracts import DxfImportResult
 from app.dxf_import.layer_contracts import Layer, LayerKind
@@ -263,6 +267,106 @@ def test_applies_native_curve_and_point_from_autocad_snapshot() -> None:
     assert result.cad_snapshot_provenance.native_geometry == 3
 
 
+def test_snapshot_only_builder_creates_layers_without_portable_reader() -> None:
+    result = build_dxf_import_from_snapshot(
+        snapshot(with_primitives=True), source_sha256="a" * 64
+    )
+
+    assert result.entity_count == 3
+    assert result.units == "м"
+    assert result.dxf_version == "AutoCAD 2027.0.1"
+    assert len(result.geometry.feature_collection["features"]) == 3
+    assert {layer.source_name for layer in result.layers} == {
+        "BUILDINGS",
+        "TREES",
+    }
+    assert all(layer.geometry_complete for layer in result.layers)
+
+
+def test_self_intersecting_closed_path_stays_reviewable_linework() -> None:
+    payload = snapshot(with_primitives=True).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    path = next(item for item in payload["geometry"] if item["kind"] == "path")
+    path["coordinates"] = [
+        [20, 0, 0],
+        [30, 10, 0],
+        [20, 10, 0],
+        [30, 0, 0],
+        [20, 0, 0],
+    ]
+    payload = CadSnapshot.model_validate(payload).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    path = next(item for item in payload["geometry"] if item["kind"] == "path")
+    path["content_sha256"] = _canonical_sha256(
+        {key: value for key, value in path.items() if key != "content_sha256"}
+    )
+    payload["summary"]["payload_sha256"] = _canonical_sha256(
+        {key: value for key, value in payload.items() if key != "summary"}
+    )
+
+    result = build_dxf_import_from_snapshot(
+        CadSnapshot.model_validate(payload), source_sha256="a" * 64
+    )
+
+    feature = next(
+        item
+        for item in result.geometry.feature_collection["features"]
+        if item["properties"].get("source_handle") == "C1"
+    )
+    assert feature["geometry"]["type"] == "LineString"
+    assert feature["properties"]["source_closed_path"] is True
+    assert feature["properties"]["source_polygon_projection"] is False
+
+
+def test_unresolved_autocad_instance_never_keeps_fallback_geometry() -> None:
+    payload = snapshot().model_dump(by_alias=True, mode="json", exclude_none=True)
+    payload["coverage"].append(
+        {
+            "identity": {"handle": "B12", "instance_chain": []},
+            "entity_type": "AcDbArc",
+            "layer": "BUILDINGS",
+            "status": "unresolved",
+            "method": "autodesk-acdbcurve-adaptive-sampling-failed",
+            "reason": "native finite curve extraction failed",
+            "geometry_ids": [],
+        }
+    )
+    payload["summary"].update(source_instances=2, unresolved=1)
+    payload["summary"]["payload_sha256"] = _canonical_sha256(
+        {key: value for key, value in payload.items() if key != "summary"}
+    )
+    native = CadSnapshot.model_validate(payload)
+    portable = imported()
+    portable.geometry.feature_collection["features"] = [
+        {
+            "type": "Feature",
+            "id": "forbidden-fallback",
+            "properties": {
+                "source_handle": "B12",
+                "source_instance_chain": [],
+                "source_layer": "BUILDINGS",
+                "entity_type": "ARC",
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[0, 0], [1, 1]],
+            },
+        }
+    ]
+
+    result = apply_cad_snapshot(portable, native, source_sha256="a" * 64)
+
+    assert all(
+        feature["id"] != "forbidden-fallback"
+        for feature in result.geometry.feature_collection["features"]
+    )
+    layer = result.layers[0]
+    assert layer.geometry_complete is False
+    assert layer.unsupported_geometry_types == {"ARC": 1}
+
+
 def test_snapshot_hash_must_match_exact_source_dxf() -> None:
     with pytest.raises(CadSnapshotProviderError, match="different DXF"):
         apply_cad_snapshot(imported(), snapshot(), source_sha256="d" * 64)
@@ -313,9 +417,7 @@ def test_import_application_uses_snapshot_only_when_explicitly_supplied() -> Non
 
     class Reader:
         def read(self, filename: str, content: bytes | bytearray) -> DxfImportResult:
-            assert filename == "source.dxf"
-            assert content == source
-            return imported()
+            raise AssertionError("portable DXF reader must not run")
 
     class History:
         def clear(self, project_id: str) -> None:

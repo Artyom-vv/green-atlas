@@ -31,6 +31,7 @@ from app.projects.concurrency import ProjectVersionConflict
 @pytest.fixture
 def fixture(tmp_path):
     value = fixture_preview(tmp_path)
+    write_snapshot(value)
     try:
         yield value
     finally:
@@ -58,7 +59,67 @@ def write_snapshot(
     xref: tuple[str, bytes] | None = None,
 ):
     dependencies = None
-    coverage = []
+    coverage = [
+        {
+            "identity": {"handle": "10", "instance_chain": []},
+            "entity_type": "AcDbPolyline",
+            "layer": "0",
+            "status": "native",
+            "method": "autodesk-acdbcurve-adaptive-sampling",
+            "geometry_ids": ["path/10"],
+        },
+        {
+            "identity": {"handle": "11", "instance_chain": []},
+            "entity_type": "AcDbLine",
+            "layer": "0",
+            "status": "native",
+            "method": "autodesk-acdbcurve-adaptive-sampling",
+            "geometry_ids": ["path/11"],
+        },
+        {
+            "identity": {"handle": "12", "instance_chain": []},
+            "entity_type": "AcDbLine",
+            "layer": "0",
+            "status": "native",
+            "method": "autodesk-acdbcurve-adaptive-sampling",
+            "geometry_ids": ["path/12"],
+        },
+    ]
+    geometry = [
+        {
+            "id": "path/10",
+            "identity": {"handle": "10", "instance_chain": []},
+            "kind": "path",
+            "closed": True,
+            "coordinates": [
+                [0, 0, 0],
+                [10, 0, 0],
+                [10, 10, 0],
+                [0, 10, 0],
+                [0, 0, 0],
+            ],
+            "achieved_tolerance_m": 0,
+            "content_sha256": "0" * 64,
+        },
+        {
+            "id": "path/11",
+            "identity": {"handle": "11", "instance_chain": []},
+            "kind": "path",
+            "closed": False,
+            "coordinates": [[-10, 5, 0], [20, 5, 0]],
+            "achieved_tolerance_m": 0,
+            "content_sha256": "0" * 64,
+        },
+        {
+            "id": "path/12",
+            "identity": {"handle": "12", "instance_chain": []},
+            "kind": "path",
+            "closed": False,
+            "coordinates": [[100, 100, 0], [200, 200, 0]],
+            "achieved_tolerance_m": 0,
+            "content_sha256": "0" * 64,
+        },
+    ]
     if xref is not None:
         xref_path, xref_content = xref
         dependencies = [
@@ -73,7 +134,7 @@ def write_snapshot(
                 "stored_path": xref_path,
             }
         ]
-        coverage = [
+        coverage.append(
             {
                 "identity": {
                     "handle": "31",
@@ -86,7 +147,7 @@ def write_snapshot(
                 "reason": "No native calculation geometry required",
                 "dependency_ids": ["xref/2F"],
             }
-        ]
+        )
     payload = {
         "schema": "green-atlas.autocad-snapshot/1",
         "source": {
@@ -97,19 +158,19 @@ def write_snapshot(
         },
         "extraction": {
             "autocad_version": "2027.0.1",
-            "plugin_version": "0.1.6" if xref is not None else "0.1.3",
+            "plugin_version": "0.1.12",
             "target": "macos-arm64",
             "projection": "wcs-xy-planar",
             "requested_tolerance_m": 0.001,
         },
         "dependencies": dependencies,
         "coverage": coverage,
-        "geometry": [],
+        "geometry": geometry,
         "summary": {
             "source_instances": len(coverage),
-            "native": 0,
+            "native": len(geometry),
             "converted": 0,
-            "context": len(coverage),
+            "context": 1 if xref is not None else 0,
             "unresolved": 0,
             "payload_sha256": "0" * 64,
             "complete": True,
@@ -118,6 +179,10 @@ def write_snapshot(
     normalized = CadSnapshot.model_validate(payload).model_dump(
         by_alias=True, mode="json", exclude_none=True
     )
+    for item in normalized["geometry"]:
+        item["content_sha256"] = _canonical_sha256(
+            {key: value for key, value in item.items() if key != "content_sha256"}
+        )
     normalized["summary"]["payload_sha256"] = _canonical_sha256(
         {key: value for key, value in normalized.items() if key != "summary"}
     )
@@ -126,6 +191,70 @@ def write_snapshot(
     content = snapshot.model_dump_json(by_alias=True, exclude_none=True).encode()
     path.write_bytes(content)
     return path, content, snapshot
+
+
+def write_line_snapshot(source):
+    digest = sha256(source.read_bytes()).hexdigest()
+    payload = {
+        "schema": "green-atlas.autocad-snapshot/1",
+        "source": {
+            "sha256": digest,
+            "saved": True,
+            "units_code": 6,
+            "document_revision": "test-independent-drawing",
+        },
+        "extraction": {
+            "autocad_version": "2027.0.1",
+            "plugin_version": "0.1.12",
+            "target": "macos-arm64",
+            "projection": "wcs-xy-planar",
+            "requested_tolerance_m": 0.001,
+        },
+        "coverage": [
+            {
+                "identity": {"handle": "20", "instance_chain": []},
+                "entity_type": "AcDbLine",
+                "layer": "BUILDINGS",
+                "status": "native",
+                "method": "autodesk-acdbcurve-adaptive-sampling",
+                "geometry_ids": ["path/20"],
+            }
+        ],
+        "geometry": [
+            {
+                "id": "path/20",
+                "identity": {"handle": "20", "instance_chain": []},
+                "kind": "path",
+                "closed": False,
+                "coordinates": [[50, 50, 0], [60, 60, 0]],
+                "achieved_tolerance_m": 0,
+                "content_sha256": "0" * 64,
+            }
+        ],
+        "summary": {
+            "source_instances": 1,
+            "native": 1,
+            "converted": 0,
+            "context": 0,
+            "unresolved": 0,
+            "payload_sha256": "0" * 64,
+            "complete": True,
+        },
+    }
+    normalized = CadSnapshot.model_validate(payload).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    geometry = normalized["geometry"][0]
+    geometry["content_sha256"] = _canonical_sha256(
+        {key: value for key, value in geometry.items() if key != "content_sha256"}
+    )
+    normalized["summary"]["payload_sha256"] = _canonical_sha256(
+        {key: value for key, value in normalized.items() if key != "summary"}
+    )
+    snapshot = CadSnapshot.model_validate(normalized)
+    path = source.with_name(f"{source.name}.green-atlas.snapshot.json")
+    path.write_text(snapshot.model_dump_json(by_alias=True, exclude_none=True))
+    return path
 
 
 def add_resolved_xref_to_passport(fixture, path: str = "references/child.dxf"):
@@ -189,6 +318,7 @@ def add_independent_dxf_to_passport(fixture, path: str = "networks/base.dxf"):
     document.layers.add("BUILDINGS")
     document.modelspace().add_line((50, 50), (60, 60), dxfattribs={"layer": "BUILDINGS"})
     document.saveas(child)
+    write_line_snapshot(child)
     digest = sha256(child.read_bytes()).hexdigest()
     intake = fixture.lifecycle.operations.get(fixture.request.intake_operation_id)
     manifest = (
@@ -334,7 +464,7 @@ def test_full_worker_discovers_native_snapshot_and_persists_receipt(fixture):
         record.cad_prepare.result.cad_snapshot_payload_sha256
         == snapshot.summary.payload_sha256
     )
-    assert record.cad_prepare.result.cad_snapshot_native_geometry == 0
+    assert record.cad_prepare.result.cad_snapshot_native_geometry == 3
     project = fixture.runtime.project_repository.get(fixture.project.id)
     assert project.source_file is not None
     assert project.source_file.cad_snapshot_provenance is not None
