@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "name": "Automatic mixed species in a tight courtyard",
+  "input_kind": "synthetic",
+  "units": "m",
+  "evidence_note": "Synthetic 16x16m courtyard. Explicit 50/50 target, no extra inset. Both plant footprints and networks use unchanged validators. Saved territory context is explicit in this version; the earlier fixture remains unchanged.",
+  "project": {
+    "id": "species-narrow-courtyard",
+    "name": "Allocation",
+    "status": "empty",
+    "source_file": null,
+    "import_status": {
+      "mode": "source_dxf",
+      "editability": "editable",
+      "release_id": null,
+      "message": "Исходный DXF доступен для подготовки редактируемого плана."
+    },
+    "source_review": null,
+    "layers": [],
+    "coordinate_reference": {
+      "status": "unknown",
+      "crs_id": null,
+      "name": null,
+      "source": "none",
+      "axis_order": null,
+      "origin_wgs84": null,
+      "local_projection": null,
+      "earth_radius_m": null,
+      "horizontal_source": null,
+      "control_points_count": 0,
+      "evidence": "Система координат не указана",
+      "updated_at": null
+    },
+    "source_geometry": null,
+    "geometry": {
+      "feature_collection": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "kind": "site_border"
+            },
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    510.0,
+                    -10.0
+                  ],
+                  [
+                    510.0,
+                    210.0
+                  ],
+                  [
+                    -10.0,
+                    210.0
+                  ],
+                  [
+                    -10.0,
+                    -10.0
+                  ],
+                  [
+                    510.0,
+                    -10.0
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "vertical_primitives": [],
+      "site_area_m2": null,
+      "planning_area_m2": null,
+      "allowed_area_m2": null
+    },
+    "map_ready": true,
+    "geometry_version": 0,
+    "planting_zones": [
+      {
+        "id": "west",
+        "label": "West",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                16.0,
+                0.0
+              ],
+              [
+                16.0,
+                16.0
+              ],
+              [
+                0.0,
+                16.0
+              ],
+              [
+                0.0,
+                0.0
+              ],
+              [
+                16.0,
+                0.0
+              ]
+            ]
+          ]
+        },
+        "territory": {
+          "category": "courtyard",
+          "regime": "ordinary",
+          "basis": "Synthetic ordinary courtyard"
+        },
+        "site_conditions": null
+      },
+      {
+        "id": "east",
+        "label": "East",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                500.0,
+                0.0
+              ],
+              [
+                500.0,
+                100.0
+              ],
+              [
+                400.0,
+                100.0
+              ],
+              [
+                400.0,
+                0.0
+              ],
+              [
+                500.0,
+                0.0
+              ]
+            ]
+          ]
+        },
+        "territory": {
+          "category": "courtyard",
+          "regime": "ordinary",
+          "basis": "Synthetic ordinary courtyard"
+        },
+        "site_conditions": null
+      }
+    ],
+    "site_area_m2": null,
+    "planning_area_m2": null,
+    "allowed_area_m2": null,
+    "plan": {
+      "id": "plan-narrow-courtyard",
+      "objects": [],
+      "issues": [],
+      "version": 1,
+      "validation_basis": null
+    },
+    "state_version": 1,
+    "created_at": "2026-09-17T00:00:00+00:00",
+    "updated_at": "2026-09-17T00:00:00+00:00"
+  },
+  "scenario": "composition_selection",
+  "request": {
+    "placement": {
+      "type": "fill",
+      "base_plan_version": 1,
+      "zone_ids": [
+        "west"
+      ],
+      "composition": "mixed",
+      "tree_share": 0.5,
+      "placement_mode": "count",
+      "target_count": 20,
+      "layout": "staggered",
+      "seed": 7,
+      "size_class": "standard",
+      "edge_offset_m": 0
+    },
+    "territory": {
+      "category": "courtyard",
+      "regime": "ordinary",
+      "basis": "Synthetic ordinary courtyard"
+    },
+    "objective": "balanced"
+  }
+}

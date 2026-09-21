@@ -65,10 +65,19 @@ def test_source_qualifiers_and_municipal_conditions_remain_effective():
     assert assortment_status("physocarpus-opulifolius", context) == "listed"
     context.regime = "individual_project"
     assert assortment_status("physocarpus-opulifolius", context) == "individual_review"
-    assert len(source_profiles()) == 4
+    assert len(source_profiles()) == 10
 
 
-def test_lilac_can_be_selected_and_applied_with_explicit_uncertainties():
+def test_lilac_can_be_selected_and_applied_with_explicit_uncertainties(monkeypatch):
+    from app.planning import recommendation_application
+    from app.species.catalog import list_species
+
+    catalogue = list_species("shrub")
+    monkeypatch.setattr(
+        recommendation_application,
+        "list_species",
+        lambda kind: [s for s in catalogue if not s.id.endswith("@2026-09-21.1")],
+    )
     app, project = application()
     app.history = InMemoryProjectHistory()
     app.history_application.history = app.history
@@ -82,6 +91,8 @@ def test_lilac_can_be_selected_and_applied_with_explicit_uncertainties():
             category="courtyard", regime="ordinary", basis="Synthetic brief"
         ),
     )
+    project.planting_zones[0].territory = req.territory
+    app.repository.save(project)
     result = app.preview_recommendation(project.id, req)
     assert result.change_set and result.change_set.can_apply
     assert len(result.change_set.additions) == 5

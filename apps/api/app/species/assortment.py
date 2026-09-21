@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.species.assortment_inventory import assortment_entry, category_cell
 
@@ -22,6 +22,8 @@ AssortmentStatus = Literal[
 
 
 class TerritoryContext(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     category: TerritoryCategory
     regime: Literal["ordinary", "individual_project", "unknown"]
     basis: str = Field(min_length=1, max_length=500)
@@ -30,7 +32,7 @@ class TerritoryContext(BaseModel):
 
 ASSORTMENT_SOURCE = "https://www.mos.ru/upload/content/files/c6ee55bb75792e008a490f28cfe834fb/Osnovnoiidopolnitelniiassortimentderevevkystarnikovilian.pdf"
 ASSORTMENT_SHA256 = "114fe5b7598f32ca0b13162985cc80d14be569d8898aacbcd148fd08571a4b67"
-ASSORTMENT_REVISION = "mos-assortment@2026-09-17.3"
+ASSORTMENT_REVISION = "mos-assortment@2026-09-21.1"
 
 
 def assortment_status(species_id: str, context: TerritoryContext) -> AssortmentStatus:

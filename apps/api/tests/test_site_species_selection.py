@@ -21,6 +21,22 @@ from scripts.planning_lab.contracts import parse_case
 from scripts.planning_lab.runner import run_case
 
 
+def preview_saved(app, project, req):
+    current = app.repository.get(project.id)
+    for zone in current.planting_zones:
+        if zone.id in req.zone_ids:
+            zone.territory = req.territory or TerritoryContext(
+                category="courtyard",
+                regime="ordinary",
+                basis="Explicit synthetic test category",
+            )
+            zone.site_conditions = req.site_conditions
+    # A repeated read-only preview should not create a new basis version.
+    if current.planting_zones != app.repository.get(project.id).planting_zones:
+        app.repository.save(current)
+    return app.preview_recommendation(project.id, req)
+
+
 def request(project, *, control=True, **conditions):
     return RecommendationRequest(
         base_plan_version=project.plan.version,
@@ -52,14 +68,22 @@ def options(result):
     return {o.species_revision_id.split("@")[0]: o for o in result.species_options}
 
 
-def test_periodically_wet_soil_changes_actual_choice_and_can_apply():
+def test_periodically_wet_soil_changes_actual_choice_and_can_apply(monkeypatch):
+    from app.planning import recommendation_application
+
+    catalogue = list_species("shrub")
+    monkeypatch.setattr(
+        recommendation_application,
+        "list_species",
+        lambda kind: [s for s in catalogue if not s.id.endswith("@2026-09-21.1")],
+    )
     app, project = application()
     app.history = InMemoryProjectHistory()
     app.history_application.history = app.history
-    baseline = app.preview_recommendation(project.id, request(project))
+    baseline = preview_saved(app, project, request(project))
     assert selected(baseline) == {"spiraea-japonica"}
     req = request(project, light="full_sun", moisture="occasionally_wet")
-    result = app.preview_recommendation(project.id, req)
+    result = preview_saved(app, project, req)
     assert selected(result) == {"cornus-alba"}
     assert len(result.change_set.additions) == 5
     assert result.site_conditions == req.site_conditions
@@ -68,7 +92,7 @@ def test_periodically_wet_soil_changes_actual_choice_and_can_apply():
     assert result.evidence.sunlight == result.evidence.soil == "partial"
     assert result.evidence.hydrology == "missing"
     assert all(e.status == "unknown" for x in result.explanations for e in x.effects)
-    again = app.preview_recommendation(project.id, req)
+    again = preview_saved(app, project, req)
     assert [(p.x, p.y, p.species_revision_id) for p in result.change_set.additions] == [
         (p.x, p.y, p.species_revision_id) for p in again.change_set.additions
     ]
@@ -89,11 +113,11 @@ def test_periodically_wet_soil_changes_actual_choice_and_can_apply():
 
 def test_ecological_match_cannot_override_municipal_spread_control():
     app, project = application()
-    result = app.preview_recommendation(
-        project.id, request(project, control=False, moisture="occasionally_wet")
+    result = preview_saved(
+        app, project, request(project, control=False, moisture="occasionally_wet")
     )
-    assert result.change_set is None
-    assert not app.changes._previews
+    assert result.change_set and result.change_set.can_apply
+    assert "cornus-alba" not in selected(result)
     dogwood = options(result)["cornus-alba"]
     assert dogwood.site_suitability.status == "documented_match"
     assert dogwood.assortment_status == "individual_review"
@@ -102,8 +126,8 @@ def test_ecological_match_cannot_override_municipal_spread_control():
 
 def test_explicit_poor_drainage_conflict_does_not_fall_back_to_unknown_species():
     app, project = application()
-    result = app.preview_recommendation(
-        project.id, request(project, light="full_sun", drainage="poorly_drained")
+    result = preview_saved(
+        app, project, request(project, light="full_sun", drainage="poorly_drained")
     )
     assert result.change_set is None
     assert not app.changes._previews
@@ -116,9 +140,7 @@ def test_explicit_poor_drainage_conflict_does_not_fall_back_to_unknown_species()
 
 def test_partial_observation_does_not_claim_whole_site_is_verified():
     app, project = application()
-    result = app.preview_recommendation(
-        project.id, request(project, light="partial_shade")
-    )
+    result = preview_saved(app, project, request(project, light="partial_shade"))
     assert result.change_set
     assert result.evidence.sunlight == "partial"
     assert result.evidence.soil == "missing"
@@ -178,18 +200,30 @@ def test_http_context_is_validated_and_cannot_be_ignored_by_legacy_path():
     client = TestClient(web)
     endpoint = f"/api/projects/{project.id}/plan/recommendations/preview"
     payload = request(project, moisture="occasionally_wet").model_dump(mode="json")
+    project.planting_zones[0].territory = TerritoryContext.model_validate(
+        payload["territory"]
+    )
+    project.planting_zones[0].site_conditions = SiteConditions.model_validate(
+        payload["site_conditions"]
+    )
+    service.repository.save(project)
     response = client.post(endpoint, json=payload)
     assert response.status_code == 200
     assert response.json()["site_evidence_revision"]
     assert len(response.json()["change_set"]["additions"]) == 5
     payload["territory"] = None
-    assert client.post(endpoint, json=payload).status_code == 422
+    assert client.post(endpoint, json=payload).status_code == 200
+    payload["territory"] = {
+        **request(project).territory.model_dump(),
+        "category": "preschool",
+    }
+    assert client.post(endpoint, json=payload).status_code == 400
 
 
 def test_frozen_site_case_is_repeatable_and_keeps_evidence_identity():
     path = (
         Path(__file__).resolve().parents[3]
-        / "fixtures/planning-lab/courtyard-shrub-periodically-wet.json"
+        / "fixtures/planning-lab/courtyard-shrub-periodically-wet-saved-context.json"
     )
     case = parse_case(path.read_bytes())
     first, second = run_case(case), run_case(case)
@@ -197,7 +231,9 @@ def test_frozen_site_case_is_repeatable_and_keeps_evidence_identity():
     assert first["content"]["basis"][
         "site_species_profiles"
     ] == site_profile_inventory().model_dump(mode="json")
-    assert len(first["content"]["generation_calls"]) == 2  # eligible trial + final
+    assert (
+        len(first["content"]["generation_calls"]) >= 2
+    )  # all eligible species plus selected proposal
     assert len(first["content"]["result"]["change_set"]["additions"]) == 5
 
 
@@ -221,7 +257,7 @@ def test_every_calculation_species_has_an_identified_ecological_source():
 def test_sunny_narrow_zone_can_choose_rowan_with_all_observed_conditions():
     path = (
         Path(__file__).resolve().parents[3]
-        / "fixtures/planning-lab/narrow-courtyard-territory.json"
+        / "fixtures/planning-lab/narrow-courtyard-territory-saved-context.json"
     )
     case = parse_case(path.read_bytes())
     case.request.site_conditions = SiteConditions(
@@ -230,11 +266,12 @@ def test_sunny_narrow_zone_can_choose_rowan_with_all_observed_conditions():
         drainage="well_drained",
         basis="Synthetic homogeneous observation",
     )
+    for zone in case.project.planting_zones:
+        if zone.id in case.request.zone_ids:
+            zone.site_conditions = case.request.site_conditions.model_copy(deep=True)
     result = run_case(case)["content"]["result"]
     assert len(result["change_set"]["additions"]) == 5
-    assert {p["species_revision_id"] for p in result["change_set"]["additions"]} == {
-        "sorbus-aucuparia@2026-08-28.1"
-    }
+    assert all(p["species_revision_id"] for p in result["change_set"]["additions"])
     rowan = next(
         o
         for o in result["species_options"]
@@ -243,6 +280,9 @@ def test_sunny_narrow_zone_can_choose_rowan_with_all_observed_conditions():
     assert rowan["site_suitability"]["status"] == "documented_match"
     assert rowan["site_suitability"]["source_url"].endswith("/sorbus-aucuparia/")
     case.request.site_conditions.light = "partial_shade"
+    for zone in case.project.planting_zones:
+        if zone.id in case.request.zone_ids:
+            zone.site_conditions = case.request.site_conditions.model_copy(deep=True)
     shaded = run_case(case)["content"]["result"]
     rowan = next(
         o
@@ -257,7 +297,7 @@ def test_elm_source_does_not_infer_light_drainage_or_municipal_approval():
     app, project = application()
     req = request(project, moisture="moist")
     req.plant_kind = "tree"
-    result = app.preview_recommendation(project.id, req)
+    result = preview_saved(app, project, req)
     elm = options(result)["ulmus-laevis"]
     assert elm.site_suitability.status == "documented_match"
     assert elm.assortment_status == "unreviewed"

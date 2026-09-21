@@ -57,7 +57,7 @@ export const SpeciesPicker: FC<SpeciesPickerProps> = ({
                 {selected?.common_name ?? 'Выбрать породу'}
               </strong>
               <small className="text-[11px] leading-4 text-neutral-600">
-                {selected?.scientific_name ?? 'Каталог с фотографиями'}
+                {selected?.scientific_name ?? 'Виды, размеры и условия посадки'}
               </small>
             </span>
           </>

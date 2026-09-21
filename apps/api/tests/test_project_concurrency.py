@@ -49,6 +49,7 @@ def create_manual_project(name: str) -> dict:
     assert client.put(f"/api/projects/{project_id}/planting-zones", json={"zones": [{
         "id": "work-area",
         "label": "Участок посадки",
+        "territory": {"category": "courtyard", "regime": "ordinary", "basis": "Synthetic concurrency test courtyard"},
         "geometry": {"type": "Polygon", "coordinates": [[[12, 12], [60, 12], [60, 35], [12, 35], [12, 12]]]},
     }]}).status_code == 200
     manual = client.post(f"/api/projects/{project_id}/plan/manual")

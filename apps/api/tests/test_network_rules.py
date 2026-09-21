@@ -7,7 +7,13 @@ import pytest
 from shapely.geometry import LineString, Point, Polygon, box, mapping
 from test_placement_allocation import application
 
-from app.contracts import GeometrySnapshot, Plan, PlanObject, Project
+from app.contracts import (
+    GeometrySnapshot,
+    Plan,
+    PlanObject,
+    PlantingZoneAssignment,
+    Project,
+)
 from app.dxf_import.contracts import SourceFile
 from app.dxf_import.layer_contracts import Layer
 from app.exporting.application import ExportApplication
@@ -25,6 +31,7 @@ from app.planning.contracts import PlacementCheckRequest, PlanObjectCreate
 from app.planning.pattern_contracts import FillPatternRequest
 from app.regulations.network_rules import NETWORK_RULE_PACK
 from app.scene.contracts import SceneSnapshot
+from app.species.assortment import TerritoryContext
 from app.validation.adapters import RuleBasedPlanValidator
 
 
@@ -65,6 +72,9 @@ def network_project(*networks):
         )
     return Project(
         name="Reviewed networks",
+        planting_zones=[PlantingZoneAssignment(id="network-test-courtyard", label="Synthetic courtyard",
+            geometry=mapping(box(-1000, -1000, 1000, 1000)), territory=TerritoryContext(
+                category="courtyard", regime="ordinary", basis="Synthetic network test territory"))],
         layers=layers,
         geometry=GeometrySnapshot(
             feature_collection={"type": "FeatureCollection", "features": features}

@@ -21,14 +21,20 @@ def case():
     result = parse_case(
         (
             Path(__file__).resolve().parents[3]
-            / "fixtures/planning-lab/automatic-mixed-courtyard.json"
+            / "fixtures/planning-lab/automatic-mixed-courtyard-saved-context.json"
         ).read_bytes()
     )
     assert isinstance(result, CompositionSelectionCase)
     return result
 
 
-def test_all_pairs_are_compared_and_composition_precedes_total_count():
+def test_all_pairs_are_compared_and_composition_precedes_total_count(monkeypatch):
+    from app.species.catalog import list_species
+
+    baseline = [s for s in list_species() if not s.id.endswith("@2026-09-21.1")]
+    monkeypatch.setattr(
+        "app.planning.composition_selection.list_species", lambda: baseline
+    )
     report = run_case(case())
     result = report["content"]["result"]
     pairs = result["pairs"]
@@ -56,6 +62,8 @@ def test_conditions_filter_both_kinds_without_claiming_unknown_is_forbidden():
         "basis": "Synthetic measured homogeneous conditions",
     }
     source.request = CompositionSelectionRequest.model_validate(raw)
+    for zone in source.project.planting_zones:
+        zone.site_conditions = source.request.site_conditions
     report = run_case(source)
     assert report["content"]["error"] is None
     result = report["content"]["result"]
@@ -90,6 +98,8 @@ def test_missing_eligible_tier_does_not_silently_substitute():
         "basis": "Synthetic shady courtyard",
     }
     source.request = CompositionSelectionRequest.model_validate(values)
+    for zone in source.project.planting_zones:
+        zone.site_conditions = source.request.site_conditions
     report = run_case(source)
     result = report["content"]["result"]
     assert result["pairs"] == [] and result["preview"] is None
@@ -104,6 +114,10 @@ def test_single_cached_winner_applies_with_existing_version_guard():
     values = case().request.model_dump()
     values["placement"].update(base_plan_version=project.plan.version, target_count=4)
     request = CompositionSelectionRequest.model_validate(values)
+    for zone in project.planting_zones:
+        zone.territory = request.territory
+        zone.site_conditions = request.site_conditions
+    project = app.repository.save(project)
     before = app.get(project.id).model_dump_json()
     result = select_composition(project, request, app.patterns)
     assert len(app.changes._previews) == 1
@@ -153,14 +167,17 @@ def test_profile_tie_break_and_one_snapshot(objective, monkeypatch):
     values = case().request.model_dump()
     values["placement"].update(base_plan_version=project.plan.version, target_count=4)
     values["objective"] = objective
+    request = CompositionSelectionRequest.model_validate(values)
+    for zone in project.planting_zones:
+        zone.territory = request.territory
+        zone.site_conditions = request.site_conditions
+    project = app.repository.save(project)
 
     def unexpected_read(*args, **kwargs):
         pytest.fail("Pair search must reuse its supplied snapshot")
 
     monkeypatch.setattr(app.patterns.repository, "get", unexpected_read)
-    result = select_composition(
-        project, CompositionSelectionRequest.model_validate(values), app.patterns
-    )
+    result = select_composition(project, request, app.patterns)
     winner = result.pairs[result.selected_pair_index]
     assert (winner.trees, winner.shrubs) == (2, 2)
     full_pairs = [p for p in result.pairs if p.trees == p.shrubs == 2]
@@ -180,3 +197,11 @@ def test_profile_tie_break_and_one_snapshot(objective, monkeypatch):
             (p.tree_species_revision_id, p.shrub_species_revision_id)
             for p in full_pairs
         )
+
+
+def test_composition_request_cannot_replace_the_saved_zone_category():
+    app, project = application()
+    request = case().request
+    request.territory.category = "preschool"
+    with pytest.raises(ValueError, match="сохранённых условий"):
+        select_composition(project, request, app.patterns)

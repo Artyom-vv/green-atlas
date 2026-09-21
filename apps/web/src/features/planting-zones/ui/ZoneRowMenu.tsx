@@ -1,5 +1,11 @@
 import { useId, type FC } from 'react';
-import { MoreHorizontal, Pencil, ScanLine, Trash2 } from 'lucide-react';
+import {
+  MoreHorizontal,
+  Pencil,
+  ScanLine,
+  Trash2,
+  SlidersHorizontal,
+} from 'lucide-react';
 import {
   IconButton,
   Menu,
@@ -14,6 +20,7 @@ export interface ZoneRowMenuProps {
   saving: boolean;
   deleteReason?: string;
   onRename: () => void;
+  onConditions?: () => void;
   onRedraw: () => void;
   onDelete: () => void;
 }
@@ -22,6 +29,7 @@ export const ZoneRowMenu: FC<ZoneRowMenuProps> = ({
   saving,
   deleteReason,
   onRename,
+  onConditions,
   onRedraw,
   onDelete,
 }) => {
@@ -49,6 +57,15 @@ export const ZoneRowMenu: FC<ZoneRowMenuProps> = ({
         <MenuItem startIcon={<ScanLine />} disabled={saving} onClick={onRedraw}>
           Изменить контур
         </MenuItem>
+        {onConditions && (
+          <MenuItem
+            startIcon={<SlidersHorizontal />}
+            disabled={saving}
+            onClick={onConditions}
+          >
+            Условия участка
+          </MenuItem>
+        )}
         <MenuSeparator />
         <MenuItem
           startIcon={<Trash2 />}

@@ -74,16 +74,18 @@ class RecommendationApplication:
         if requested_zone_ids - known_zone_ids:
             raise ValueError("Один из выбранных участков больше не существует")
 
-        preferred = RECOMMENDATION_PROFILES[request.profile]["species"]
-        if request.territory is None:
-            result = self._preview_species(
-                project, request, preferred, cache_final=True
-            )
-            result.selection_reason = "Категория территории не задана: использован прежний вид пресета, пригодность по ассортименту не проверена."
-            result.data_gaps.append("Категория территории и применимость ассортимента")
-            result.evidence.species_catalog = "partial"
-            return result
+        from app.planning.zone_recommendation import recommend_by_zone
 
+        return recommend_by_zone(project, request, self._select_for_zone, self.previews)
+
+    def _select_for_zone(
+        self,
+        project: Project,
+        request: RecommendationRequest,
+    ) -> RecommendationPreview:
+        if request.territory is None:
+            raise ValueError("Укажите категорию территории рабочего участка")
+        preferred = RECOMMENDATION_PROFILES[request.profile]["species"]
         options = []
         best_key = None
         selected_id = None
@@ -131,7 +133,7 @@ class RecommendationApplication:
                 ]
                 self._record_site_context(result, request)
             return result
-        result = self._preview_species(project, request, selected_id, cache_final=True)
+        result = self._preview_species(project, request, selected_id, cache_final=False)
         result.species_options = options
         result.assortment_revision = ASSORTMENT_REVISION
         result.selection_reason = SELECTION_REASONS[request.profile]

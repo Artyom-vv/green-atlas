@@ -10,9 +10,10 @@ from app.planning.allocation import equal_zone_targets, spread_indices
 from app.planning.patterns import ShapelyCandidateGenerator
 from app.projects.adapters import InMemoryProjectRepository
 from app.validation.adapters import RuleBasedPlanValidator
+from app.species.assortment import TerritoryContext
 
 
-def application(block_east=False):
+def application(block_east=False, *, with_context=True):
     features = [{"type": "Feature", "properties": {"kind": "site_border"}, "geometry": mapping(box(-10, -10, 510, 210))}]
     if block_east:
         features.append({"type": "Feature", "properties": {"kind": "water"}, "geometry": mapping(box(400, 0, 500, 100))})
@@ -20,6 +21,12 @@ def application(block_east=False):
         PlantingZoneAssignment(id="west", label="West", geometry=mapping(box(0, 0, 200, 200))),
         PlantingZoneAssignment(id="east", label="East", geometry=mapping(box(400, 0, 500, 100))),
     ])
+    if with_context:
+        # This fixture models two ordinary courtyards with managed spread.
+        # Geometry tests must supply the same explicit context as real users.
+        for zone in project.planting_zones:
+            zone.territory = TerritoryContext(category="courtyard", regime="ordinary",
+                basis="Synthetic courtyard fixture with managed spread", spread_control_confirmed=True)
     repo = InMemoryProjectRepository()
     project = repo.create(project)
     app = ProjectApplication(repository=repo, operation_repository=None, history=None, dxf_reader=None,

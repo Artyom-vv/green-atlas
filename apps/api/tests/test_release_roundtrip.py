@@ -27,6 +27,7 @@ def _area() -> dict:
     return {
         "id": "roundtrip-area",
         "label": "Участок ревизии",
+        "territory": {"category": "courtyard", "regime": "ordinary", "basis": "Synthetic release round-trip courtyard with controlled spread", "spread_control_confirmed": True},
         "geometry": {"type": "Polygon", "coordinates": [[*coordinates, coordinates[0]]]},
     }
 

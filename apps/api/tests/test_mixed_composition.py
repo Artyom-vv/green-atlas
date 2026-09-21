@@ -66,7 +66,7 @@ def test_exact_global_quotas_and_single_durable_preview(share, trees, shrubs):
 def test_narrow_corridor_keeps_shrub_quota_without_replacing_missing_trees():
     path = (
         Path(__file__).resolve().parents[3]
-        / "fixtures/planning-lab/mixed-narrow-corridor.json"
+        / "fixtures/planning-lab/mixed-narrow-corridor-saved-context.json"
     )
     case = parse_case(path.read_bytes())
     first, second = run_case(case), run_case(case)
@@ -188,11 +188,19 @@ def test_two_layers_take_priority_over_a_larger_monoculture():
 
 @pytest.mark.parametrize("network_type", ["gas", "heat"])
 def test_mixed_network_clearances_keep_per_plant_normative_traces(network_type):
+    from app.species.assortment import TerritoryContext
+
     path = (
         Path(__file__).resolve().parents[3]
         / "fixtures/planning-lab/network-crossing.json"
     )
     case = parse_case(path.read_bytes())
+    for zone in case.project.planting_zones:
+        zone.territory = TerritoryContext(
+            category="courtyard",
+            regime="ordinary",
+            basis="Synthetic network crossing courtyard",
+        )
     case.request = request(case.project, zone_ids=["zone"])
     context = case.project.geometry.feature_collection["features"][1]["properties"][
         "utility_context"

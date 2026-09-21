@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.species.eligibility_contracts import PlantEligibility
+
 
 class GrowthEnvelopeForecast(BaseModel):
     """A bounded biological forecast, never a regulatory exclusion zone."""
@@ -61,6 +63,8 @@ class SpeciesShortlistRequest(BaseModel):
 
 
 class SpeciesShortlistItem(BaseModel):
+    can_assign: bool = False
+    zone_restrictions: list[PlantEligibility] = Field(default_factory=list)
     species: SpeciesRevision
     status: Literal["available", "review"]
     selected_area_m2: float | None = Field(default=None, ge=0)

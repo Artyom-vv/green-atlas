@@ -8,6 +8,7 @@ interface SpeciesAssignmentFooterProps extends Pick<
   'objects' | 'previewing' | 'loading' | 'error' | 'onAssign' | 'onCancel'
 > {
   showingDetails: boolean;
+  canAssign: boolean;
 }
 export const SpeciesAssignmentFooter: FC<SpeciesAssignmentFooterProps> = ({
   objects,
@@ -17,6 +18,7 @@ export const SpeciesAssignmentFooter: FC<SpeciesAssignmentFooterProps> = ({
   onAssign,
   onCancel,
   showingDetails,
+  canAssign,
 }) => {
   const form = useFormContext<SpeciesAssignmentFormValues>();
   return (
@@ -29,7 +31,10 @@ export const SpeciesAssignmentFooter: FC<SpeciesAssignmentFooterProps> = ({
           variant="primary"
           loading={previewing}
           disabled={
-            loading || Boolean(error) || objects.some((object) => object.locked)
+            !canAssign ||
+            loading ||
+            Boolean(error) ||
+            objects.some((object) => object.locked)
           }
           onClick={() => {
             const draft = form.getValues();

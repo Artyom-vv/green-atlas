@@ -7,7 +7,9 @@ from uuid import NAMESPACE_URL, uuid5
 from app.geometry.domain import PositionChecker
 from app.planning.contracts import Plan
 from app.planning.domain import PlantSpacingIndex, required_spacing
+from app.planning.rules import compiled_planting_zones, planting_zone_at
 from app.projects.contracts import Project
+from app.species.placement_policy import plant_eligibility
 from app.validation.contracts import ValidationIssue
 from app.validation.networks import (
     compact_missing_network_issues,
@@ -16,7 +18,7 @@ from app.validation.networks import (
 
 
 class RuleBasedPlanValidator:
-    revision = "rule-based-plan-v4-network-source-summary"
+    revision = "rule-based-plan-v5-zone-assortment"
 
     def __init__(self, max_cached_projects: int = 32) -> None:
         if max_cached_projects < 1:
@@ -54,6 +56,7 @@ class RuleBasedPlanValidator:
         # target or capacity score into a local editing decision.
         issues: list[ValidationIssue] = []
         position_checker = self._position_checker(project)
+        assortment_zones = compiled_planting_zones(project)
         for object_ in plan.objects:
             violation = position_checker.check(object_.x, object_.y, object_.radius, object_.kind)
             advisory = position_checker.advisory(object_.x, object_.y, object_.radius) if violation is None else None
@@ -85,6 +88,30 @@ class RuleBasedPlanValidator:
                     y=object_.y,
                     suggested_action=advisory.suggested_action,
                 ))
+            zone = planting_zone_at(
+                project, object_.x, object_.y, object_.radius, assortment_zones
+            )
+            check = plant_eligibility(
+                object_.species_revision_id,
+                zone.territory if zone else None,
+                zone.site_conditions if zone else None,
+                zone_id=zone.id if zone else None,
+            )
+            if object_.species_revision_id and not check.allowed:
+                object_.status = "error"
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        code=check.code,
+                        title="Ассортимент участка",
+                        description=check.reason,
+                        object_id=object_.id,
+                        rule_id="moscow_assortment",
+                        x=object_.x,
+                        y=object_.y,
+                        suggested_action="Уточнить условия участка или заменить растение",
+                    )
+                )
             network_issues = object_network_issues(position_checker, object_)
             for issue in network_issues:
                 if violation and issue.code == violation.code and issue.rule_id == violation.rule_id:

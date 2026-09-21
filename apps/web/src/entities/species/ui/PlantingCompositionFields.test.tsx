@@ -82,7 +82,8 @@ describe('PlantingCompositionFields', () => {
     expect(
       screen.queryByRole('button', { name: /Липа/ }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Выбрано: Сирень' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Сведения: Сирень' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(props.onShrubSpeciesChange).toHaveBeenCalledWith(shrub.id);
     expect(props.onTreeSpeciesChange).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -183,8 +184,8 @@ describe('PlantingCompositionFields', () => {
     rerender(<PlantingCompositionFields {...props} species={[]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Порода деревьев' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Породы для выбора пока недоступны',
-    );
+    expect(
+      screen.getByText('Породы для выбора пока недоступны.'),
+    ).toBeVisible();
   });
 });

@@ -48,6 +48,10 @@ export type PatternPreview = Omit<
 };
 
 export type SpeciesRevision = Schemas['SpeciesRevision'];
+export type AssortmentInventory = Schemas['AssortmentInventory'];
+export type AssortmentEntry = Schemas['AssortmentEntry'];
+export type TerritoryContext = Schemas['TerritoryContext'];
+export type SiteConditions = Schemas['SiteConditions'];
 
 export type GrowthEnvelopeForecast = Schemas['GrowthEnvelopeForecast'];
 

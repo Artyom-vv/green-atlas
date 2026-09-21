@@ -12,6 +12,7 @@ from app.planning.types import (
     OperationType,
 )
 from app.regulations.trace_contracts import PlantingRuleTrace
+from app.species.eligibility_contracts import PlantEligibility
 
 
 class PlanObjectAddOperation(BaseModel):
@@ -62,6 +63,7 @@ class ChangeSetCandidateResult(BaseModel):
     suggested_action: str | None = None
     zone_id: str | None = None
     rule_trace: PlantingRuleTrace | None = None
+    assortment: PlantEligibility | None = None
 
 
 class ChangeSetPreview(BaseModel):

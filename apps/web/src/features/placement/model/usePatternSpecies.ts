@@ -65,6 +65,10 @@ export function usePatternSpecies({
       .filter(
         (item) =>
           item.id !== selectedSpecies.id &&
+          (!shortlist ||
+            shortlist.some(
+              (option) => option.species.id === item.id && option.can_assign,
+            )) &&
           item.mature_crown_diameter_max_m <
             selectedSpecies.mature_crown_diameter_max_m,
       )
@@ -72,9 +76,16 @@ export function usePatternSpecies({
         (left, right) =>
           left.mature_crown_diameter_max_m - right.mature_crown_diameter_max_m,
       )[0];
-  }, [availableSpecies, selectedSpecies]);
+  }, [availableSpecies, selectedSpecies, shortlist]);
+  const eligible = (id: string | undefined) =>
+    Boolean(
+      id &&
+      (!shortlist ||
+        shortlist.some((item) => item.species.id === id && item.can_assign)),
+    );
   const validSpecies = Boolean(
-    speciesId && (values.composition !== 'mixed' || values.shrubSpeciesId),
+    eligible(speciesId) &&
+    (values.composition !== 'mixed' || eligible(values.shrubSpeciesId)),
   );
 
   return {

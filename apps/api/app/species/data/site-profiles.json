@@ -1,61 +1,118 @@
 {
-  "revision": "site-evidence@2026-09-17.2",
+  "revision": "site-evidence@2026-09-21.1",
   "profiles": [
     {
       "species_id": "syringa-vulgaris",
       "source_url": "https://plants.ces.ncsu.edu/plants/syringa-vulgaris/",
       "checked_on": "2026-09-17",
-      "light": ["full_sun", "partial_shade"],
-      "moisture": ["moist"],
-      "drainage": ["well_drained"],
-      "avoid_drainage": ["poorly_drained"],
-      "notes": ["NC State: свет и водный режим из Cultural Conditions; описание прямо отмечает плохую переносимость плохо дренируемой почвы. Кислотность, сорт и местные условия требуют отдельной проверки."]
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "avoid_drainage": [
+        "poorly_drained"
+      ],
+      "notes": [
+        "NC State: свет и водный режим из Cultural Conditions; описание прямо отмечает плохую переносимость плохо дренируемой почвы. Кислотность, сорт и местные условия требуют отдельной проверки."
+      ]
     },
     {
       "species_id": "cornus-alba",
       "source_url": "https://plants.ces.ncsu.edu/plants/cornus-alba/",
       "checked_on": "2026-09-17",
-      "light": ["full_sun", "partial_shade"],
-      "moisture": ["moist", "occasionally_dry", "occasionally_wet"],
-      "drainage": ["well_drained"],
-      "notes": ["NC State: Cultural Conditions. Периодически влажная почва не приравнивается к постоянному затоплению или плохому дренированию. Московское условие контроля распространения проверяется отдельно."]
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_dry",
+        "occasionally_wet"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Периодически влажная почва не приравнивается к постоянному затоплению или плохому дренированию. Московское условие контроля распространения проверяется отдельно."
+      ]
     },
     {
       "species_id": "spiraea-japonica",
       "source_url": "https://plants.ces.ncsu.edu/plants/spiraea-japonica/",
       "checked_on": "2026-09-17",
-      "light": ["full_sun", "partial_shade"],
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
       "moisture": [],
-      "drainage": ["well_drained"],
-      "notes": ["NC State: Cultural Conditions не указывает отдельную категорию влажности; устойчивость к засухе не превращена в гарантию для саженца. Инвазивность в США не перенесена как московский норматив; самосев, сорт и обслуживание требуют оценки."]
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions не указывает отдельную категорию влажности; устойчивость к засухе не превращена в гарантию для саженца. Инвазивность в США не перенесена как московский норматив; самосев, сорт и обслуживание требуют оценки."
+      ]
     },
     {
       "species_id": "physocarpus-opulifolius",
       "source_url": "https://plants.ces.ncsu.edu/plants/physocarpus-opulifolius/",
       "checked_on": "2026-09-17",
-      "light": ["full_sun", "partial_shade"],
-      "moisture": ["moist", "occasionally_dry"],
-      "drainage": ["well_drained"],
-      "notes": ["NC State: Cultural Conditions. Периодически сухая почва не означает постоянную засуху и отсутствие полива. Московское условие контроля распространения проверяется отдельно."]
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_dry"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions. Периодически сухая почва не означает постоянную засуху и отсутствие полива. Московское условие контроля распространения проверяется отдельно."
+      ]
     },
     {
       "species_id": "larix-decidua",
       "source_url": "https://plants.ces.ncsu.edu/plants/larix-decidua/",
       "checked_on": "2026-09-17",
-      "light": ["full_sun", "partial_shade"],
-      "moisture": ["moist"],
-      "drainage": ["well_drained"],
-      "avoid_light": ["full_shade"],
-      "notes": ["NC State: Cultural Conditions; описание явно исключает полную тень. Общие условия не подтверждают пригодность конкретного сорта и микроклимата."]
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "avoid_light": [
+        "full_shade"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions; описание явно исключает полную тень. Общие условия не подтверждают пригодность конкретного сорта и микроклимата."
+      ]
     },
     {
       "species_id": "picea-pungens",
       "source_url": "https://plants.ces.ncsu.edu/plants/picea-pungens/",
       "checked_on": "2026-09-17",
-      "light": ["full_sun", "partial_shade"],
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
       "moisture": [],
-      "drainage": ["well_drained"],
-      "notes": ["NC State: Cultural Conditions не указывает отдельную категорию влажности. Общая засухоустойчивость не заменяет данные о поливе и возрасте саженца; конкретный сорт проверяется отдельно."]
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "NC State: Cultural Conditions не указывает отдельную категорию влажности. Общая засухоустойчивость не заменяет данные о поливе и возрасте саженца; конкретный сорт проверяется отдельно."
+      ]
     },
     {
       "species_id": "tilia-cordata",
@@ -193,6 +250,123 @@
       "drainage": [],
       "notes": [
         "EUFORGEN: вводное описание указывает влажные плодородные местообитания. Устойчивость к длительным затоплениям не преобразована в бессрочное затопление; свет и дренирование не классифицированы. Московская строка ассортимента для этого вида ещё не квалифицирована."
+      ]
+    },
+    {
+      "species_id": "acer-ginnala",
+      "source_url": "https://plants.ces.ncsu.edu/plants/acer-tataricum-subsp-ginnala/",
+      "checked_on": "2026-09-21",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "Источник использует синоним Acer tataricum subsp. ginnala; размеры относятся к виду, не отдельному сорту.",
+        "Поля Cultural Conditions; неподтверждённые значения остаются неизвестными."
+      ]
+    },
+    {
+      "species_id": "berberis-thunbergii",
+      "source_url": "https://plants.ces.ncsu.edu/plants/berberis-thunbergii/",
+      "checked_on": "2026-09-21",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_dry"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "Колючий кустарник; форму и сорт необходимо уточнить.",
+        "Поля Cultural Conditions; неподтверждённые значения остаются неизвестными."
+      ]
+    },
+    {
+      "species_id": "hydrangea-arborescens",
+      "source_url": "https://plants.ces.ncsu.edu/plants/hydrangea-arborescens/",
+      "checked_on": "2026-09-21",
+      "light": [
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "Предпочитает полутень. Полное солнце требует постоянной влажности; это сочетание не подтверждается отдельным флагом освещения.",
+        "Поля Cultural Conditions; неподтверждённые значения остаются неизвестными."
+      ]
+    },
+    {
+      "species_id": "hydrangea-paniculata",
+      "source_url": "https://plants.ces.ncsu.edu/plants/hydrangea-paniculata/",
+      "checked_on": "2026-09-21",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_wet"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "Диапазон относится к виду; размеры компактных сортов не подменяют диапазон источника.",
+        "Поля Cultural Conditions; неподтверждённые значения остаются неизвестными."
+      ]
+    },
+    {
+      "species_id": "viburnum-opulus",
+      "source_url": "https://plants.ces.ncsu.edu/plants/viburnum-opulus/",
+      "checked_on": "2026-09-21",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_wet"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "Размеры видовые; сорт, обрезка и уход требуют уточнения.",
+        "Поля Cultural Conditions; неподтверждённые значения остаются неизвестными."
+      ]
+    },
+    {
+      "species_id": "thuja-occidentalis",
+      "source_url": "https://plants.ces.ncsu.edu/plants/thuja-occidentalis/",
+      "checked_on": "2026-09-21",
+      "light": [
+        "full_sun",
+        "partial_shade"
+      ],
+      "moisture": [
+        "moist",
+        "occasionally_dry"
+      ],
+      "drainage": [
+        "well_drained"
+      ],
+      "notes": [
+        "Размеры относятся к видовому дереву, не карликовым и формованным сортам туи.",
+        "Поля Cultural Conditions; неподтверждённые значения остаются неизвестными."
       ]
     }
   ]

@@ -7,6 +7,7 @@ from app.geometry.domain import PositionChecker
 from app.planning.domain import PlantSpacingIndex
 from app.planning.patterns import generate_brush, generate_fill, generate_mask
 from app.species.catalog import get_species, growth_forecasts
+from app.species.assortment import TerritoryContext
 from app.validation.adapters import RuleBasedPlanValidator
 
 
@@ -83,7 +84,8 @@ def test_automatic_safe_area_uses_the_same_growth_envelope_as_validation() -> No
                 "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]]},
             }],
         }),
-        planting_zones=[PlantingZoneAssignment(id="work", label="Участок", geometry=area)],
+        planting_zones=[PlantingZoneAssignment(id="work", label="Участок", geometry=area,
+            territory=TerritoryContext(category="courtyard", regime="ordinary", basis="Synthetic crown fixture"))],
     )
     checker = PositionChecker(project)
     safe = checker.automatic_safe_area(shape(area), radius=1.6, plant_kind="tree", growth_canopy_radius=6, growth_root_radius=7)
@@ -105,7 +107,8 @@ def test_wide_crown_is_not_a_validation_issue_without_a_real_conflict() -> None:
                 "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]]},
             }],
         }),
-        planting_zones=[PlantingZoneAssignment(id="work", label="Участок", geometry=area)],
+        planting_zones=[PlantingZoneAssignment(id="work", label="Участок", geometry=area,
+            territory=TerritoryContext(category="courtyard", regime="ordinary", basis="Synthetic crown fixture"))],
     )
     revision = get_species("tilia-cordata@2026-08-28.1")
     canopy, roots = growth_forecasts(revision, "standard")

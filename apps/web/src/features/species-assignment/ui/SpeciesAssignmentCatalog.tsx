@@ -35,7 +35,15 @@ export const SpeciesAssignmentCatalog: FC<SpeciesAssignmentCatalogProps> = ({
     itemStatuses={Object.fromEntries(
       (shortlist ?? []).map((item) => [
         item.species.id,
-        shortlistStatus[item.status],
+        {
+          ...shortlistStatus[item.status],
+          canSelect: item.can_assign,
+          label:
+            item.zone_restrictions
+              ?.filter((check) => !check.allowed)
+              .map((check) => check.reason)
+              .join('; ') || shortlistStatus[item.status].label,
+        },
       ]),
     )}
   />

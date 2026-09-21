@@ -15,7 +15,9 @@ class SourceSpeciesProfile(BaseModel):
     common_name: str
     scientific_name: str
     kind: Literal["tree", "shrub"]
-    crown_shape: Literal["conical", "irregular", "spreading"]
+    crown_shape: Literal[
+        "conical", "irregular", "spreading", "round", "oval", "columnar"
+    ]
     height_ft: tuple[float, float]
     width_ft: tuple[float, float]
     growth_label: Literal["Slow", "Medium", "Rapid"]

@@ -93,8 +93,10 @@ def verify_zone_preview(bound: BoundZoneIntent, preview: ZoneChangePreview | dic
             if zone.id != draft.zone_id:
                 expected.append(zone)
             elif draft.operation != "delete":
-                expected.append(ZoneSnapshot(id=zone.id, label=draft.label if draft.label is not None else zone.label,
-                                             geometry=draft.geometry if draft.geometry is not None else zone.geometry))
+                expected.append(zone.model_copy(update={
+                    "label": draft.label if draft.label is not None else zone.label,
+                    "geometry": draft.geometry if draft.geometry is not None else zone.geometry,
+                }))
     if _snapshots(expected) != preview.after_zones:
         raise ValueError("Фактический состав участков содержит непрошенные изменения")
     before_area = next((shape(zone.geometry).area for zone in before if zone.id == preview.target_zone_id), None)

@@ -43,6 +43,20 @@ export const PatternFormContent: FC<PatternFormContentProps> = ({
             disabled={loading || shortlistLoading}
             loading={shortlistLoading}
             onChange={selectSpecies}
+            itemStatuses={Object.fromEntries(
+              (options.shortlist ?? []).map((item) => [
+                item.species.id,
+                {
+                  canSelect: item.can_assign,
+                  tone: item.can_assign ? 'neutral' : 'warning',
+                  label:
+                    item.zone_restrictions
+                      ?.filter((check) => !check.allowed)
+                      .map((check) => check.reason)
+                      .join('; ') || 'Входит в ассортимент выбранных участков',
+                },
+              ]),
+            )}
           />
         </section>
       )}

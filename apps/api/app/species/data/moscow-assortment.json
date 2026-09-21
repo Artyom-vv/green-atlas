@@ -1,5 +1,5 @@
 {
-  "revision": "mos-assortment@2026-09-17.3",
+  "revision": "mos-assortment@2026-09-21.1",
   "source_url": "https://www.mos.ru/upload/content/files/c6ee55bb75792e008a490f28cfe834fb/Osnovnoiidopolnitelniiassortimentderevevkystarnikovilian.pdf",
   "source_sha256": "114fe5b7598f32ca0b13162985cc80d14be569d8898aacbcd148fd08571a4b67",
   "categories": [
@@ -604,9 +604,9 @@
       "page": 4,
       "row": 24,
       "cells": "++++++++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "acer-ginnala",
       "notes": [],
       "requires_spread_control": false
     },
@@ -1312,10 +1312,12 @@
       "page": 8,
       "row": 6,
       "cells": "+--+++++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
-      "notes": [],
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "berberis-thunbergii",
+      "notes": [
+        "Таблица рекомендует размещать вдали от детских и спортивных площадок и мест массового пребывания детей; расстояние здесь не задано."
+      ],
       "requires_spread_control": false
     },
     {
@@ -1584,9 +1586,9 @@
       "page": 10,
       "row": 23,
       "cells": "++++++++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "hydrangea-arborescens",
       "notes": [],
       "requires_spread_control": false
     },
@@ -1600,9 +1602,9 @@
       "page": 10,
       "row": 24,
       "cells": "++++-+++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "hydrangea-paniculata",
       "notes": [],
       "requires_spread_control": false
     },
@@ -1858,9 +1860,9 @@
       "page": 11,
       "row": 40,
       "cells": "+--+-++-",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "viburnum-opulus",
       "notes": [],
       "requires_spread_control": false
     },
@@ -2964,9 +2966,9 @@
       "page": 15,
       "row": 20,
       "cells": "++++-+++",
-      "matrix_reviewed": false,
-      "conditions_reviewed": false,
-      "calculation_species_id": null,
+      "matrix_reviewed": true,
+      "conditions_reviewed": true,
+      "calculation_species_id": "thuja-occidentalis",
       "notes": [],
       "requires_spread_control": false
     },

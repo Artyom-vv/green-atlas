@@ -16,10 +16,10 @@ SiteCheckStatus = Literal[
 
 
 class SiteConditions(BaseModel):
-    """One homogeneous observation context for all zones in this request.
+    """One homogeneous observation context for a working zone.
 
     Unknown dimensions stay null; drainage and moisture are independent.
-    Separate requests are necessary for zones with different conditions.
+    Zones keep independent observations; absent dimensions remain unknown.
     """
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)

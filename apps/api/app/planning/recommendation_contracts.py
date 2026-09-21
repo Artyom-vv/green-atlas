@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.planning.change_contracts import ChangeSetPreview
 from app.planning.pattern_contracts import PatternSkippedCandidate
@@ -21,22 +21,12 @@ class RecommendationRequest(BaseModel):
     plant_kind: Literal["tree", "shrub"] | None = None
     site_conditions: SiteConditions | None = Field(
         default=None,
-        description="Явно заданные одинаковые условия всех выбранных участков. Для разных условий нужны отдельные запросы; null означает отсутствие данных.",
+        description="Необязательная проверка одинаковых условий запроса: они должны совпадать с сохранёнными условиями каждого участка. Если поле не задано, используются независимые условия участков.",
     )
 
     @property
     def effective_plant_kind(self) -> Literal["tree", "shrub"]:
         return self.plant_kind or "tree"
-
-    @model_validator(mode="after")
-    def require_shrub_context(self) -> RecommendationRequest:
-        if self.plant_kind == "shrub" and self.territory is None:
-            raise ValueError("Для подбора кустарников укажите контекст территории")
-        if self.site_conditions is not None and self.territory is None:
-            raise ValueError(
-                "Для подбора по условиям участка укажите контекст территории"
-            )
-        return self
 
 
 class EvidenceAssessment(BaseModel):
@@ -81,7 +71,18 @@ class RecommendationSpeciesOption(QualifiedSpeciesOption):
     crown_projection_sum_m2: float = 0
 
 
+class ZoneRecommendationSummary(BaseModel):
+    zone_id: str
+    requested_count: int
+    accepted_count: int
+    territory: TerritoryContext
+    site_conditions: SiteConditions | None = None
+    species_options: list[RecommendationSpeciesOption] = Field(default_factory=list)
+    selection_reason: str | None = None
+
+
 class RecommendationPreview(BaseModel):
+    zone_results: list[ZoneRecommendationSummary] = Field(default_factory=list)
     arrangement: Literal["area", "building_screen"] = "area"
     target_geometry: dict[str, Any] | None = None
     profile: Literal["balanced", "shade", "continuity", "low_future_conflict"]

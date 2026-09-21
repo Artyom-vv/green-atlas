@@ -11,6 +11,7 @@ import {
 import { Crosshair } from 'lucide-react';
 import { zoneGeometryArea } from '@/entities/planting-zone/model/geometry';
 import { ZoneRowMenu } from './ZoneRowMenu';
+import { territoryLabels } from '@/entities/species/model/assortmentLabels';
 
 export interface ZoneRowProps {
   zone: PlantingZoneAssignment;
@@ -23,6 +24,7 @@ export interface ZoneRowProps {
   onToggle?: (checked: boolean) => void;
   onFocus: () => void;
   onRename: (label: string) => void;
+  onConditions?: () => void;
   onRedraw: () => void;
   onDelete: () => void;
 }
@@ -81,6 +83,7 @@ export const ZoneRow: FC<ZoneRowProps> = ({
   onFocus,
   onRename,
   onRedraw,
+  onConditions,
   onDelete,
 }) => {
   const [editing, setEditing] = useState(false);
@@ -105,6 +108,18 @@ export const ZoneRow: FC<ZoneRowProps> = ({
         ) : (
           name
         )}
+        {onConditions && (
+          <button
+            type="button"
+            className="mt-1 block cursor-pointer border-0 bg-transparent p-0 text-left text-[11px] text-blue-700 hover:underline"
+            disabled={saving}
+            onClick={onConditions}
+          >
+            {zone.territory
+              ? territoryLabels[zone.territory.category]
+              : 'Указать условия участка'}
+          </button>
+        )}
       </ScrollTableCell>
       <ScrollTableCell className="text-right font-mono">
         {Math.round(zoneGeometryArea(zone.geometry)).toLocaleString('ru')}
@@ -123,6 +138,7 @@ export const ZoneRow: FC<ZoneRowProps> = ({
             saving={saving}
             deleteReason={deleteReason}
             onRename={() => setEditing(true)}
+            onConditions={onConditions}
             onRedraw={onRedraw}
             onDelete={onDelete}
           />

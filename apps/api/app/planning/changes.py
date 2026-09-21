@@ -31,10 +31,15 @@ from app.planning.evaluation import (
     PlanEvaluation,
     candidate_result,
 )
-from app.planning.rules import compiled_planting_zones
+from app.planning.rules import (
+    compiled_planting_zones,
+    default_layout_radius,
+    planting_zone_at,
+)
 from app.planning.trace import operation_rule_trace
 from app.projects.contracts import Project, ProjectStatus
 from app.projects.ports import ProjectReader
+from app.species.placement_policy import plant_eligibility
 from app.validation.application import PlanValidation
 
 
@@ -261,10 +266,41 @@ class ChangeSetApplication:
                         "",
                     )
                 )
+        original_objects = {p.id: p for p in project.plan.objects}
         for operation, result in zip(draft.operations, results, strict=True):
             result.rule_trace = operation_rule_trace(
                 self.evaluation.geometry, project, operation
             )
+            if operation.type != "delete":
+                if (
+                    operation.type == "update"
+                    and operation.changes.model_fields_set <= {"locked"}
+                ):
+                    continue
+                if operation.type == "add":
+                    specimen = operation.object.model_dump()
+                else:
+                    original = original_objects.get(operation.object_id)
+                    if original is None:
+                        continue
+                    specimen = {
+                        **original.model_dump(),
+                        **operation.changes.model_dump(exclude_unset=True),
+                    }
+                radius = (
+                    specimen.get("layout_radius_m")
+                    or specimen.get("radius")
+                    or default_layout_radius(specimen["kind"])
+                )
+                zone = planting_zone_at(
+                    project, specimen["x"], specimen["y"], radius, compiled_zones
+                )
+                result.assortment = plant_eligibility(
+                    specimen.get("species_revision_id"),
+                    zone.territory if zone else None,
+                    zone.site_conditions if zone else None,
+                    zone_id=zone.id if zone else None,
+                )
         can_apply = all(
             item.status == "allowed"
             or (manual_single_review and item.status in {"unknown", "soft_conflict"})
@@ -510,6 +546,8 @@ class ChangeSetApplication:
                 ):
                     raise ValueError("Снимок ручной команды устарел. Обновите проект")
                 project = snapshot
+            if project.plan is None:
+                raise ValueError("План ещё не создан")
             before = history_basis(project)
             before_plan = project.plan.model_copy(deep=True)
             project.plan = cached.plan.model_copy(deep=True)

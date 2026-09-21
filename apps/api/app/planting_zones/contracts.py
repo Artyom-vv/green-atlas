@@ -5,11 +5,16 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.species.assortment import TerritoryContext
+from app.species.site_contracts import SiteConditions
+
 
 class PlantingZoneAssignment(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     label: str = Field(min_length=1, max_length=160)
     geometry: dict[str, Any]
+    territory: TerritoryContext | None = None
+    site_conditions: SiteConditions | None = None
 
 
 class PlantingZonesRequest(BaseModel):

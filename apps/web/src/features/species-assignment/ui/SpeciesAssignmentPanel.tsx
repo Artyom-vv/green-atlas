@@ -153,6 +153,7 @@ const SpeciesAssignmentForm: FC<SpeciesAssignmentPanelProps> = ({
             onAssign={onAssign}
             onCancel={onCancel}
             showingDetails={Boolean(showingDetails)}
+            canAssign={selected?.can_assign === true}
           />
         </footer>
       </Surface>

@@ -19,6 +19,7 @@ from app.planning.types import OperationType, RejectedCategory, RejectedStatus
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 from app.species.catalog import get_species, growth_forecasts
+from app.species.placement_policy import plant_eligibility
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,7 @@ class PlanEvaluation:
             revision = get_species(object_.species_revision_id)
             if revision.kind != object_.kind:
                 raise ValueError("Порода не соответствует типу посадочного места")
+            self.require_assortment(object_.species_revision_id, zone)
             object_.canopy_forecast, object_.root_forecast = growth_forecasts(
                 revision, object_.size_class
             )
@@ -257,6 +259,7 @@ class PlanEvaluation:
             revision = get_species(str(next_revision_id))
             if revision.kind != current.kind:
                 raise ValueError("Порода не соответствует типу посадочного места")
+            self.require_assortment(str(next_revision_id), zone)
             canopy, roots = growth_forecasts(revision, str(next_size_class))
             updates["canopy_forecast"] = canopy
             updates["root_forecast"] = roots
@@ -282,6 +285,33 @@ class PlanEvaluation:
         if not index.respects(candidate, ignore_id=ignore_id):
             raise ValueError("Объект расположен слишком близко к существующим посадкам")
         return candidate, advisory
+
+    @staticmethod
+    def require_assortment(
+        revision_id: str | None, zone: PlantingZoneAssignment | None
+    ) -> None:
+        # Unassigned layout positions remain repairable drafts. Release already
+        # rejects them; assigning a real species must pass the saved zone policy.
+        if revision_id is None:
+            return
+        check = plant_eligibility(
+            revision_id,
+            zone.territory if zone else None,
+            zone.site_conditions if zone else None,
+            zone_id=zone.id if zone else None,
+        )
+        if not check.allowed:
+            raise CandidateRejected(
+                CandidateIssue(
+                    status="blocked",
+                    code=check.code,
+                    category="constraint",
+                    message=check.reason,
+                    rule_id="moscow_assortment",
+                    suggested_action="Уточнить условия участка или выбрать подходящее растение",
+                    zone_id=check.zone_id,
+                )
+            )
 
     def automatic_generation_zones(
         self,

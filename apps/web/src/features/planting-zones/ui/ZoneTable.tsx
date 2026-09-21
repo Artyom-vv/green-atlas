@@ -17,6 +17,7 @@ interface ZoneTableProps extends Pick<
   | 'saving'
   | 'onFocus'
   | 'onRename'
+  | 'onConditions'
   | 'onRedraw'
   | 'onDelete'
 > {
@@ -34,6 +35,7 @@ export const ZoneTable: FC<ZoneTableProps> = ({
   onSelectionChange,
   onFocus,
   onRename,
+  onConditions,
   onRedraw,
   onDelete,
 }) => (
@@ -88,6 +90,7 @@ export const ZoneTable: FC<ZoneTableProps> = ({
           }
           onFocus={() => onFocus(zone)}
           onRename={(label) => onRename(zone, label)}
+          onConditions={onConditions ? () => onConditions(zone) : undefined}
           onRedraw={() => onRedraw(zone)}
           onDelete={() => onDelete(zone)}
         />

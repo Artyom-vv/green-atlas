@@ -8,6 +8,7 @@ import type {
 import { ZoneManagerToolbar } from './ZoneManagerToolbar';
 import { ZoneSelectionBar } from './ZoneSelectionBar';
 import { ZoneTable } from './ZoneTable';
+import { ZoneConditionsDialog } from './ZoneConditionsDialog';
 export type { PlantingZoneManagerProps } from './PlantingZoneManager.types';
 export const PlantingZoneManager: FC<PlantingZoneManagerProps> = ({
   zones,
@@ -20,12 +21,15 @@ export const PlantingZoneManager: FC<PlantingZoneManagerProps> = ({
   error,
   onFocus,
   onRename,
+  onConditions,
   onRedraw,
   onDelete,
   onDraw,
   onCancelDraw,
 }) => {
   const [query, setQuery] = useState('');
+  const [conditionsId, setConditionsId] = useState<string>();
+  const conditionsZone = zones.find((zone) => zone.id === conditionsId);
   const [filter, setFilter] = useState<ZoneFilter>('all');
   const visible = zones.filter(
     (zone) =>
@@ -65,6 +69,9 @@ export const PlantingZoneManager: FC<PlantingZoneManagerProps> = ({
           onSelectionChange={onSelectionChange}
           onFocus={onFocus}
           onRename={onRename}
+          onConditions={
+            onConditions ? (zone) => setConditionsId(zone.id) : undefined
+          }
           onRedraw={onRedraw}
           onDelete={onDelete}
         />
@@ -74,6 +81,18 @@ export const PlantingZoneManager: FC<PlantingZoneManagerProps> = ({
           </InlineMessage>
         )}
         {error && <InlineMessage tone="error">{error}</InlineMessage>}
+        {conditionsZone && onConditions && (
+          <ZoneConditionsDialog
+            key={conditionsZone.id}
+            zone={conditionsZone}
+            saving={saving}
+            onClose={() => setConditionsId(undefined)}
+            onSave={(zone) => {
+              onConditions(zone);
+              setConditionsId(undefined);
+            }}
+          />
+        )}
       </div>
     </ControlProvider>
   );

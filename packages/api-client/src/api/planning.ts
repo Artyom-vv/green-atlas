@@ -33,6 +33,8 @@ import { withProjectWriteOptions } from '../transport/projectWrite';
 export const planningApi = {
   listSpecies: (kind?: SpeciesRevision['kind']) =>
     request<SpeciesRevision[]>(`/api/species${kind ? `?kind=${kind}` : ''}`),
+  getAssortment: () =>
+    request<WireSchema<'AssortmentInventory'>>('/api/species/assortment'),
   createManualPlan: (projectId: string, options?: ProjectWriteOptions) =>
     request<Project>(
       `/api/projects/${projectId}/plan/manual`,

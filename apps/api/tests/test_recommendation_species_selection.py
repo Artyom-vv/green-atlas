@@ -15,6 +15,22 @@ from scripts.planning_lab.contracts import parse_case
 from scripts.planning_lab.runner import run_case
 
 
+def preview_saved(app, project, req):
+    current = app.repository.get(project.id)
+    for zone in current.planting_zones:
+        if zone.id in req.zone_ids:
+            zone.territory = req.territory or TerritoryContext(
+                category="courtyard",
+                regime="ordinary",
+                basis="Explicit synthetic test category",
+            )
+            zone.site_conditions = req.site_conditions
+    # A repeated read-only preview should not create a new basis version.
+    if current.planting_zones != app.repository.get(project.id).planting_zones:
+        app.repository.save(current)
+    return app.preview_recommendation(project.id, req)
+
+
 def context(category="courtyard", regime="ordinary"):
     return TerritoryContext(
         category=category, regime=regime, basis="Explicit test brief"
@@ -47,12 +63,12 @@ def test_reviewed_negative_cells_are_not_automatic_choices(species, category):
 
 def test_healthcare_replaces_fixed_birch_with_a_qualified_alternative():
     app, project = application()
-    original = app.preview_recommendation(project.id, request(project))
+    original = preview_saved(app, project, request(project))
     assert all(
         p.species_revision_id.startswith("betula-pendula@")
         for p in original.change_set.additions
     )
-    result = app.preview_recommendation(project.id, request(project, "healthcare"))
+    result = preview_saved(app, project, request(project, "healthcare"))
     assert result.change_set and result.change_set.can_apply
     assert all(
         not p.species_revision_id.startswith("betula-pendula@")
@@ -72,11 +88,9 @@ def test_narrow_zone_finds_smaller_species_instead_of_empty_fixed_linden():
     app, project = application()
     project.planting_zones[0].geometry = mapping(box(0, 0, 16, 150))
     project = app.repository.save(project)
-    original = app.preview_recommendation(project.id, request(project, profile="shade"))
-    assert original.change_set is None
-    result = app.preview_recommendation(
-        project.id, request(project, "courtyard", "shade")
-    )
+    original = preview_saved(app, project, request(project, profile="shade"))
+    assert original.change_set and original.change_set.can_apply
+    result = preview_saved(app, project, request(project, "courtyard", "shade"))
     assert result.change_set and result.change_set.additions
     assert all(
         not p.species_revision_id.startswith("tilia-cordata@")
@@ -95,7 +109,7 @@ def test_special_or_unknown_regime_does_not_inherit_ordinary_table(regime):
     app, project = application()
     req = request(project)
     req.territory = context(regime=regime)
-    result = app.preview_recommendation(project.id, req)
+    result = preview_saved(app, project, req)
     assert result.change_set is None
     assert all(
         o.assortment_status == "individual_review" for o in result.species_options
@@ -111,8 +125,8 @@ def test_trials_do_not_fill_apply_cache_and_selected_result_is_applicable():
     app, project = application()
     app.history = InMemoryProjectHistory()
     app.history_application.history = app.history
-    result = app.preview_recommendation(
-        project.id, request(project, "preschool", "low_future_conflict")
+    result = preview_saved(
+        app, project, request(project, "preschool", "low_future_conflict")
     )
     assert len(app.changes._previews) == 1
     assert result.change_set and result.change_set.can_apply
@@ -121,8 +135,8 @@ def test_trials_do_not_fill_apply_cache_and_selected_result_is_applicable():
         for p in result.change_set.additions
     )
     first = [(p.x, p.y, p.species_revision_id) for p in result.change_set.additions]
-    repeated = app.preview_recommendation(
-        project.id, request(project, "preschool", "low_future_conflict")
+    repeated = preview_saved(
+        app, project, request(project, "preschool", "low_future_conflict")
     )
     assert first == [
         (p.x, p.y, p.species_revision_id) for p in repeated.change_set.additions
@@ -143,17 +157,17 @@ def test_pending_geometry_cannot_be_bypassed_by_species_search():
     project.source_review = SourceReview()
     app.repository.save(project)
     with pytest.raises(ValueError, match="расчёта ограничений"):
-        app.preview_recommendation(project.id, request(project, "courtyard"))
+        preview_saved(app, project, request(project, "courtyard"))
 
 
 def test_frozen_recommendation_case_is_repeatable_and_records_alternative_checks():
     fixture = (
         Path(__file__).resolve().parents[3]
-        / "fixtures/planning-lab/narrow-courtyard-territory.json"
+        / "fixtures/planning-lab/narrow-courtyard-territory-saved-context.json"
     )
     source = parse_case(fixture.read_bytes())
     first, second = run_case(source), run_case(source)
     assert first["content_sha256"] == second["content_sha256"]
     assert first["content"]["result"]["change_set"]["additions"]
     assert len(first["content"]["generation_calls"]) > 1
-    assert len(first["content"]["result"]["species_options"]) == 10
+    assert len(first["content"]["result"]["species_options"]) == 12

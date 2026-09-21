@@ -2254,6 +2254,7 @@ export interface components {
             /** Zone Id */
             zone_id?: string | null;
             rule_trace?: components["schemas"]["PlantingRuleTrace"] | null;
+            assortment?: components["schemas"]["PlantEligibility"] | null;
         };
         /** ChangeSetPreview */
         ChangeSetPreview: {
@@ -3889,6 +3890,37 @@ export interface components {
             /** Task */
             task: string;
         };
+        /** PlantEligibility */
+        PlantEligibility: {
+            /** Allowed */
+            allowed: boolean;
+            /** Code */
+            code: string;
+            /** Reason */
+            reason: string;
+            /** Zone Id */
+            zone_id?: string | null;
+            /** Category */
+            category?: string | null;
+            /**
+             * Source Url
+             * @default https://www.mos.ru/upload/content/files/c6ee55bb75792e008a490f28cfe834fb/Osnovnoiidopolnitelniiassortimentderevevkystarnikovilian.pdf
+             */
+            source_url: string;
+            /**
+             * Source Revision
+             * @default mos-assortment@2026-09-21.1
+             */
+            source_revision: string;
+            /** Source Page */
+            source_page?: number | null;
+            /** Source Row */
+            source_row?: number | null;
+            /** Source Row Id */
+            source_row_id?: string | null;
+            /** Notes */
+            notes?: string[];
+        };
         /** PlantingRuleTrace */
         PlantingRuleTrace: {
             basis: components["schemas"]["RuleTraceBasis"];
@@ -3922,6 +3954,8 @@ export interface components {
             geometry: {
                 [key: string]: unknown;
             };
+            territory?: components["schemas"]["TerritoryContext"] | null;
+            site_conditions?: components["schemas"]["SiteConditions"] | null;
         };
         /** PlantingZoneOverlap */
         PlantingZoneOverlap: {
@@ -4376,6 +4410,8 @@ export interface components {
         };
         /** RecommendationPreview */
         RecommendationPreview: {
+            /** Zone Results */
+            zone_results?: components["schemas"]["ZoneRecommendationSummary"][];
             /**
              * Arrangement
              * @default area
@@ -4429,7 +4465,7 @@ export interface components {
             territory?: components["schemas"]["TerritoryContext"] | null;
             /** Plant Kind */
             plant_kind?: ("tree" | "shrub") | null;
-            /** @description Явно заданные одинаковые условия всех выбранных участков. Для разных условий нужны отдельные запросы; null означает отсутствие данных. */
+            /** @description Необязательная проверка одинаковых условий запроса: они должны совпадать с сохранёнными условиями каждого участка. Если поле не задано, используются независимые условия участков. */
             site_conditions?: components["schemas"]["SiteConditions"] | null;
         };
         /** RecommendationSpeciesOption */
@@ -5085,10 +5121,10 @@ export interface components {
         };
         /**
          * SiteConditions
-         * @description One homogeneous observation context for all zones in this request.
+         * @description One homogeneous observation context for a working zone.
          *
          *     Unknown dimensions stay null; drainage and moisture are independent.
-         *     Separate requests are necessary for zones with different conditions.
+         *     Zones keep independent observations; absent dimensions remain unknown.
          */
         SiteConditions: {
             /** Light */
@@ -5238,6 +5274,13 @@ export interface components {
         };
         /** SpeciesShortlistItem */
         SpeciesShortlistItem: {
+            /**
+             * Can Assign
+             * @default false
+             */
+            can_assign: boolean;
+            /** Zone Restrictions */
+            zone_restrictions?: components["schemas"]["PlantEligibility"][];
             species: components["schemas"]["SpeciesRevision"];
             /**
              * Status
@@ -5630,6 +5673,21 @@ export interface components {
             label?: string | null;
             geometry_reference?: components["schemas"]["ZoneGeometryReference"] | null;
         };
+        /** ZoneRecommendationSummary */
+        ZoneRecommendationSummary: {
+            /** Zone Id */
+            zone_id: string;
+            /** Requested Count */
+            requested_count: number;
+            /** Accepted Count */
+            accepted_count: number;
+            territory: components["schemas"]["TerritoryContext"];
+            site_conditions?: components["schemas"]["SiteConditions"] | null;
+            /** Species Options */
+            species_options?: components["schemas"]["RecommendationSpeciesOption"][];
+            /** Selection Reason */
+            selection_reason?: string | null;
+        };
         /** ZoneSnapshot */
         ZoneSnapshot: {
             /** Id */
@@ -5640,6 +5698,8 @@ export interface components {
             geometry: {
                 [key: string]: unknown;
             };
+            territory?: components["schemas"]["TerritoryContext"] | null;
+            site_conditions?: components["schemas"]["SiteConditions"] | null;
         };
         /**
          * ZoneSourceAmendment

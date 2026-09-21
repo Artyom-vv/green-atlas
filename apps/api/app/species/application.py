@@ -5,6 +5,7 @@ from app.projects.ports import ProjectReader
 from app.species.assortment_inventory import AssortmentInventory, assortment_inventory
 from app.species.catalog import list_species
 from app.species.contracts import SpeciesRevision, SpeciesShortlistItem
+from app.species.placement_policy import plant_eligibility
 
 
 class SpeciesApplication:
@@ -51,6 +52,18 @@ class SpeciesApplication:
             scope_reason = (
                 f"Предварительный выбор для {len(requested_zones)} выбранных участков"
             )
+        if object_ids:
+            from app.planning.rules import compiled_planting_zones, planting_zone_at
+
+            compiled = compiled_planting_zones(project)
+            scope_zones = {}
+            for obj in selected:
+                zone = planting_zone_at(project, obj.x, obj.y, obj.radius, compiled)
+                scope_zones[zone.id if zone else None] = zone
+        else:
+            scope_zones = {
+                zone_id: known_zones[zone_id] for zone_id in sorted(requested_zones)
+            }
         selected_area_m2: float | None = None
         estimated_safe_area_m2: float | None = None
         if not object_ids:
@@ -70,7 +83,17 @@ class SpeciesApplication:
                 estimated_safe_area_m2 = selected_area_m2
         result: list[SpeciesShortlistItem] = []
         for revision in list_species(kind):
-            reasons = [scope_reason]
+            checks = [
+                plant_eligibility(
+                    revision.id,
+                    z.territory if z else None,
+                    z.site_conditions if z else None,
+                    zone_id=key,
+                )
+                for key, z in scope_zones.items()
+            ]
+            can_assign = bool(checks) and all(check.allowed for check in checks)
+            reasons = [scope_reason, *(check.reason for check in checks)]
             mature_diameter = revision.mature_crown_diameter_max_m
             capacity: int | None = None
             if estimated_safe_area_m2 is not None:
@@ -103,8 +126,11 @@ class SpeciesApplication:
             result.append(
                 SpeciesShortlistItem(
                     species=revision,
+                    can_assign=can_assign,
+                    zone_restrictions=checks,
                     status="review"
-                    if revision.territory_policy == "specialist_review"
+                    if not can_assign
+                    or revision.territory_policy == "specialist_review"
                     or revision.risk_flags
                     else "available",
                     selected_area_m2=selected_area_m2,

@@ -7557,6 +7557,16 @@
                 "type": "null"
               }
             ]
+          },
+          "assortment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlantEligibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -12088,6 +12098,101 @@
         ],
         "title": "PlanningBriefInput"
       },
+      "PlantEligibility": {
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Id"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "default": "https://www.mos.ru/upload/content/files/c6ee55bb75792e008a490f28cfe834fb/Osnovnoiidopolnitelniiassortimentderevevkystarnikovilian.pdf"
+          },
+          "source_revision": {
+            "type": "string",
+            "title": "Source Revision",
+            "default": "mos-assortment@2026-09-21.1"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "source_row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Row"
+          },
+          "source_row_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Row Id"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "allowed",
+          "code",
+          "reason"
+        ],
+        "title": "PlantEligibility"
+      },
       "PlantingRuleTrace": {
         "properties": {
           "basis": {
@@ -12161,6 +12266,26 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Geometry"
+          },
+          "territory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerritoryContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "site_conditions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteConditions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -13534,6 +13659,13 @@
       },
       "RecommendationPreview": {
         "properties": {
+          "zone_results": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneRecommendationSummary"
+            },
+            "type": "array",
+            "title": "Zone Results"
+          },
           "arrangement": {
             "type": "string",
             "enum": [
@@ -13725,7 +13857,7 @@
                 "type": "null"
               }
             ],
-            "description": "Явно заданные одинаковые условия всех выбранных участков. Для разных условий нужны отдельные запросы; null означает отсутствие данных."
+            "description": "Необязательная проверка одинаковых условий запроса: они должны совпадать с сохранёнными условиями каждого участка. Если поле не задано, используются независимые условия участков."
           }
         },
         "type": "object",
@@ -15627,7 +15759,7 @@
           "basis"
         ],
         "title": "SiteConditions",
-        "description": "One homogeneous observation context for all zones in this request.\n\nUnknown dimensions stay null; drainage and moisture are independent.\nSeparate requests are necessary for zones with different conditions."
+        "description": "One homogeneous observation context for a working zone.\n\nUnknown dimensions stay null; drainage and moisture are independent.\nZones keep independent observations; absent dimensions remain unknown."
       },
       "SiteSuitability": {
         "properties": {
@@ -16028,6 +16160,18 @@
       },
       "SpeciesShortlistItem": {
         "properties": {
+          "can_assign": {
+            "type": "boolean",
+            "title": "Can Assign",
+            "default": false
+          },
+          "zone_restrictions": {
+            "items": {
+              "$ref": "#/components/schemas/PlantEligibility"
+            },
+            "type": "array",
+            "title": "Zone Restrictions"
+          },
           "species": {
             "$ref": "#/components/schemas/SpeciesRevision"
           },
@@ -17396,6 +17540,61 @@
         ],
         "title": "ZoneIntent"
       },
+      "ZoneRecommendationSummary": {
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "title": "Zone Id"
+          },
+          "requested_count": {
+            "type": "integer",
+            "title": "Requested Count"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "title": "Accepted Count"
+          },
+          "territory": {
+            "$ref": "#/components/schemas/TerritoryContext"
+          },
+          "site_conditions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteConditions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "species_options": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationSpeciesOption"
+            },
+            "type": "array",
+            "title": "Species Options"
+          },
+          "selection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "zone_id",
+          "requested_count",
+          "accepted_count",
+          "territory"
+        ],
+        "title": "ZoneRecommendationSummary"
+      },
       "ZoneSnapshot": {
         "properties": {
           "id": {
@@ -17414,6 +17613,26 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Geometry"
+          },
+          "territory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerritoryContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "site_conditions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteConditions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,

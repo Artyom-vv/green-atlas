@@ -1,4 +1,5 @@
 import type { FC } from 'react';
+import { WorkspacePlantCatalog } from './WorkspacePlantCatalog';
 import { featureAvailability } from '@/shared/config/featureAvailability';
 import { IDEWorkspaceShell } from '@/widgets/workbench';
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
@@ -48,7 +49,7 @@ export const WorkspaceReadyView: FC<WorkspaceReadyViewProps> = ({ model }) => {
     <WorkspacePatternTool {...WorkspacePatternToolPropsFor(model)} />
   );
   return (
-    <>
+    <WorkspacePlantCatalog>
       <IDEWorkspaceShell
         header={
           <div>
@@ -109,6 +110,6 @@ export const WorkspaceReadyView: FC<WorkspaceReadyViewProps> = ({ model }) => {
         }
       />
       <WorkspaceDialogs {...WorkspaceDialogsPropsFor(model)} />
-    </>
+    </WorkspacePlantCatalog>
   );
 };

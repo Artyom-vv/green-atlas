@@ -4,13 +4,26 @@ import type { SpeciesRevision } from '@green/api-client';
 import { SinglePlacementPanel } from '@/features/placement/ui/SinglePlacementPanel';
 
 afterEach(cleanup);
-const tree = {
+const tree: SpeciesRevision = {
   id: 'tree@1',
   species_id: 'tree',
   common_name: 'Липа',
   scientific_name: 'Tilia',
   kind: 'tree',
-} as SpeciesRevision;
+  revision: 1,
+  crown_shape: 'spreading',
+  mature_height_min_m: 18,
+  mature_height_max_m: 25,
+  mature_crown_diameter_min_m: 8,
+  mature_crown_diameter_max_m: 14,
+  growth_rate: 'moderate',
+  root_architecture: 'uncertain',
+  provenance: 'not_assessed',
+  territory_policy: 'specialist_review',
+  risk_flags: [],
+  evidence_note: 'Synthetic component test profile',
+  source_urls: [],
+};
 const shrub = {
   ...tree,
   id: 'shrub@1',
@@ -33,9 +46,10 @@ it('returns the species directly from one catalog to the active planting task', 
   fireEvent.click(screen.getByRole('button', { name: 'Выбрать породу' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(
-    screen.queryByRole('button', { name: 'Выбрать: Сирень' }),
+    screen.queryByRole('button', { name: 'Сведения: Сирень' }),
   ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Выбрать: Липа' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сведения: Липа' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
   expect(onSpeciesChange).toHaveBeenCalledWith(tree.id);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(

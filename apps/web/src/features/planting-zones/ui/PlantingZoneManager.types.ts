@@ -11,6 +11,7 @@ export interface PlantingZoneManagerProps {
   error?: string;
   onFocus: (zone: PlantingZoneAssignment) => void;
   onRename: (zone: PlantingZoneAssignment, label: string) => void;
+  onConditions?: (zone: PlantingZoneAssignment) => void;
   onRedraw: (zone: PlantingZoneAssignment) => void;
   onDelete: (zone: PlantingZoneAssignment) => void;
   onDraw: () => void;

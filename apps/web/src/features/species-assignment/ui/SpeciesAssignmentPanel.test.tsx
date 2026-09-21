@@ -26,6 +26,7 @@ const object = {
 const shortlist = [
   {
     status: 'review' as const,
+    can_assign: true,
     reasons: ['Широкая крона требует проверки'],
     species: {
       id: 'tilia@1',
@@ -80,8 +81,9 @@ describe('SpeciesAssignmentPanel', () => {
       />,
     );
     fireEvent.click(
-      screen.getByRole('button', { name: 'Выбрать: Липа мелколистная' }),
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(
       screen.queryByLabelText('Поиск в каталоге пород'),
     ).not.toBeInTheDocument();
@@ -117,7 +119,7 @@ describe('SpeciesAssignmentPanel', () => {
     });
     fireEvent.change(search, { target: { value: ' TILIA ' } });
     const choice = screen.getByRole('button', {
-      name: 'Выбрать: Липа мелколистная',
+      name: 'Сведения: Липа мелколистная',
     });
     const catalogViewport = choice.closest('[data-slot="scroll-viewport"]');
     expect(catalogViewport).not.toBeNull();
@@ -127,6 +129,7 @@ describe('SpeciesAssignmentPanel', () => {
     );
     choice.focus();
     fireEvent.click(choice);
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(
       screen.getByRole('heading', { name: 'Липа мелколистная' }),
     ).toHaveFocus();
@@ -152,9 +155,9 @@ describe('SpeciesAssignmentPanel', () => {
     expect(restoredSearch).toHaveValue(' TILIA ');
     expect(onCatalogModeChange).toHaveBeenLastCalledWith(true);
     expect(
-      screen.getByRole('button', { name: 'Выбрано: Липа мелколистная' }),
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     ).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('status')).toHaveTextContent('Показано 1 из 1');
+    expect(screen.getByRole('status')).toHaveTextContent('Найдено 1');
     fireEvent.change(restoredSearch, { target: { value: 'нет такой породы' } });
     expect(
       screen.getByText('По этому запросу пород нет. Измените название.'),
@@ -162,8 +165,9 @@ describe('SpeciesAssignmentPanel', () => {
     expect(screen.getByText('Липа мелколистная')).toBeVisible();
     fireEvent.change(restoredSearch, { target: { value: 'липа' } });
     fireEvent.click(
-      screen.getByRole('button', { name: 'Выбрано: Липа мелколистная' }),
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(
       screen.getByRole('heading', { name: 'Липа мелколистная' }),
     ).toHaveFocus();
@@ -186,11 +190,12 @@ describe('SpeciesAssignmentPanel', () => {
       />,
     );
     expect(
-      screen.getByRole('button', { name: 'Выбрать: Липа мелколистная' }),
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     ).toHaveAccessibleDescription('Tilia cordata Требует проверки');
     fireEvent.click(
-      screen.getByRole('button', { name: 'Выбрать: Липа мелколистная' }),
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     const evidence = screen.getByRole('region', { name: 'Условия подбора' });
     expect(within(evidence).getByText('Требует проверки')).toBeVisible();
     expect(within(evidence).getByText(shortlist[0].reasons[0])).toBeVisible();
@@ -228,8 +233,9 @@ describe('SpeciesAssignmentPanel', () => {
       />,
     );
     fireEvent.click(
-      screen.getByRole('button', { name: 'Выбрать: Липа мелколистная' }),
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(screen.getByText('Подходит по типу')).toBeVisible();
     expect(screen.queryByText('Требует проверки')).not.toBeInTheDocument();
     expect(
@@ -269,8 +275,9 @@ describe('SpeciesAssignmentPanel', () => {
     };
     const { rerender } = render(<SpeciesAssignmentPanel {...props} />);
     fireEvent.click(
-      screen.getByRole('button', { name: 'Выбрать: Липа мелколистная' }),
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     fireEvent.change(screen.getByRole('combobox'), {
       target: { value: 'sapling' },
     });

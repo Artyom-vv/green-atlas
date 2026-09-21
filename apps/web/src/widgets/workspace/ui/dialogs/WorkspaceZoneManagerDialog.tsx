@@ -106,6 +106,12 @@ export const WorkspaceZoneManagerDialog: FC<
           setDraftZones(zones);
           saveManagedZones.mutate({ zones, focusId: zone.id });
         }}
+        onConditions={(zone) => {
+          const zones = draftZones.map((item) =>
+            item.id === zone.id ? zone : item,
+          );
+          saveManagedZones.mutate({ zones, focusId: zone.id });
+        }}
         onRedraw={(zone) => {
           if (sceneOpen) changeMapMode('2d');
           if (!zone.id) return;

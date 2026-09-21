@@ -55,7 +55,7 @@ def test_repeated_source_name_is_not_deduplicated_or_merged():
 def test_reference_rows_do_not_become_fabricated_growth_models():
     revisions = list_species()
     mapped = [e for e in assortment_inventory().entries if e.calculation_species_id]
-    assert len(revisions) == 14 and len(mapped) == 13
+    assert len(revisions) == 20 and len(mapped) == 19
     by_species = {s.species_id: s for s in revisions}
     assert all(by_species[e.calculation_species_id].kind == e.kind for e in mapped)
     assert all(e.matrix_reviewed and e.conditions_reviewed for e in mapped)
@@ -114,11 +114,20 @@ def test_shrub_recommendation_uses_shrub_geometry_and_excludes_dogwood_at_presch
             category="preschool", regime="ordinary", basis="Test brief"
         ),
     )
+    project.planting_zones[0].territory = req.territory
+    app.repository.save(project)
     result = app.preview_recommendation(project.id, req)
     assert result.change_set and result.change_set.can_apply
     assert len(result.change_set.additions) == 5
     assert all(
-        p.kind == "shrub" and p.species_revision_id.startswith("spiraea-japonica@")
+        p.kind == "shrub"
+        and p.species_revision_id.split("@")[0]
+        in {
+            "spiraea-japonica",
+            "syringa-vulgaris",
+            "hydrangea-arborescens",
+            "hydrangea-paniculata",
+        }
         for p in result.change_set.additions
     )
     assert len(app.changes._previews) == 1
@@ -136,11 +145,10 @@ def test_shrub_recommendation_uses_shrub_geometry_and_excludes_dogwood_at_presch
     ]
 
 
-def test_new_shrub_path_requires_explicit_territory_but_old_requests_stay_valid():
+def test_request_context_is_optional_because_saved_zone_context_is_authoritative():
     payload = dict(base_plan_version=1, zone_ids=["west"])
     assert RecommendationRequest(**payload).effective_plant_kind == "tree"
-    with pytest.raises(ValueError, match="контекст территории"):
-        RecommendationRequest(**payload, plant_kind="shrub")
+    assert RecommendationRequest(**payload, plant_kind="shrub").territory is None
 
 
 def test_http_catalog_exposes_reference_rows_without_changing_existing_revision_endpoint():
@@ -154,5 +162,5 @@ def test_http_catalog_exposes_reference_rows_without_changing_existing_revision_
     assert len(reference.json()["entries"]) == 113
     existing = client.get("/api/species", params={"kind": "shrub"})
     assert existing.status_code == 200
-    assert len(existing.json()) == 4
+    assert len(existing.json()) == 8
     assert all(s["canopy_forecast"] for s in existing.json())

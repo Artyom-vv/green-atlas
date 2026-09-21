@@ -73,6 +73,16 @@ def select_composition(
         )
     if set(request.placement.zone_ids) - {z.id for z in project.planting_zones}:
         raise ValueError("Один из выбранных участков больше не существует")
+    selected_zones = [
+        z for z in project.planting_zones if z.id in request.placement.zone_ids
+    ]
+    if any(
+        z.territory != request.territory or z.site_conditions != request.site_conditions
+        for z in selected_zones
+    ):
+        raise ValueError(
+            "Подбор композиции требует одинаковых сохранённых условий выбранных участков, совпадающих с запросом"
+        )
 
     options = [
         qualify_species(s.id, request.territory, request.site_conditions)

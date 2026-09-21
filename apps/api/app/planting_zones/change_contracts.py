@@ -7,6 +7,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.planting_zones.contracts import PlantingZonePreview
+from app.species.assortment import TerritoryContext
+from app.species.site_contracts import SiteConditions
 
 
 class _Closed(BaseModel):
@@ -60,6 +62,8 @@ class ZoneSnapshot(_Closed):
     id: str = Field(min_length=1, max_length=200)
     label: str = Field(min_length=1, max_length=160)
     geometry: dict[str, Any]
+    territory: TerritoryContext | None = None
+    site_conditions: SiteConditions | None = None
 
 
 class ZoneChangePreview(_Closed):
