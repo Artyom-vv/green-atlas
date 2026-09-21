@@ -20,6 +20,26 @@ function deferred() {
   return { promise, resolve };
 }
 describe('recommendation task request ownership', () => {
+  it('respects an explicit parsed count after leaving automatic mode', async () => {
+    const { result } = renderHook(() => {
+      const form = useRecommendationForm({
+        task: '12 деревьев',
+        selectionMode: 'automatic',
+        arrangement: 'road_edges',
+      });
+      const task = useRecommendationTask({
+        form,
+        active: true,
+        onInterpret: vi.fn().mockResolvedValue(interpreted),
+        supportsBuildingScreen: false,
+      });
+      return { form, task };
+    });
+    await act(() => result.current.task.interpret());
+    expect(result.current.form.getValues('selectionMode')).toBe('configured');
+    expect(result.current.form.getValues('maxSites')).toBe(12);
+    expect(result.current.form.getValues('arrangement')).toBe('area');
+  });
   it.each(['inactive', 'edit', 'manual', 'back', 'unmount'] as const)(
     'aborts on %s and ignores completion even if the interpreter ignores its signal',
     async (reason) => {

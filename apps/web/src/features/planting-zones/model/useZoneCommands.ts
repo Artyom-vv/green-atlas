@@ -259,6 +259,12 @@ export function useZoneCommands(options: ZoneCommandsOptions) {
     isPending: visible.kind === kind && isPending,
     error: visible.kind === kind ? visible.error : undefined,
     submittedAt: visible.kind === kind ? visible.submittedAt : 0,
+    isSuccess:
+      visible.kind === kind &&
+      visible.phase === 'idle' &&
+      Boolean(visible.data) &&
+      !visible.error &&
+      !visible.notice,
   });
   return {
     ...visible,

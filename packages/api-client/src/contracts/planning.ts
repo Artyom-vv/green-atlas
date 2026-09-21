@@ -57,7 +57,12 @@ export type GrowthEnvelopeForecast = Schemas['GrowthEnvelopeForecast'];
 
 export type SpeciesShortlistItem = Schemas['SpeciesShortlistItem'];
 
-export type RecommendationRequest = Schemas['RecommendationRequest'];
+type RecommendationDefaults = 'selection_mode' | 'arrangement' | 'max_sites';
+export type RecommendationRequest = Omit<
+  Schemas['RecommendationRequest'],
+  RecommendationDefaults
+> &
+  Partial<Pick<Schemas['RecommendationRequest'], RecommendationDefaults>>;
 
 type BuildingScreenDefaults =
   | 'arrangement'

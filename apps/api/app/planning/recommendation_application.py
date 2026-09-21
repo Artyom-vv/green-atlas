@@ -4,9 +4,18 @@ import json
 from hashlib import sha256
 from typing import Literal
 
-from app.planning.change_contracts import PlanChangeSetDraft, PlanObjectAddOperation
+from app.planning.automatic_recommendation import (
+    automatic_composition,
+    automatic_species_preview,
+)
+from app.planning.change_contracts import (
+    ChangeSetPreview,
+    PlanChangeSetDraft,
+    PlanObjectAddOperation,
+)
 from app.planning.domain import PlanVersionConflict
 from app.planning.evaluation import PlanEvaluation
+from app.planning.pattern_application import PatternApplication
 from app.planning.pattern_contracts import FillPatternRequest, PatternSkippedCandidate
 from app.planning.ports import CandidateGeneratorPort, ChangeSetPreviewPort
 from app.planning.recommendation_config import RECOMMENDATION_PROFILES
@@ -50,6 +59,9 @@ class RecommendationApplication:
         self.candidate_generator = candidate_generator
         self.evaluation = evaluation
         self.previews = previews
+        self.patterns = PatternApplication(
+            repository, candidate_generator, evaluation, previews
+        )
 
     def preview_recommendation(
         self, project_id: str, request: RecommendationRequest
@@ -76,7 +88,16 @@ class RecommendationApplication:
 
         from app.planning.zone_recommendation import recommend_by_zone
 
-        return recommend_by_zone(project, request, self._select_for_zone, self.previews)
+        choose = (
+            (
+                lambda snapshot, local: automatic_composition(
+                    snapshot, local, self._select_for_zone, self.previews
+                )
+            )
+            if request.selection_mode == "automatic"
+            else self._select_for_zone
+        )
+        return recommend_by_zone(project, request, choose, self.previews)
 
     def _select_for_zone(
         self,
@@ -196,6 +217,13 @@ class RecommendationApplication:
         *,
         cache_final: bool,
     ) -> RecommendationPreview:
+        if request.selection_mode == "automatic":
+            pattern = automatic_species_preview(
+                project, request, species_revision_id, self.patterns
+            )
+            return self._explain_preview(
+                project, request, pattern.change_set, pattern.skipped
+            )
         profile = RECOMMENDATION_PROFILES[request.profile]
         revision = get_species(species_revision_id)
         fill = FillPatternRequest(
@@ -231,9 +259,13 @@ class RecommendationApplication:
             json.dumps(
                 request.model_dump(
                     mode="json",
-                    exclude={"site_conditions"}
-                    if request.site_conditions is None
-                    else set(),
+                    # New opt-in settings must not alter legacy proposal IDs.
+                    exclude={"selection_mode", "arrangement"}
+                    | (
+                        {"site_conditions"}
+                        if request.site_conditions is None
+                        else set()
+                    ),
                 ),
                 ensure_ascii=False,
                 sort_keys=True,
@@ -321,6 +353,15 @@ class RecommendationApplication:
                 cache_preview=cache_final,
             )
 
+        return self._explain_preview(project, request, change_set, skipped)
+
+    @staticmethod
+    def _explain_preview(
+        project: Project,
+        request: RecommendationRequest,
+        change_set: ChangeSetPreview | None,
+        skipped: list[PatternSkippedCandidate],
+    ) -> RecommendationPreview:
         # Layer names alone do not establish completeness of networks or norms.
         spatial_evidence: Literal["partial", "missing"] = (
             "partial" if project.geometry is not None else "missing"
@@ -369,6 +410,7 @@ class RecommendationApplication:
             )
         ]
         return RecommendationPreview(
+            arrangement=request.arrangement,
             profile=request.profile,
             evidence=evidence,
             change_set=change_set,

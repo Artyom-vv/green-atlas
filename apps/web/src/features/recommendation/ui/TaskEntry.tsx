@@ -10,6 +10,7 @@ export interface TaskEntryProps {
   requiresComposition: boolean;
   onChooseComposition?: () => void;
   onManualEntry: () => void;
+  onAutomaticEntry: () => void;
 }
 export const TaskEntry: FC<TaskEntryProps> = ({
   inputRef,
@@ -18,11 +19,19 @@ export const TaskEntry: FC<TaskEntryProps> = ({
   requiresComposition,
   onChooseComposition,
   onManualEntry,
+  onAutomaticEntry,
 }) => {
   const { control } = useFormContext<RecommendationFormValues>();
   const { field } = useController({ name: 'task', control });
   return (
     <div className="grid min-w-0 gap-3">
+      <Button
+        variant="secondary"
+        onClick={onAutomaticEntry}
+        disabled={interpreting}
+      >
+        Автоматически по участкам
+      </Button>
       <Field label="Что нужно получить?">
         <TextArea
           {...field}

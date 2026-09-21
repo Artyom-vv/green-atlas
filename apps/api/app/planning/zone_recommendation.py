@@ -46,9 +46,15 @@ def recommend_by_zone(
             )
     working = project.model_copy(deep=True)
     assert working.plan is not None
-    quotas = equal_zone_targets([z.id for z in zones], request.max_sites)
+    automatic = request.selection_mode == "automatic"
+    quotas = (
+        {}
+        if automatic
+        else equal_zone_targets([z.id for z in zones], request.max_sites)
+    )
     result = RecommendationPreview(
         profile=request.profile,
+        arrangement=request.arrangement,
         evidence=EvidenceAssessment(
             spatial_constraints="partial",
             species_catalog="partial",
@@ -56,12 +62,16 @@ def recommend_by_zone(
         ),
         assortment_revision=ASSORTMENT_REVISION,
         site_evidence_revision=site_profile_inventory().revision,
-        selection_reason="Виды подобраны отдельно для каждого участка. Общий лимит поровну распределён между участками; недобор не переносится скрыто в другую зону.",
+        selection_reason=(
+            "Состав и количество подобраны по свободным местам каждого участка."
+            if automatic
+            else "Виды подобраны отдельно для каждого участка. Общий лимит поровну распределён между участками; недобор не переносится скрыто в другую зону."
+        ),
     )
     operations: list[PlanChangeOperation] = []
     for zone in zones:
         assert zone.territory is not None
-        quota = quotas[zone.id]
+        quota = quotas.get(zone.id)
         if quota == 0:
             result.zone_results.append(
                 ZoneRecommendationSummary(
@@ -77,7 +87,7 @@ def recommend_by_zone(
         local = request.model_copy(
             update={
                 "zone_ids": [zone.id],
-                "max_sites": quota,
+                "max_sites": quota if quota is not None else request.max_sites,
                 "territory": zone.territory,
                 "site_conditions": zone.site_conditions,
             }

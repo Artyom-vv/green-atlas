@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.planning.change_contracts import ChangeSetPreview
 from app.planning.pattern_contracts import PatternSkippedCandidate
@@ -16,13 +16,26 @@ class RecommendationRequest(BaseModel):
     profile: Literal["balanced", "shade", "continuity", "low_future_conflict"] = (
         "balanced"
     )
-    max_sites: int = Field(default=80, ge=1, le=500)
+    max_sites: int = Field(
+        default=80,
+        ge=1,
+        le=500,
+        description="Лимит только для configured; automatic определяет число по допустимым местам.",
+    )
+    selection_mode: Literal["configured", "automatic"] = "configured"
+    arrangement: Literal["area", "road_edges"] = "area"
     territory: TerritoryContext | None = None
     plant_kind: Literal["tree", "shrub"] | None = None
     site_conditions: SiteConditions | None = Field(
         default=None,
         description="Необязательная проверка одинаковых условий запроса: они должны совпадать с сохранёнными условиями каждого участка. Если поле не задано, используются независимые условия участков.",
     )
+
+    @model_validator(mode="after")
+    def validate_arrangement(self) -> RecommendationRequest:
+        if self.arrangement == "road_edges" and self.selection_mode != "automatic":
+            raise ValueError("Для подбора вдоль дорог включите автоматический режим")
+        return self
 
     @property
     def effective_plant_kind(self) -> Literal["tree", "shrub"]:
@@ -73,7 +86,7 @@ class RecommendationSpeciesOption(QualifiedSpeciesOption):
 
 class ZoneRecommendationSummary(BaseModel):
     zone_id: str
-    requested_count: int
+    requested_count: int | None
     accepted_count: int
     territory: TerritoryContext
     site_conditions: SiteConditions | None = None
@@ -83,7 +96,7 @@ class ZoneRecommendationSummary(BaseModel):
 
 class RecommendationPreview(BaseModel):
     zone_results: list[ZoneRecommendationSummary] = Field(default_factory=list)
-    arrangement: Literal["area", "building_screen"] = "area"
+    arrangement: Literal["area", "road_edges", "building_screen"] = "area"
     target_geometry: dict[str, Any] | None = None
     profile: Literal["balanced", "shade", "continuity", "low_future_conflict"]
     evidence: EvidenceAssessment

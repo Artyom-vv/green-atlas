@@ -14,7 +14,9 @@ export type BuildingScreenDraft = Omit<
 >;
 export interface RecommendationFormValues {
   profile: RecommendationRequest['profile'];
-  maxSites: RecommendationRequest['max_sites'];
+  maxSites: NonNullable<RecommendationRequest['max_sites']>;
+  selectionMode: NonNullable<RecommendationRequest['selection_mode']>;
+  arrangement: NonNullable<RecommendationRequest['arrangement']>;
   task: string;
   screenSide: BuildingScreenRequest['screen_side'];
   screenLimit: BuildingScreenRequest['max_sites'];
@@ -25,6 +27,8 @@ export function createRecommendationFormDefaults(
   return {
     profile: 'balanced',
     maxSites: 40,
+    selectionMode: 'configured',
+    arrangement: 'area',
     task: '',
     screenSide: 'perimeter',
     screenLimit: null,
@@ -38,7 +42,12 @@ export function buildRecommendationDraft(
   return {
     zone_ids: [...zoneIds],
     profile: values.profile,
-    max_sites: values.maxSites,
+    ...(values.selectionMode === 'automatic'
+      ? {
+          selection_mode: 'automatic' as const,
+          arrangement: values.arrangement,
+        }
+      : { max_sites: values.maxSites }),
   };
 }
 export function buildBuildingScreenDraft(

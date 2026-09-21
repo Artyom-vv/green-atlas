@@ -47,7 +47,11 @@ export function RecommendationZoneEvidence({
             </h4>
             <p className="m-0 text-xs">
               {territoryLabels[zone.territory.category]}. Подобрано{' '}
-              {zone.accepted_count} из {zone.requested_count}.
+              {zone.accepted_count}
+              {zone.requested_count != null
+                ? ` из ${zone.requested_count}`
+                : ''}
+              .
             </p>
             <p className="m-0 text-xs text-neutral-600">
               Основание: {zone.territory.basis}

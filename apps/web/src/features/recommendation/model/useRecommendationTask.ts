@@ -133,6 +133,8 @@ export function useRecommendationTask(options: RecommendationTaskOptions) {
         });
         setStage('building_screen');
       } else {
+        captured.form.setValue('selectionMode', 'configured');
+        captured.form.setValue('arrangement', 'area');
         captured.form.setValue('profile', result.profile, {
           shouldDirty: true,
         });

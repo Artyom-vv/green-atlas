@@ -4417,7 +4417,7 @@ export interface components {
              * @default area
              * @enum {string}
              */
-            arrangement: "area" | "building_screen";
+            arrangement: "area" | "road_edges" | "building_screen";
             /** Target Geometry */
             target_geometry?: {
                 [key: string]: unknown;
@@ -4459,9 +4459,22 @@ export interface components {
             profile: "balanced" | "shade" | "continuity" | "low_future_conflict";
             /**
              * Max Sites
+             * @description Лимит только для configured; automatic определяет число по допустимым местам.
              * @default 80
              */
             max_sites: number;
+            /**
+             * Selection Mode
+             * @default configured
+             * @enum {string}
+             */
+            selection_mode: "configured" | "automatic";
+            /**
+             * Arrangement
+             * @default area
+             * @enum {string}
+             */
+            arrangement: "area" | "road_edges";
             territory?: components["schemas"]["TerritoryContext"] | null;
             /** Plant Kind */
             plant_kind?: ("tree" | "shrub") | null;
@@ -5678,7 +5691,7 @@ export interface components {
             /** Zone Id */
             zone_id: string;
             /** Requested Count */
-            requested_count: number;
+            requested_count: number | null;
             /** Accepted Count */
             accepted_count: number;
             territory: components["schemas"]["TerritoryContext"];

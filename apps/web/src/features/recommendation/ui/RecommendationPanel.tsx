@@ -109,7 +109,14 @@ const RecommendationForm: FC<RecommendationPanelProps> = (props) => {
             interpreting={flow.task.interpreting}
             feedback={flow.task.feedback}
             requiresComposition={flow.task.requiresComposition}
-            onManualEntry={flow.task.manualEntry}
+            onManualEntry={() => {
+              form.setValue('selectionMode', 'configured');
+              flow.task.manualEntry();
+            }}
+            onAutomaticEntry={() => {
+              form.setValue('selectionMode', 'automatic');
+              flow.task.manualEntry();
+            }}
             onChooseComposition={chooseComposition}
           />
         ) : flow.buildingScreen ? (

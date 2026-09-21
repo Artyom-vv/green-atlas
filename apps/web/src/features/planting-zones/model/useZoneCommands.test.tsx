@@ -209,6 +209,7 @@ describe('zone command ownership', () => {
     );
     act(() => result.current.saveManagedZones.mutate({ zones: [zone] }));
     await waitFor(() => expect(result.current.needsRefresh).toBe(true));
+    expect(result.current.saveManagedZones.isSuccess).toBe(false);
     expect(result.current.error).toBeUndefined();
     act(() => {
       result.current.saveManagedZones.reset();
@@ -221,6 +222,7 @@ describe('zone command ownership', () => {
       result.current.retryRefresh();
     });
     await waitFor(() => expect(result.current.blocked).toBe(false));
+    expect(result.current.saveManagedZones.isSuccess).toBe(true);
     expect(saveZoneSnapshot).toHaveBeenCalledOnce();
     expect(onCommitted).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledTimes(2);

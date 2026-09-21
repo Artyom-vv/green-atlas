@@ -19,6 +19,54 @@ describe('RecommendationPanel', () => {
       geometry: { type: 'Polygon' as const, coordinates: [] },
     },
   ];
+  it('offers automatic composition without an LLM or an implicit count limit', () => {
+    const onPreview = vi.fn();
+    render(
+      <RecommendationPanel
+        zones={zones}
+        onPreview={onPreview}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Состав и количество автоматически',
+      }),
+    );
+    expect(screen.queryByLabelText('Максимум посадок')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Где искать места'), {
+      target: { value: 'road_edges' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Показать' }));
+    expect(onPreview).toHaveBeenCalledExactlyOnceWith({
+      profile: 'balanced',
+      zone_ids: ['west'],
+      selection_mode: 'automatic',
+      arrangement: 'road_edges',
+    });
+  });
+
+  it('starts guided automatic selection directly from the task step', () => {
+    render(
+      <RecommendationPanel
+        guided
+        zones={zones}
+        onPreview={vi.fn()}
+        onCancel={vi.fn()}
+        onInterpret={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Автоматически по участкам' }),
+    );
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Состав и количество автоматически',
+      }),
+    ).toBeChecked();
+    expect(screen.queryByLabelText('Максимум посадок')).not.toBeInTheDocument();
+  });
   it('keeps the external form draft when the workspace temporarily unmounts its surface', () => {
     const onPreview = vi.fn();
     function Host({ visible }: { visible: boolean }) {

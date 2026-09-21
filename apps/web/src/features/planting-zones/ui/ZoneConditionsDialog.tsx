@@ -9,9 +9,10 @@ import {
   Button,
   Checkbox,
   Dialog,
+  Disclosure,
   Field,
   FormActions,
-  ScrollArea,
+  InlineMessage,
   Select,
   TextInput,
 } from '@green/ui';
@@ -31,11 +32,13 @@ type Values = {
 export function ZoneConditionsDialog({
   zone,
   saving,
+  error,
   onSave,
   onClose,
 }: {
   zone: PlantingZoneAssignment;
   saving: boolean;
+  error?: string;
   onSave: (zone: PlantingZoneAssignment) => void;
   onClose: () => void;
 }) {
@@ -59,11 +62,13 @@ export function ZoneConditionsDialog({
     <Dialog
       open
       title={`Условия участка: ${zone.label}`}
-      onClose={onClose}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
       footer={
         <FormActions>
-          <Button variant="secondary" onClick={onClose}>
-            Отмена
+          <Button variant="secondary" disabled={saving} onClick={onClose}>
+            К участкам
           </Button>
           <Button variant="primary" type="submit" form={id} loading={saving}>
             Сохранить условия
@@ -71,77 +76,95 @@ export function ZoneConditionsDialog({
         </FormActions>
       }
     >
-      <ScrollArea className="max-h-[65vh]" contentClassName="p-1">
-        <form
-          id={id}
-          className="grid gap-5"
-          onSubmit={form.handleSubmit((v) => {
-            if (
-              !v.category ||
-              !v.regime ||
-              !v.basis.trim() ||
-              (observed && v.observation.trim().length < 3)
-            )
-              return;
-            onSave({
-              ...zone,
-              territory: {
-                category: v.category,
-                regime: v.regime,
-                basis: v.basis.trim(),
-                spread_control_confirmed: v.spread,
-              },
-              site_conditions: observed
-                ? {
-                    light: v.light || null,
-                    moisture: v.moisture || null,
-                    drainage: v.drainage || null,
-                    basis: v.observation.trim(),
-                  }
-                : null,
-            });
-          })}
+      <form
+        id={id}
+        className="grid gap-5"
+        onSubmit={form.handleSubmit((v) => {
+          if (
+            saving ||
+            !v.category ||
+            !v.regime ||
+            !v.basis.trim() ||
+            (observed && v.observation.trim().length < 3)
+          )
+            return;
+          onSave({
+            ...zone,
+            territory: {
+              category: v.category,
+              regime: v.regime,
+              basis: v.basis.trim(),
+              spread_control_confirmed: v.spread,
+            },
+            site_conditions: observed
+              ? {
+                  light: v.light || null,
+                  moisture: v.moisture || null,
+                  drainage: v.drainage || null,
+                  basis: v.observation.trim(),
+                }
+              : null,
+          });
+        })}
+      >
+        <p className="m-0 text-xs leading-5 text-neutral-600">
+          {zone.territory
+            ? 'Загружены сохранённые сведения участка.'
+            : 'Категория территории в данных участка не задана. Уточните её по проекту благоустройства.'}
+        </p>
+        <Field
+          label="Категория территории"
+          hint="Определяет допустимые виды растений."
         >
-          <Field label="Категория территории">
-            <Select required {...form.register('category')}>
-              <option value="" disabled>
-                Выберите категорию
+          <Select required disabled={saving} {...form.register('category')}>
+            <option value="" disabled>
+              Выберите категорию
+            </option>
+            {Object.entries(territoryLabels).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
               </option>
-              {Object.entries(territoryLabels).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Режим территории">
-            <Select required {...form.register('regime')}>
-              <option value="" disabled>
-                Уточните режим
-              </option>
-              <option value="ordinary">Обычная городская территория</option>
-              <option value="individual_project">
-                Особый режим — индивидуальный проект
-              </option>
-              <option value="unknown">Режим пока неизвестен</option>
-            </Select>
-          </Field>
-          <Field label="Основание выбора">
-            <TextInput
-              required
-              maxLength={500}
-              placeholder="Проект благоустройства, раздел или обследование"
-              {...form.register('basis')}
-            />
-          </Field>
-          <Checkbox
-            label="Для видов с порослью предусмотрен контроль распространения"
-            {...form.register('spread')}
+            ))}
+          </Select>
+        </Field>
+        <Field
+          label="Режим территории"
+          hint="По проектной документации. Если сведений нет, выберите «Неизвестен»."
+        >
+          <Select required disabled={saving} {...form.register('regime')}>
+            <option value="" disabled>
+              Уточните режим
+            </option>
+            <option value="ordinary">Обычная городская территория</option>
+            <option value="individual_project">
+              Особый режим — индивидуальный проект
+            </option>
+            <option value="unknown">Неизвестен</option>
+          </Select>
+        </Field>
+        <Field
+          label="Основание выбора"
+          hint="Документ или раздел, из которого взята категория."
+        >
+          <TextInput
+            required
+            disabled={saving}
+            maxLength={500}
+            placeholder="Проект благоустройства, раздел или обследование"
+            {...form.register('basis')}
           />
-          <fieldset className="m-0 grid gap-3 border-0 border-t border-neutral-200 p-0 pt-4">
-            <legend className="px-0 text-sm font-medium">
-              Известные условия места
-            </legend>
+        </Field>
+        <Checkbox
+          disabled={saving}
+          label="Для видов с порослью предусмотрен контроль распространения"
+          {...form.register('spread')}
+        />
+        <Disclosure title="Свет и почва" defaultOpen={observed} variant="plain">
+          <fieldset disabled={saving} className="m-0 grid gap-3 border-0 p-0">
+            <p className="m-0 text-xs leading-5 text-neutral-600">
+              Необязательно. Укажите только известные данные из обследования
+              участка.
+            </p>
             <Field label="Свет">
               <Select {...form.register('light')}>
                 <option value="">Нет данных</option>
@@ -181,12 +204,9 @@ export function ZoneConditionsDialog({
               </Field>
             )}
           </fieldset>
-          <p className="m-0 text-xs leading-5 text-neutral-600">
-            Условия сохраняются для этого участка. После изменения существующие
-            посадки будут проверены повторно.
-          </p>
-        </form>
-      </ScrollArea>
+        </Disclosure>
+        {error && <InlineMessage tone="error">{error}</InlineMessage>}
+      </form>
     </Dialog>
   );
 }
