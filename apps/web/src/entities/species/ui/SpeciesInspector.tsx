@@ -4,7 +4,7 @@ import type {
   SpeciesRevision,
 } from '@green/api-client';
 import { ExternalLink, Ruler, Trees } from 'lucide-react';
-import { cx } from '@green/ui';
+import { Disclosure, cx } from '@green/ui';
 import { crownLabels, territoryLabels } from '../model/assortmentLabels';
 import { speciesPhotos } from '../model/speciesPhotos';
 import { SpeciesPhoto } from './SpeciesPhoto';
@@ -65,7 +65,7 @@ export function SpeciesInspector({
       )}
       {inventory && species && !entry && (
         <p className="m-0 border-l-2 border-amber-500 pl-3 text-xs leading-5">
-          Соответствие этого вида московскому ассортименту ещё не подтверждено.
+          Вид не сверён с ассортиментом Москвы.
         </p>
       )}
       {species ? (
@@ -73,10 +73,13 @@ export function SpeciesInspector({
           {speciesPhotos[species.species_id] && (
             <SpeciesPhoto key={species.id} species={species} credits />
           )}
-          <dl className="m-0 grid grid-cols-2 gap-4 border-y border-neutral-200 py-4">
+          <dl
+            aria-label="Размеры взрослого растения"
+            className="m-0 grid grid-cols-2 gap-4 border-y border-neutral-200 py-4"
+          >
             <div>
               <dt className="flex items-center gap-1 text-xs text-neutral-600">
-                <Ruler size={14} /> Высота
+                <Ruler size={14} /> Высота взрослого растения
               </dt>
               <dd className="m-0 mt-1 text-base tabular-nums">
                 {species.mature_height_min_m.toLocaleString('ru', {
@@ -121,20 +124,18 @@ export function SpeciesInspector({
               </dd>
             </div>
           </dl>
-          <p className="m-0 text-xs leading-5 text-neutral-600">
-            Размеры взрослого растения. На карте отдельно показаны посадочное
-            место и прогноз кроны.
-          </p>
         </>
       ) : (
         <p className="m-0 text-sm leading-6 text-neutral-600">
-          Вид есть в официальном ассортименте. Для посадки в сервисе пока не
-          подтверждены расчётные характеристики.
+          Посадка недоступна: нет расчётных характеристик.
         </p>
       )}
       {entry && inventory && (
-        <section className="grid gap-2" aria-label="Рекомендации по территории">
-          <h4 className="m-0 text-sm font-semibold">Где рекомендуется</h4>
+        <Disclosure
+          title="Рекомендации по территориям"
+          variant="plain"
+          contentClassName="grid gap-3"
+        >
           <dl className="m-0 grid gap-2">
             {inventory.categories.map((category, index) => (
               <div
@@ -157,8 +158,7 @@ export function SpeciesInspector({
           </dl>
           {!entry.matrix_reviewed && (
             <p className="m-0 text-xs leading-5 text-neutral-600">
-              Значения перенесены из таблицы. Эта строка ещё не прошла сверку
-              для расчёта.
+              Строка таблицы ещё не сверена.
             </p>
           )}
           {entry.notes?.map((note) => (
@@ -168,7 +168,7 @@ export function SpeciesInspector({
           ))}
           {!entry.conditions_reviewed && (
             <p className="m-0 text-xs text-neutral-600">
-              Примечания этой строки ещё не сверены.
+              Примечания ещё не сверены.
             </p>
           )}
           <a
@@ -180,14 +180,15 @@ export function SpeciesInspector({
             Ассортимент Москвы, стр. {entry.page}, строка {entry.row}
             <ExternalLink size={12} />
           </a>
-        </section>
+        </Disclosure>
       )}
       {species && (
-        <details className="text-xs leading-5">
-          <summary className="cursor-pointer text-neutral-600">
-            Источники и точность данных
-          </summary>
-          <p>{species.evidence_note}</p>
+        <Disclosure
+          title="Источники и точность данных"
+          variant="plain"
+          contentClassName="text-xs leading-5"
+        >
+          <p className="m-0 mb-2">{species.evidence_note}</p>
           {species.source_urls.map((url, i) => (
             <a
               key={url}
@@ -199,7 +200,7 @@ export function SpeciesInspector({
               Источник {i + 1}
             </a>
           ))}
-        </details>
+        </Disclosure>
       )}
     </div>
   );

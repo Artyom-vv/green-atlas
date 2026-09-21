@@ -11,6 +11,7 @@ import { SpeciesCatalog } from '@/entities/species/ui/SpeciesCatalog';
 import { SpeciesPicker } from '@/entities/species/ui/SpeciesPicker';
 import { speciesPhotos } from '@/entities/species/model/speciesPhotos';
 import { PlantCatalogContext } from '@/entities/species/model/PlantCatalogContext';
+import { catalogItemStatus } from '@/entities/species/model/catalogItems';
 
 afterEach(cleanup);
 
@@ -44,6 +45,43 @@ const sorbus = {
 const species = [sorbus, tilia];
 
 describe('SpeciesPicker', () => {
+  it('keeps unknown server conflicts verbatim and groups only their presentation labels', () => {
+    const source = {
+      source_url: 'https://example.org/assortment.pdf',
+      source_revision: 'test',
+    };
+    const result = catalogItemStatus({
+      species: tilia,
+      status: 'available',
+      can_assign: false,
+      zone_restrictions: [
+        {
+          ...source,
+          allowed: false,
+          code: 'ASSORTMENT_UNREVIEWED',
+          category: 'courtyard',
+          reason: 'first',
+        },
+        {
+          ...source,
+          allowed: false,
+          code: 'ASSORTMENT_UNREVIEWED',
+          category: 'preschool',
+          reason: 'second',
+        },
+        {
+          ...source,
+          allowed: false,
+          code: 'FUTURE_CONFLICT',
+          reason: 'Проверьте подтверждённый конфликт почвы',
+        },
+      ],
+    });
+    expect(result.canSelect).toBe(false);
+    expect(result.label).toBe(
+      'Ассортимент не подтверждён: жилые территории, детские сады; Проверьте подтверждённый конфликт почвы',
+    );
+  });
   it('shows a visible catalog action and comparison information before browsing', () => {
     render(
       <SpeciesPicker species={species} value={tilia.id} onChange={vi.fn()} />,
@@ -128,10 +166,17 @@ describe('SpeciesPicker', () => {
         <SpeciesCatalog species={species} onChange={change} />
       </PlantCatalogContext.Provider>,
     );
+    expect(screen.getByRole('button', { name: 'Все (3)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     fireEvent.click(
-      screen.getByRole('button', { name: 'Весь ассортимент (1)' }),
+      screen.getByRole('button', { name: 'Сведения: Ель сербская' }),
     );
     expect(screen.getByRole('heading', { name: 'Ель сербская' })).toBeVisible();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Рекомендации по территориям' }),
+    );
     expect(screen.getByText('Да')).toBeVisible();
     expect(screen.getByText('Нет')).toBeVisible();
     expect(
@@ -154,7 +199,7 @@ describe('SpeciesPicker', () => {
     fireEvent.change(search, { target: { value: 'нет такой породы' } });
     expect(confirm).toBeDisabled();
     expect(
-      screen.getByText('По этому запросу пород нет. Измените название.'),
+      screen.getByText('Растения не найдены. Измените поиск или фильтр.'),
     ).toBeVisible();
     fireEvent.change(search, { target: { value: 'SORBUS' } });
     fireEvent.click(
@@ -200,6 +245,7 @@ describe('SpeciesPicker', () => {
             tone: 'warning',
             canSelect: false,
           },
+          [tilia.id]: { label: '', tone: 'neutral', canSelect: true },
         }}
       />,
     );
@@ -216,6 +262,81 @@ describe('SpeciesPicker', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(change).toHaveBeenCalledExactlyOnceWith(tilia.id);
+  });
+
+  it('filters server admission, preserves the current species, and never treats missing checks as suitable', () => {
+    const change = vi.fn();
+    const unknown = {
+      ...tilia,
+      id: 'unknown@1',
+      species_id: 'unknown',
+      common_name: 'Без проверки',
+    };
+    const statuses = {
+      [tilia.id]: { label: '', tone: 'neutral' as const, canSelect: true },
+      [sorbus.id]: {
+        label: 'Не рекомендована для детского сада',
+        tone: 'warning' as const,
+        canSelect: false,
+      },
+    };
+    const { rerender } = render(
+      <SpeciesCatalog
+        species={[...species, unknown]}
+        value={sorbus.id}
+        itemStatuses={statuses}
+        onChange={change}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Подходящие (1)' }));
+    expect(
+      screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Сведения: Рябина обыкновенная' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Сведения: Без проверки' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Отклонённые (1)' }));
+    expect(
+      screen.getByRole('button', { name: 'Сведения: Рябина обыкновенная' }),
+    ).toHaveAttribute('aria-current', 'true');
+    expect(
+      screen.getByRole('button', { name: 'Выбрать растение' }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Все (3)' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Сведения: Без проверки' }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Выбрать растение' }),
+    ).toBeDisabled();
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'липа' },
+    });
+    expect(
+      screen.getByRole('button', { name: 'Отклонённые (0)' }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Подходящие (1)' }));
+    rerender(
+      <SpeciesCatalog
+        species={[...species, unknown]}
+        value={sorbus.id}
+        itemStatuses={{
+          ...statuses,
+          [tilia.id]: { ...statuses[tilia.id], canSelect: false },
+        }}
+        onChange={change}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Подходящие (0)' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Выбрать растение' }),
+    ).toBeDisabled();
+    expect(change).not.toHaveBeenCalled();
   });
 
   it('blocks confirmation during refresh and keeps one lookup icon', () => {

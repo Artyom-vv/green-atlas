@@ -94,4 +94,90 @@ export const speciesPhotos: Record<
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     detail: 'Цветение сорта Anthony Waterer',
   },
+  'thuja-occidentalis': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dc/Thuja_occidentalis_tree.jpg/500px-Thuja_occidentalis_tree.jpg',
+    source:
+      'https://commons.wikimedia.org/wiki/File:Thuja_occidentalis_tree.jpg',
+    author: 'USDA-NRCS / Herman et al.',
+    license: 'Public domain',
+    licenseUrl: 'https://commons.wikimedia.org/wiki/Template:PD-USGov-USDA',
+    detail: 'Внешний вид туи',
+  },
+  'acer-ginnala': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/93/Acer_ginnala_tree.jpg/500px-Acer_ginnala_tree.jpg',
+    source: 'https://commons.wikimedia.org/wiki/File:Acer_ginnala_tree.jpg',
+    author: 'Matthieu Sontag / Wikimedia Commons',
+    license: 'CC BY-SA 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0/',
+    detail: 'Клён Гиннала в дендрарии',
+  },
+  'picea-pungens': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/d/df/Picea_pungens_USDA1.jpg/500px-Picea_pungens_USDA1.jpg',
+    source: 'https://commons.wikimedia.org/wiki/File:Picea_pungens_USDA1.jpg',
+    author: 'Jeffrey J. Witcosky / USDA Forest Service',
+    license: 'CC BY 3.0 US',
+    licenseUrl: 'https://creativecommons.org/licenses/by/3.0/us/',
+    detail: 'Взрослая ель',
+  },
+  'larix-decidua': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/af/Larixdecidua.jpg/500px-Larixdecidua.jpg',
+    source: 'https://commons.wikimedia.org/wiki/File:Larixdecidua.jpg',
+    author: 'Schlurcher',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    detail: 'Лиственница в парке',
+  },
+  'syringa-vulgaris': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2b/Purple_lilacs_in_Tuntorp_3.jpg/500px-Purple_lilacs_in_Tuntorp_3.jpg',
+    source:
+      'https://commons.wikimedia.org/wiki/File:Purple_lilacs_in_Tuntorp_3.jpg',
+    author: 'W.carter',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    detail: 'Цветущая сирень',
+  },
+  'physocarpus-opulifolius': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/85/0_Physocarpus_opulifolius_-_Samo%C3%ABns.JPG/500px-0_Physocarpus_opulifolius_-_Samo%C3%ABns.JPG',
+    source:
+      'https://commons.wikimedia.org/wiki/File:0_Physocarpus_opulifolius_-_Samo%C3%ABns.JPG',
+    author: 'Jean-Pol GRANDMONT',
+    license: 'CC BY-SA 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0/',
+    detail: 'Пузыреплодник',
+  },
+  'hydrangea-arborescens': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/91/Hydrangea_arborescens_Annabelle_4zz.jpg/500px-Hydrangea_arborescens_Annabelle_4zz.jpg',
+    source:
+      'https://commons.wikimedia.org/wiki/File:Hydrangea_arborescens_Annabelle_4zz.jpg',
+    author: 'David J. Stang',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    detail: 'Гортензия, сорт Annabelle',
+  },
+  'hydrangea-paniculata': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/3/33/Hydrangea_paniculata.jpg/500px-Hydrangea_paniculata.jpg',
+    source: 'https://commons.wikimedia.org/wiki/File:Hydrangea_paniculata.jpg',
+    author: 'Dezidor',
+    license: 'CC BY 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
+    detail: 'Гортензия метельчатая',
+  },
+  'viburnum-opulus': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b7/%28ms%29_Viburnum_opulus_9.jpg/500px-%28ms%29_Viburnum_opulus_9.jpg',
+    source:
+      'https://commons.wikimedia.org/wiki/File:(ms)_Viburnum_opulus_9.jpg',
+    author: 'Hladac',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    detail: 'Калина с плодами',
+  },
+  'berberis-thunbergii': {
+    url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a9/%28ms%29_Berberis_thunbergii_11.jpg/500px-%28ms%29_Berberis_thunbergii_11.jpg',
+    source:
+      'https://commons.wikimedia.org/wiki/File:(ms)_Berberis_thunbergii_11.jpg',
+    author: 'Hladac',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    detail: 'Барбарис осенью',
+  },
 };

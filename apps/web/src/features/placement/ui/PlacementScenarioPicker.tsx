@@ -57,7 +57,10 @@ export const PlacementScenarioPicker: FC<PlacementScenarioPickerProps> = ({
   return (
     <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
       <legend className="mb-2 text-xs font-semibold">Размещение</legend>
-      <FieldGrid minWidth={140} className="gap-2">
+      <FieldGrid
+        className="auto-rows-fr gap-2"
+        style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
+      >
         {SCENARIOS.map((scenario) => {
           const preset =
             scenario.id === 'natural'

@@ -4,7 +4,7 @@ import {
   SpeciesCatalog,
   type SpeciesCatalogProps,
 } from '@/entities/species/ui/SpeciesCatalog';
-import { shortlistStatus } from '../model/shortlistStatus';
+import { catalogItemStatus } from '@/entities/species/model/catalogItems';
 
 interface SpeciesAssignmentCatalogProps extends Pick<
   SpeciesCatalogProps,
@@ -35,18 +35,7 @@ export const SpeciesAssignmentCatalog: FC<SpeciesAssignmentCatalogProps> = ({
     itemStatuses={Object.fromEntries(
       (shortlist ?? []).map((item) => [
         item.species.id,
-        {
-          ...shortlistStatus[item.status],
-          canSelect: item.can_assign,
-          label:
-            Array.from(
-              new Set(
-                item.zone_restrictions
-                  ?.filter((check) => !check.allowed)
-                  .map((check) => check.reason),
-              ),
-            ).join('; ') || shortlistStatus[item.status].label,
-        },
+        catalogItemStatus(item),
       ]),
     )}
   />

@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Search } from 'lucide-react';
 import { usePlantCatalog } from '../model/PlantCatalogContext';
 import { SpeciesInspector } from './SpeciesInspector';
 import { SpeciesSummary } from './SpeciesSummary';
+import { catalogItems, type CatalogItemStatus } from '../model/catalogItems';
 
 export interface SpeciesCatalogProps {
   species: SpeciesRevision[];
@@ -17,12 +18,7 @@ export interface SpeciesCatalogProps {
   onQueryChange?: (query: string) => void;
   showResultCount?: boolean;
   showSelection?: boolean;
-  itemStatuses?: Readonly<
-    Record<
-      string,
-      { label: string; tone: 'neutral' | 'warning'; canSelect?: boolean }
-    >
-  >;
+  itemStatuses?: Readonly<Record<string, CatalogItemStatus>>;
   loadingMessage?: string;
 }
 
@@ -42,43 +38,32 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
   const library = usePlantCatalog();
   const [localQuery, setQuery] = useState('');
   const [focused, setFocused] = useState<string>();
-  const [all, setAll] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'suitable' | 'rejected'>('all');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsViewport = useRef<HTMLDivElement>(null);
   const listViewport = useRef<HTMLDivElement>(null);
   const detailsHeading = useRef<HTMLHeadingElement>(null);
   const returnToList = useRef(false);
   const query = controlledQuery ?? localQuery;
-  const kinds = new Set(species.map((s) => s.kind));
-  const singleKind = kinds.size === 1 ? species[0]?.kind : undefined;
   const inventory = library.inventory;
-  const entries =
-    all && inventory
-      ? inventory.entries
-          .filter((e) => !singleKind || e.kind === singleKind)
-          .map((entry) => ({
-            id: entry.id,
-            name: entry.name,
-            kind: entry.kind,
-            entry,
-            profile: species.find(
-              (s) => s.species_id === entry.calculation_species_id,
-            ),
-          }))
-      : species.map((profile) => ({
-          id: profile.id,
-          name: profile.common_name,
-          kind: profile.kind,
-          profile,
-          entry: inventory?.entries.find(
-            (e) => e.calculation_species_id === profile.species_id,
-          ),
-        }));
-  const filtered = entries.filter((e) =>
+  const entries = catalogItems(species, inventory);
+  const searched = entries.filter((e) =>
     `${e.name} ${e.profile?.scientific_name ?? ''}`
       .toLocaleLowerCase('ru')
       .includes(query.trim().toLocaleLowerCase('ru')),
   );
+  const suitable = searched.filter(
+    (e) => e.profile && itemStatuses?.[e.profile.id]?.canSelect === true,
+  );
+  const rejected = searched.filter(
+    (e) => e.profile && itemStatuses?.[e.profile.id]?.canSelect === false,
+  );
+  const filtered =
+    filter === 'suitable'
+      ? suitable
+      : filter === 'rejected'
+        ? rejected
+        : searched;
   const selected =
     filtered.find((e) => e.id === focused) ??
     filtered.find((e) => e.profile?.id === value) ??
@@ -87,7 +72,10 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
     ? itemStatuses?.[selected.profile.id]
     : undefined;
   const canSelect = Boolean(
-    selected?.profile && status?.canSelect !== false && !disabled && !loading,
+    selected?.profile &&
+    (itemStatuses ? status?.canSelect === true : true) &&
+    !disabled &&
+    !loading,
   );
   useLayoutEffect(() => {
     if (detailsViewport.current) detailsViewport.current.scrollTop = 0;
@@ -111,7 +99,7 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
         current.getBoundingClientRect().top -
         viewport.getBoundingClientRect().top;
     }
-  }, [value, all, loading]);
+  }, [value, filter, loading]);
   return (
     <div
       className={cx(
@@ -133,30 +121,37 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
         />
         <div
           className="flex flex-wrap items-center gap-1"
-          aria-label="Состав каталога"
+          aria-label="Пригодность растений"
         >
-          <Button
-            variant={all ? 'ghost' : 'secondary'}
-            aria-pressed={!all}
-            onClick={() => setAll(false)}
-          >
-            Для расчёта ({species.length})
-          </Button>
-          {inventory && (
+          {[
+            ...(itemStatuses
+              ? [
+                  {
+                    id: 'suitable' as const,
+                    label: 'Подходящие',
+                    count: suitable.length,
+                  },
+                  {
+                    id: 'rejected' as const,
+                    label: 'Отклонённые',
+                    count: rejected.length,
+                  },
+                ]
+              : []),
+            { id: 'all' as const, label: 'Все', count: searched.length },
+          ].map((item) => (
             <Button
-              variant={all ? 'secondary' : 'ghost'}
-              aria-pressed={all}
-              onClick={() => setAll(true)}
+              key={item.id}
+              variant={filter === item.id ? 'secondary' : 'ghost'}
+              aria-pressed={filter === item.id}
+              onClick={() => {
+                setFilter(item.id);
+                setDetailsOpen(false);
+              }}
             >
-              Весь ассортимент (
-              {
-                inventory.entries.filter(
-                  (e) => !singleKind || e.kind === singleKind,
-                ).length
-              }
-              )
+              {item.label} ({item.count})
             </Button>
-          )}
+          ))}
           <span className="ml-auto text-xs text-neutral-600" role="status">
             {loading ? loadingMessage : `Найдено ${filtered.length}`}
           </span>
@@ -213,7 +208,7 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
                           </span>
                         </>
                       )}
-                      {itemStatus && (
+                      {itemStatus?.label && itemStatus.canSelect === false && (
                         <span
                           className={cx(
                             'text-xs leading-4',
@@ -234,7 +229,7 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
           {!loading && !filtered.length && (
             <p className="p-3 text-xs text-neutral-600">
               {entries.length
-                ? 'По этому запросу пород нет. Измените название.'
+                ? 'Растения не найдены. Измените поиск или фильтр.'
                 : 'Породы для выбора пока недоступны.'}
             </p>
           )}
@@ -283,7 +278,15 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
               species={selected?.profile}
               entry={selected?.entry}
               inventory={inventory}
-              reason={status?.label}
+              reason={
+                status?.tone === 'warning'
+                  ? status.label
+                  : selected?.profile &&
+                      itemStatuses &&
+                      status?.canSelect === undefined
+                    ? 'Проверка доступности ещё не выполнена.'
+                    : undefined
+              }
               reasonTone={status?.tone}
             />
           </ScrollArea>

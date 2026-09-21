@@ -1,6 +1,7 @@
 import type { FC } from 'react';
 import { Dialog, InlineMessage } from '@green/ui';
 import { SpeciesCatalog } from '@/entities/species';
+import { catalogItemStatus } from '@/entities/species/model/catalogItems';
 import type { usePatternWorkflow } from '../model/usePatternWorkflow';
 import type { PatternToolPanelProps } from './PatternToolPanel';
 import { PatternResult } from './PatternResult';
@@ -44,23 +45,15 @@ export const PatternFormContent: FC<PatternFormContentProps> = ({
             disabled={loading || shortlistLoading}
             loading={shortlistLoading}
             onChange={selectSpecies}
-            itemStatuses={Object.fromEntries(
-              (options.shortlist ?? []).map((item) => [
-                item.species.id,
-                {
-                  canSelect: item.can_assign,
-                  tone: item.can_assign ? 'neutral' : 'warning',
-                  label:
-                    Array.from(
-                      new Set(
-                        item.zone_restrictions
-                          ?.filter((check) => !check.allowed)
-                          .map((check) => check.reason),
-                      ),
-                    ).join('; ') || 'Входит в ассортимент выбранных участков',
-                },
-              ]),
-            )}
+            itemStatuses={
+              options.shortlist &&
+              Object.fromEntries(
+                (options.shortlist ?? []).map((item) => [
+                  item.species.id,
+                  catalogItemStatus(item),
+                ]),
+              )
+            }
           />
         </Dialog>
       )}

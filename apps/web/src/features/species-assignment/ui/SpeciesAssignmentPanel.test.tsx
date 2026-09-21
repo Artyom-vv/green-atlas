@@ -160,7 +160,7 @@ describe('SpeciesAssignmentPanel', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Найдено 1');
     fireEvent.change(restoredSearch, { target: { value: 'нет такой породы' } });
     expect(
-      screen.getByText('По этому запросу пород нет. Измените название.'),
+      screen.getByText('Растения не найдены. Измените поиск или фильтр.'),
     ).toBeVisible();
     expect(screen.getByText('Липа мелколистная')).toBeVisible();
     fireEvent.change(restoredSearch, { target: { value: 'липа' } });
@@ -191,7 +191,7 @@ describe('SpeciesAssignmentPanel', () => {
     );
     expect(
       screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
-    ).toHaveAccessibleDescription('Tilia cordata Требует проверки');
+    ).toHaveAccessibleDescription('Tilia cordata');
     fireEvent.click(
       screen.getByRole('button', { name: 'Сведения: Липа мелколистная' }),
     );

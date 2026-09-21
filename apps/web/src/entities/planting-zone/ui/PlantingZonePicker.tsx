@@ -56,10 +56,11 @@ export const PlantingZonePicker: FC<PlantingZonePickerProps> = ({
           </Button>
         </FormActions>
       ) : null}
-      <div className="grid min-w-0 gap-2">
+      <div className="grid min-w-0">
         {available.map((zone) => (
           <Checkbox
             key={zone.id}
+            controlSize="compact"
             label={repeatedItemLabel(available, zone)}
             checked={selected.has(zone.id)}
             disabled={disabled || drawing}
