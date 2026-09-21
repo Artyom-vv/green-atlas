@@ -33,11 +33,17 @@ class CadPreviewRequest(BaseModel):
 
 
 class CadPreviewResult(BaseModel):
-    status: Literal["preview_only"] = "preview_only"
+    status: Literal["requires_review"] = "requires_review"
     calculation_ready: Literal[False] = False
     published_state_version: int = Field(ge=1)
     geometry_version: int = Field(ge=0)
     source_name: str
+    source_original_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_bytes: int = Field(ge=1)
+    source_count: int = Field(ge=1)
+    source_bytes_total: int = Field(ge=1)
+    feature_count: int = Field(ge=0)
     output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     output_bytes: int = Field(ge=1)
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")

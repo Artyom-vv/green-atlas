@@ -3,12 +3,13 @@
 from collections import OrderedDict
 from threading import RLock
 
-from shapely import STRtree
+from shapely import STRtree, disjoint_subset_union_all
+from shapely import buffer as vector_buffer
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import unary_union
 
 FeatureGeometry = tuple[dict, BaseGeometry]
 LOCAL_UNION_CACHE_SIZE = 32
+LOCAL_QUERY_EPSILON_M = 0.001
 
 
 class ConstraintIndex:
@@ -65,8 +66,64 @@ class ConstraintIndex:
             if cached is not None:
                 self._unions.move_to_end(indices)
                 return cached
-            geometry = unary_union([self.features[index][1] for index in indices])
+            # Municipal source drawings contain many independent symbols
+            # (trees are the dominant real-world case).  ``unary_union``
+            # nodes every input against one global graph and took minutes for
+            # 10k+ disjoint contours.  Shapely's disjoint-subset union first
+            # partitions independent components, then applies the same exact
+            # overlay within each connected subset.  It does not simplify or
+            # buffer the source geometry, so the placement contract remains
+            # unchanged while sparse layers avoid quadratic overlay work.
+            geometry = disjoint_subset_union_all(
+                [self.features[index][1] for index in indices]
+            )
             self._unions[indices] = geometry
             while len(self._unions) > LOCAL_UNION_CACHE_SIZE:
                 self._unions.popitem(last=False)
             return geometry
+
+    def buffered_union(
+        self, window: BaseGeometry, distance: float
+    ) -> BaseGeometry | None:
+        """Buffer only local source fragments, then combine the result.
+
+        Positive buffering distributes over geometric union.  Performing it
+        per source fragment avoids constructing and buffering one enormous
+        sparse GeometryCollection, while clipping to the influence window is
+        equivalent for every point that can affect the target area.
+        """
+
+        # A work area is often already cut along the exact obstacle boundary.
+        # Querying and clipping at precisely the rule distance then leaves
+        # thousands of zero-width boundary fragments for GEOS to buffer.  A
+        # 1 mm *query-only* halo keeps the local source polygons intact.  The
+        # regulatory buffer below remains exactly ``distance``; extra objects
+        # outside that distance cannot change the target-area difference.
+        local_window = window.buffer(LOCAL_QUERY_EPSILON_M)
+        indices = self._indices(local_window)
+        if not indices:
+            return None
+        min_x, min_y, max_x, max_y = local_window.bounds
+        fragments: list[BaseGeometry] = []
+        for index in indices:
+            geometry = self.features[index][1]
+            source_min_x, source_min_y, source_max_x, source_max_y = geometry.bounds
+            # Most municipal symbols are tiny and already wholly inside the
+            # influence envelope. Avoid an expensive GEOS overlay for those;
+            # only long/crossing source objects need exact clipping.
+            if (
+                source_min_x >= min_x
+                and source_min_y >= min_y
+                and source_max_x <= max_x
+                and source_max_y <= max_y
+            ):
+                fragments.append(geometry)
+            else:
+                fragments.append(geometry.intersection(local_window))
+        fragments = [fragment for fragment in fragments if not fragment.is_empty]
+        if not fragments:
+            return None
+        # Match BaseGeometry.buffer's existing 16-segment quarter-circle
+        # approximation; the vectorised function defaults to only eight.
+        buffered = vector_buffer(fragments, distance, quad_segs=16)
+        return disjoint_subset_union_all(buffered)

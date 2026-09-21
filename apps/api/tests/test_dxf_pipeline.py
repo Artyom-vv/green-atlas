@@ -16,7 +16,6 @@ from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.projects.adapters import SqliteProjectRepository
 
-
 SITE_DXF = Path(__file__).parents[3] / "fixtures" / "site.dxf"
 LARGE_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "vdnkh-large.dxf"
 VDNKH_3D_DXF = Path(__file__).parents[3] / "fixtures" / "large-map" / "vdnkh-3d.dxf"
@@ -376,15 +375,79 @@ def test_hatch_with_many_disconnected_islands_stays_fast_and_keeps_every_area() 
 
     started = perf_counter()
     imported = EzdxfReader().read("many-islands.dxf", stream.getvalue().encode())
+    imported.layers[0].mapped_kind = LayerKind.SITE_BORDER
     geometry = shape(imported.geometry.feature_collection["features"][0]["geometry"])
     project = Project(name="Много участков HATCH", layers=imported.layers, source_geometry=imported.geometry)
     calculated = ShapelyGeometryEngine().calculate(project)
+    allowed_fragments = [
+        feature
+        for feature in calculated.feature_collection["features"]
+        if feature["properties"].get("kind") == "allowed"
+    ]
 
     assert geometry.geom_type == "MultiPolygon"
     assert len(geometry.geoms) == island_count
     assert geometry.area == island_count
     assert calculated.site_area_m2 == island_count
+    assert len(allowed_fragments) == island_count
+    assert all(
+        feature["geometry"]["type"] == "Polygon" for feature in allowed_fragments
+    )
+    assert (
+        sum(feature["properties"]["area_m2"] for feature in allowed_fragments)
+        == island_count
+    )
     assert perf_counter() - started < 5
+
+
+def test_disconnected_setbacks_are_published_as_local_map_fragments() -> None:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.M
+    document.layers.add("SITE_BORDER", color=1)
+    document.layers.add("BUILDING", color=2)
+    modelspace = document.modelspace()
+    modelspace.add_lwpolyline(
+        [(0, 0), (100, 0), (100, 100), (0, 100)],
+        close=True,
+        dxfattribs={"layer": "SITE_BORDER"},
+    )
+    for x in (15, 70):
+        modelspace.add_lwpolyline(
+            [(x, 20), (x + 5, 20), (x + 5, 25), (x, 25)],
+            close=True,
+            dxfattribs={"layer": "BUILDING"},
+        )
+    stream = StringIO()
+    document.write(stream)
+
+    imported = EzdxfReader().read(
+        "separate-buildings.dxf", stream.getvalue().encode()
+    )
+    for layer in imported.layers:
+        layer.mapped_kind = layer.suggested_kind
+    calculated = ShapelyGeometryEngine().calculate(
+        Project(
+            name="Раздельные ограничения",
+            layers=imported.layers,
+            source_geometry=imported.geometry,
+        )
+    )
+    setback_fragments = [
+        feature
+        for feature in calculated.feature_collection["features"]
+        if feature["properties"].get("rule_id") == "pp743-3.6.3-building"
+    ]
+
+    assert len(setback_fragments) == 2
+    assert all(
+        feature["geometry"]["type"] == "Polygon" for feature in setback_fragments
+    )
+    assert {
+        feature["properties"]["fragment_index"] for feature in setback_fragments
+    } == {1, 2}
+    assert {
+        feature["properties"]["fragment_count"] for feature in setback_fragments
+    } == {2}
 
 
 def test_planar_cad_faces_remain_visible_and_can_be_mapped_as_buildings() -> None:

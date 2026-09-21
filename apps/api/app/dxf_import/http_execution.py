@@ -16,21 +16,36 @@ _inflight: set[asyncio.Task[Project]] = set()
 
 
 async def execute_import(
-    operation: Callable[[str, str, bytes | bytearray], Project],
+    operation: Callable[..., Project],
     project_id: str,
     filename: str,
     file: UploadFile,
     read_upload: Callable[[UploadFile], Awaitable[bytearray]],
+    *,
+    sidecar: UploadFile | None = None,
+    read_sidecar: Callable[[UploadFile], Awaitable[bytearray]] | None = None,
 ) -> Project:
     borrower = object()
     await _import_capacity.acquire_on_behalf_of(borrower)
     try:
         content = await read_upload(file)
+        sidecar_content = None
+        if sidecar is not None:
+            if read_sidecar is None:
+                raise ValueError("Не задан обработчик CAD snapshot")
+            sidecar_content = await read_sidecar(sidecar)
     except BaseException:
         _import_capacity.release_on_behalf_of(borrower)
         raise
     task = asyncio.create_task(
-        _complete_import(operation, project_id, filename, content, borrower)
+        _complete_import(
+            operation,
+            project_id,
+            filename,
+            content,
+            borrower,
+            sidecar_content,
+        )
     )
     _inflight.add(task)
     task.add_done_callback(_finished)
@@ -40,16 +55,22 @@ async def execute_import(
 
 
 async def _complete_import(
-    operation: Callable[[str, str, bytes | bytearray], Project],
+    operation: Callable[..., Project],
     project_id: str,
     filename: str,
     content: bytearray,
     borrower: object,
+    sidecar_content: bytearray | None,
 ) -> Project:
     try:
         # AnyIO propagates If-Match to the worker; the atomic repository check
         # rejects any source changed during parsing.
-        return await run_in_threadpool(operation, project_id, filename, content)
+        arguments = (
+            (project_id, filename, content, sidecar_content)
+            if sidecar_content is not None
+            else (project_id, filename, content)
+        )
+        return await run_in_threadpool(operation, *arguments)
     finally:
         _import_capacity.release_on_behalf_of(borrower)
 

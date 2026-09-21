@@ -13,18 +13,32 @@ from ezdxf.lldxf.tagger import binary_tags_loader
 from ezdxf.math import OCS, Vec3
 from ezdxf.path import make_path
 from shapely import STRtree
+from shapely.errors import GEOSException
 from shapely.geometry import LineString as ShapelyLineString
 from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import shape as shapely_shape
+from shapely.ops import polygonize, unary_union
 
 from app.dxf_import.acis_lookup import indexed_acis_lookup
 from app.dxf_import.axis_provenance import straight_axis_provenance
 from app.dxf_import.block_capacity import inspect_block_expansion
 from app.dxf_import.block_diagnostics import BlockGeometryFailure, record_failure, source_handle
 from app.dxf_import.capacity import SourceGeometryCapacity
+from app.dxf_import.component_provenance import component_definition_provenance
 from app.dxf_import.contracts import DxfImportResult
 from app.dxf_import.encoding import decode_text_dxf
-from app.dxf_import.layer_contracts import Layer, LayerKind
-from app.dxf_import.layer_suggestions import suggest_layer_kind
+from app.dxf_import.layer_contracts import (
+    BoundaryCandidate,
+    BoundaryCandidateStatus,
+    Layer,
+    LayerKind,
+    LayerSuggestionConfidence,
+)
+from app.dxf_import.layer_suggestions import (
+    assess_layer_suggestion,
+    is_boundary_candidate_name,
+    suggest_layer_kind,
+)
 from app.dxf_import.mleader_compat import prepare_multileader_transforms
 from app.dxf_import.polygons import hatch_geometry, mpolygon_geometry
 from app.dxf_import.preview_marker import read_preview_marker
@@ -532,6 +546,120 @@ def _wide_polyline_geometry(coordinates: list[list[float]], width_m: float) -> d
             for ring in rings
         ],
     }
+
+
+def _polyline_center_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
+    """Preserve the authored path independently from a displayed line width.
+
+    A closed, wide polyline used as a project boundary is visually a narrow
+    stroke, but its centre path is the actual enclosing ring. The map keeps
+    the stroke footprint; calculation may use this separately audited path
+    when the operator maps the layer as ``site_border``.
+    """
+    try:
+        if entity.dxftype() == "LWPOLYLINE":
+            coordinates = _lwpolyline_points(entity, factor)
+            closed = entity.closed
+        elif entity.dxftype() == "POLYLINE" and entity.is_2d_polyline:
+            coordinates = _polyline_points(entity, factor)
+            closed = entity.is_closed
+        else:
+            return None
+    except Exception:
+        return None
+    if len(coordinates) < 2:
+        return None
+    if closed and len(coordinates) >= 3:
+        if coordinates[-1] != coordinates[0]:
+            coordinates.append(coordinates[0])
+        return {"type": "Polygon", "coordinates": [coordinates]}
+    return {"type": "LineString", "coordinates": coordinates}
+
+
+def _polygon_parts(geometry: Any) -> list[Any]:
+    if geometry.is_empty:
+        return []
+    if geometry.geom_type == "Polygon":
+        return [geometry]
+    if geometry.geom_type in {"MultiPolygon", "GeometryCollection"}:
+        return [part for item in geometry.geoms for part in _polygon_parts(item)]
+    return []
+
+
+def _boundary_candidate(features: list[dict[str, Any]]) -> BoundaryCandidate:
+    polygons: list[Any] = []
+    lines: list[Any] = []
+    used_center_geometry = False
+    for feature in features:
+        properties = feature.get("properties", {})
+        source_geometry = properties.get("source_polyline_center_geometry")
+        if isinstance(source_geometry, dict):
+            used_center_geometry = True
+        else:
+            source_geometry = feature.get("geometry")
+        try:
+            geometry = shapely_shape(source_geometry)
+        except (KeyError, TypeError, ValueError):
+            return BoundaryCandidate(
+                status=BoundaryCandidateStatus.INVALID,
+                basis="source_geometry",
+                issue="Контур слоя не читается как плоская геометрия",
+            )
+        if geometry.is_empty or not geometry.is_valid:
+            return BoundaryCandidate(
+                status=BoundaryCandidateStatus.INVALID,
+                basis="authored_centerline" if used_center_geometry else "source_geometry",
+                issue="Контур слоя пуст или самопересекается",
+            )
+        polygons.extend(_polygon_parts(geometry))
+        if geometry.geom_type in {"LineString", "MultiLineString"}:
+            lines.append(geometry)
+
+    basis = "authored_centerline" if used_center_geometry else "source_surface"
+    surfaces = polygons
+    if not surfaces and lines:
+        surfaces = list(polygonize(lines))
+        basis = "polygonized_linework"
+    if not surfaces:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.UNAVAILABLE,
+            basis=basis,
+            issue="Слой не образует замкнутую поверхность",
+        )
+    try:
+        surface = unary_union(surfaces)
+    except GEOSException:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.INVALID,
+            basis=basis,
+            issue="Контуры слоя конфликтуют при объединении",
+        )
+    if surface.is_empty or not surface.is_valid:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.INVALID,
+            basis=basis,
+            issue="Объединённая поверхность слоя некорректна",
+        )
+    inset = surface.buffer(-1.5)
+    area = float(surface.area)
+    inset_area = float(inset.area)
+    status = (
+        BoundaryCandidateStatus.USABLE
+        if inset_area >= 24.0
+        else BoundaryCandidateStatus.THIN
+    )
+    return BoundaryCandidate(
+        status=status,
+        basis=basis,
+        area_m2=round(area, 3),
+        inset_1_5m_area_m2=round(inset_area, 3),
+        component_count=len(_polygon_parts(surface)),
+        issue=(
+            None
+            if status == BoundaryCandidateStatus.USABLE
+            else "После внутреннего отступа 1,5 м не остаётся рабочей площади"
+        ),
+    )
 
 
 def _underlay_clip_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
@@ -1428,6 +1556,7 @@ class EzdxfReader:
                             # retain its parent handle as the audit link.
                             "source_handle": str(entity.dxf.get("handle", "")),
                             **styles.entity(virtual, source_layer, fallback_color),
+                            **component_definition_provenance(virtual),
                             **_source_vertical_properties(virtual, factor, attributes),
                             "source_block": block_name,
                             "source_block_parent_layer": parent_layer,
@@ -1455,6 +1584,9 @@ class EzdxfReader:
                                     "source_polyline_width_m": source_width_m,
                                     "source_width_mode": "conservative_max",
                                 })
+                                center_geometry = _polyline_center_geometry(virtual, factor)
+                                if center_geometry is not None:
+                                    properties["source_polyline_center_geometry"] = center_geometry
                         if virtual.dxftype() in CONTEXT_ONLY_ENTITY_TYPES or _is_mesh_context(virtual):
                             properties["source_context_only"] = True
                         if _is_mesh_context(virtual):
@@ -1547,6 +1679,9 @@ class EzdxfReader:
                             "source_polyline_width_m": source_width_m,
                             "source_width_mode": "conservative_max",
                         })
+                        center_geometry = _polyline_center_geometry(entity, factor)
+                        if center_geometry is not None:
+                            properties["source_polyline_center_geometry"] = center_geometry
                 if entity.dxftype() == "INSERT":
                     properties.update({
                         "source_block": str(entity.dxf.name),
@@ -1605,13 +1740,39 @@ class EzdxfReader:
         layers: list[Layer] = []
         for index, (name, count) in enumerate(counts.items()):
             kind = suggest_layer_kind(name)
+            boundary_candidate = (
+                _boundary_candidate(features_by_layer.get(name, []))
+                if is_boundary_candidate_name(name)
+                else None
+            )
             if kind == LayerKind.SITE_BORDER and name not in polygon_layers:
                 kind = LayerKind.IGNORE
+            if (
+                kind == LayerKind.SITE_BORDER
+                and boundary_candidate is not None
+                and boundary_candidate.status != BoundaryCandidateStatus.USABLE
+            ):
+                kind = LayerKind.IGNORE
+            geometry_complete = not (
+                unrenderable_geometry_count_by_layer[name]
+                or unsupported_by_layer.get(name)
+            )
+            confidence, reasons, review_required = assess_layer_suggestion(
+                kind,
+                entity_types=dict(entity_types_by_layer[name]),
+                has_polygon=name in polygon_layers,
+                geometry_complete=geometry_complete,
+                boundary_candidate=boundary_candidate,
+            )
             style = styles.layer(name, LAYER_COLORS[index % len(LAYER_COLORS)])
             layers.append(Layer(
                 id=str(uuid5(NAMESPACE_URL, f"dxf-layer:{name}")),
                 source_name=name,
                 suggested_kind=kind,
+                suggestion_confidence=confidence,
+                suggestion_reasons=reasons,
+                mapping_review_required=review_required,
+                mapping_confirmed=not review_required,
                 mapped_kind=kind,
                 object_count=count,
                 bounds=_geometry_bounds(features_by_layer.get(name, [])),
@@ -1619,12 +1780,48 @@ class EzdxfReader:
                 linetype=style.linetype,
                 lineweight_mm=style.lineweight_mm,
                 entity_types=dict(entity_types_by_layer[name]),
-                geometry_complete=not (
-                    unrenderable_geometry_count_by_layer[name]
-                    or unsupported_by_layer.get(name)
-                ),
+                geometry_complete=geometry_complete,
+                unsupported_geometry_types=dict(unsupported_by_layer.get(name, {})),
+                unreadable_geometry_count=unrenderable_geometry_count_by_layer[name],
+                boundary_candidate=boundary_candidate,
                 required=kind == LayerKind.SITE_BORDER,
             ))
+
+        usable_boundaries = [
+            layer
+            for layer in layers
+            if layer.boundary_candidate is not None
+            and layer.boundary_candidate.status == BoundaryCandidateStatus.USABLE
+        ]
+        if len(usable_boundaries) > 1:
+            # Several valid surfaces are a semantic choice, not evidence that
+            # every one is the project territory. Leave the source import
+            # editable and require one explicit operator selection instead of
+            # silently preferring a name heuristic.
+            for layer in usable_boundaries:
+                if layer.suggested_kind == LayerKind.SITE_BORDER:
+                    layer.suggested_kind = LayerKind.IGNORE
+                    layer.mapped_kind = LayerKind.IGNORE
+                    layer.suggestion_confidence = (
+                        LayerSuggestionConfidence.LOW
+                    )
+                    layer.suggestion_reasons = [
+                        "Найдено несколько подходящих контуров территории"
+                    ]
+                    # Choosing one contour is handled by the dedicated
+                    # boundary control; excluded alternatives are safe.
+                    layer.mapping_review_required = False
+                    layer.mapping_confirmed = True
+                    layer.required = False
+
+        kind_by_layer = {layer.source_name: layer.suggested_kind for layer in layers}
+        for feature in features:
+            properties = feature["properties"]
+            if properties.get("source_context_only"):
+                continue
+            source_layer = properties.get("source_layer")
+            if source_layer in kind_by_layer:
+                properties["kind"] = kind_by_layer[source_layer].value
 
         warnings = styles.warnings()
         warnings.extend(failure.warning() for failure in block_failures)

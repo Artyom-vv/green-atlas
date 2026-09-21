@@ -56,3 +56,46 @@ export function filterProjectLayers(layers: Layer[], query: string) {
       .includes(normalized),
   );
 }
+
+export type ProjectLayerGroup = {
+  id: 'project' | 'base' | 'other';
+  label: string;
+  layers: Layer[];
+};
+
+function layerGroupId(layer: Layer): ProjectLayerGroup['id'] {
+  const name = layer.source_name.toLocaleLowerCase('ru').replaceAll('ё', 'е');
+  if (
+    name.startsWith('!!!_') ||
+    name.includes('$0$01_') ||
+    name.includes('дендр') ||
+    name.includes('генплан') ||
+    /(?:граница|границы) работ/.test(name)
+  )
+    return 'project';
+  if (
+    name.includes('$0$00.') ||
+    name.includes('топограф') ||
+    name.includes('геоподосн') ||
+    name.includes('сети') ||
+    name.includes('красн') ||
+    name.includes('границ')
+  )
+    return 'base';
+  return 'other';
+}
+
+/** Coarse source roles stay independent from regulatory layer mapping. */
+export function projectLayerGroups(layers: Layer[]): ProjectLayerGroup[] {
+  const definitions: Array<Pick<ProjectLayerGroup, 'id' | 'label'>> = [
+    { id: 'project', label: 'Проектные слои' },
+    { id: 'base', label: 'Геоподоснова' },
+    { id: 'other', label: 'Прочие слои' },
+  ];
+  return definitions
+    .map((definition) => ({
+      ...definition,
+      layers: layers.filter((layer) => layerGroupId(layer) === definition.id),
+    }))
+    .filter((group) => group.layers.length > 0);
+}

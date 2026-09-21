@@ -9,6 +9,7 @@ from shapely.geometry import GeometryCollection, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 
+from app.dxf_import.admission import require_confirmed_layer_mapping
 from app.dxf_import.layer_contracts import LayerKind
 from app.dxf_import.utility_mapping import (
     assign_utility_context,
@@ -69,6 +70,12 @@ def _unprojectable_physical_layers(project: Project, source_features: list[dict]
     }
     for source_name, layer in mapped_layers.items():
         unsupported = set(layer.entity_types).intersection(UNPROJECTABLE_PHYSICAL_ENTITY_TYPES)
+        unsupported = {
+            entity_type
+            for entity_type in unsupported
+            if layer.projected_geometry_types.get(entity_type, 0)
+            < layer.entity_types.get(entity_type, 0)
+        }
         if unsupported:
             issues[source_name] = unsupported
     for feature in source_features:
@@ -91,6 +98,47 @@ def _polygons(geometry: BaseGeometry) -> list[BaseGeometry]:
     if geometry.geom_type == "GeometryCollection":
         return [polygon for part in geometry.geoms for polygon in _polygons(part)]
     return []
+
+
+def _stable_polygon_parts(geometry: BaseGeometry) -> list[BaseGeometry]:
+    """Return disconnected map targets instead of one aggregate MultiPolygon.
+
+    Constraint math still uses the complete geometry. Only the published map
+    representation is split, so hovering one local setback cannot highlight
+    every disconnected object covered by the same regulation.
+    """
+    return sorted(
+        (polygon for polygon in _polygons(geometry) if not polygon.is_empty),
+        key=lambda polygon: (
+            *(round(value, 6) for value in polygon.bounds),
+            round(polygon.area, 6),
+        ),
+    )
+
+
+def _fragment_features(
+    geometry: BaseGeometry,
+    *,
+    feature_id: str,
+    properties: dict,
+) -> list[dict]:
+    parts = _stable_polygon_parts(geometry)
+    count = len(parts)
+    return [
+        {
+            "type": "Feature",
+            "id": feature_id if count == 1 else f"{feature_id}-part-{index}",
+            "properties": {
+                **properties,
+                "calculation_fragment": True,
+                "fragment_index": index,
+                "fragment_count": count,
+                "area_m2": round(part.area, 2),
+            },
+            "geometry": mapping(part),
+        }
+        for index, part in enumerate(parts, start=1)
+    ]
 
 
 def _union_in_batches(
@@ -178,6 +226,7 @@ class ShapelyGeometryEngine:
             return checker
 
     def calculate(self, project: Project, progress: ProgressReporter | None = None) -> GeometrySnapshot:
+        require_confirmed_layer_mapping(project)
         if project.source_geometry is None:
             raise ValueError("Сначала импортируйте DXF")
         mapping_by_layer = {layer.source_name: layer.mapped_kind for layer in project.layers}
@@ -253,13 +302,19 @@ class ShapelyGeometryEngine:
             try:
                 geometry = shape(feature["geometry"])
             except Exception:
+                # A malformed physical object is not evidence of empty ground.
+                # Keep the source untouched and refuse an authoritative result;
+                # the existing source-editor remains available for correction.
+                invalid_constraint_layers.add(str(source_layer))
+                properties["source_invalid_geometry"] = True
+                visible_features.append(feature)
                 continue
-            if not geometry.is_valid:
+            if geometry.is_empty or not geometry.is_valid:
                 # Repairing a self-intersecting boundary would invent a
-                # footprint. For mapped site/building/road geometry that is
+                # footprint. For any mapped physical geometry that is
                 # less safe than stopping the calculation: an operator must
                 # decide which intended contour is authoritative.
-                if kind in {LayerKind.SITE_BORDER, LayerKind.BUILDING, LayerKind.ROAD}:
+                if kind in PHYSICAL_LAYER_KINDS:
                     invalid_constraint_layers.add(str(source_layer))
                     properties["source_invalid_geometry"] = True
                 visible_features.append(feature)
@@ -267,7 +322,21 @@ class ShapelyGeometryEngine:
                     progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.35 * index / max(1, total_features), processed=index, total=total_features, unit="объектов"))
                 continue
             if not geometry.is_empty:
-                grouped[kind].append(geometry)
+                calculation_geometry = geometry
+                if kind == LayerKind.SITE_BORDER:
+                    center_geometry = properties.get("source_polyline_center_geometry")
+                    if isinstance(center_geometry, dict):
+                        try:
+                            authored_boundary = shape(center_geometry)
+                        except (KeyError, TypeError, ValueError):
+                            authored_boundary = GeometryCollection()
+                        if authored_boundary.is_empty or not authored_boundary.is_valid:
+                            invalid_constraint_layers.add(str(source_layer))
+                            properties["source_invalid_boundary_geometry"] = True
+                            visible_features.append(feature)
+                            continue
+                        calculation_geometry = authored_boundary
+                grouped[kind].append(calculation_geometry)
                 visible_features.append(feature)
             if progress and (index % report_step == 0 or index == total_features):
                 progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.35 * index / max(1, total_features), processed=index, total=total_features, unit="объектов"))
@@ -275,7 +344,7 @@ class ShapelyGeometryEngine:
         if invalid_constraint_layers:
             layers = ", ".join(sorted(invalid_constraint_layers))
             raise ValueError(
-                "DXF содержит самопересекающуюся или некорректную замкнутую геометрию "
+                "DXF содержит отсутствующую, пустую или некорректную геометрию "
                 f"в слоях: {layers}. Исправьте контур или сопоставьте его как справочный слой."
             )
 
@@ -293,6 +362,17 @@ class ShapelyGeometryEngine:
         # inside the explicitly selected manual areas.
         full_site = unary_union(site_polygons).buffer(0) if site_polygons else None
         site = full_site
+        site_surface_feature = None if site is None or site.is_empty else {
+            "type": "Feature",
+            "id": "calculated-site-surface",
+            "properties": {
+                "kind": "site_surface",
+                "label": "Расчётная граница территории",
+                "area_m2": round(site.area, 2),
+                "calculation_only": True,
+            },
+            "geometry": mapping(site),
+        }
         if progress:
             progress(WorkProgress(
                 stage="Граница проектирования готова" if site is not None else "Граница не найдена: доступна ручная область",
@@ -344,12 +424,18 @@ class ShapelyGeometryEngine:
             if clipped.is_empty:
                 continue
             forbidden_parts.append(clipped)
-            constraint_features.append({
-                "type": "Feature",
-                "id": f"forbidden-{rule_id}",
-                "properties": {"kind": "forbidden", "rule_id": rule_id, "label": label, "distance_m": distance},
-                "geometry": mapping(clipped),
-            })
+            constraint_features.extend(
+                _fragment_features(
+                    clipped,
+                    feature_id=f"forbidden-{rule_id}",
+                    properties={
+                        "kind": "forbidden",
+                        "rule_id": rule_id,
+                        "label": label,
+                        "distance_m": distance,
+                    },
+                )
+            )
 
         occupied_labels = {
             LayerKind.EXISTING_GREEN: "Существующее озеленение",
@@ -371,27 +457,42 @@ class ShapelyGeometryEngine:
             if clipped.is_empty:
                 continue
             forbidden_parts.append(clipped)
-            constraint_features.append({
-                "type": "Feature",
-                "id": f"occupied-{kind.value}",
-                "properties": {"kind": "forbidden", "rule_id": f"occupied-{kind.value}", "label": f"Занято: {label.lower()}", "distance_m": 0},
-                "geometry": mapping(clipped),
-            })
+            constraint_features.extend(
+                _fragment_features(
+                    clipped,
+                    feature_id=f"occupied-{kind.value}",
+                    properties={
+                        "kind": "forbidden",
+                        "rule_id": f"occupied-{kind.value}",
+                        "label": f"Занято: {label.lower()}",
+                        "distance_m": 0,
+                    },
+                )
+            )
 
         if progress:
             progress(WorkProgress(stage="Вычисляем итоговую допустимую область", fraction=None, processed=processed_constraints, total=total_constraints, unit="объектов ограничений"))
         forbidden = unary_union(forbidden_parts) if forbidden_parts else GeometryCollection()
         allowed = site.difference(forbidden).buffer(0) if site is not None else None
-        allowed_feature = None if allowed is None or allowed.is_empty else {
-            "type": "Feature",
-            "id": "allowed-area",
-            # This is the intersection left after the strictest currently
-            # known buffer for every plant class. It is a useful common map
-            # cue, not a second universal validation rule: a shrub may be
-            # valid outside it when its own regulatory distance is smaller.
-            "properties": {"kind": "allowed", "label": "Базово допустимая зона", "area_m2": round(allowed.area, 2), "scope": "conservative_all_plant_kinds"},
-            "geometry": mapping(allowed),
-        }
+        # This is the intersection left after the strictest currently known
+        # buffer for every plant class. It is a useful common map cue, not a
+        # second universal validation rule: a shrub may be valid outside it
+        # when its own regulatory distance is smaller. Publish disconnected
+        # components independently so the map exposes local areas, while the
+        # snapshot totals below continue to describe the complete result.
+        allowed_features = (
+            []
+            if allowed is None or allowed.is_empty
+            else _fragment_features(
+                allowed,
+                feature_id="allowed-area",
+                properties={
+                    "kind": "allowed",
+                    "label": "Базово допустимая зона",
+                    "scope": "conservative_all_plant_kinds",
+                },
+            )
+        )
         if progress:
             progress(WorkProgress(stage="Фиксируем выбранные рабочие области", fraction=0.92, processed=0, total=None, unit="областей"))
         planting_zone_features = [{
@@ -406,7 +507,12 @@ class ShapelyGeometryEngine:
         } for zone in project.planting_zones]
         if progress:
             progress(WorkProgress(stage=f"Выбрано рабочих областей: {len(planting_zone_features)}", fraction=1.0, processed=len(planting_zone_features), total=len(planting_zone_features), unit="областей"))
-        derived_features = [*constraint_features, *([allowed_feature] if allowed_feature is not None else []), *planting_zone_features]
+        derived_features = [
+            *([site_surface_feature] if site_surface_feature is not None else []),
+            *constraint_features,
+            *allowed_features,
+            *planting_zone_features,
+        ]
         return GeometrySnapshot(
             feature_collection={"type": "FeatureCollection", "features": [*visible_features, *derived_features]},
             # Regulatory calculation remains strictly 2D. Carry the source

@@ -47,7 +47,7 @@ export function CadWorkPreview({ intake, state, disabled, hasSource }: Props) {
       )}
       {completed ? (
         <Button variant="primary" onClick={state.open} loading={state.opening}>
-          Открыть предварительную карту
+          Открыть карту
         </Button>
       ) : hasSource ? (
         <Text variant="caption">

@@ -1,30 +1,38 @@
 from __future__ import annotations
 
-from pathlib import Path
-from contextlib import ExitStack
-from tempfile import TemporaryDirectory
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event, Thread
+from contextlib import ExitStack
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Event, RLock, Thread
 from time import sleep
 
-from app.contracts import OperationKind, OperationStatus, ProjectOperation
 from app.application import ProjectApplication
-from app.operations.application import GeometryOperationApplication
-from app.validation.application import PlanValidation
-from app.shared.identity import random_id, utc_now
-from threading import RLock
-from app.contracts import GeometrySnapshot, Project
+from app.contracts import (
+    GeometrySnapshot,
+    OperationKind,
+    OperationStatus,
+    Project,
+    ProjectOperation,
+)
 from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.layer_contracts import Layer, LayerKind
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import InMemoryProjectHistory
-from app.projects.adapters import InMemoryProjectRepository
 from app.operations.adapters import SqliteOperationRepository
-from app.planning.patterns import ShapelyCandidateGenerator
+from app.operations.application import GeometryOperationApplication
 from app.operations.progress import OperationCancelled, WorkProgress
-from app.projects.concurrency import reset_expected_project_version, set_expected_project_version
+from app.planning.patterns import ShapelyCandidateGenerator
+from app.projects.adapters import InMemoryProjectRepository
+from app.projects.concurrency import (
+    reset_expected_project_version,
+    set_expected_project_version,
+)
+from app.shared.identity import random_id, utc_now
 from app.validation.adapters import RuleBasedPlanValidator
+from app.validation.application import PlanValidation
 
 
 def operation_application(*, repository=None, operation_repository, geometry=None):
@@ -36,6 +44,34 @@ def operation_application(*, repository=None, operation_repository, geometry=Non
         commit_lock=RLock(), invalidate_spatial=lambda _: None,
         now=utc_now, new_id=random_id,
     )
+
+
+def test_geometry_start_requires_confirmation_of_active_suggestions() -> None:
+    project_repository = InMemoryProjectRepository()
+    project = project_repository.create(
+        Project(
+            name="Проверка автомаппинга",
+            layers=[
+                Layer(
+                    id="building",
+                    source_name="Здания",
+                    suggested_kind=LayerKind.BUILDING,
+                    mapped_kind=LayerKind.BUILDING,
+                    mapping_review_required=True,
+                    mapping_confirmed=False,
+                    object_count=1,
+                    color="#000000",
+                )
+            ],
+        )
+    )
+    application = operation_application(
+        repository=project_repository,
+        operation_repository=SqliteOperationRepository(":memory:"),
+    )
+
+    with __import__("pytest").raises(ValueError, match="Подтвердите предложенные"):
+        application.start_geometry_operation(project.id)
 
 
 def test_sqlite_operation_repository_persists_latest_state() -> None:

@@ -1,4 +1,13 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 
 from app.api import project_version_scope
 from app.cad_intake.application import CadIntakeApplication
@@ -7,11 +16,13 @@ from app.cad_intake.contracts import (
     CadFingerprint,
     CadIntakeRequest,
     CadRoot,
+    CadUploadPackage,
 )
 from app.cad_intake.prepare_application import CadPrepareApplication
 from app.cad_intake.prepare_contracts import CadPrepareRequest
 from app.cad_intake.preview_application import CadPreviewApplication
 from app.cad_intake.preview_contracts import CadPreviewRequest
+from app.cad_intake.uploads import store_uploaded_package
 from app.composition import get_cad_intake, get_cad_prepare, get_cad_preview
 from app.http_errors import handle
 from app.operations.contracts import OperationStatus, ProjectOperation
@@ -53,6 +64,17 @@ def prepare_project(
 @router.get("/cad/roots", response_model=list[CadRoot])
 def roots(application: CadIntakeApplication = Depends(get_cad_intake)) -> list[CadRoot]:
     return application.discovery.roots()
+
+
+@router.post("/cad/uploads", response_model=CadUploadPackage, status_code=201)
+async def upload_package(
+    files: list[UploadFile] = File(...),
+    application: CadIntakeApplication = Depends(get_cad_intake),
+) -> CadUploadPackage:
+    try:
+        return await store_uploaded_package(application.config, files)
+    except Exception as error:
+        raise handle(error) from error
 
 
 @router.get("/cad/roots/{root_id}/entries", response_model=CadDirectory)

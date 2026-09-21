@@ -110,6 +110,37 @@ def test_old_mapping_client_preserves_context_without_invalidating_geometry():
     assert invalidated == []
 
 
+def test_review_required_mapping_must_be_explicitly_confirmed():
+    project = mapped_project()
+    project.layers[1].mapping_review_required = True
+    project.layers[1].mapping_confirmed = False
+    service, project, _invalidated = import_service(project)
+
+    with pytest.raises(ValueError, match="Подтвердите предложенные роли"):
+        service.save_mappings(
+            project.id,
+            [
+                LayerMapping(
+                    layer_id="utility",
+                    kind="utility",
+                    confirmed=False,
+                )
+            ],
+        )
+
+    saved = service.save_mappings(
+        project.id,
+        [
+            LayerMapping(
+                layer_id="utility",
+                kind="utility",
+                confirmed=True,
+            )
+        ],
+    )
+    assert saved.layers[1].mapping_confirmed
+
+
 @pytest.mark.parametrize("kind", ["utility", "road"])
 def test_explicit_clear_or_semantic_remap_invalidates_derived_geometry(kind):
     service, project, invalidated = import_service(mapped_project())

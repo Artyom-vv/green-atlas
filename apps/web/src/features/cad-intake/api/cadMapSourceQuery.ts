@@ -26,7 +26,7 @@ export function cadMapSourceQuery(project?: Project) {
       const receipt = cadSourceReceipt(project, operation);
       const asset = await api.getCadSourceAsset(
         project.id,
-        receipt.intake_operation_id,
+        receipt.request.intake_operation_id,
         signal,
       );
       return cadMapSource(project, operation, asset);

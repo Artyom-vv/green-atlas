@@ -13,7 +13,7 @@ from app.cad_import.package_contracts import (
 )
 from app.cad_import.policy import ConversionPolicy
 from app.cad_import.process import run_converter
-from app.cad_intake.contracts import CadIntakeRequest
+from app.cad_intake.contracts import CadDrawingEntry, CadIntakeRequest
 from app.cad_intake.passport import make_passport
 from app.cad_intake.worker import InspectionWork, execute
 from app.operations.progress import OperationCancelled
@@ -37,6 +37,18 @@ def test_changed_fingerprint_fails_before_converter(tmp_path):
             )
         )
     assert not (tmp_path / "manifest.json").exists()
+
+
+def test_request_rejects_duplicate_independent_entries():
+    with pytest.raises(ValueError, match="выбирается один раз"):
+        CadIntakeRequest(
+            root_id="official",
+            entry="entry.dxf",
+            entry_sha256="a" * 64,
+            additional_entries=[
+                CadDrawingEntry(path="entry.dxf", sha256="a" * 64)
+            ],
+        )
 
 
 def test_cancelled_worker_stops_its_process_tree(tmp_path):

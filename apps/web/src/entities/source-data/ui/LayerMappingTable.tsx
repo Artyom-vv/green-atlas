@@ -1,5 +1,5 @@
 import type { Layer, LayerMapping } from '@green/api-client';
-import { DataTable, Select, Text } from '@green/ui';
+import { Button, DataTable, Select, Text } from '@green/ui';
 import type { CSSProperties, FC } from 'react';
 import {
   LAYER_KIND_LABELS,
@@ -42,10 +42,16 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
         const warning =
           (mapping.kind === 'ignore' && layer.required) ||
           !layer.geometry_complete;
+        const needsReview = Boolean(
+          layer.mapping_review_required &&
+          mapping.kind !== 'ignore' &&
+          !mapping.confirmed,
+        );
+        const reviewReason = layer.suggestion_reasons?.join('. ');
         return (
           <tr
             key={layer.id}
-            className={warning ? 'bg-yellow-100/50' : undefined}
+            className={warning || needsReview ? 'bg-yellow-100/50' : undefined}
           >
             <td>
               <div className="grid grid-cols-[12px_minmax(100px,1fr)] items-center gap-x-2 gap-y-1">
@@ -67,6 +73,15 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
                     часть объектов не показана
                   </Text>
                 )}
+                {needsReview && (
+                  <Text
+                    variant="caption"
+                    className="col-start-2 text-amber-700"
+                    title={reviewReason}
+                  >
+                    проверьте роль
+                  </Text>
+                )}
               </div>
             </td>
             <td>
@@ -79,9 +94,12 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
                   onChange={(event) => {
                     const kind = layerKindFromValue(event.target.value);
                     if (kind) {
+                      const nextMapping = { ...mapping, kind };
+                      if (layer.mapping_review_required)
+                        nextMapping.confirmed = true;
                       onChange({
                         ...mappings,
-                        [layer.id]: { ...mapping, kind },
+                        [layer.id]: nextMapping,
                       });
                     }
                   }}
@@ -92,6 +110,21 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
                     </option>
                   ))}
                 </Select>
+              )}
+              {!readOnly && needsReview && (
+                <Button
+                  controlSize="compact"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() =>
+                    onChange({
+                      ...mappings,
+                      [layer.id]: { ...mapping, confirmed: true },
+                    })
+                  }
+                >
+                  Подтвердить
+                </Button>
               )}
             </td>
             <td className="text-right font-mono tabular-nums">

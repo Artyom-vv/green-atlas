@@ -107,6 +107,72 @@ def test_http_discovery_start_status_and_project_unchanged(service):
     assert str(source.parent) not in str(status)
 
 
+def test_http_upload_package_can_start_multi_dxf_intake(service):
+    client, _, project, _ = service
+    uploaded = client.post(
+        "/api/cad/uploads",
+        files=[
+            ("files", ("genplan.dxf", b"AC1032 genplan", "application/dxf")),
+            (
+                "files",
+                (
+                    "genplan.dxf.green-atlas.snapshot.json",
+                    b"native genplan",
+                    "application/json",
+                ),
+            ),
+            ("files", ("geobase.dxf", b"AC1032 geobase", "application/dxf")),
+            (
+                "files",
+                (
+                    "geobase.dxf.green-atlas.snapshot.json",
+                    b"native geobase",
+                    "application/json",
+                ),
+            ),
+        ],
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    package = uploaded.json()
+    assert package["total_bytes"] == 56
+    assert package["root_id"].startswith("upload-")
+    assert [entry["path"] for entry in package["entries"]] == [
+        "genplan.dxf",
+        "geobase.dxf",
+    ]
+    assert [entry["path"] for entry in package["snapshots"]] == [
+        "genplan.dxf.green-atlas.snapshot.json",
+        "geobase.dxf.green-atlas.snapshot.json",
+    ]
+
+    listed = client.get(f"/api/cad/roots/{package['root_id']}/entries")
+    assert listed.status_code == 200
+    assert [entry["name"] for entry in listed.json()["entries"]] == [
+        "genplan.dxf",
+        "geobase.dxf",
+    ]
+    primary, additional = package["entries"]
+    started = client.post(
+        f"/api/projects/{project.id}/operations/cad-intake",
+        headers={"If-Match": '"1"'},
+        json={
+            "root_id": package["root_id"],
+            "entry": primary["path"],
+            "entry_sha256": primary["sha256"],
+            "additional_entries": [
+                {"path": additional["path"], "sha256": additional["sha256"]}
+            ],
+        },
+    )
+    assert started.status_code == 202, started.text
+    request = started.json()["cad_intake"]["request"]
+    assert request["entry"] == "genplan.dxf"
+    assert request["additional_entries"] == [
+        {"path": "geobase.dxf", "sha256": additional["sha256"]}
+    ]
+    assert str(service[3].parent) not in uploaded.text
+
+
 @pytest.mark.parametrize(
     "path",
     [

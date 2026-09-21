@@ -27,7 +27,6 @@ class ProcessCadPreviewPreparation:
         check_cancelled: Callable[[], None],
         report_progress: Callable[[WorkProgress], None],
     ) -> None:
-        self.config.require_enabled()
         with inspection_capacity(check_cancelled):
             report_progress(
                 WorkProgress(stage="Проверяем выбранные источники CAD", fraction=None)

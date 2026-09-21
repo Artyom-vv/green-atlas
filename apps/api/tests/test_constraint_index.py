@@ -197,13 +197,13 @@ def test_index_excludes_remote_objects_before_union(
     import app.geometry.constraint_index as module
 
     sizes: list[int] = []
-    original = module.unary_union
+    original = module.disjoint_subset_union_all
 
     def record(geometries: list[BaseGeometry]) -> BaseGeometry:
         sizes.append(len(geometries))
         return original(geometries)
 
-    monkeypatch.setattr(module, "unary_union", record)
+    monkeypatch.setattr(module, "disjoint_subset_union_all", record)
     records = [
         (
             feature("building", box(index * 20, 0, index * 20 + 5, 5)),
@@ -216,3 +216,30 @@ def test_index_excludes_remote_objects_before_union(
     assert index.union(box(-2, -2, 7, 7)) is first
     assert index.union(box(-100, -100, -50, -50)) is None
     assert sizes == [1]
+
+
+def test_disjoint_subset_union_preserves_overlaps_lines_and_points() -> None:
+    geometries = [
+        box(0, 0, 4, 4),
+        box(2, 2, 6, 6),
+        LineString([(10, 0), (10, 10)]),
+        Point(20, 20),
+        box(100, 100, 101, 101),
+    ]
+    index = ConstraintIndex(
+        [(feature("existing_green", geometry, str(item)), geometry)
+         for item, geometry in enumerate(geometries)]
+    )
+
+    result = index.union(box(-1, -1, 102, 102))
+
+    assert result is not None
+    assert result.equals(unary_union(geometries))
+
+    buffered = index.buffered_union(box(-1, -1, 102, 102), 1.5)
+    baseline = unary_union(geometries).intersection(
+        box(-1, -1, 102, 102)
+    ).buffer(1.5)
+    assert buffered is not None
+    assert buffered.symmetric_difference(baseline).area < 1e-8
+    assert buffered.hausdorff_distance(baseline) < 1e-8

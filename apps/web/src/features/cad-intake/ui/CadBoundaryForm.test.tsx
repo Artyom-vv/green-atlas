@@ -19,7 +19,7 @@ describe('authored CAD boundary selection', () => {
       />,
     );
     const button = screen.getByRole('button', {
-      name: 'Подготовить предварительную карту',
+      name: 'Подготовить территорию',
     });
     expect(button).toBeDisabled();
     expect(

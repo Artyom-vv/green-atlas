@@ -3,6 +3,21 @@ import { cadApi } from './cad';
 
 afterEach(() => vi.unstubAllGlobals());
 describe('CAD transport', () => {
+  it('uploads every DXF as one multipart CAD package', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{}'));
+    vi.stubGlobal('fetch', fetch);
+    const files = [
+      new File(['one'], 'genplan.dxf'),
+      new File(['two'], 'geobase.dxf'),
+    ];
+    await cadApi.uploadCadPackage(files);
+    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url).pathname).toBe('/api/cad/uploads');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).getAll('files')).toEqual(files);
+    expect(new Headers(init.headers).has('Content-Type')).toBe(false);
+  });
   it('binds full-file metadata and streaming URL to the same encoded operation', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response('{}'));
     vi.stubGlobal('fetch', fetch);

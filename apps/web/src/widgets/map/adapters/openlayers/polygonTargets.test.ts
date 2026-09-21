@@ -1,5 +1,7 @@
 import Feature from 'ol/Feature';
 import GeoJSON from 'ol/format/GeoJSON';
+import type Geometry from 'ol/geom/Geometry';
+import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import Point from 'ol/geom/Point';
@@ -23,7 +25,7 @@ function square(x = 0) {
   ]);
 }
 
-function source(geometry = square(), id = 'source') {
+function source(geometry: Geometry = square(), id = 'source') {
   const feature = new Feature({
     geometry,
     kind: 'ignore',
@@ -172,5 +174,45 @@ describe('revision-aware polygon targets', () => {
         { preview: { objectId: 'tree', status: 'blocked', reason: 'Отступ' } },
       ],
     });
+  });
+
+  it('treats a closed CAD line as an interaction area without changing its source geometry', () => {
+    const line = new LineString([
+      [0, 0, 2],
+      [10, 0, 2],
+      [10, 10, 2],
+      [0, 10, 2],
+      [0, 0, 2],
+    ]);
+    const feature = source(line);
+    const target = mapAreaTargetFromFeature(feature, [5, 5]);
+    expect(target.selectable).toBe(true);
+    expect(target.geometry).toEqual({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+          [0, 0],
+        ],
+      ],
+    });
+    expect(feature.getGeometry()).toBe(line);
+    expect(line.getCoordinates()[0]).toEqual([0, 0, 2]);
+  });
+
+  it('keeps open CAD lines non-selectable as areas', () => {
+    const feature = source(
+      new LineString([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ]),
+    );
+    const target = mapAreaTargetFromFeature(feature, [5, 5]);
+    expect(target.selectable).toBe(false);
+    expect(target.geometry).toBeUndefined();
   });
 });

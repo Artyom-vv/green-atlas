@@ -225,6 +225,7 @@ def test_final_rechecks_evidence_and_draft_stays_editable():
     repository.get.return_value = project
     repository.get_release.return_value = None
     repository.get_source.return_value = b"dxf"
+    repository.get_source_components.return_value = {}
     writer = Mock()
     writer.create.return_value = (
         ExportArtifact(filename="source.dxf", status="ready", size=3, download_url=""),

@@ -1,5 +1,6 @@
 from cad_preview_fixtures import fixture_preview
 from fastapi.testclient import TestClient
+from test_cad_prepare import write_snapshot
 
 from app.cad_intake.prepare_adapter import ProcessCadProjectPreparation
 from app.cad_intake.prepare_application import CadPrepareApplication
@@ -11,6 +12,7 @@ def test_full_preparation_http_requires_version_and_publishes_editable_source(
     tmp_path, monkeypatch
 ):
     fixture = fixture_preview(tmp_path)
+    write_snapshot(fixture)
     application = CadPrepareApplication(
         fixture.config,
         fixture.lifecycle,

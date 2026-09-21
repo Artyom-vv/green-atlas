@@ -1010,7 +1010,8 @@ def test_draft_release_is_reproducible_and_links_every_artifact_by_object_id() -
     }
     assert exported_ids == {object_id}
     with zipfile.ZipFile(BytesIO(contents["bundle"])) as archive:
-        assert len(archive.namelist()) == 5
+        assert len(archive.namelist()) == 6
+        assert "source/site.dxf" in archive.namelist()
         assert all(info.date_time == (2026, 8, 28, 0, 0, 0) for info in archive.infolist())
 
 

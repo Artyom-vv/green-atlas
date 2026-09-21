@@ -27,10 +27,10 @@ const asset: CadSourceAsset = {
 };
 
 describe('full CAD source binding', () => {
-  it('uses full input hash instead of the cropped preview output hash', () => {
+  it('uses the stored full input hash instead of the derived AOI hash', () => {
     const source = cadMapSource(previewProject, previewReceipt, asset);
     expect(source.sha256).toBe(previewRequestFixture.source.normalized_sha256);
-    expect(source.sha256).not.toBe(previewProject.source_file?.content_sha256);
+    expect(source.sha256).toBe(previewProject.source_file?.content_sha256);
     expect(source.url).toMatch(
       /\/projects\/project\/operations\/intake\/cad-asset\/file$/,
     );

@@ -7,7 +7,10 @@ from app.projects.ports import ProjectReader
 
 class DxfWriterPort(Protocol):
     def create(
-        self, project: Project, source_content: bytes
+        self,
+        project: Project,
+        source_content: bytes,
+        source_components: dict[str, bytes] | None = None,
     ) -> tuple[ExportArtifact, bytes]: ...
 
 
@@ -15,6 +18,7 @@ class ExportProjectRepository(ProjectReader, Protocol):
     """Atomic publication and artifact reads; no general project mutation."""
 
     def get_source(self, project_id: str) -> bytes | None: ...
+    def get_source_components(self, project_id: str) -> dict[str, bytes]: ...
     def get_export(self, project_id: str, artifact_id: str) -> bytes | None: ...
     def get_release(self, project_id: str, release_id: str) -> str | None: ...
     def publish_export(

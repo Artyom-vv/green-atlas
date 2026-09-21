@@ -35,6 +35,7 @@ it.each([true, false])(
           geometry_version: 2,
           source_sha256: 'b'.repeat(64),
           source_bytes: 100,
+          source_count: 1,
           feature_count: 5,
         },
       },

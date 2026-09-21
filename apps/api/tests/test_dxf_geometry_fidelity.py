@@ -95,6 +95,12 @@ def test_partial_insert_skip_is_addressed_and_marks_effective_layer_incomplete(
     if explicit_layer:
         assert layers["BUILDING"].geometry_complete
         assert layers["CABLE"].object_count == 1
+    # This test exercises the later completeness gate, not operator review.
+    # Confirm the suggested roles explicitly instead of bypassing the product
+    # contract inside the geometry engine.
+    for layer in imported.layers:
+        layer.mapping_confirmed = True
+        layer.mapping_review_required = False
     project = Project(name="Incomplete", layers=imported.layers, source_geometry=imported.geometry)
     with pytest.raises(ValueError, match="часть объектов"):
         ShapelyGeometryEngine().calculate(project)

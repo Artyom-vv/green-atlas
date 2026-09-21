@@ -221,9 +221,15 @@ class ProjectApplication:
         return self.projects.delete_project(project_id)
 
     def import_dxf(
-        self, project_id: str, filename: str, content: bytes | bytearray
+        self,
+        project_id: str,
+        filename: str,
+        content: bytes | bytearray,
+        cad_snapshot: bytes | bytearray | None = None,
     ) -> Project:
-        return self._imports.import_dxf(project_id, filename, content)
+        return self._imports.import_dxf(
+            project_id, filename, content, cad_snapshot
+        )
 
     def open_source_editor(self, project_id: str) -> Project:
         return self._imports.open_editor(project_id)

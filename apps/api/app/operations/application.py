@@ -2,7 +2,10 @@ from collections.abc import Callable
 from datetime import datetime
 from threading import RLock
 
-from app.dxf_import.admission import require_calculation_source
+from app.dxf_import.admission import (
+    require_calculation_source,
+    require_confirmed_layer_mapping,
+)
 from app.geometry.contracts import GeometrySnapshot
 from app.geometry.ports import GeometryEnginePort
 from app.history.ports import ProjectHistoryResetPort
@@ -90,6 +93,7 @@ class GeometryOperationApplication:
         with self._operation_commit_lock:
             project = self.repository.get(project_id)
             require_calculation_source(project.source_file)
+            require_confirmed_layer_mapping(project)
             if project.plan is not None and project.map_ready and project.source_review is None:
                 raise ValueError(
                     "Нельзя пересчитывать карту после открытия ручной схемы. Создайте новый проект."
@@ -119,6 +123,7 @@ class GeometryOperationApplication:
             # takes the one copy it actually needs.
             project = self.repository.get(operation.project_id).model_copy(deep=False)
             require_calculation_source(project.source_file)
+            require_confirmed_layer_mapping(project)
             release_source_after = project.plan is not None
             if project.source_review is not None and project.source_geometry is None:
                 if project.geometry is None:

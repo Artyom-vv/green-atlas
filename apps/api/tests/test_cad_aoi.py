@@ -161,6 +161,22 @@ def test_invalid_boundary_and_unproven_influence_are_not_silently_accepted() -> 
         InfluenceScope(radius_m=50, verified=True)
 
 
+def test_unknown_bounds_warnings_are_aggregated_by_entity_type() -> None:
+    document = ezdxf.new("R2018")
+    first = document.modelspace().add_text("first")
+    second = document.modelspace().add_text("second")
+    selection = AoiSelection(box(0, 0, 10, 10))
+
+    assert selection.unknown_extent(first)
+    assert selection.unknown_extent(second)
+
+    assert selection.unknown == 2
+    assert len(selection.warnings) == 1
+    assert "2 объектов TEXT" in selection.warnings[0]
+    assert f"#{first.dxf.handle}" in selection.warnings[0]
+    assert f"#{second.dxf.handle}" in selection.warnings[0]
+
+
 def test_changed_source_is_rejected_before_workpackage_publication(
     tmp_path: Path,
 ) -> None:

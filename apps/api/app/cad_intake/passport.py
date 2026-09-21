@@ -43,6 +43,7 @@ def make_passport(
     return CadPackagePassport(
         root_id=root_id,
         entry=package.entry,
+        entries=list(package.entries or [package.entry]),
         manifest_sha256=digest,
         drawings=drawings,
         references=[

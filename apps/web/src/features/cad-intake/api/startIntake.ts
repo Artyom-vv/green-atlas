@@ -1,5 +1,6 @@
 import {
   api,
+  type CadDrawingEntry,
   type CadIntakeRequest,
   type ProjectOperation,
 } from '@green/api-client';
@@ -8,7 +9,14 @@ import { startOrRecoverOperation } from './startOrRecoverOperation';
 export interface IntakeSelection {
   rootId: string;
   path: string;
+  sha256?: string;
+  additionalEntries?: CadDrawingEntry[];
 }
+
+const sameEntries = (
+  left: CadDrawingEntry[] | undefined,
+  right: CadDrawingEntry[] | undefined,
+) => JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
 
 function sameRequest(
   operation: ProjectOperation,
@@ -21,6 +29,7 @@ function sameRequest(
     saved?.root_id === request.root_id &&
     saved.entry === request.entry &&
     saved.entry_sha256 === request.entry_sha256 &&
+    sameEntries(saved.additional_entries, request.additional_entries) &&
     !saved.overrides?.length
   );
 }
@@ -30,10 +39,9 @@ export async function startIntake(
   projectId: string | undefined,
   onProject: (id: string) => void,
 ) {
-  const fingerprint = await api.fingerprintCadDrawing(
-    selection.rootId,
-    selection.path,
-  );
+  const fingerprint = selection.sha256
+    ? { sha256: selection.sha256 }
+    : await api.fingerprintCadDrawing(selection.rootId, selection.path);
   const name =
     selection.path
       .split('/')
@@ -49,6 +57,9 @@ export async function startIntake(
     root_id: selection.rootId,
     entry: selection.path,
     entry_sha256: fingerprint.sha256,
+    ...(selection.additionalEntries?.length
+      ? { additional_entries: selection.additionalEntries }
+      : {}),
   };
   const operation = await startOrRecoverOperation(
     project.id,

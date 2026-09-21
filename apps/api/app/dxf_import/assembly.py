@@ -53,6 +53,7 @@ def assemble_imported_project(
         bounds=imported.bounds,
         warnings=warnings,
         preview_provenance=imported.preview_provenance,
+        cad_snapshot_provenance=imported.cad_snapshot_provenance,
     )
     return project.model_copy(
         update={

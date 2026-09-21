@@ -16,11 +16,14 @@ export const LAYER_KIND_OPTIONS = Object.entries(LAYER_KIND_LABELS).map(
 );
 
 export function toLayerMapping(layer: Layer): LayerMapping {
-  return {
+  const mapping: LayerMapping = {
     layer_id: layer.id,
     kind: layer.mapped_kind ?? 'ignore',
     visible: layer.visible,
   };
+  if (layer.mapping_review_required)
+    mapping.confirmed = Boolean(layer.mapping_confirmed);
+  return mapping;
 }
 
 export function layerKindFromValue(value: string): LayerKind | undefined {

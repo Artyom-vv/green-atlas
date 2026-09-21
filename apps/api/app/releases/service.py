@@ -54,7 +54,9 @@ class ParsedReleaseBundle:
 
     manifest: dict[str, Any]
     source_filename: str
+    source_path: str
     source_content: bytes
+    source_components: dict[str, bytes]
     dxf_content: bytes | None
     plan: Plan | None
     geometry: GeometrySnapshot | None
@@ -183,10 +185,11 @@ def _plan_from_manifest(manifest: dict[str, Any]) -> Plan | None:
 def parse_release_bundle(content: bytes | bytearray) -> ParsedReleaseBundle:
     """Parse a release ZIP without mutating a project.
 
-    New bundles carry the exact source DXF as base64 in the manifest.  Older
-    bundles only contain a derived planting DXF; they remain importable for
-    inspection, but are explicitly read-only because their project semantics
-    cannot be reconstructed safely.
+    New bundles carry every exact source DXF as a hashed ZIP entry. Bundles
+    created before that contract may carry the primary source inline as
+    base64. Older bundles containing only a derived planting DXF remain
+    importable for inspection, but are explicitly read-only because their
+    project semantics cannot be reconstructed safely.
     """
 
     entries = _read_release_entries(content)
@@ -256,6 +259,53 @@ def parse_release_bundle(content: bytes | bytearray) -> ParsedReleaseBundle:
     expected_hash = source.get("sha256")
     if source_is_exact and expected_hash and (not isinstance(expected_hash, str) or sha256(source_content).hexdigest() != expected_hash):
         raise ValueError("Хеш исходного DXF не совпадает с manifest")
+    source_path = source_filename
+    prepared = source.get("prepared_provenance")
+    if isinstance(prepared, dict) and isinstance(prepared.get("entry"), str):
+        source_path = prepared["entry"]
+    drawing_records = source.get("drawings")
+    source_components: dict[str, bytes] = {}
+    if drawing_records is not None:
+        if not isinstance(drawing_records, list) or not drawing_records:
+            raise ValueError("Manifest содержит неверный список исходных DXF")
+        seen: set[str] = set()
+        primary_recorded = False
+        for record in drawing_records:
+            if not isinstance(record, dict):
+                raise ValueError("Manifest содержит неверный исходный DXF")
+            path = record.get("path")
+            archive_path = record.get("archive_path")
+            if (
+                not isinstance(path, str)
+                or not _safe_archive_name(path)
+                or not path.lower().endswith(".dxf")
+                or path in seen
+                or not isinstance(archive_path, str)
+                or not _safe_archive_name(archive_path)
+            ):
+                raise ValueError("Manifest содержит небезопасный исходный DXF")
+            seen.add(path)
+            drawing_content = entries.get(archive_path)
+            if drawing_content is None:
+                raise ValueError("Исходный DXF отсутствует в пакете выпуска")
+            size = record.get("size")
+            digest = record.get("sha256")
+            if (
+                isinstance(size, bool)
+                or not isinstance(size, int)
+                or size != len(drawing_content)
+                or not isinstance(digest, str)
+                or sha256(drawing_content).hexdigest() != digest
+            ):
+                raise ValueError("Исходный DXF не совпадает с manifest")
+            if path == source_path:
+                if drawing_content != source_content:
+                    raise ValueError("Основной DXF в пакете не совпадает с manifest")
+                primary_recorded = True
+            else:
+                source_components[path] = bytes(drawing_content)
+        if not primary_recorded:
+            raise ValueError("Основной DXF отсутствует в списке исходников")
     plan = _plan_from_manifest(manifest)
     geometry_payload = manifest.get("geometry")
     if geometry_payload is None and isinstance(manifest.get("project"), dict):
@@ -278,7 +328,7 @@ def parse_release_bundle(content: bytes | bytearray) -> ParsedReleaseBundle:
         planting_zones = [PlantingZoneAssignment.model_validate(item) for item in zone_payload]
     except Exception as error:
         raise ValueError("Участки в manifest имеют неверную структуру") from error
-    editable = inline_source is not None and plan is not None and declared_editable is not False
+    editable = source_is_exact and plan is not None and declared_editable is not False
     reason = None if editable else (
         "Manifest помечает пакет как доступный только для просмотра."
         if declared_editable is False
@@ -287,7 +337,9 @@ def parse_release_bundle(content: bytes | bytearray) -> ParsedReleaseBundle:
     return ParsedReleaseBundle(
         manifest=manifest,
         source_filename=source_filename,
+        source_path=source_path,
         source_content=bytes(source_content),
+        source_components=source_components,
         dxf_content=dxf_content,
         plan=plan,
         geometry=geometry,
@@ -414,6 +466,7 @@ def build_release(
     dxf_content: bytes,
     scene: SceneSnapshot,
     source_content: bytes,
+    source_components: dict[str, bytes] | None = None,
 ) -> tuple[ReleasePackage, dict[str, bytes]]:
     assert project.plan is not None and project.source_file is not None
     stem = Path(project.source_file.name).stem or "green-atlas"
@@ -426,6 +479,29 @@ def build_release(
         f"{stem}-scene-{request.scene_horizon}y.json": scene_content,
         f"{stem}-dendroplan.svg": dendroplan,
     }
+    source_components = source_components or {}
+    provenance = project.source_file.prepared_provenance
+    primary_path = provenance.entry if provenance is not None else project.source_file.name
+    if primary_path in source_components:
+        raise ValueError("Дополнительный DXF дублирует основной исходник")
+    if source_components and (provenance is None or not provenance.drawings):
+        raise ValueError(
+            "Для комплекта исходных DXF отсутствует проверенное происхождение"
+        )
+    source_files = {primary_path: source_content, **source_components}
+    if provenance is not None and provenance.drawings:
+        expected = {item.path: item for item in provenance.drawings}
+        if set(source_files) != set(expected) or any(
+            len(source_files[path]) != item.source_bytes
+            or sha256(source_files[path]).hexdigest() != item.source_sha256
+            for path, item in expected.items()
+        ):
+            raise ValueError("Исходные DXF выпуска не совпадают с подготовленным комплектом")
+    for path, content in source_files.items():
+        archive_path = f"source/{path}"
+        if not _safe_archive_name(archive_path):
+            raise ValueError("Путь исходного DXF недопустим для пакета выпуска")
+        entries[archive_path] = content
     entry_hashes = {name: sha256(content).hexdigest() for name, content in sorted(entries.items())}
     missing_species = sorted(item.id for item in project.plan.objects if not item.species_revision_id)
     hard_errors = sorted(issue.id for issue in project.plan.issues if issue.severity == "error")
@@ -442,10 +518,9 @@ def build_release(
         warnings.append("Посадки не проверены по ограничениям исходного комплекта: требуется расчёт после уточнения данных.")
     if hard_errors:
         warnings.append(f"В плане осталось ошибок: {len(hard_errors)}.")
-    # The manifest is intentionally self-contained for a round-trip import.
-    # Keeping the exact source inline lets the importer rebuild the project
-    # from the original layer tree while retaining the historical five-entry
-    # ZIP shape consumed by existing release clients.
+    # Exact sources are regular hashed ZIP entries. Do not duplicate a large
+    # DXF as base64 inside the manifest: that inflates memory and archive size
+    # while adding no evidence beyond the independently verified entry hash.
     plan_payload = project.plan.model_dump(mode="json")
     geometry_payload = project.geometry.model_dump(mode="json") if project.geometry is not None else None
     planting_zone_payload = [zone.model_dump(mode="json") for zone in project.planting_zones]
@@ -476,24 +551,40 @@ def build_release(
             "status": project.status.value,
             "coordinate_reference": project.coordinate_reference.model_dump(mode="json"),
             "planting_zones": planting_zone_payload,
-            "geometry": geometry_payload,
         },
         "source": {
             "prepared_provenance": project.source_file.prepared_provenance.model_dump(mode="json") if project.source_file.prepared_provenance is not None else None,
             "filename": project.source_file.name,
+            "path": f"source/{primary_path}",
             "size": len(source_content),
             "sha256": sha256(source_content).hexdigest(),
-            "content_base64": base64.b64encode(source_content).decode("ascii"),
             "embedded": True,
             "dxf_version": project.source_file.dxf_version,
             "units": project.source_file.units,
             "units_assumed": project.source_file.units_assumed,
+            "drawings": [
+                {
+                    "path": path,
+                    "size": len(content),
+                    "sha256": sha256(content).hexdigest(),
+                    "archive_path": f"source/{path}",
+                }
+                for path, content in sorted(source_files.items())
+            ],
         },
         "layer_mappings": [
             {
                 "layer_id": layer.id,
                 "source_name": layer.source_name,
                 "kind": layer.mapped_kind,
+                "suggested_kind": layer.suggested_kind,
+                "suggestion_confidence": layer.suggestion_confidence,
+                "suggestion_reasons": layer.suggestion_reasons,
+                "mapping_review_required": layer.mapping_review_required,
+                "mapping_confirmed": bool(
+                    layer.mapping_confirmed
+                    or not layer.mapping_review_required
+                ),
                 "parsing_status": "complete" if layer.geometry_complete else "partial",
                 "semantic_status": "excluded" if str(layer.mapped_kind) == "LayerKind.IGNORE" or getattr(layer.mapped_kind, "value", layer.mapped_kind) == "ignore" else "classified",
                 "used_in_calculation": bool(project.source_review is None and layer.geometry_complete and getattr(layer.mapped_kind, "value", layer.mapped_kind) not in {None, "ignore", "unclassified"}),

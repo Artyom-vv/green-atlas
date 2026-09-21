@@ -1,6 +1,6 @@
 """Conservative inclusion of complete world-space geometries, without clipping."""
 
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from math import isfinite
 
@@ -61,7 +61,8 @@ class AoiSelection:
     selected: list[DXFEntity] = field(default_factory=list)
     excluded: int = 0
     unknown: int = 0
-    warnings: list[str] = field(default_factory=list)
+    unknown_by_type: Counter[str] = field(default_factory=Counter)
+    unknown_samples: dict[str, list[str]] = field(default_factory=dict)
     bounds_cache: OrderedDict[str, BoundingBox] = field(default_factory=OrderedDict)
     bounds_requests: int = 0
     cache_hits: int = 0
@@ -136,8 +137,21 @@ class AoiSelection:
 
     def unknown_extent(self, entity: DXFEntity) -> bool:
         self.unknown += 1
+        entity_type = entity.dxftype()
         handle = (entity.origin_of_copy or entity).dxf.handle
-        self.warnings.append(
-            f"Границы {entity.dxftype()} #{handle} не подтверждены; пространственный фильтр не применяется"
-        )
+        self.unknown_by_type[entity_type] += 1
+        samples = self.unknown_samples.setdefault(entity_type, [])
+        if len(samples) < 3:
+            samples.append(str(handle))
         return True
+
+    @property
+    def warnings(self) -> list[str]:
+        return [
+            (
+                f"Для {count} объектов {entity_type} границы не подтверждены; "
+                "они консервативно включены без пространственного отсечения. "
+                f"Примеры: {', '.join(f'#{handle}' for handle in self.unknown_samples[entity_type])}"
+            )
+            for entity_type, count in sorted(self.unknown_by_type.items())
+        ]

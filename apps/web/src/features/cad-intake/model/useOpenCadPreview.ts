@@ -29,12 +29,8 @@ export function useOpenCadPreview(
       const project = await api.getProject(operation.project_id, false);
       if (
         (project.state_version ?? 0) < receipt.published_state_version ||
-        project.source_file?.content_sha256 !==
-          ('source_sha256' in receipt
-            ? receipt.source_sha256
-            : receipt.output_sha256) ||
-        project.import_status?.mode !==
-          (prepared ? 'source_dxf' : 'cad_preview')
+        project.source_file?.content_sha256 !== receipt.source_sha256 ||
+        project.import_status?.mode !== 'source_dxf'
       )
         throw new Error(
           'Источник проекта изменился. Обновите страницу, чтобы открыть текущие данные.',

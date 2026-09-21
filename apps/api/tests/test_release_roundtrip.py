@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-from io import BytesIO, StringIO
 import json
-from pathlib import Path
 import zipfile
+from hashlib import sha256
+from io import BytesIO, StringIO
+from pathlib import Path
 
 import ezdxf
 from fastapi.testclient import TestClient
 
+from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
+from app.cad_intake.prepare_contracts import (
+    PreparedDrawingProvenance,
+    PreparedSourceProvenance,
+)
+from app.composition import get_runtime
+from app.dxf_import.encoding import decode_text_dxf
 from app.main import app
-
 
 client = TestClient(app)
 SITE_DXF = Path(__file__).parents[3] / "fixtures" / "site.dxf"
@@ -22,6 +29,28 @@ def _area() -> dict:
         "label": "Участок ревизии",
         "geometry": {"type": "Polygon", "coordinates": [[*coordinates, coordinates[0]]]},
     }
+
+
+def _auxiliary_dxf() -> bytes:
+    document = ezdxf.new("R2013", setup=True)
+    document.units = ezdxf.units.M
+    document.layers.add("AUX_NETWORK")
+    document.modelspace().add_lwpolyline(
+        [(5, 5), (65, 5)], dxfattribs={"layer": "AUX_NETWORK"}
+    )
+    stream = StringIO()
+    document.write(stream)
+    return stream.getvalue().encode()
+
+
+def _replace_bundle_entry(bundle: bytes, name: str, content: bytes) -> bytes:
+    output = BytesIO()
+    with zipfile.ZipFile(BytesIO(bundle)) as source, zipfile.ZipFile(
+        output, "w", compression=zipfile.ZIP_DEFLATED
+    ) as target:
+        for entry in source.infolist():
+            target.writestr(entry.filename, content if entry.filename == name else source.read(entry))
+    return output.getvalue()
 
 
 def _prepared_project() -> tuple[str, list[str], bytes]:
@@ -91,6 +120,8 @@ def test_release_bundle_restores_editable_plan_and_source_layers() -> None:
     assert manifest["schema"] == "green-atlas-release:2"
     assert {item["id"] for item in manifest["plan"]["objects"]} == set(object_ids)
     assert manifest["source"]["embedded"] is True
+    assert manifest["source"]["path"] == "source/site.dxf"
+    assert "content_base64" not in manifest["source"]
 
     target = client.post("/api/projects", json={"name": "Новая ревизия"}).json()["id"]
     imported = client.post(
@@ -145,6 +176,134 @@ def test_release_bundle_restores_editable_plan_and_source_layers() -> None:
     shrubs = document.modelspace().query('CIRCLE[layer=="GREEN_ATLAS_SHRUBS"]')
     assert len(shrubs) == 1
     assert any(tag.code == 1000 and tag.value == f"object_id={object_id}" for tag in shrubs[0].get_xdata("GREEN_ATLAS"))
+
+
+def test_release_bundle_preserves_and_restores_independent_dxf_set() -> None:
+    project_id, _object_ids, primary = _prepared_project()
+    auxiliary = _auxiliary_dxf()
+    primary_path = "site.dxf"
+    auxiliary_path = "networks/base.dxf"
+    runtime = get_runtime()
+    composed = compose_dxf_imports(
+        [
+            ImportedDrawing(
+                path=primary_path,
+                source=primary,
+                imported=runtime.application.dxf_reader.read(primary_path, primary),
+            ),
+            ImportedDrawing(
+                path=auxiliary_path,
+                source=auxiliary,
+                imported=runtime.application.dxf_reader.read(
+                    auxiliary_path, auxiliary
+                ),
+            ),
+        ]
+    )
+    project = runtime.project_repository.get(project_id)
+    assert project.source_file is not None
+    project.layers = composed.imported.layers
+    project.geometry = composed.imported.geometry
+    project.coordinate_reference = composed.imported.coordinate_reference
+    project.source_file.dxf_version = composed.imported.dxf_version
+    project.source_file.entity_count = composed.imported.entity_count
+    project.source_file.bounds = composed.imported.bounds
+    project.source_file.prepared_provenance = PreparedSourceProvenance(
+        intake_operation_id="roundtrip-multi-intake",
+        manifest_sha256="a" * 64,
+        entry=primary_path,
+        source_sha256=sha256(primary).hexdigest(),
+        drawings=[
+            PreparedDrawingProvenance(
+                path=item.path,
+                source_sha256=item.source_sha256,
+                source_bytes=item.source_bytes,
+                cad_snapshot=item.cad_snapshot,
+            )
+            for item in composed.drawings
+        ],
+    )
+    runtime.project_repository.save(
+        project,
+        source=primary,
+        source_components={auxiliary_path: auxiliary},
+    )
+
+    release = client.post(
+        f"/api/projects/{project_id}/releases",
+        json={"mode": "draft", "scene_horizon": 20},
+    )
+    assert release.status_code == 200, release.json()
+    bundle_artifact = next(
+        item for item in release.json()["artifacts"] if item["kind"] == "bundle"
+    )
+    bundle = client.get(bundle_artifact["download_url"]).content
+    with zipfile.ZipFile(BytesIO(bundle)) as archive:
+        assert archive.read(f"source/{primary_path}") == primary
+        assert archive.read(f"source/{auxiliary_path}") == auxiliary
+        derived_name = next(
+            name for name in archive.namelist() if name.endswith("planting-plan.dxf")
+        )
+        derived = ezdxf.read(
+            StringIO(decode_text_dxf(archive.read(derived_name)))
+        )
+        manifest = json.loads(
+            archive.read(
+                next(name for name in archive.namelist() if name.endswith("manifest.json"))
+            )
+        )
+    assert {item["path"] for item in manifest["source"]["drawings"]} == {
+        primary_path,
+        auxiliary_path,
+    }
+    assert "geometry" in manifest
+    assert "geometry" not in manifest["project"]
+    assert any(
+        layer.dxf.name.endswith("$0$AUX_NETWORK")
+        for layer in derived.layers
+    )
+    auxiliary_marker = (
+        f"GREEN_ATLAS_SOURCE_{sha256(auxiliary).hexdigest()[:12].upper()}"
+    )
+    assert any(
+        entity.is_alive and entity.has_xdata(auxiliary_marker)
+        for entity in derived.entitydb.values()
+    )
+
+    target = client.post("/api/projects", json={"name": "Комплект DXF"}).json()["id"]
+    restored = client.post(
+        f"/api/projects/{target}/release-bundle",
+        files={"file": ("release.zip", bundle, "application/zip")},
+    )
+    assert restored.status_code == 200, restored.json()
+    assert runtime.project_repository.get_source_components(target) == {
+        auxiliary_path: auxiliary
+    }
+    assert {layer["source_name"] for layer in restored.json()["layers"]} >= {
+        f"[{primary_path}] SITE_BORDER",
+        f"[{auxiliary_path}] AUX_NETWORK",
+    }
+    restored_project = runtime.project_repository.get(target)
+    assert restored_project.geometry is not None
+    source_paths = {
+        feature["properties"].get("source_drawing_path")
+        for feature in restored_project.geometry.feature_collection["features"]
+    }
+    assert source_paths == {primary_path, auxiliary_path}
+
+    rejected_target = client.post(
+        "/api/projects", json={"name": "Повреждённый комплект"}
+    ).json()["id"]
+    tampered = _replace_bundle_entry(
+        bundle, f"source/{auxiliary_path}", auxiliary + b"\nchanged"
+    )
+    rejected = client.post(
+        f"/api/projects/{rejected_target}/release-bundle",
+        files={"file": ("release.zip", tampered, "application/zip")},
+    )
+    assert rejected.status_code == 400, rejected.json()
+    assert runtime.project_repository.get_source(rejected_target) is None
+    assert runtime.project_repository.get_source_components(rejected_target) == {}
 
 
 def test_plain_exported_dxf_is_explicitly_read_only_fallback() -> None:

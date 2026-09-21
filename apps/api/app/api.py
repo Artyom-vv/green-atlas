@@ -143,6 +143,22 @@ async def read_limited_release_upload(file: UploadFile) -> bytearray:
     return content
 
 
+async def read_limited_cad_snapshot(file: UploadFile) -> bytearray:
+    """Read an optional admitted snapshot without changing the DXF limit."""
+
+    content = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        if len(content) + len(chunk) > limits.MAX_CAD_SNAPSHOT_BYTES:
+            raise ValueError(
+                "CAD snapshot должен быть не больше "
+                f"{limits.MAX_CAD_SNAPSHOT_BYTES // 1024 // 1024} МБ"
+            )
+        content.extend(chunk)
+    if not content:
+        raise ValueError("CAD snapshot пуст")
+    return content
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -198,6 +214,7 @@ def delete_project(
 async def upload_dxf(
     project_id: str,
     file: UploadFile = File(...),
+    cad_snapshot: UploadFile | None = File(default=None),
     application: ProjectApplication = Depends(get_application),
 ) -> Project:
     try:
@@ -206,6 +223,8 @@ async def upload_dxf(
         # dedicated release-bundle route.  The ZIP branch uses the larger
         # archive limit and still validates the manifest before mutation.
         if filename.lower().endswith(".zip"):
+            if cad_snapshot is not None:
+                raise ValueError("CAD snapshot прикладывается только к исходному DXF")
             return lightweight(await execute_import(
                 application.import_release_bundle, project_id, filename,
                 file, read_limited_release_upload,
@@ -213,6 +232,8 @@ async def upload_dxf(
         limits.validate_dxf_filename(filename)
         return lightweight(await execute_import(
             application.import_dxf, project_id, filename, file, read_limited_dxf_upload,
+            sidecar=cad_snapshot,
+            read_sidecar=read_limited_cad_snapshot,
         ))
     except Exception as error:
         raise handle(error) from error

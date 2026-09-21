@@ -68,6 +68,12 @@ export const WorkspaceResources: FC<WorkspaceResourcesProps> = ({
           onVisibility={(id, visible) =>
             setVisibility((current) => ({ ...current, [id]: visible }))
           }
+          onGroupVisibility={(ids, visible) =>
+            setVisibility((current) => ({
+              ...current,
+              ...Object.fromEntries(ids.map((id) => [id, visible])),
+            }))
+          }
           onSelect={(id) => {
             setActiveLayerId((current) => (current === id ? undefined : id));
             setPanel(null);
