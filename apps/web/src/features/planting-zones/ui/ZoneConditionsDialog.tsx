@@ -58,7 +58,7 @@ export function ZoneConditionsDialog({
   return (
     <Dialog
       open
-      title={`Условия участка · ${zone.label}`}
+      title={`Условия участка: ${zone.label}`}
       onClose={onClose}
       footer={
         <FormActions>

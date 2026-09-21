@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import { InlineMessage } from '@green/ui';
+import { Dialog, InlineMessage } from '@green/ui';
 import { SpeciesCatalog } from '@/entities/species';
 import type { usePatternWorkflow } from '../model/usePatternWorkflow';
 import type { PatternToolPanelProps } from './PatternToolPanel';
@@ -28,15 +28,16 @@ export const PatternFormContent: FC<PatternFormContentProps> = ({
   return (
     <>
       {catalog && (
-        <section
-          className="flex min-h-0 flex-1 flex-col gap-3"
-          aria-label="Выбор породы"
+        <Dialog
+          open
+          size="wide"
+          stableHeight
+          title={
+            catalog === 'shrub' ? 'Каталог кустарников' : 'Каталог растений'
+          }
+          onClose={() => workflow.setCatalog(undefined)}
         >
-          <h3 className="m-0 shrink-0 text-sm font-semibold">
-            {catalog === 'shrub' ? 'Порода кустарника' : 'Порода посадок'}
-          </h3>
           <SpeciesCatalog
-            variant="placement"
             layout="fill"
             species={catalog === 'shrub' ? shrubs : availableSpecies}
             value={catalog === 'shrub' ? values.shrubSpeciesId : speciesId}
@@ -50,17 +51,20 @@ export const PatternFormContent: FC<PatternFormContentProps> = ({
                   canSelect: item.can_assign,
                   tone: item.can_assign ? 'neutral' : 'warning',
                   label:
-                    item.zone_restrictions
-                      ?.filter((check) => !check.allowed)
-                      .map((check) => check.reason)
-                      .join('; ') || 'Входит в ассортимент выбранных участков',
+                    Array.from(
+                      new Set(
+                        item.zone_restrictions
+                          ?.filter((check) => !check.allowed)
+                          .map((check) => check.reason),
+                      ),
+                    ).join('; ') || 'Входит в ассортимент выбранных участков',
                 },
               ]),
             )}
           />
-        </section>
+        </Dialog>
       )}
-      <div className="grid gap-3" hidden={Boolean(catalog)}>
+      <div className="grid gap-3">
         {preview && (
           <PatternResult
             preview={preview}

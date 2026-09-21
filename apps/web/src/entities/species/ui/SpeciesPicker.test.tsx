@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SpeciesRevision } from '@green/api-client';
 import { SpeciesCatalog } from '@/entities/species/ui/SpeciesCatalog';
@@ -38,6 +44,60 @@ const sorbus = {
 const species = [sorbus, tilia];
 
 describe('SpeciesPicker', () => {
+  it('shows a visible catalog action and comparison information before browsing', () => {
+    render(
+      <SpeciesPicker species={species} value={tilia.id} onChange={vi.fn()} />,
+    );
+    const open = screen.getByRole('button', {
+      name: 'Изменить растение в каталоге: Выбрать породу',
+    });
+    expect(open).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(open).toHaveTextContent('Изменить растение в каталоге');
+    expect(screen.getByText('Высота 18–25 м')).toBeVisible();
+    fireEvent.click(open);
+    const row = screen.getByRole('button', {
+      name: 'Сведения: Рябина обыкновенная',
+    });
+    expect(within(row).getByRole('img')).toHaveAttribute(
+      'src',
+      speciesPhotos[sorbus.species_id].url,
+    );
+    expect(row).toHaveTextContent('Высота 18–25 м');
+    expect(row).toHaveTextContent('Крона 8–14 м');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent(/[·•]/);
+  });
+
+  it('pins the inspected name and resets only its detail scroll when switching plants', () => {
+    const { container } = render(
+      <SpeciesCatalog species={species} value={tilia.id} onChange={vi.fn()} />,
+    );
+    const list = container.querySelector<HTMLElement>(
+      '[aria-label="Список растений"]',
+    )!;
+    const detail = container.querySelector<HTMLElement>(
+      '[aria-label="Характеристики растения"]',
+    )!;
+    expect(
+      list.parentElement?.closest('[data-slot="scroll-viewport"]'),
+    ).toBeNull();
+    expect(
+      detail.parentElement?.closest('[data-slot="scroll-viewport"]'),
+    ).toBeNull();
+    list.scrollTop = 30;
+    detail.scrollTop = 400;
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Сведения: Рябина обыкновенная' }),
+    );
+    const heading = screen.getByRole('heading', { name: sorbus.common_name });
+    expect(heading.closest('[data-slot="scroll-viewport"]')).toBeNull();
+    expect(heading).toHaveFocus();
+    expect(detail.scrollTop).toBe(0);
+    expect(list.scrollTop).toBe(30);
+    fireEvent.click(screen.getByRole('button', { name: 'К списку растений' }));
+    expect(
+      screen.getByRole('button', { name: 'Сведения: Рябина обыкновенная' }),
+    ).toHaveFocus();
+  });
   it('shows reference matrix values without turning an unreviewed row into an assignable model', () => {
     const change = vi.fn();
     const inventory = {
@@ -69,7 +129,7 @@ describe('SpeciesPicker', () => {
       </PlantCatalogContext.Provider>,
     );
     fireEvent.click(
-      screen.getByRole('button', { name: 'Весь ассортимент · 1' }),
+      screen.getByRole('button', { name: 'Весь ассортимент (1)' }),
     );
     expect(screen.getByRole('heading', { name: 'Ель сербская' })).toBeVisible();
     expect(screen.getByText('Да')).toBeVisible();
@@ -82,7 +142,7 @@ describe('SpeciesPicker', () => {
   it('keeps search and confirmation fixed, browsing does not assign until confirmed', async () => {
     const change = vi.fn();
     render(<SpeciesPicker species={species} onChange={change} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Выбрать породу' }));
+    fireEvent.click(screen.getByRole('button', { name: /Выбрать породу/ }));
     const dialog = await screen.findByRole('dialog');
     const search = screen.getByRole('textbox', {
       name: 'Поиск в каталоге пород',
@@ -147,8 +207,8 @@ describe('SpeciesPicker', () => {
       screen.getByRole('button', { name: 'Сведения: Рябина обыкновенная' }),
     );
     expect(
-      screen.getByText('Не рекомендована для детского сада'),
-    ).toBeVisible();
+      screen.getByRole('region', { name: 'Сведения о растении' }),
+    ).toHaveTextContent('Не рекомендована для детского сада');
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(change).not.toHaveBeenCalled();
     fireEvent.click(

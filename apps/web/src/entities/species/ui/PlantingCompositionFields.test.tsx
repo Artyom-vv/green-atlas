@@ -54,21 +54,21 @@ describe('PlantingCompositionFields', () => {
     });
     expect(props.onCompositionChange).toHaveBeenCalledWith('shrubs');
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев' }),
+      screen.getByRole('button', { name: /Порода деревьев/ }).parentElement,
     ).toHaveTextContent('Липа');
     rerender(<PlantingCompositionFields {...props} composition="shrubs" />);
     expect(
-      screen.queryByRole('button', { name: 'Порода деревьев' }),
+      screen.queryByRole('button', { name: /Порода деревьев/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников' }),
+      screen.getByRole('button', { name: /Порода кустарников/ }).parentElement,
     ).toHaveTextContent('Сирень');
     rerender(<PlantingCompositionFields {...props} composition="mixed" />);
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев' }),
+      screen.getByRole('button', { name: /Порода деревьев/ }).parentElement,
     ).toHaveTextContent('Липа');
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников' }),
+      screen.getByRole('button', { name: /Порода кустарников/ }).parentElement,
     ).toHaveTextContent('Сирень');
     expect(props.onTreeSpeciesChange).not.toHaveBeenCalled();
     expect(props.onShrubSpeciesChange).not.toHaveBeenCalled();
@@ -77,7 +77,7 @@ describe('PlantingCompositionFields', () => {
   it('opens the existing modal catalog filtered by kind and returns selection to its caller', () => {
     const props = base();
     render(<PlantingCompositionFields {...props} composition="mixed" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Порода кустарников' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода кустарников/ }));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(
       screen.queryByRole('button', { name: /Липа/ }),
@@ -140,7 +140,7 @@ describe('PlantingCompositionFields', () => {
     expect(
       screen.getByRole('combobox', { name: 'Состав группы' }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
     expect(onBrowseTree).toHaveBeenCalledOnce();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     rerender(
@@ -151,10 +151,10 @@ describe('PlantingCompositionFields', () => {
       />,
     );
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев' }),
+      screen.getByRole('button', { name: /Порода деревьев/ }),
     ).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников' }),
+      screen.getByRole('button', { name: /Порода кустарников/ }),
     ).toBeEnabled();
     rerender(
       <PlantingCompositionFields
@@ -167,10 +167,10 @@ describe('PlantingCompositionFields', () => {
     );
     expect(screen.getByRole('combobox')).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев' }),
+      screen.getByRole('button', { name: /Порода деревьев/ }),
     ).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников' }),
+      screen.getByRole('button', { name: /Порода кустарников/ }),
     ).toBeDisabled();
     expect(screen.getByRole('spinbutton')).toBeDisabled();
   });
@@ -182,7 +182,7 @@ describe('PlantingCompositionFields', () => {
     );
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     rerender(<PlantingCompositionFields {...props} species={[]} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Порода деревьев' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода деревьев/ }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(
       screen.getByText('Породы для выбора пока недоступны.'),

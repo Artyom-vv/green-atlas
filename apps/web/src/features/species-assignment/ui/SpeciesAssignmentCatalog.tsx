@@ -39,10 +39,13 @@ export const SpeciesAssignmentCatalog: FC<SpeciesAssignmentCatalogProps> = ({
           ...shortlistStatus[item.status],
           canSelect: item.can_assign,
           label:
-            item.zone_restrictions
-              ?.filter((check) => !check.allowed)
-              .map((check) => check.reason)
-              .join('; ') || shortlistStatus[item.status].label,
+            Array.from(
+              new Set(
+                item.zone_restrictions
+                  ?.filter((check) => !check.allowed)
+                  .map((check) => check.reason),
+              ),
+            ).join('; ') || shortlistStatus[item.status].label,
         },
       ]),
     )}

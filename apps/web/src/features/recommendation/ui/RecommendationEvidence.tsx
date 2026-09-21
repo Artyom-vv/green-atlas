@@ -2,14 +2,19 @@ import type { FC } from 'react';
 import type { RecommendationPreview } from '@green/api-client';
 import { InlineMessage } from '@green/ui';
 import { evidenceLabel } from '../model/recommendationSummary';
+import { RecommendationZoneEvidence } from './RecommendationZoneEvidence';
 
 export interface RecommendationEvidenceProps {
   proposal: RecommendationPreview;
   requestedCount?: number | null;
+  speciesNames?: Map<string, string>;
+  zoneNames?: Map<string, string>;
 }
 export const RecommendationEvidence: FC<RecommendationEvidenceProps> = ({
   proposal,
   requestedCount,
+  speciesNames,
+  zoneNames,
 }) => {
   const first = proposal.explanations[0];
   return (
@@ -17,6 +22,11 @@ export const RecommendationEvidence: FC<RecommendationEvidenceProps> = ({
       {requestedCount != null && (
         <p className="m-0">Максимум по заданию: {requestedCount}</p>
       )}
+      <RecommendationZoneEvidence
+        proposal={proposal}
+        speciesNames={speciesNames}
+        zoneNames={zoneNames}
+      />
       <section className="grid gap-3">
         <h3 className="m-0 text-sm font-semibold">На чём основано</h3>
         <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 text-sm">

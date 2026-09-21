@@ -366,10 +366,10 @@ describe('BrushToolPanel', () => {
       <BrushToolPanel {...props} strokes={[add, subtract]} />,
     );
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев для кисти' }),
+      screen.getByRole('button', { name: /Порода деревьев для кисти/ }).parentElement,
     ).toHaveTextContent('Липа');
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников для кисти' }),
+      screen.getByRole('button', { name: /Порода кустарников для кисти/ }).parentElement,
     ).toHaveTextContent('Дёрен');
     fireEvent.change(screen.getByLabelText('Доля деревьев'), {
       target: { value: '40' },
@@ -404,7 +404,7 @@ describe('BrushToolPanel', () => {
     expect(screen.getByLabelText('Шаг кисти')).toHaveValue(3.5);
     expect(screen.getByLabelText('Плотность кисти')).toHaveValue('dense');
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников для кисти' }),
+      screen.getByRole('button', { name: /Порода кустарников для кисти/ }).parentElement,
     ).toHaveTextContent('Дёрен');
   });
 
@@ -433,7 +433,7 @@ describe('BrushToolPanel', () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев для кисти' }),
+      screen.getByRole('button', { name: /Порода деревьев для кисти/ }),
     ).toBeEnabled();
     act(() => vi.advanceTimersByTime(200));
     expect(props.onPreview).not.toHaveBeenCalled();

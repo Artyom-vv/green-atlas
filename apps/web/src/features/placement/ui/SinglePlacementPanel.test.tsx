@@ -43,7 +43,7 @@ it('returns the species directly from one catalog to the active planting task', 
       onFinish={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Выбрать породу' }));
+  fireEvent.click(screen.getByRole('button', { name: /Выбрать породу/ }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(
     screen.queryByRole('button', { name: 'Сведения: Сирень' }),
@@ -69,7 +69,7 @@ it('locks species and finish while the clicked planting is being checked and sav
       onFinish={vi.fn()}
     />,
   );
-  expect(screen.getByRole('button', { name: 'Выбрать породу' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /Выбрать породу/ })).toBeDisabled();
   expect(
     screen.getByRole('button', { name: 'Завершить посадку' }),
   ).toBeDisabled();

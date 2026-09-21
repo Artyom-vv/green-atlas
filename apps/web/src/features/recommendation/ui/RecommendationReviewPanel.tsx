@@ -16,6 +16,7 @@ export interface RecommendationReviewPanelProps {
   proposal: RecommendationPreview;
   requestedCount?: number | null;
   speciesNames?: Map<string, string>;
+  zoneNames?: Map<string, string>;
   applying?: boolean;
   growthHorizon?: GrowthHorizon;
   onGrowthHorizon?: (value: GrowthHorizon) => void;
@@ -26,6 +27,7 @@ export const RecommendationReviewPanel: FC<RecommendationReviewPanelProps> = ({
   proposal,
   requestedCount,
   speciesNames,
+  zoneNames,
   applying,
   growthHorizon,
   onGrowthHorizon,
@@ -105,6 +107,8 @@ export const RecommendationReviewPanel: FC<RecommendationReviewPanelProps> = ({
         <RecommendationEvidence
           proposal={proposal}
           requestedCount={requestedCount}
+          speciesNames={speciesNames}
+          zoneNames={zoneNames}
         />
       </Dialog>
       {!count && (

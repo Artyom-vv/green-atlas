@@ -21,7 +21,7 @@ export const RowOffsetFields: FC<RowOffsetFieldsProps> = ({
     values.endOffset ? `Конец ${values.endOffset} м` : '',
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(', ');
 
   return (
     <>

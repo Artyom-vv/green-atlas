@@ -4,6 +4,7 @@ import type {
   SpeciesRevision,
 } from '@green/api-client';
 import { ExternalLink, Ruler, Trees } from 'lucide-react';
+import { cx } from '@green/ui';
 import { crownLabels, territoryLabels } from '../model/assortmentLabels';
 import { speciesPhotos } from '../model/speciesPhotos';
 import { SpeciesPhoto } from './SpeciesPhoto';
@@ -13,11 +14,15 @@ export function SpeciesInspector({
   entry,
   inventory,
   reason,
+  showHeading = true,
+  reasonTone = 'neutral',
 }: {
   species?: SpeciesRevision;
   entry?: AssortmentEntry;
   inventory?: AssortmentInventory;
   reason?: string;
+  showHeading?: boolean;
+  reasonTone?: 'neutral' | 'warning';
 }) {
   if (!species && !entry)
     return (
@@ -27,25 +32,34 @@ export function SpeciesInspector({
     );
   return (
     <div className="grid min-w-0 gap-5 p-4">
-      <div className="grid gap-1">
-        <span className="text-xs text-neutral-600">
-          {(species?.kind ?? entry?.kind) === 'tree'
-            ? 'Дерево'
-            : entry?.kind === 'vine'
-              ? 'Лиана'
-              : 'Кустарник'}
-        </span>
-        <h3 className="m-0 text-lg font-semibold">
-          {species?.common_name ?? entry?.name}
-        </h3>
-        {species && (
-          <p className="m-0 text-xs text-neutral-600 italic">
-            {species.scientific_name}
-          </p>
-        )}
-      </div>
+      {showHeading && (
+        <div className="grid gap-1">
+          <span className="text-xs text-neutral-600">
+            {(species?.kind ?? entry?.kind) === 'tree'
+              ? 'Дерево'
+              : entry?.kind === 'vine'
+                ? 'Лиана'
+                : 'Кустарник'}
+          </span>
+          <h3 className="m-0 text-lg font-semibold">
+            {species?.common_name ?? entry?.name}
+          </h3>
+          {species && (
+            <p className="m-0 text-xs text-neutral-600 italic">
+              {species.scientific_name}
+            </p>
+          )}
+        </div>
+      )}
       {reason && (
-        <p className="m-0 border-l-2 border-amber-500 pl-3 text-xs leading-5">
+        <p
+          className={cx(
+            'm-0 border-l-2 pl-3 text-xs leading-5',
+            reasonTone === 'warning'
+              ? 'border-amber-500'
+              : 'border-neutral-300',
+          )}
+        >
           {reason}
         </p>
       )}
@@ -163,7 +177,7 @@ export function SpeciesInspector({
             target="_blank"
             rel="noreferrer"
           >
-            Ассортимент Москвы · стр. {entry.page}, строка {entry.row}
+            Ассортимент Москвы, стр. {entry.page}, строка {entry.row}
             <ExternalLink size={12} />
           </a>
         </section>

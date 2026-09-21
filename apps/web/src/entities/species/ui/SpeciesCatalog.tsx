@@ -1,9 +1,10 @@
-import { useState, type FC } from 'react';
+import { useLayoutEffect, useRef, useState, type FC } from 'react';
 import type { SpeciesRevision } from '@green/api-client';
 import { Button, ScrollArea, TextInput, cx } from '@green/ui';
-import { Check, Search, Trees, Sprout } from 'lucide-react';
+import { ArrowLeft, Check, Search } from 'lucide-react';
 import { usePlantCatalog } from '../model/PlantCatalogContext';
 import { SpeciesInspector } from './SpeciesInspector';
+import { SpeciesSummary } from './SpeciesSummary';
 
 export interface SpeciesCatalogProps {
   species: SpeciesRevision[];
@@ -11,7 +12,6 @@ export interface SpeciesCatalogProps {
   onChange: (id: string) => void;
   disabled?: boolean;
   loading?: boolean;
-  variant?: 'catalog' | 'placement';
   layout?: 'document' | 'fill';
   query?: string;
   onQueryChange?: (query: string) => void;
@@ -33,7 +33,6 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
   disabled,
   loading,
   layout = 'document',
-  variant = 'catalog',
   query: controlledQuery,
   onQueryChange,
   showSelection,
@@ -44,6 +43,11 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
   const [localQuery, setQuery] = useState('');
   const [focused, setFocused] = useState<string>();
   const [all, setAll] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsViewport = useRef<HTMLDivElement>(null);
+  const listViewport = useRef<HTMLDivElement>(null);
+  const detailsHeading = useRef<HTMLHeadingElement>(null);
+  const returnToList = useRef(false);
   const query = controlledQuery ?? localQuery;
   const kinds = new Set(species.map((s) => s.kind));
   const singleKind = kinds.size === 1 ? species[0]?.kind : undefined;
@@ -85,7 +89,29 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
   const canSelect = Boolean(
     selected?.profile && status?.canSelect !== false && !disabled && !loading,
   );
-  const compact = variant === 'placement';
+  useLayoutEffect(() => {
+    if (detailsViewport.current) detailsViewport.current.scrollTop = 0;
+  }, [selected?.id]);
+  useLayoutEffect(() => {
+    if (detailsOpen) detailsHeading.current?.focus({ preventScroll: true });
+    else if (returnToList.current) {
+      listViewport.current
+        ?.querySelector<HTMLElement>('[aria-pressed="true"]')
+        ?.focus();
+      returnToList.current = false;
+    }
+  }, [detailsOpen, selected?.id]);
+  useLayoutEffect(() => {
+    const viewport = listViewport.current;
+    const current = viewport?.querySelector<HTMLElement>(
+      '[aria-current="true"]',
+    );
+    if (viewport && current) {
+      viewport.scrollTop +=
+        current.getBoundingClientRect().top -
+        viewport.getBoundingClientRect().top;
+    }
+  }, [value, all, loading]);
   return (
     <div
       className={cx(
@@ -101,6 +127,7 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
+            setDetailsOpen(false);
             onQueryChange?.(e.target.value);
           }}
         />
@@ -113,7 +140,7 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
             aria-pressed={!all}
             onClick={() => setAll(false)}
           >
-            Для расчёта · {species.length}
+            Для расчёта ({species.length})
           </Button>
           {inventory && (
             <Button
@@ -121,12 +148,13 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
               aria-pressed={all}
               onClick={() => setAll(true)}
             >
-              Весь ассортимент ·{' '}
+              Весь ассортимент (
               {
                 inventory.entries.filter(
                   (e) => !singleKind || e.kind === singleKind,
                 ).length
               }
+              )
             </Button>
           )}
           <span className="ml-auto text-xs text-neutral-600" role="status">
@@ -134,23 +162,21 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
           </span>
         </div>
       </div>
-      <div
-        className={cx(
-          'grid min-h-0 flex-1 overflow-hidden rounded-md border border-neutral-200',
-          compact
-            ? 'grid-cols-1'
-            : 'grid-rows-[minmax(6rem,1fr)_minmax(10rem,2fr)] @min-[640px]/catalog:grid-cols-[minmax(240px,0.9fr)_minmax(0,1.1fr)] @min-[640px]/catalog:grid-rows-1',
-        )}
-      >
-        <ScrollArea className="min-h-0" contentClassName="p-1">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-md border border-neutral-200 @min-[640px]/catalog:grid-cols-[minmax(280px,1fr)_minmax(0,1.1fr)]">
+        <ScrollArea
+          className={cx(
+            'min-h-0 @min-[640px]/catalog:block',
+            detailsOpen && 'hidden',
+          )}
+          viewportProps={{ ref: listViewport, 'aria-label': 'Список растений' }}
+          contentClassName="p-1"
+        >
           {loading ? (
             <p className="p-3 text-xs">{loadingMessage}</p>
           ) : (
             filtered.map((item) => {
-              const blocked =
-                item.profile &&
-                itemStatuses?.[item.profile.id]?.canSelect === false;
-              const Icon = item.kind === 'tree' ? Trees : Sprout;
+              const itemStatus =
+                item.profile && itemStatuses?.[item.profile.id];
               return (
                 <Button
                   key={item.id}
@@ -160,6 +186,7 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
                     selected?.id === item.id && 'bg-blue-100 hover:bg-blue-100',
                   )}
                   aria-pressed={selected?.id === item.id}
+                  aria-current={item.profile?.id === value ? 'true' : undefined}
                   aria-label={`Сведения: ${item.name}`}
                   aria-description={[
                     item.profile?.scientific_name,
@@ -167,20 +194,37 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
                   ]
                     .filter(Boolean)
                     .join(' ')}
-                  onClick={() => setFocused(item.id)}
-                  startIcon={<Icon />}
+                  onClick={() => {
+                    setFocused(item.id);
+                    setDetailsOpen(true);
+                  }}
                   endIcon={item.profile?.id === value ? <Check /> : undefined}
                   content={
                     <span className="grid min-w-0 flex-1 gap-1">
-                      <strong className="text-xs font-medium">
-                        {item.name}
-                      </strong>
-                      <span className="text-[11px] leading-4 text-neutral-600">
-                        {blocked
-                          ? 'Не подходит для выбранного участка'
-                          : (item.profile?.scientific_name ??
-                            'Без расчётного профиля')}
-                      </span>
+                      {item.profile ? (
+                        <SpeciesSummary species={item.profile} />
+                      ) : (
+                        <>
+                          <strong className="text-sm font-medium">
+                            {item.name}
+                          </strong>
+                          <span className="text-xs text-neutral-600">
+                            Без расчётного профиля
+                          </span>
+                        </>
+                      )}
+                      {itemStatus && (
+                        <span
+                          className={cx(
+                            'text-xs leading-4',
+                            itemStatus.tone === 'warning'
+                              ? 'text-amber-700'
+                              : 'text-neutral-600',
+                          )}
+                        >
+                          {itemStatus.label}
+                        </span>
+                      )}
                     </span>
                   }
                 />
@@ -194,25 +238,56 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
                 : 'Породы для выбора пока недоступны.'}
             </p>
           )}
-          {compact && selected && (
-            <SpeciesInspector
-              species={selected.profile}
-              entry={selected.entry}
-              inventory={inventory}
-              reason={status?.label}
-            />
-          )}
         </ScrollArea>
-        {!compact && (
-          <ScrollArea className="min-h-0 border-t border-neutral-200 @min-[640px]/catalog:border-t-0 @min-[640px]/catalog:border-l">
+        <section
+          aria-label="Сведения о растении"
+          className={cx(
+            'min-h-0 flex-col @min-[640px]/catalog:flex @min-[640px]/catalog:border-l @min-[640px]/catalog:border-neutral-200',
+            detailsOpen ? 'flex' : 'hidden',
+          )}
+        >
+          <div className="grid shrink-0 gap-2 border-b border-neutral-200 p-4">
+            <Button
+              variant="ghost"
+              className="justify-self-start @min-[640px]/catalog:hidden"
+              startIcon={<ArrowLeft />}
+              onClick={() => {
+                returnToList.current = true;
+                setDetailsOpen(false);
+              }}
+            >
+              К списку растений
+            </Button>
+            <h3
+              ref={detailsHeading}
+              tabIndex={-1}
+              className="m-0 text-base font-semibold outline-offset-2 focus-visible:outline-2 focus-visible:outline-blue-600"
+            >
+              {selected?.name ?? 'Выберите растение'}
+            </h3>
+            {selected?.profile && (
+              <p className="m-0 text-xs text-neutral-600 italic">
+                {selected.profile.scientific_name}
+              </p>
+            )}
+          </div>
+          <ScrollArea
+            className="min-h-0 flex-1"
+            viewportProps={{
+              ref: detailsViewport,
+              'aria-label': 'Характеристики растения',
+            }}
+          >
             <SpeciesInspector
+              showHeading={false}
               species={selected?.profile}
               entry={selected?.entry}
               inventory={inventory}
               reason={status?.label}
+              reasonTone={status?.tone}
             />
           </ScrollArea>
-        )}
+        </section>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-3">
         <span className="min-w-0 text-xs text-neutral-600">

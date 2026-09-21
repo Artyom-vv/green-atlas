@@ -221,7 +221,7 @@ describe('PatternToolPanel', () => {
       target: { value: '20' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     fireEvent.change(
       screen.getByRole('textbox', { name: 'Поиск в каталоге пород' }),
@@ -271,7 +271,7 @@ describe('PatternToolPanel', () => {
     });
     fireEvent.change(count, { target: { value: '70' } });
     fireEvent.change(count, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('spinbutton', { name: 'Количество посадок' })).toBe(
@@ -386,7 +386,7 @@ describe('PatternToolPanel', () => {
       { target: { value: '70' } },
     );
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
     fireEvent.change(
       screen.getByRole('textbox', { name: 'Поиск в каталоге пород' }),
       { target: { value: 'sorbus' } },
@@ -394,7 +394,7 @@ describe('PatternToolPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сведения: Рябина' }));
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(
-      screen.getByRole('button', { name: 'Порода для участка' }),
+      screen.getByRole('button', { name: /Порода для участка/ }).parentElement,
     ).toHaveTextContent('Рябина');
     fireEvent.click(
       screen.getByRole('button', { name: 'Настроить размещение' }),
@@ -432,19 +432,19 @@ describe('PatternToolPanel', () => {
     fireEvent.change(count, { target: { value: '70' } });
     fireEvent.change(count, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
 
     const search = screen.getByRole('textbox', {
       name: 'Поиск в каталоге пород',
     });
     const choice = screen.getByRole('button', { name: 'Сведения: Липа' });
     const cardViewport = choice.closest('[data-slot="scroll-viewport"]');
-    expect(search.closest('[data-slot="scroll-viewport"]')).toBe(outerViewport);
-    expect(outerViewport?.firstElementChild).toHaveClass(
-      'h-full',
-      'min-h-0',
-      'overflow-hidden',
-    );
+    expect(search.closest('[data-slot="scroll-viewport"]')).toBeNull();
+    expect(screen.getByRole('dialog')).toContainElement(search);
+    expect(
+      cardViewport?.parentElement?.closest('[data-slot="scroll-viewport"]'),
+    ).toBeNull();
+    expect(outerViewport).not.toContainElement(search);
     expect(cardViewport).not.toBe(outerViewport);
     expect(cardViewport).not.toContainElement(search);
     expect(count).toBeInTheDocument();
@@ -466,7 +466,7 @@ describe('PatternToolPanel', () => {
     expect(count).toHaveValue(70);
   });
 
-  it('guides placement without nested dialogs and retains settings on back navigation', () => {
+  it('opens one catalog dialog from the placement panel and retains settings on back navigation', () => {
     const onPreview = vi.fn();
     render(
       <PatternToolPanel
@@ -489,15 +489,15 @@ describe('PatternToolPanel', () => {
     fireEvent.change(screen.getByLabelText('Состав группы'), {
       target: { value: 'mixed' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(
       screen.getByRole('textbox', { name: 'Поиск в каталоге пород' }),
     ).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Сведения: Липа' }));
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(
-      screen.getByRole('button', { name: 'Порода кустарника' }),
+      screen.getByRole('button', { name: /Порода кустарника/ }).parentElement,
     ).toHaveTextContent('Дёрен');
     fireEvent.click(
       screen.getByRole('button', { name: 'Настроить размещение' }),
@@ -571,15 +571,15 @@ describe('PatternToolPanel', () => {
     fireEvent.change(screen.getByLabelText('Состав группы'), {
       target: { value: 'shrubs' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(
       screen.queryByRole('button', { name: 'Сведения: Липа' }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Сведения: Спирея' }));
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
     expect(
-      screen.getByRole('button', { name: 'Порода для участка' }),
+      screen.getByRole('button', { name: /Порода для участка/ }).parentElement,
     ).toHaveTextContent('Спирея');
     fireEvent.click(
       screen.getByRole('button', { name: 'Настроить размещение' }),
@@ -861,7 +861,7 @@ describe('PatternToolPanel', () => {
       screen.getByRole('spinbutton', { name: 'Количество посадок' }),
     ).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: 'Порода для участка' }),
+      screen.getByRole('button', { name: /Порода для участка/ }),
     ).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Развернуть направление' }),
@@ -942,9 +942,9 @@ describe('PatternToolPanel', () => {
     );
 
     expect(
-      screen.getByRole('button', { name: 'Порода для участка' }),
+      screen.getByRole('button', { name: /Порода для участка/ }).parentElement,
     ).toHaveTextContent('Липа');
-    fireEvent.click(screen.getByRole('button', { name: 'Порода для участка' }));
+    fireEvent.click(screen.getByRole('button', { name: /Порода для участка/ }));
     expect(screen.getByRole('dialog', { name: 'Каталог пород' })).toBeVisible();
     expect(screen.queryByText('до 18 мест')).not.toBeInTheDocument();
   });
@@ -966,7 +966,7 @@ describe('PatternToolPanel', () => {
       target: { value: 'mixed' },
     });
     expect(
-      screen.getByRole('button', { name: 'Порода кустарника' }),
+      screen.getByRole('button', { name: /Порода кустарника/ }).parentElement,
     ).toHaveTextContent('Дёрен');
     fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
 

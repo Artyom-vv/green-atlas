@@ -104,11 +104,6 @@ const PatternForm: FC<PatternToolPanelProps> = (props) => {
       }
       bodyRef={workflow.bodyRef}
       bodyTabIndex={-1}
-      bodyClassName={
-        workflow.catalog
-          ? 'flex h-full min-h-0 flex-col overflow-hidden'
-          : undefined
-      }
       footer={
         !drawingZone && (
           <PatternFooter

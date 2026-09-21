@@ -45,7 +45,7 @@ export function usePatternWorkflow(options: PatternWorkflowOptions) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const { guided, hasPreview, placementMasks, shortlistLoading } = options;
   useEffect(() => {
-    if (guided) bodyRef.current?.focus({ preventScroll: true });
+    if (guided && !catalog) bodyRef.current?.focus({ preventScroll: true });
   }, [guided, step, catalog, hasPreview]);
   const species = usePatternSpecies({ ...options, values });
   useEffect(() => {

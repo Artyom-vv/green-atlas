@@ -54,6 +54,13 @@ export const WorkspaceRecommendationTool: FC<
         <RecommendationReviewPanel
           requestedCount={previewRecommendation.variables?.max_sites}
           speciesNames={speciesNames}
+          zoneNames={
+            new Map(
+              (project.planting_zones ?? []).flatMap((zone) =>
+                zone.id ? [[zone.id, zone.label] as const] : [],
+              ),
+            )
+          }
           proposal={recommendationPreview}
           growthHorizon={growthHorizon}
           onGrowthHorizon={setGrowthHorizon}

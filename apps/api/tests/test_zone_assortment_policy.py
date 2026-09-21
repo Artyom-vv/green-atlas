@@ -141,6 +141,39 @@ def test_request_cannot_override_saved_zone():
         )
 
 
+def test_changing_only_saved_categories_changes_the_selected_species():
+    app, project = ready()
+    project.planting_zones[0].territory = context("healthcare")
+    request = RecommendationRequest(
+        base_plan_version=1, zone_ids=["west", "east"], max_sites=4
+    )
+
+    def selected_by_zone():
+        app.repository.save(project)
+        result = app.preview_recommendation(project.id, request)
+        assert result.change_set and result.change_set.can_apply
+        assert len(result.change_set.additions) == 4
+        return {
+            zone.id: {
+                p.species_revision_id
+                for p in result.change_set.additions
+                if p.planting_zone_id == zone.id
+            }
+            for zone in project.planting_zones
+        }
+
+    original = selected_by_zone()
+    assert original["west"] != original["east"]
+    project.planting_zones[0].territory, project.planting_zones[1].territory = (
+        project.planting_zones[1].territory,
+        project.planting_zones[0].territory,
+    )
+    swapped = selected_by_zone()
+    assert swapped["west"] == original["east"]
+    assert swapped["east"] == original["west"]
+    assert app.get(project.id).plan.objects == []
+
+
 def test_saved_category_change_invalidates_old_preview():
     app, project = ready()
     result = preview(app, project, [addition()])
