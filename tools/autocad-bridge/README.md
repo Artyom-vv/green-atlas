@@ -237,14 +237,14 @@ The full prepared-import flow discovers that exact name automatically. It
 binds the sidecar by path, file SHA-256, embedded source SHA-256 and payload /
 per-geometry hashes, then rechecks the sidecar immediately before atomic
 publication. A missing or invalid native snapshot blocks import; it does not
-fall back to `ezdxf`. The browser upload requires one adjacent snapshot for
+fall back to another parser. The browser upload requires one adjacent snapshot for
 every DXF.
 
 ## Sequential real-file matrix
 
 `scripts/cad-lab/audit_autocad_native_matrix.py` runs the same MCP preparation
 implementation over a manifest, strictly one DWG or DXF at a time. It never reads CAD
-geometry itself and has no `ezdxf` fallback. After every source it atomically
+geometry itself and has no parser fallback. After every source it atomically
 writes source/snapshot hashes, native admission counts, elapsed time and the
 exact rejection reason, so a later failure does not erase earlier evidence.
 
