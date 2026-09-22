@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import { Disclosure, InlineMessage } from '@green/ui';
+import { Button, Disclosure, InlineMessage } from '@green/ui';
 import { LayerMappingTable } from '@/entities/source-data/ui/LayerMappingTable';
 import { LayerMappingReview } from '@/entities/source-data/ui/LayerMappingReview';
 import { BoundaryCandidatePicker } from '@/entities/source-data/ui/BoundaryCandidatePicker';
@@ -11,6 +11,8 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
   sourceWarnings,
   unconfirmedMappings,
   incompleteConstraintLayers,
+  partialAccepted,
+  acceptPartialGeometry,
   hasPlanningBoundary,
   reviewOnly,
   preparationBlocked,
@@ -52,14 +54,28 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
         </Disclosure>
       )}
       {!reviewOnly && !!incompleteConstraintLayers.length && (
-        <InlineMessage
-          tone="warning"
-          title="Нужно уточнить геометрию отдельных слоёв"
-        >
-          Исходные объекты сохранены в DXF, но часть не представлена расчётными
-          контурами. Можно открыть редактор без расчёта и продолжить работу.
-          Назначение слоёв и ограничения нужно проверить до автоматической
-          расстановки.
+        <InlineMessage tone="warning" title="Часть геометрии недоступна">
+          <div className="space-y-2">
+            <p className="m-0">
+              {partialAccepted
+                ? 'Разрешён расчёт по доступным объектам. Результат неполный: пропущенные объекты не проверяются.'
+                : 'Можно рассчитать ограничения по доступным объектам. Пропущенные объекты не проверяются, поэтому отсутствие конфликтов не гарантирует безопасность посадки.'}
+            </p>
+            {!partialAccepted && (
+              <Button
+                variant="secondary"
+                disabled={
+                  preparationBlocked ||
+                  !projectQuery.data?.source_file?.content_sha256
+                }
+                onClick={() => acceptPartialGeometry.mutate()}
+              >
+                {acceptPartialGeometry.isPending
+                  ? 'Сохраняем решение…'
+                  : 'Использовать доступную геометрию'}
+              </Button>
+            )}
+          </div>
         </InlineMessage>
       )}
       {!reviewOnly && !hasPlanningBoundary && !hasBoundaryCandidates && (

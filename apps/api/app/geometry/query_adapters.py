@@ -8,7 +8,9 @@ from shapely import STRtree
 from shapely.geometry import box, mapping, shape
 from shapely.geometry.base import BaseGeometry
 
+from app.dxf_import.contracts import ImportMode
 from app.geometry.contracts import GeometrySnapshot
+from app.geometry.source_overview import source_overview
 from app.geometry.viewport_admission import (
     PreparedViewportFeature,
     admit_fair_features,
@@ -285,10 +287,17 @@ class IndexedGeometryQuery:
             for kind, count in total_by_kind.items()
             if count > returned_by_kind.get(kind, 0)
         }
+        overview = None
+        if truncated and project.import_status.mode == ImportMode.AUTOCAD_LIVE:
+            overview = source_overview(
+                ((indexed.features[int(index)], indexed.geometries[int(index)])
+                 for index in matched_indexes), extent, resolution,
+            )
         return GeometrySnapshot(
             feature_collection={
                 "type": "FeatureCollection",
                 "features": selected,
+                **({"source_overview": overview} if overview else {}),
                 "metadata": {
                     "returned_features": len(selected),
                     "total_matches": total_matches,

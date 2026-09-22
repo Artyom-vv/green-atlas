@@ -13,6 +13,10 @@ export const dialog = tv({
       wide: { popup: 'max-w-[960px]' },
     },
     stable: {
+      compact: {
+        popup: 'h-[min(560px,calc(100dvh-48px))]',
+        body: 'flex flex-1 flex-col overflow-hidden [scrollbar-gutter:auto]',
+      },
       true: {
         popup: 'h-[min(760px,calc(100dvh-48px))]',
         body: 'flex flex-1 flex-col overflow-hidden [scrollbar-gutter:auto]',

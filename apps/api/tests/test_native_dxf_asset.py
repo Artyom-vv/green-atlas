@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.composition import Runtime, create_runtime, get_application
+from app.cad_bridge.contracts import CadSnapshotProvenance
 from app.dxf_import.contracts import ImportMode
 from app.dxf_import.encoding import (
     DECODE_VALIDATION_CHUNK_BYTES,
@@ -117,6 +118,31 @@ def test_metadata_and_download_never_read_full_project(
     assert client.get(root(project) + "/download").content == content
     assert runtime.application.download_source(project.id) == content
     assert all("SELECT payload" not in item for item in statements)
+
+
+def test_existing_autocad_project_opens_without_reimport(runtime: Runtime, client: TestClient) -> None:
+    project, content = native_source(runtime)
+    project.source_file.dxf_version = "AutoCAD 2027"
+    project.source_file.cad_snapshot_provenance = CadSnapshotProvenance(
+        schema_="green-atlas.autocad-snapshot/1",
+        source_sha256=sha256(content).hexdigest(), payload_sha256="a" * 64,
+        autocad_version="2027", plugin_version="0.1.28", target="macos-arm64",
+        source_instances=1, native_geometry=1, unresolved_instances=0,
+    )
+    runtime.project_repository.save(project)
+    response = client.get(root(project) + "/asset")
+    assert response.status_code == 200
+    assert client.get(response.json()["file_url"]).content == content
+    # Compatibility is read-only and does not weaken the immutable byte check.
+    runtime.project_repository.save_source(project.id, b"x" + content[1:])
+    assert client.get(response.json()["file_url"]).status_code == 409
+
+
+def test_actual_dxf_format_mismatch_is_still_rejected(runtime: Runtime, client: TestClient) -> None:
+    project, _ = native_source(runtime)
+    project.source_file.dxf_version = "AC1009"
+    runtime.project_repository.save(project)
+    assert client.get(root(project) + "/asset").status_code == 409
 
 
 def test_stale_url_never_serves_replaced_source(

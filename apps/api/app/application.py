@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime
 from threading import RLock
+from typing import Literal
 
 from app.contracts import (
     BrushPreview,
@@ -203,6 +204,9 @@ class ProjectApplication:
     def create_project(self, name: str) -> Project:
         return self.projects.create_project(name)
 
+    def ensure_import_project(self, project_id: str, name: str) -> Project:
+        return self.projects.ensure_import_project(project_id, name)
+
     def get(self, project_id: str, *, lightweight: bool = False) -> Project:
         return self.projects.get(project_id, lightweight=lightweight)
 
@@ -230,8 +234,22 @@ class ProjectApplication:
             project_id, filename, content, cad_snapshot
         )
 
+    def import_autocad_live(
+        self, project_id: str, filename: str, content: bytes | bytearray, *,
+        autocad_version: str,
+        target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
+    ) -> Project:
+        return self._imports.import_autocad_live(
+            project_id, filename, content,
+            autocad_version=autocad_version, target=target,
+        )
+
     def open_source_editor(self, project_id: str) -> Project:
         return self._imports.open_editor(project_id)
+
+    def accept_partial_geometry(self, project_id: str, source_sha256: str) -> Project:
+        with self._operation_commit_lock:
+            return self._imports.accept_partial_geometry(project_id, source_sha256)
 
     def import_release_bundle(
         self, project_id: str, filename: str, content: bytes | bytearray

@@ -1,10 +1,13 @@
 from urllib.parse import quote
+from functools import partial
+from typing import Literal
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
     File,
+    Form,
     Header,
     HTTPException,
     Query,
@@ -58,6 +61,7 @@ from app.contracts import (
     SpeciesShortlistRequest,
 )
 from app.dxf_import import limits
+from app.dxf_import.contracts import AcceptPartialGeometryRequest
 from app.dxf_import.http_execution import execute_import
 from app.dxf_import.native_contracts import NativeDxfSourceAsset
 from app.dxf_import.native_response import source_download_response
@@ -227,6 +231,25 @@ async def upload_dxf(
         raise handle(error) from error
 
 
+@router.post("/projects/{project_id}/source-autocad-live", response_model=Project)
+async def upload_autocad_live(
+    project_id: str,
+    file: UploadFile = File(...),
+    autocad_version: str = Form(..., min_length=1),
+    target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"] = Form(...),
+    application: ProjectApplication = Depends(get_application),
+) -> Project:
+    try:
+        return lightweight(await execute_import(
+            partial(application.import_autocad_live,
+                    autocad_version=autocad_version, target=target),
+            project_id, file.filename or "document.autocad.json",
+            file, read_limited_cad_snapshot,
+        ))
+    except Exception as error:
+        raise handle(error) from error
+
+
 @router.post("/projects/{project_id}/release-bundle", response_model=Project)
 async def upload_release_bundle(
     project_id: str,
@@ -279,6 +302,18 @@ def save_mappings(
 ) -> Project:
     try:
         return lightweight(application.save_mappings(project_id, payload.mappings))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/source-partial-geometry/accept", response_model=Project)
+def accept_partial_geometry(
+    project_id: str,
+    payload: AcceptPartialGeometryRequest,
+    application: ProjectApplication = Depends(get_application),
+) -> Project:
+    try:
+        return lightweight(application.accept_partial_geometry(project_id, payload.source_sha256))
     except Exception as error:
         raise handle(error) from error
 

@@ -28,6 +28,7 @@ class CoordinateReference(BaseModel):
 
 class GeometrySnapshot(BaseModel):
     feature_collection: dict[str, Any]
+    calculation_scope: Literal["complete_source", "available_data"] | None = None
     # Metric XYZ evidence is deliberately stored beside, rather than inside,
     # the 2D GeoJSON projection. GeoJSON consumers may continue to reason in
     # XY while the scene can reproduce genuine CAD elevations and surfaces.

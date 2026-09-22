@@ -2,6 +2,7 @@ import { createViewportHandle } from './createViewportHandle';
 import { attachTranslation } from './attachTranslation';
 import { loadViewportGeometry } from './loadViewportGeometry';
 import { useCadSourceLayer } from './useCadSourceLayer';
+import { useSourceOverviewLayer } from './useSourceOverviewLayer';
 import type { CadGeometryLayers } from './cadGeometryDisplay';
 import { attachMapPerformanceProbe } from './performance/attachMapPerformanceProbe';
 import { attachSnapping } from './attachSnapping';
@@ -1250,11 +1251,19 @@ export function useOpenLayersViewport(
     const frame = requestAnimationFrame(() => {
       if (fittedExtentKeyRef.current === extentKey) return;
       fittedExtentKeyRef.current = extentKey;
-      fit();
+      // The initial working-area camera is distinct from "show entire DXF".
+      // A late CAD load must not replace it with remote legends/title blocks.
+      const map = mapRef.current;
+      const size = map?.getSize();
+      if (map && size?.[0] && size[1]) {
+        map.getView().fit([...initialExtent], {
+          size, padding: [28, 28, 28, 28], maxZoom: 24,
+        });
+      }
       if (planSourceRef.current.getFeatures().length) fitPlan();
     });
     return () => cancelAnimationFrame(frame);
-  }, [fit, fitPlan, initialExtent, planSourceRef]);
+  }, [fitPlan, initialExtent, planSourceRef]);
 
   useEffect(
     () =>
@@ -1404,6 +1413,11 @@ export function useOpenLayersViewport(
   useEffect(() => {
     mapRef.current?.getLayers().forEach((layer) => layer.changed());
   }, [renderMode]);
+
+  useSourceOverviewLayer({
+    mapRef, targetRef, layersRef: geometryLayersRef,
+    geometry, hiddenNames: hiddenLayerNames, disabled: Boolean(cadSource),
+  });
 
   useEffect(() => {
     const source = planSourceRef.current;

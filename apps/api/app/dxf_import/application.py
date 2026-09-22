@@ -4,8 +4,10 @@ from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime
 from hashlib import sha256
+from typing import Literal
 
 from app.cad_bridge import CadSnapshot
+from app.cad_bridge.compiler import compile_live_document
 from app.cad_bridge.provider import build_dxf_import_from_snapshot
 from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
 from app.dxf_import import limits
@@ -18,6 +20,7 @@ from app.dxf_import.contracts import (
     SourceFile,
 )
 from app.dxf_import.editor_source import open_source_editor
+from app.dxf_import.encoding import declared_dxf_version
 from app.dxf_import.layer_contracts import LayerKind, LayerMapping
 from app.dxf_import.ports import DxfReaderPort, ImportProjectRepository
 from app.dxf_import.review_contracts import SourceReview
@@ -59,6 +62,19 @@ class ImportApplication:
         self.invalidate_spatial(project.id)
         return saved
 
+    def accept_partial_geometry(self, project_id: str, source_sha256: str) -> Project:
+        project = self.repository.get(project_id).model_copy(deep=False)
+        source = project.source_file
+        if source is None or source.content_sha256 != source_sha256:
+            raise ValueError("Исходник изменился. Обновите замечания перед подтверждением.")
+        if project.import_status.editability == ImportEditability.READ_ONLY:
+            raise ValueError("Этот источник доступен только для просмотра")
+        if source.accept_partial_geometry:
+            return project
+        project.source_file = source.model_copy(update={"accept_partial_geometry": True})
+        # Only consent changes. Preserve layers, immutable geometry, zones and plan.
+        return self.repository.save(project)
+
     def import_dxf(
         self,
         project_id: str,
@@ -81,13 +97,49 @@ class ImportApplication:
             imported = self.dxf_reader.read(filename, content)
         else:
             snapshot = CadSnapshot.model_validate_json(cad_snapshot)
+            if snapshot.source.live_capture is not None:
+                raise ValueError("Живой снимок AutoCAD нужно открывать без промежуточного DXF")
             imported = build_dxf_import_from_snapshot(
                 snapshot,
+                dxf_version=declared_dxf_version(content) or "unknown",
                 source_sha256=sha256(content).hexdigest(),
             )
         project = assemble_imported_project(
             project, filename, content, imported, self.now().isoformat()
         )
+        saved = self.repository.save(project, source=content)
+        self.invalidate_spatial(project.id)
+        self.history.clear(project.id)
+        return saved
+
+    def import_autocad_live(
+        self, project_id: str, filename: str, content: bytes | bytearray, *,
+        autocad_version: str,
+        target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
+    ) -> Project:
+        """Open captured native geometry without a DXF round trip or XREF reload."""
+        project = self.repository.get(project_id)
+        if project.source_file is not None or project.plan is not None:
+            raise ValueError("Для снимка AutoCAD создайте новый проект")
+        if not content or len(content) > limits.MAX_CAD_SNAPSHOT_BYTES:
+            raise ValueError("Недопустимый размер снимка AutoCAD")
+        snapshot = compile_live_document(
+            content, autocad_version=autocad_version, target=target,
+        )
+        imported = build_dxf_import_from_snapshot(
+            snapshot, source_sha256=sha256(content).hexdigest(),
+            dxf_version="AutoCAD live snapshot",
+        )
+        if not imported.geometry.feature_collection.get("features"):
+            raise ValueError("AutoCAD не передал доступную геометрию")
+        project = assemble_imported_project(
+            project, filename, content, imported, self.now().isoformat(),
+        )
+        project.import_status = ImportStatus(
+            mode=ImportMode.AUTOCAD_LIVE,
+            message="Открыта геометрия текущего документа AutoCAD.",
+        )
+        project = open_source_editor(project)
         saved = self.repository.save(project, source=content)
         self.invalidate_spatial(project.id)
         self.history.clear(project.id)
@@ -158,6 +210,7 @@ class ImportApplication:
             warnings=list(imported.warnings),
             preview_provenance=imported.preview_provenance,
             prepared_provenance=source_meta.get("prepared_provenance"),
+            accept_partial_geometry=bool(source_meta.get("accept_partial_geometry", False)),
         )
         provenance = project.source_file.prepared_provenance
         if provenance is not None:
@@ -392,7 +445,20 @@ class ImportApplication:
                 )
             # Re-read the immutable input for this explicit interpretation step.
             # A cached calculated snapshot or a submitted map feature is not proof.
-            original = self.dxf_reader.read(source_file.name, source)
+            if project.import_status.mode == ImportMode.AUTOCAD_LIVE:
+                provenance = source_file.cad_snapshot_provenance
+                if provenance is None or provenance.live_capture is None:
+                    raise ValueError("Происхождение снимка AutoCAD не подтверждено")
+                snapshot = compile_live_document(
+                    source, autocad_version=provenance.autocad_version,
+                    target=provenance.target,
+                )
+                original = build_dxf_import_from_snapshot(
+                    snapshot, source_sha256=sha256(source).hexdigest(),
+                    dxf_version=source_file.dxf_version,
+                )
+            else:
+                original = self.dxf_reader.read(source_file.name, source)
             if original.preview_provenance is not None:
                 raise ValueError(
                     "Производный CAD preview нельзя подтвердить как исходную ось"

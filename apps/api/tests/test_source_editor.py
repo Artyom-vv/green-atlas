@@ -118,6 +118,11 @@ def test_calculation_promotes_draft_without_discarding_manual_work():
     assert client.post(f"{url}/plan/manual").status_code == 200
     added = client.post(f"{url}/plan/objects", json={"kind": "tree", "x": 20, "y": 20})
     object_id = added.json()["objects"][0]["id"]
+    layers = client.get(url).json()["layers"]
+    assert client.put(f"{url}/layer-mappings", json={"mappings": [
+        {"layer_id": layer["id"], "kind": layer["mapped_kind"], "confirmed": True}
+        for layer in layers
+    ]}).status_code == 200
     response = client.post(f"{url}/operations/geometry")
     assert response.status_code == 202, response.text
     operation = client.get(f"{url}/operations/{response.json()['id']}").json()

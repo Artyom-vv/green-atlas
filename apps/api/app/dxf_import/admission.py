@@ -24,6 +24,15 @@ def require_calculation_source(source: SourceFile | None) -> None:
         raise ValueError(CAD_PREVIEW_MESSAGE)
 
 
+def partial_geometry_accepted(source: SourceFile | None) -> bool:
+    if source is None:
+        return False
+    provenance = source.prepared_provenance
+    return bool(source.accept_partial_geometry or (
+        provenance and provenance.opening_review.accept_partial_geometry
+    ))
+
+
 def require_confirmed_layer_mapping(project: Project) -> None:
     pending = [
         layer.source_name

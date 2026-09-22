@@ -1,6 +1,9 @@
 import type { Schemas } from './wire';
 
 export type CadRoot = Schemas['CadRoot'];
+export type CadTransferReview = Schemas['TransferReview'];
+export type CadTransferDecision = Schemas['TransferDecision'];
+export type CadTransferStatus = Schemas['TransferStatus'];
 export type CadSourceAsset = Schemas['CadSourceAsset'];
 export type CadDirectory = Schemas['CadDirectory'];
 export type CadDirectoryEntry = Schemas['CadDirectoryEntry'];

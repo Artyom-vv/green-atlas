@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import argparse
 import sys
 import xml.etree.ElementTree as ET
 from itertools import combinations
@@ -17,7 +18,7 @@ from pathlib import Path
 import ezdxf
 import numpy as np
 from ezdxf.path import make_path
-from shapely.geometry import LineString, Polygon, shape
+from shapely.geometry import LineString, Point, Polygon, shape
 from shapely.ops import unary_union
 
 
@@ -26,6 +27,7 @@ sys.path.insert(0, str(ROOT / "apps/api"))
 
 from app.dxf_import.adapters import _hatch_polygon_geometry  # noqa: E402
 from app.dxf_import.polygons import hatch_geometry  # noqa: E402
+from automatic_address_controls import normalize_address, normalize_street, pair_unique_addresses  # noqa: E402
 
 
 DXF_ROOT = ROOT / ".runtime/kustanayskaya-mac-ready-20260917/dxf"
@@ -35,10 +37,9 @@ EARTH_RADIUS_M = 6378137.0
 REFERENCE_LON_LAT = (37.7535, 55.6185)
 INLIER_THRESHOLD_M = 4.0
 
-# Each pair was checked by address text inside the named DXF building footprint
-# and the same addr:housenumber on an OSM building way.  The robust fit decides
-# which pairs agree; no pair is silently removed.
-CONTROL_PAIRS = [
+# Retained only to compare the automatic discovery with the historical audit.
+# Production/default execution does not use these handles or way identifiers.
+LEGACY_CONTROL_PAIRS = [
     {"address": "4 к2", "dxf_label_handle": "144EF", "dxf_building_handle": "72A3", "osm_way_id": "40678924"},
     {"address": "4 к1", "dxf_label_handle": "1471E", "dxf_building_handle": "78A6", "osm_way_id": "40678925"},
     {"address": "2 к1", "dxf_label_handle": "147E9", "dxf_building_handle": "78B3", "osm_way_id": "40678960"},
@@ -78,6 +79,86 @@ def dxf_buildings(document) -> dict[str, Polygon]:
         if polygon.is_valid and polygon.area > 0:
             result[entity.dxf.handle] = polygon
     return result
+
+
+def text_value(entity) -> str:
+    value = entity.plain_text() if hasattr(entity, "plain_text") else entity.dxf.text
+    return str(value).replace("\\P", " ").strip()
+
+
+def text_position(entity) -> tuple[float, float]:
+    point = entity.dxf.insert
+    return float(point.x), float(point.y)
+
+
+def discover_dxf_address_candidates(document, buildings: dict[str, Polygon],
+                                    accepted_addresses: set[str]) -> list[dict[str, object]]:
+    candidates = []
+    for entity in document.modelspace().query("TEXT MTEXT"):
+        raw = text_value(entity)
+        address = normalize_address(raw)
+        if address is None or address not in accepted_addresses:
+            continue
+        point_xy = text_position(entity)
+        containing = [
+            (handle, polygon) for handle, polygon in buildings.items()
+            if polygon.buffer(0.05).covers(Point(point_xy))
+        ]
+        placement = "inside"
+        if not containing:
+            nearest = sorted(
+                ((polygon.distance(Point(point_xy)), handle, polygon) for handle, polygon in buildings.items()),
+                key=lambda row: row[0],
+            )
+            if not nearest or nearest[0][0] > 6.0:
+                continue
+            _, handle, polygon = nearest[0]
+            containing = [(handle, polygon)]
+            placement = "nearest_within_6m"
+        if len(containing) != 1:
+            continue
+        handle, polygon = containing[0]
+        candidates.append({
+            "normalized_address": address,
+            "raw_address": raw,
+            "label_handle": entity.dxf.handle,
+            "building_handle": handle,
+            "centroid": list(polygon.centroid.coords[0]),
+            "area_m2": polygon.area,
+            "label_placement": placement,
+        })
+    # Repeated text entities pointing at the same footprint are one candidate.
+    unique = {}
+    for row in candidates:
+        unique[(row["normalized_address"], row["building_handle"])] = row
+    return sorted(unique.values(), key=lambda row: (row["normalized_address"], row["building_handle"]))
+
+
+def discover_osm_address_candidates(ways, street_name: str) -> list[dict[str, object]]:
+    expected_street = normalize_street(street_name)
+    candidates = []
+    for way_id, way in ways.items():
+        tags = way["tags"]
+        if "building" not in tags or normalize_street(tags.get("addr:street")) != expected_street:
+            continue
+        address = normalize_address(tags.get("addr:housenumber"))
+        if address is None or len(way["coordinates"]) < 4:
+            continue
+        polygon = Polygon(way["coordinates"])
+        if not polygon.is_valid or polygon.area <= 0:
+            continue
+        candidates.append({
+            "normalized_address": address,
+            "way_id": way_id,
+            "centroid": list(polygon.centroid.coords[0]),
+            "area_m2": polygon.area,
+            "tags": {
+                key: tags.get(key) for key in
+                ("addr:street", "addr:housenumber", "building", "building:levels", "height")
+                if tags.get(key) is not None
+            },
+        })
+    return sorted(candidates, key=lambda row: (row["normalized_address"], row["way_id"]))
 
 
 def local_tangent(lon: float, lat: float) -> np.ndarray:
@@ -190,6 +271,15 @@ def render_overlay(boundary: Polygon, buildings, ways, model, controls, output: 
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--street-name", default="Кустанайская улица")
+    parser.add_argument("--output", type=Path, default=OUT)
+    parser.add_argument(
+        "--legacy-manual-controls", action="store_true",
+        help="Use the old seven hard-coded pairs only for regression comparison.",
+    )
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
     topography_path = source("00.1_10004141_Топография.dxf")
     boundary_path = source("01_10004141_Границы работ.dxf")
     project_path = source("03_10004141_Проектные решения.dxf")
@@ -199,30 +289,83 @@ def main() -> None:
     buildings = dxf_buildings(topography)
     _, ways = read_osm(OSM)
 
-    boundary_entity = boundary_document.entitydb["2A8E2F"]
-    boundary_points = [(point.x, point.y) for point in make_path(boundary_entity).flattening(0.02)]
-    if boundary_points[0] != boundary_points[-1]:
-        boundary_points.append(boundary_points[0])
-    boundary = Polygon(boundary_points)
+    boundary_entity = boundary_document.entitydb.get("2A8E2F")
+    if boundary_entity is None:
+        candidates = []
+        for entity in boundary_document.modelspace().query("LWPOLYLINE"):
+            if entity.dxf.layer != "ДВ_ГП_П_Граница работ" or not entity.closed:
+                continue
+            points = [(point.x, point.y) for point in make_path(entity).flattening(0.02)]
+            if points and points[0] != points[-1]:
+                points.append(points[0])
+            polygon = Polygon(points)
+            if polygon.is_valid and polygon.area > 0:
+                candidates.append((polygon.area, entity, polygon))
+        if not candidates:
+            raise RuntimeError("No valid authored work boundary found")
+        _, boundary_entity, boundary = max(candidates, key=lambda row: row[0])
+    else:
+        boundary_points = [(point.x, point.y) for point in make_path(boundary_entity).flattening(0.02)]
+        if boundary_points[0] != boundary_points[-1]:
+            boundary_points.append(boundary_points[0])
+        boundary = Polygon(boundary_points)
 
     osm_points = []
     dxf_points = []
     controls = []
-    for pair in CONTROL_PAIRS:
-        polygon = buildings[pair["dxf_building_handle"]]
-        osm_way = ways[pair["osm_way_id"]]
-        osm_polygon = Polygon(osm_way["coordinates"])
-        if not osm_polygon.is_valid:
-            raise RuntimeError(f"Invalid OSM building {pair['osm_way_id']}")
-        osm_points.append(osm_polygon.centroid.coords[0])
-        dxf_points.append(polygon.centroid.coords[0])
-        controls.append({
-            **pair,
-            "dxf_centroid": list(polygon.centroid.coords[0]),
-            "dxf_area_m2": polygon.area,
-            "osm_tangent_centroid": list(osm_polygon.centroid.coords[0]),
-            "osm_area_m2": osm_polygon.area,
-        })
+    if args.legacy_manual_controls:
+        control_discovery = {
+            "method": "legacy_manual_handles_and_way_ids",
+            "pairs": len(LEGACY_CONTROL_PAIRS),
+        }
+        for pair in LEGACY_CONTROL_PAIRS:
+            polygon = buildings[pair["dxf_building_handle"]]
+            osm_way = ways[pair["osm_way_id"]]
+            osm_polygon = Polygon(osm_way["coordinates"])
+            if not osm_polygon.is_valid:
+                raise RuntimeError(f"Invalid OSM building {pair['osm_way_id']}")
+            osm_points.append(osm_polygon.centroid.coords[0])
+            dxf_points.append(polygon.centroid.coords[0])
+            controls.append({
+                **pair,
+                "source": "legacy_manual_control",
+                "dxf_centroid": list(polygon.centroid.coords[0]),
+                "dxf_area_m2": polygon.area,
+                "osm_tangent_centroid": list(osm_polygon.centroid.coords[0]),
+                "osm_area_m2": osm_polygon.area,
+            })
+    else:
+        osm_candidates = discover_osm_address_candidates(ways, args.street_name)
+        accepted_addresses = {str(row["normalized_address"]) for row in osm_candidates}
+        dxf_candidates = discover_dxf_address_candidates(topography, buildings, accepted_addresses)
+        pairs, discovery_audit = pair_unique_addresses(dxf_candidates, osm_candidates)
+        control_discovery = {
+            "method": "automatic_normalized_address_inside_dxf_building_to_osm_addr_housenumber",
+            "street_name": args.street_name,
+            **discovery_audit,
+        }
+        if len(pairs) < 3:
+            raise RuntimeError(
+                f"Automatic address discovery produced only {len(pairs)} unique pairs; "
+                "at least three are required"
+            )
+        for pair in pairs:
+            left, right = pair["dxf"], pair["map"]
+            osm_points.append(right["centroid"])
+            dxf_points.append(left["centroid"])
+            controls.append({
+                "address": pair["address"],
+                "source": "automatic_unique_normalized_address",
+                "dxf_label_handle": left["label_handle"],
+                "dxf_building_handle": left["building_handle"],
+                "osm_way_id": right["way_id"],
+                "dxf_label_placement": left["label_placement"],
+                "dxf_centroid": left["centroid"],
+                "dxf_area_m2": left["area_m2"],
+                "osm_tangent_centroid": right["centroid"],
+                "osm_area_m2": right["area_m2"],
+                "osm_tags": right["tags"],
+            })
     osm_points = np.asarray(osm_points)
     dxf_points = np.asarray(dxf_points)
     model, residuals, inliers = robust_fit(osm_points, dxf_points)
@@ -281,6 +424,7 @@ def main() -> None:
             "rmse_inliers_m": float(math.sqrt(np.mean(np.square(inlier_residuals)))),
             "max_inlier_residual_m": float(inlier_residuals.max()),
         },
+        "control_discovery": control_discovery,
         "controls": controls,
         "independent_coarse_check": {
             "feature": "OSM ways named Кустанайская улица against authored DXF road HATCH union",
@@ -296,8 +440,8 @@ def main() -> None:
             "Do not use this transform for final object placement until surveyed or official control points validate it.",
         ],
     }
-    (OUT / "candidate-osm-alignment.json").write_text(json.dumps(receipt, ensure_ascii=False, indent=2))
-    render_overlay(boundary, buildings, ways, model, controls, OUT / "candidate-osm-alignment.svg")
+    (args.output / "candidate-osm-alignment.json").write_text(json.dumps(receipt, ensure_ascii=False, indent=2))
+    render_overlay(boundary, buildings, ways, model, controls, args.output / "candidate-osm-alignment.svg")
     print(json.dumps({
         "status": receipt["status"],
         "scale": receipt["similarity_transform_row_vector"]["scale"],

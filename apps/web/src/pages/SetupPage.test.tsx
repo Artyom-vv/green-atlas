@@ -30,6 +30,7 @@ const project = (source = 'a'): Project => ({
   state_version: source === 'a' ? 1 : 2,
   geometry_version: source === 'a' ? 1 : 2,
   source_file: {
+    accept_partial_geometry: false,
     name: 'site.dxf',
     size: 1024,
     imported_at:
@@ -179,6 +180,42 @@ describe('import to source-bound setup', () => {
       expect(api.startGeometryOperation).toHaveBeenCalledWith('project-1'),
     );
   });
+  it('lets the operator accept missing geometry and then start calculation', async () => {
+    const source = project();
+    source.source_file!.content_sha256 = 'a'.repeat(64);
+    source.layers![1].geometry_complete = false;
+    vi.mocked(api.getProject).mockResolvedValue(source);
+    const accepted: Project = {
+      ...source,
+      state_version: 2,
+      source_file: { ...source.source_file!, accept_partial_geometry: true },
+    };
+    const accept = vi
+      .spyOn(api, 'acceptPartialGeometry')
+      .mockResolvedValue(accepted);
+    openPage();
+    const action = await screen.findByRole('button', {
+      name: 'Использовать доступную геометрию',
+    });
+    await waitFor(() => expect(action).toBeEnabled());
+    expect(
+      screen.getByRole('button', { name: 'Подготовить карту' }),
+    ).toBeDisabled();
+    fireEvent.click(action);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Подготовить карту' }),
+      ).toBeEnabled(),
+    );
+    expect(accept).toHaveBeenCalledWith('project-1', 'a'.repeat(64), {
+      expectedStateVersion: 1,
+    });
+    expect(api.startGeometryOperation).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Подготовить карту' }));
+    await waitFor(() =>
+      expect(api.startGeometryOperation).toHaveBeenCalledWith('project-1'),
+    );
+  });
   it('publishes a replacement before navigation, clears only source-derived cache and submits the new layers', async () => {
     const queryClient = client();
     queryClient.setQueryData(['setup-project', 'project-1'], project());
@@ -192,7 +229,10 @@ describe('import to source-bound setup', () => {
     });
     queryClient.setQueryData(['agent-runs', 'project-1'], ['saved-run']);
     const upload = vi.spyOn(api, 'uploadDxf').mockResolvedValue(project('b'));
-    const view = openPage(queryClient, '/projects/project-1/import');
+    const view = openPage(
+      queryClient,
+      '/projects/project-1/import?source=file',
+    );
     fireEvent.change(view.container.querySelector('input[type=file]')!, {
       target: { files: [new File(['0\nEOF\n'], 'site.dxf')] },
     });
@@ -245,7 +285,10 @@ describe('import to source-bound setup', () => {
       })
       .catch(() => undefined);
     vi.spyOn(api, 'uploadDxf').mockResolvedValue(project('b'));
-    const view = openPage(queryClient, '/projects/project-1/import');
+    const view = openPage(
+      queryClient,
+      '/projects/project-1/import?source=file',
+    );
     fireEvent.change(view.container.querySelector('input[type=file]')!, {
       target: { files: [new File(['DXF'], 'site.dxf')] },
     });
@@ -637,7 +680,7 @@ describe('geometry operation status recovery', () => {
       invalid: 'utility',
       fixed: 'ignore',
       reason:
-        'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.',
+        'Разрешите расчёт по доступным объектам или исправьте неполные слои.',
     },
   ] as const)(
     'blocks an invalid $name for both preparation actions, then retries only corrected mappings',

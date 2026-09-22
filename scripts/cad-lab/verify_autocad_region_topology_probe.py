@@ -150,8 +150,9 @@ def verify(probe_path: Path, *, diagnostic: bool = False) -> dict[str, Any]:
         failures.append({"reason": "summary resolved count mismatch"})
     if summary["loops"] != total_loops:
         failures.append({"reason": "summary loop count mismatch"})
-    if summary["points"] != total_points:
-        failures.append({"reason": "summary point count mismatch"})
+    summarized_region_points = summary.get("region_sampled_points", summary.get("points"))
+    if summarized_region_points != total_points:
+        failures.append({"reason": "summary region sampled point count mismatch"})
 
     coverage = document.get("coverage")
     if coverage is not None:
@@ -165,11 +166,13 @@ def verify(probe_path: Path, *, diagnostic: bool = False) -> dict[str, Any]:
             for record in coverage
             if record["status"] == "native"
         }
-        region_keys = {
-            (region["handle"], tuple(region["instance_chain"])) for region in regions
+        emitted_keys = {
+            (geometry["handle"], tuple(geometry["instance_chain"]))
+            for collection in (regions, document.get("paths", []), document.get("points", []))
+            for geometry in collection
         }
-        if native_keys != region_keys:
-            failures.append({"reason": "native coverage does not match REGION geometry"})
+        if native_keys != emitted_keys:
+            failures.append({"reason": "native coverage does not match emitted geometry"})
         status_counts = Counter(record["status"] for record in coverage)
         expected_summary = {
             "source_instances": len(coverage),

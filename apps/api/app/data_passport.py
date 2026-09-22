@@ -5,7 +5,6 @@ from typing import Final
 
 from app.contracts import DataPassport, DataPassportEntry, LayerKind, Project
 
-
 DATA_CLASSES: Final[tuple[tuple[str, LayerKind, str], ...]] = (
     ("site_border", LayerKind.SITE_BORDER, "Граница участка"),
     ("building", LayerKind.BUILDING, "Здания и сооружения"),
@@ -106,14 +105,15 @@ def build_data_passport(project: Project) -> DataPassport:
             for layer in included
         )
         complete = bool(included) and all(layer.geometry_complete for layer in included) and snapshot_complete
-        used = bool(project.map_ready and project.source_review is None and included and complete)
+        partial_calculation = bool(project.geometry and project.geometry.calculation_scope == "available_data")
+        used = bool(project.map_ready and project.source_review is None and included and (complete or partial_calculation))
         if has_feature_payload and used:
             # If the calculated snapshot has source features, only mark a
             # layer as used when at least one real feature survived into it.
             used = any(layer.source_name in used_counts for layer in included)
         feature_missing = bool(project.map_ready and project.source_review is None and has_feature_payload and included and complete and not used)
         for layer in included:
-            if project.map_ready and project.source_review is None and layer.geometry_complete and (not has_feature_payload or layer.source_name in used_counts):
+            if project.map_ready and project.source_review is None and (layer.geometry_complete or partial_calculation) and (not has_feature_payload or layer.source_name in used_counts):
                 used_layers.append(layer.source_name)
 
         if not matching:
@@ -183,6 +183,15 @@ def build_data_passport(project: Project) -> DataPassport:
 
     if incomplete:
         critical_gaps.append(f"Неполные слои: {', '.join(incomplete)}")
+    provenance = project.source_file.prepared_provenance if project.source_file else None
+    if provenance:
+        review = provenance.opening_review
+        if review.skipped_references:
+            critical_gaps.append("Проект открыт без части внешних ссылок")
+        if review.skipped_drawings:
+            critical_gaps.append("Проект открыт без части файлов комплекта")
+    if project.geometry and project.geometry.calculation_scope == "available_data":
+        critical_gaps.append("Расчёт выполнен по доступным данным")
     if excluded:
         critical_gaps.append(f"Исключённые физические слои: {', '.join(excluded)}")
     if unclassified:

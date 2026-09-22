@@ -554,6 +554,7 @@ def build_release(
         },
         "source": {
             "prepared_provenance": project.source_file.prepared_provenance.model_dump(mode="json") if project.source_file.prepared_provenance is not None else None,
+            "accept_partial_geometry": project.source_file.accept_partial_geometry,
             "filename": project.source_file.name,
             "path": f"source/{primary_path}",
             "size": len(source_content),

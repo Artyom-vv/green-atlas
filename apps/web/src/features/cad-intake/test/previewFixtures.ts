@@ -67,6 +67,7 @@ export const previewProject: Project = {
     message: 'Назначения слоёв требуют проверки',
   },
   source_file: {
+    accept_partial_geometry: false,
     name: 'АПОТ.dwg',
     size: 1000,
     imported_at: '2026-09-15',
@@ -93,6 +94,7 @@ export const boundaryPassport: CadPackagePassport = {
       source_bytes: 1000,
       status: 'readable',
       inspection: {
+        native_unresolved: 0,
         dxf_version: 'AC1024',
         units: 6,
         modelspace_entities: { LWPOLYLINE: 2 },

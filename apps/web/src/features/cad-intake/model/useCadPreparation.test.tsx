@@ -11,6 +11,56 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('observes a fast queued-to-completed local operation without waiting for a cached interval', async () => {
+  const queued: ProjectOperation = {
+    id: 'prepare-fast',
+    project_id: 'project',
+    kind: 'prepare_cad_project',
+    status: 'queued',
+    progress: 0,
+    progress_mode: 'indeterminate',
+    stage: 'Операция поставлена в очередь',
+    project_state_version: 1,
+  };
+  const completed: ProjectOperation = {
+    ...queued,
+    status: 'completed',
+    progress: 100,
+    progress_mode: 'determinate',
+    stage: 'Готово',
+  };
+  const latest = vi
+    .spyOn(api, 'getLatestOperation')
+    .mockResolvedValueOnce(null)
+    .mockResolvedValue(completed);
+  const start = vi.fn().mockResolvedValue(queued);
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  function Wrapper({ children }: PropsWithChildren) {
+    return (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+  }
+  const { result } = renderHook(
+    () =>
+      useCadPreparation(
+        { projectId: 'project', version: 1, onNavigate: vi.fn(), autoOpen: false },
+        'prepare_cad_project',
+        start,
+      ),
+    { wrapper: Wrapper },
+  );
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  act(() => result.current.launch({}));
+  await waitFor(() => expect(result.current.operation?.status).toBe('completed'));
+  expect(start).toHaveBeenCalledOnce();
+  expect(latest).toHaveBeenCalledTimes(2);
+});
+
 it.each([true, false])(
   'opens a completed full source only if its identity matches (matches=%s)',
   async (matches) => {

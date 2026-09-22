@@ -402,6 +402,71 @@
         }
       }
     },
+    "/api/projects/{project_id}/source-autocad-live": {
+      "post": {
+        "summary": "Upload Autocad Live",
+        "operationId": "upload_autocad_live_api_projects__project_id__source_autocad_live_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_autocad_live_api_projects__project_id__source_autocad_live_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/release-bundle": {
       "post": {
         "summary": "Upload Release Bundle",
@@ -661,6 +726,71 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LayerMappingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-partial-geometry/accept": {
+      "post": {
+        "summary": "Accept Partial Geometry",
+        "operationId": "accept_partial_geometry_api_projects__project_id__source_partial_geometry_accept_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptPartialGeometryRequest"
               }
             }
           }
@@ -2762,6 +2892,619 @@
         }
       }
     },
+    "/api/cad-bridge/device/transfers": {
+      "post": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_cad_bridge_device_transfers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad-bridge/device/transfers/{transfer_id}": {
+      "get": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Device Status",
+        "operationId": "device_status_api_cad_bridge_device_transfers__transfer_id__get",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad-bridge/device/transfers/{transfer_id}/cancel": {
+      "post": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Cancel",
+        "operationId": "cancel_api_cad_bridge_device_transfers__transfer_id__cancel_post",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad-bridge/approvals/{transfer_id}": {
+      "get": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Review",
+        "operationId": "review_api_cad_bridge_approvals__transfer_id__get",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferReview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Decide",
+        "operationId": "decide_api_cad_bridge_approvals__transfer_id__post",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad-bridge/device/transfers/{transfer_id}/upload": {
+      "post": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Begin Upload",
+        "operationId": "begin_upload_api_cad_bridge_device_transfers__transfer_id__upload_post",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadProgress"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Upload Progress",
+        "operationId": "upload_progress_api_cad_bridge_device_transfers__transfer_id__upload_get",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadProgress"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad-bridge/device/transfers/{transfer_id}/files/{file_index}": {
+      "put": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Upload Chunk",
+        "operationId": "upload_chunk_api_cad_bridge_device_transfers__transfer_id__files__file_index__put",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "file_index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "File Index"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "X-Chunk-SHA256",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "X-Chunk-Sha256"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadProgress"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad-bridge/device/transfers/{transfer_id}/upload/finish": {
+      "post": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Finish Upload",
+        "operationId": "finish_upload_api_cad_bridge_device_transfers__transfer_id__upload_finish_post",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadProgress"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cad-bridge/device/transfers/{transfer_id}/publication": {
+      "post": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Publish Transfer",
+        "operationId": "publish_transfer_api_cad_bridge_device_transfers__transfer_id__publication_post",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "AutoCAD delivery"
+        ],
+        "summary": "Publication Status",
+        "operationId": "publication_status_api_cad_bridge_device_transfers__transfer_id__publication_get",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "X-Green-Atlas-Transfer-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 128,
+              "title": "X-Green-Atlas-Transfer-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/cad-prepare": {
       "post": {
         "tags": [
@@ -4698,6 +5441,20 @@
   },
   "components": {
     "schemas": {
+      "AcceptPartialGeometryRequest": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256"
+        ],
+        "title": "AcceptPartialGeometryRequest"
+      },
       "AgentIntent": {
         "properties": {
           "raw_text": {
@@ -5391,6 +6148,36 @@
           "geometry_sha256"
         ],
         "title": "AxisSourceReference"
+      },
+      "Body_upload_autocad_live_api_projects__project_id__source_autocad_live_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "autocad_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Autocad Version"
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "macos-arm64",
+              "macos-x86_64",
+              "windows-x86_64"
+            ],
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "autocad_version",
+          "target"
+        ],
+        "title": "Body_upload_autocad_live_api_projects__project_id__source_autocad_live_post"
       },
       "Body_upload_dxf_api_projects__project_id__source_dxf_post": {
         "properties": {
@@ -6248,6 +7035,35 @@
         ],
         "title": "CadIntakeRequest"
       },
+      "CadOpeningReview": {
+        "properties": {
+          "skipped_references": {
+            "items": {
+              "$ref": "#/components/schemas/CadSkippedReference"
+            },
+            "type": "array",
+            "maxItems": 4096,
+            "title": "Skipped References"
+          },
+          "skipped_drawings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 63,
+            "title": "Skipped Drawings"
+          },
+          "accept_partial_geometry": {
+            "type": "boolean",
+            "title": "Accept Partial Geometry",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CadOpeningReview",
+        "description": "Explicit decisions, bound to the request's immutable passport digest."
+      },
       "CadPackagePassport": {
         "properties": {
           "root_id": {
@@ -6356,6 +7172,9 @@
             "const": 1,
             "title": "Profile Version",
             "default": 1
+          },
+          "opening_review": {
+            "$ref": "#/components/schemas/CadOpeningReview"
           },
           "cad_snapshot": {
             "anyOf": [
@@ -6868,6 +7687,29 @@
         ],
         "title": "CadRoot"
       },
+      "CadSkippedReference": {
+        "properties": {
+          "owner": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Owner"
+          },
+          "block": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Block"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner",
+          "block"
+        ],
+        "title": "CadSkippedReference"
+      },
       "CadSnapshotDependency": {
         "properties": {
           "id": {
@@ -6958,6 +7800,7 @@
             "type": "string",
             "enum": [
               "macos-arm64",
+              "macos-x86_64",
               "windows-x86_64"
             ],
             "title": "Target"
@@ -6983,6 +7826,30 @@
             },
             "type": "array",
             "title": "Dependencies"
+          },
+          "live_capture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveDocumentCapture"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live_references": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LiveCadReference"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live References"
           }
         },
         "type": "object",
@@ -8480,6 +9347,12 @@
             "type": "object",
             "title": "Xrefs"
           },
+          "native_unresolved": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Native Unresolved",
+            "default": 0
+          },
           "boundary_catalog": {
             "anyOf": [
               {
@@ -9127,6 +10000,21 @@
             "type": "object",
             "title": "Feature Collection"
           },
+          "calculation_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "complete_source",
+                  "available_data"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Scope"
+          },
           "vertical_primitives": {
             "items": {
               "$ref": "#/components/schemas/DxfVerticalPrimitive"
@@ -9323,6 +10211,7 @@
         "type": "string",
         "enum": [
           "source_dxf",
+          "autocad_live",
           "release_bundle",
           "plain_dxf_fallback",
           "cad_preview"
@@ -9757,6 +10646,71 @@
           "text"
         ],
         "title": "LegacyMessage"
+      },
+      "LiveCadReference": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^xref/[0-9A-F]+$",
+            "title": "Id"
+          },
+          "record_handle": {
+            "type": "string",
+            "pattern": "^[0-9A-F]+$",
+            "title": "Record Handle"
+          },
+          "block_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Block Name"
+          },
+          "stored_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Stored Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "record_handle",
+          "block_name",
+          "stored_path"
+        ],
+        "title": "LiveCadReference",
+        "description": "A reference traversed in memory, not a verified/archived package file."
+      },
+      "LiveDocumentCapture": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "live_document",
+            "title": "Mode",
+            "default": "live_document"
+          },
+          "original_path": {
+            "type": "string",
+            "title": "Original Path"
+          },
+          "original_disk_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Original Disk Sha256"
+          },
+          "database_modified_flags": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Database Modified Flags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_path",
+          "original_disk_sha256",
+          "database_modified_flags"
+        ],
+        "title": "LiveDocumentCapture",
+        "description": "Disk identity is context, not proof that unsaved geometry matches it."
       },
       "MapContext": {
         "properties": {
@@ -12161,6 +13115,9 @@
             "type": "array",
             "title": "Drawings"
           },
+          "opening_review": {
+            "$ref": "#/components/schemas/CadOpeningReview"
+          },
           "aoi": {
             "anyOf": [
               {
@@ -12869,6 +13826,107 @@
           "can_apply"
         ],
         "title": "ProposalStatus"
+      },
+      "PublicationReceipt": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "needs_review",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Path"
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Id"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "stage"
+        ],
+        "title": "PublicationReceipt"
+      },
+      "PublicationRequest": {
+        "properties": {
+          "autocad_version": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[0-9][0-9A-Za-z ._-]*$",
+            "title": "Autocad Version"
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "macos-arm64",
+              "macos-x86_64",
+              "windows-x86_64"
+            ],
+            "title": "Target"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "autocad_version",
+          "target"
+        ],
+        "title": "PublicationRequest"
       },
       "ReadIntent": {
         "properties": {
@@ -15090,6 +16148,11 @@
                 "type": "null"
               }
             ]
+          },
+          "accept_partial_geometry": {
+            "type": "boolean",
+            "title": "Accept Partial Geometry",
+            "default": false
           }
         },
         "type": "object",
@@ -15942,6 +17005,392 @@
           "status"
         ],
         "title": "ToolResult"
+      },
+      "TransferCreate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "client_secret": {
+            "type": "string",
+            "format": "password",
+            "title": "Client Secret",
+            "writeOnly": true
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+            "title": "Plugin Version"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/TransferManifest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "client_secret",
+          "plugin_version",
+          "manifest"
+        ],
+        "title": "TransferCreate"
+      },
+      "TransferDecision": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "deny"
+            ],
+            "title": "Decision"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifest Sha256"
+          },
+          "confirmation_code": {
+            "type": "string",
+            "pattern": "^[A-F0-9]{8}$",
+            "title": "Confirmation Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision",
+          "manifest_sha256",
+          "confirmation_code"
+        ],
+        "title": "TransferDecision"
+      },
+      "TransferFile": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "drawing",
+              "native_probe"
+            ],
+            "title": "Kind"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256"
+          },
+          "bytes": {
+            "type": "integer",
+            "maximum": 2147483648.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "sha256",
+          "bytes"
+        ],
+        "title": "TransferFile"
+      },
+      "TransferManifest": {
+        "properties": {
+          "entry": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Entry"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/TransferFile"
+            },
+            "type": "array",
+            "maxItems": 128,
+            "minItems": 2,
+            "title": "Files"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entry",
+          "files"
+        ],
+        "title": "TransferManifest"
+      },
+      "TransferReceipt": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_approval",
+              "approved",
+              "denied",
+              "cancelled",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "entry": {
+            "type": "string",
+            "title": "Entry"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          },
+          "poll_after_seconds": {
+            "type": "integer",
+            "title": "Poll After Seconds",
+            "default": 5
+          },
+          "verification_url": {
+            "type": "string",
+            "title": "Verification Url"
+          },
+          "confirmation_code": {
+            "type": "string",
+            "title": "Confirmation Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "entry",
+          "manifest_sha256",
+          "file_count",
+          "total_bytes",
+          "expires_at",
+          "verification_url",
+          "confirmation_code"
+        ],
+        "title": "TransferReceipt"
+      },
+      "TransferReview": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_approval",
+              "approved",
+              "denied",
+              "cancelled",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "entry": {
+            "type": "string",
+            "title": "Entry"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          },
+          "poll_after_seconds": {
+            "type": "integer",
+            "title": "Poll After Seconds",
+            "default": 5
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/TransferManifest"
+          },
+          "plugin_version": {
+            "type": "string",
+            "title": "Plugin Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "entry",
+          "manifest_sha256",
+          "file_count",
+          "total_bytes",
+          "expires_at",
+          "manifest",
+          "plugin_version"
+        ],
+        "title": "TransferReview"
+      },
+      "TransferStatus": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_approval",
+              "approved",
+              "denied",
+              "cancelled",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "entry": {
+            "type": "string",
+            "title": "Entry"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          },
+          "poll_after_seconds": {
+            "type": "integer",
+            "title": "Poll After Seconds",
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "entry",
+          "manifest_sha256",
+          "file_count",
+          "total_bytes",
+          "expires_at"
+        ],
+        "title": "TransferStatus"
+      },
+      "UploadFileProgress": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          },
+          "received_bytes": {
+            "type": "integer",
+            "title": "Received Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "bytes",
+          "received_bytes"
+        ],
+        "title": "UploadFileProgress"
+      },
+      "UploadProgress": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "uploading",
+              "ready"
+            ],
+            "title": "Status"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          },
+          "chunk_bytes": {
+            "type": "integer",
+            "title": "Chunk Bytes"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/UploadFileProgress"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "expires_at",
+          "chunk_bytes",
+          "files"
+        ],
+        "title": "UploadProgress"
       },
       "UserMessage": {
         "properties": {

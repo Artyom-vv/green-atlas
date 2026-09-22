@@ -3,7 +3,6 @@
 import hashlib
 import json
 import os
-import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +12,7 @@ from app.cad_import.aoi_evidence import log_tail, retain_aoi_failure
 from app.cad_import.aoi_policy import AoiPolicy
 from app.cad_import.contracts import CadConversionError
 from app.cad_import.process import run_converter
+from app.shared.python_worker import worker_command
 
 
 def prepare_aoi(
@@ -46,15 +46,13 @@ def prepare_aoi(
         policy_file.write_text(json.dumps(asdict(policy)), encoding="utf-8")
         try:
             run = run_converter(
-                [
-                    sys.executable,
-                    "-m",
+                worker_command(
                     "app.cad_import.aoi_worker",
                     str(config),
                     str(drawing),
                     str(result),
                     str(policy_file),
-                ],
+                ),
                 drawing,
                 log,
                 policy,

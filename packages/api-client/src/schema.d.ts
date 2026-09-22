@@ -91,6 +91,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/source-autocad-live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Autocad Live */
+        post: operations["upload_autocad_live_api_projects__project_id__source_autocad_live_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/release-bundle": {
         parameters: {
             query?: never;
@@ -153,6 +170,23 @@ export interface paths {
         /** Save Mappings */
         put: operations["save_mappings_api_projects__project_id__layer_mappings_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-partial-geometry/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Partial Geometry */
+        post: operations["accept_partial_geometry_api_projects__project_id__source_partial_geometry_accept_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -697,6 +731,145 @@ export interface paths {
         get: operations["download_release_artifact_api_projects__project_id__releases__release_id__artifacts__artifact_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/device/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create */
+        post: operations["create_api_cad_bridge_device_transfers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/device/transfers/{transfer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Device Status */
+        get: operations["device_status_api_cad_bridge_device_transfers__transfer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/device/transfers/{transfer_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_cad_bridge_device_transfers__transfer_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/approvals/{transfer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Review */
+        get: operations["review_api_cad_bridge_approvals__transfer_id__get"];
+        put?: never;
+        /** Decide */
+        post: operations["decide_api_cad_bridge_approvals__transfer_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/device/transfers/{transfer_id}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Upload Progress */
+        get: operations["upload_progress_api_cad_bridge_device_transfers__transfer_id__upload_get"];
+        put?: never;
+        /** Begin Upload */
+        post: operations["begin_upload_api_cad_bridge_device_transfers__transfer_id__upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/device/transfers/{transfer_id}/files/{file_index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upload Chunk */
+        put: operations["upload_chunk_api_cad_bridge_device_transfers__transfer_id__files__file_index__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/device/transfers/{transfer_id}/upload/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish Upload */
+        post: operations["finish_upload_api_cad_bridge_device_transfers__transfer_id__upload_finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cad-bridge/device/transfers/{transfer_id}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Publication Status */
+        get: operations["publication_status_api_cad_bridge_device_transfers__transfer_id__publication_get"];
+        put?: never;
+        /** Publish Transfer */
+        post: operations["publish_transfer_api_cad_bridge_device_transfers__transfer_id__publication_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1262,6 +1435,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcceptPartialGeometryRequest */
+        AcceptPartialGeometryRequest: {
+            /** Source Sha256 */
+            source_sha256: string;
+        };
         /**
          * AgentIntent
          * @description Immutable user intent atoms plus explicit delegations.
@@ -1447,6 +1625,18 @@ export interface components {
             insert_chain: string[];
             /** Geometry Sha256 */
             geometry_sha256: string;
+        };
+        /** Body_upload_autocad_live_api_projects__project_id__source_autocad_live_post */
+        Body_upload_autocad_live_api_projects__project_id__source_autocad_live_post: {
+            /** File */
+            file: string;
+            /** Autocad Version */
+            autocad_version: string;
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "macos-arm64" | "macos-x86_64" | "windows-x86_64";
         };
         /** Body_upload_dxf_api_projects__project_id__source_dxf_post */
         Body_upload_dxf_api_projects__project_id__source_dxf_post: {
@@ -1767,6 +1957,21 @@ export interface components {
             /** Overrides */
             overrides?: components["schemas"]["CadReferenceOverride"][];
         };
+        /**
+         * CadOpeningReview
+         * @description Explicit decisions, bound to the request's immutable passport digest.
+         */
+        CadOpeningReview: {
+            /** Skipped References */
+            skipped_references?: components["schemas"]["CadSkippedReference"][];
+            /** Skipped Drawings */
+            skipped_drawings?: string[];
+            /**
+             * Accept Partial Geometry
+             * @default false
+             */
+            accept_partial_geometry: boolean;
+        };
         /** CadPackagePassport */
         CadPackagePassport: {
             /** Root Id */
@@ -1812,6 +2017,7 @@ export interface components {
              * @constant
              */
             profile_version: 1;
+            opening_review?: components["schemas"]["CadOpeningReview"];
             cad_snapshot?: components["schemas"]["CadSnapshotSelection"] | null;
             /** Additional Snapshots */
             additional_snapshots?: components["schemas"]["CadDrawingSnapshotSelection"][];
@@ -1993,6 +2199,13 @@ export interface components {
             /** Label */
             label: string;
         };
+        /** CadSkippedReference */
+        CadSkippedReference: {
+            /** Owner */
+            owner: string;
+            /** Block */
+            block: string;
+        };
         /**
          * CadSnapshotDependency
          * @description A package-local file whose exact bytes contributed native geometry.
@@ -2037,7 +2250,7 @@ export interface components {
              * Target
              * @enum {string}
              */
-            target: "macos-arm64" | "windows-x86_64";
+            target: "macos-arm64" | "macos-x86_64" | "windows-x86_64";
             /** Source Instances */
             source_instances: number;
             /** Native Geometry */
@@ -2046,6 +2259,9 @@ export interface components {
             unresolved_instances: number;
             /** Dependencies */
             dependencies?: components["schemas"]["CadSnapshotDependency"][];
+            live_capture?: components["schemas"]["LiveDocumentCapture"] | null;
+            /** Live References */
+            live_references?: components["schemas"]["LiveCadReference"][] | null;
         };
         /**
          * CadSnapshotSelection
@@ -2596,6 +2812,11 @@ export interface components {
             xrefs: {
                 [key: string]: string;
             };
+            /**
+             * Native Unresolved
+             * @default 0
+             */
+            native_unresolved: number;
             boundary_catalog?: components["schemas"]["DrawingBoundaryCatalog"] | null;
         };
         /**
@@ -2846,6 +3067,8 @@ export interface components {
             feature_collection: {
                 [key: string]: unknown;
             };
+            /** Calculation Scope */
+            calculation_scope?: ("complete_source" | "available_data") | null;
             /** Vertical Primitives */
             vertical_primitives?: components["schemas"]["DxfVerticalPrimitive"][];
             /** Site Area M2 */
@@ -2919,7 +3142,7 @@ export interface components {
          *     editing safely.
          * @enum {string}
          */
-        ImportMode: "source_dxf" | "release_bundle" | "plain_dxf_fallback" | "cad_preview";
+        ImportMode: "source_dxf" | "autocad_live" | "release_bundle" | "plain_dxf_fallback" | "cad_preview";
         /** ImportStatus */
         ImportStatus: {
             /** @default source_dxf */
@@ -3072,6 +3295,38 @@ export interface components {
             text: string;
             /** Result */
             result?: string | null;
+        };
+        /**
+         * LiveCadReference
+         * @description A reference traversed in memory, not a verified/archived package file.
+         */
+        LiveCadReference: {
+            /** Id */
+            id: string;
+            /** Record Handle */
+            record_handle: string;
+            /** Block Name */
+            block_name: string;
+            /** Stored Path */
+            stored_path: string;
+        };
+        /**
+         * LiveDocumentCapture
+         * @description Disk identity is context, not proof that unsaved geometry matches it.
+         */
+        LiveDocumentCapture: {
+            /**
+             * Mode
+             * @default live_document
+             * @constant
+             */
+            mode: "live_document";
+            /** Original Path */
+            original_path: string;
+            /** Original Disk Sha256 */
+            original_disk_sha256: string;
+            /** Database Modified Flags */
+            database_modified_flags: number;
         };
         /** MapContext */
         MapContext: {
@@ -3922,6 +4177,7 @@ export interface components {
             source_sha256: string;
             /** Drawings */
             drawings?: components["schemas"]["PreparedDrawingProvenance"][];
+            opening_review?: components["schemas"]["CadOpeningReview"];
             aoi?: components["schemas"]["PreparedAoiProvenance"] | null;
         };
         /** PreviewRefusal */
@@ -4155,6 +4411,39 @@ export interface components {
             status: "ready" | "blocked" | "expired" | "stale" | "applied" | "undone" | "declined" | "unavailable" | "superseded";
             /** Can Apply */
             can_apply: boolean;
+        };
+        /** PublicationReceipt */
+        PublicationReceipt: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "processing" | "needs_review" | "failed";
+            /** Stage */
+            stage: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Project Path */
+            project_path?: string | null;
+            /** Operation Id */
+            operation_id?: string | null;
+            /** Message */
+            message?: string | null;
+        };
+        /** PublicationRequest */
+        PublicationRequest: {
+            /** Autocad Version */
+            autocad_version: string;
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "macos-arm64" | "macos-x86_64" | "windows-x86_64";
         };
         /** ReadIntent */
         ReadIntent: {
@@ -4940,6 +5229,11 @@ export interface components {
             preview_provenance?: components["schemas"]["CadPreviewProvenance"] | null;
             prepared_provenance?: components["schemas"]["PreparedSourceProvenance"] | null;
             cad_snapshot_provenance?: components["schemas"]["CadSnapshotProvenance"] | null;
+            /**
+             * Accept Partial Geometry
+             * @default false
+             */
+            accept_partial_geometry: boolean;
         };
         /** SourceReview */
         SourceReview: {
@@ -5161,6 +5455,176 @@ export interface components {
             verification?: components["schemas"]["VerificationSummary"] | null;
             read_page?: components["schemas"]["ReadPageEvidence"] | null;
             preview_refusal?: components["schemas"]["PreviewRefusal"] | null;
+        };
+        /** TransferCreate */
+        TransferCreate: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Client Secret
+             * Format: password
+             */
+            client_secret: string;
+            /** Plugin Version */
+            plugin_version: string;
+            manifest: components["schemas"]["TransferManifest"];
+        };
+        /** TransferDecision */
+        TransferDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "deny";
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** Confirmation Code */
+            confirmation_code: string;
+        };
+        /** TransferFile */
+        TransferFile: {
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "drawing" | "native_probe";
+            /** Sha256 */
+            sha256: string;
+            /** Bytes */
+            bytes: number;
+        };
+        /** TransferManifest */
+        TransferManifest: {
+            /** Entry */
+            entry: string;
+            /** Files */
+            files: components["schemas"]["TransferFile"][];
+        };
+        /** TransferReceipt */
+        TransferReceipt: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_approval" | "approved" | "denied" | "cancelled" | "expired";
+            /** Entry */
+            entry: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** File Count */
+            file_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            /** Expires At */
+            expires_at: number;
+            /**
+             * Poll After Seconds
+             * @default 5
+             */
+            poll_after_seconds: number;
+            /** Verification Url */
+            verification_url: string;
+            /** Confirmation Code */
+            confirmation_code: string;
+        };
+        /** TransferReview */
+        TransferReview: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_approval" | "approved" | "denied" | "cancelled" | "expired";
+            /** Entry */
+            entry: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** File Count */
+            file_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            /** Expires At */
+            expires_at: number;
+            /**
+             * Poll After Seconds
+             * @default 5
+             */
+            poll_after_seconds: number;
+            manifest: components["schemas"]["TransferManifest"];
+            /** Plugin Version */
+            plugin_version: string;
+        };
+        /** TransferStatus */
+        TransferStatus: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_approval" | "approved" | "denied" | "cancelled" | "expired";
+            /** Entry */
+            entry: string;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** File Count */
+            file_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            /** Expires At */
+            expires_at: number;
+            /**
+             * Poll After Seconds
+             * @default 5
+             */
+            poll_after_seconds: number;
+        };
+        /** UploadFileProgress */
+        UploadFileProgress: {
+            /** Index */
+            index: number;
+            /** Name */
+            name: string;
+            /** Bytes */
+            bytes: number;
+            /** Received Bytes */
+            received_bytes: number;
+        };
+        /** UploadProgress */
+        UploadProgress: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "uploading" | "ready";
+            /** Expires At */
+            expires_at: number;
+            /** Chunk Bytes */
+            chunk_bytes: number;
+            /** Files */
+            files: components["schemas"]["UploadFileProgress"][];
         };
         /** UserMessage */
         UserMessage: {
@@ -5674,6 +6138,43 @@ export interface operations {
             };
         };
     };
+    upload_autocad_live_api_projects__project_id__source_autocad_live_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_autocad_live_api_projects__project_id__source_autocad_live_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_release_bundle_api_projects__project_id__release_bundle_post: {
         parameters: {
             query?: never;
@@ -5795,6 +6296,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LayerMappingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_partial_geometry_api_projects__project_id__source_partial_geometry_accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptPartialGeometryRequest"];
             };
         };
         responses: {
@@ -6936,6 +7474,381 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_cad_bridge_device_transfers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_status_api_cad_bridge_device_transfers__transfer_id__get: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_cad_bridge_device_transfers__transfer_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_api_cad_bridge_approvals__transfer_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_api_cad_bridge_approvals__transfer_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_progress_api_cad_bridge_device_transfers__transfer_id__upload_get: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    begin_upload_api_cad_bridge_device_transfers__transfer_id__upload_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_chunk_api_cad_bridge_device_transfers__transfer_id__files__file_index__put: {
+        parameters: {
+            query: {
+                offset: number;
+            };
+            header: {
+                "X-Chunk-SHA256": string;
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+                file_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_upload_api_cad_bridge_device_transfers__transfer_id__upload_finish_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publication_status_api_cad_bridge_device_transfers__transfer_id__publication_get: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_transfer_api_cad_bridge_device_transfers__transfer_id__publication_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Green-Atlas-Transfer-Token": string;
+            };
+            path: {
+                transfer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationReceipt"];
                 };
             };
             /** @description Validation Error */

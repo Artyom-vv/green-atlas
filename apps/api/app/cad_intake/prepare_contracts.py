@@ -28,12 +28,44 @@ class CadDrawingSnapshotSelection(BaseModel):
     _relative_drawing_path = field_validator("drawing_path")(relative_path)
 
 
+class CadSkippedReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner: str = Field(min_length=1, max_length=2048)
+    block: str = Field(min_length=1, max_length=2048)
+
+    _relative_owner = field_validator("owner")(relative_path)
+
+
+class CadOpeningReview(BaseModel):
+    """Explicit decisions, bound to the request's immutable passport digest."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skipped_references: list[CadSkippedReference] = Field(default_factory=list, max_length=4096)
+    skipped_drawings: list[str] = Field(default_factory=list, max_length=63)
+    accept_partial_geometry: bool = False
+
+    @field_validator("skipped_drawings")
+    @classmethod
+    def validate_paths(cls, values: list[str]) -> list[str]:
+        return [relative_path(value) for value in values]
+
+    @model_validator(mode="after")
+    def unique_decisions(self) -> "CadOpeningReview":
+        keys = [(item.owner, item.block) for item in self.skipped_references]
+        if len(keys) != len(set(keys)) or len(self.skipped_drawings) != len(set(self.skipped_drawings)):
+            raise ValueError("Решение по каждому файлу или ссылке принимается один раз")
+        return self
+
+
 class CadPrepareRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     intake_operation_id: str = Field(min_length=1)
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     profile_version: Literal[1] = 1
+    opening_review: CadOpeningReview = Field(default_factory=CadOpeningReview)
     cad_snapshot: CadSnapshotSelection | None = None
     additional_snapshots: list[CadDrawingSnapshotSelection] = Field(
         default_factory=list, max_length=63
@@ -111,4 +143,5 @@ class PreparedSourceProvenance(BaseModel):
     entry: str
     source_sha256: str
     drawings: list[PreparedDrawingProvenance] = Field(default_factory=list)
+    opening_review: CadOpeningReview = Field(default_factory=CadOpeningReview)
     aoi: PreparedAoiProvenance | None = None

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiClientError, type Project } from '@green/api-client';
 import { preparationApi } from '../api/preparationApi';
 import { useSourcePreparation } from './useSourcePreparation';
+import { nativeProject } from '@/entities/source-data/model/nativeDxfFixtures';
 
 const source: Project = {
   id: 'project',
@@ -31,6 +32,122 @@ const source: Project = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('source preparation form recovery', () => {
+  it('accepts partial live geometry without confirming mappings or losing the draft', async () => {
+    const project: Project = {
+      ...source,
+      import_status: {
+        mode: 'autocad_live',
+        editability: 'editable',
+        message: '',
+      },
+      source_file: { ...nativeProject.source_file!, prepared_provenance: null },
+      layers: [
+        {
+          ...source.layers![0],
+          geometry_complete: false,
+          mapping_review_required: true,
+          mapping_confirmed: false,
+        },
+      ],
+    };
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    const accept = vi
+      .spyOn(preparationApi, 'acceptPartialGeometry')
+      .mockResolvedValue({
+        ...project,
+        state_version: 2,
+        source_file: { ...project.source_file!, accept_partial_geometry: true },
+      });
+    const save = vi.spyOn(preparationApi, 'saveMappings');
+    const start = vi.spyOn(preparationApi, 'startGeometryOperation');
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.layers).toHaveLength(1));
+    act(() =>
+      result.current.setMappings({
+        road: {
+          layer_id: 'road',
+          kind: 'building',
+          visible: true,
+          confirmed: false,
+        },
+      }),
+    );
+    await act(async () => {
+      await result.current.acceptPartialGeometry.mutateAsync();
+    });
+    expect(accept).toHaveBeenCalledWith('project', 'a'.repeat(64), {
+      expectedStateVersion: 1,
+    });
+    await waitFor(() => expect(result.current.partialAccepted).toBe(true));
+    expect(result.current.mappings.road.kind).toBe('building');
+    expect(result.current.unconfirmedMappings).toHaveLength(1);
+    expect(result.current.readinessBlockedReason).toBe(
+      'Проверьте предложенные роли слоёв.',
+    );
+    expect(save).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    act(() =>
+      result.current.setMappings({
+        road: { ...result.current.mappings.road, confirmed: true },
+      }),
+    );
+    expect(result.current.readinessBlockedReason).toBeUndefined();
+    unmount();
+    client.clear();
+  });
+  it.each([false, true])(
+    'respects the saved partial-geometry consent: %s',
+    async (accepted) => {
+      vi.spyOn(preparationApi, 'getProject').mockResolvedValue({
+        ...source,
+        source_file: {
+          ...nativeProject.source_file!,
+          prepared_provenance: {
+            profile_version: 1,
+            intake_operation_id: 'intake',
+            manifest_sha256: 'a'.repeat(64),
+            entry: 'source.dxf',
+            source_sha256: 'a'.repeat(64),
+            opening_review: { accept_partial_geometry: accepted },
+          },
+        },
+        layers: [{ ...source.layers![0], geometry_complete: false }],
+      });
+      vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+        () => new Promise(() => {}),
+      );
+      vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      );
+      const { result, unmount } = renderHook(
+        () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+        { wrapper },
+      );
+      await waitFor(() =>
+        expect(result.current.incompleteConstraintLayers).toHaveLength(1),
+      );
+      expect(Boolean(result.current.readinessBlockedReason)).toBe(!accepted);
+      unmount();
+      client.clear();
+    },
+  );
   it('blocks calculation until an uncertain automatic role is confirmed', async () => {
     vi.spyOn(preparationApi, 'getProject').mockResolvedValue({
       ...source,

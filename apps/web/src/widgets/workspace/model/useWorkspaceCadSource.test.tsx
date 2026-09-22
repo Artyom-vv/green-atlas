@@ -65,6 +65,7 @@ describe('workspace native DXF display and interaction ownership', () => {
     expect(result.current.baseReady).toBe(false);
     expect(result.current.vectorGeometryEnabled).toBe(true);
     expect(transport.latest).not.toHaveBeenCalled();
+    expect(result.current.displayWarning).toContain('извлечённая геометрия');
   });
 
   it('does not refetch or reload source identity when plan/state/layer presentation changes', async () => {
@@ -138,7 +139,8 @@ describe('workspace native DXF display and interaction ownership', () => {
       new Error('NATIVE_DXF_ASSET_UNAVAILABLE'),
     );
     const { result, rerender } = mount();
-    await waitFor(() => expect(result.current.error).toBeDefined());
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(result.current.displayWarning).toContain('извлечённая геометрия');
     expect(result.current.source).toBeUndefined();
     expect(result.current.vectorGeometryEnabled).toBe(true);
     rerender({

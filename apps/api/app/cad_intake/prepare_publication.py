@@ -34,6 +34,7 @@ def _validate_operation(
         request.intake_operation_id != provenance.intake_operation_id
         or request.manifest_sha256 != provenance.manifest_sha256
         or request.profile_version != provenance.profile_version
+        or request.opening_review != provenance.opening_review
         or requested_snapshot_paths != published_snapshot_paths
     ):
         raise ValueError("Источник не соответствует проверенному паспорту")

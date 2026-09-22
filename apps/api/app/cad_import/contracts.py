@@ -19,6 +19,7 @@ class DrawingInspection(BaseModel):
     modelspace_entities: dict[str, int]
     layer_names: list[str]
     xrefs: dict[str, str]
+    native_unresolved: int = Field(default=0, ge=0)
     boundary_catalog: DrawingBoundaryCatalog | None = None
 
 

@@ -67,6 +67,7 @@ DXF_TYPE_BY_AUTOCAD_CLASS = {
     "AcDb2dPolyline": "POLYLINE",
     "AcDb3dPolyline": "POLYLINE",
     "AcDbRegion": "REGION",
+    "AcDbSolid": "SOLID",
     "AcDbSpline": "SPLINE",
     "AcDbText": "TEXT",
 }
@@ -285,6 +286,7 @@ def build_dxf_import_from_snapshot(
     snapshot: CadSnapshot,
     *,
     source_sha256: str,
+    dxf_version: str = "unknown",
     capacity: SourceGeometryCapacity | None = None,
     verified_dependencies: dict[str, str] | None = None,
 ) -> DxfImportResult:
@@ -305,7 +307,7 @@ def build_dxf_import_from_snapshot(
         geometry=GeometrySnapshot(
             feature_collection={"type": "FeatureCollection", "features": []}
         ),
-        dxf_version=f"AutoCAD {snapshot.extraction.autocad_version}",
+        dxf_version=dxf_version,
         units=units,
         entity_count=snapshot.summary.source_instances,
         coordinate_reference=CoordinateReference(
@@ -334,6 +336,7 @@ def build_dxf_import_from_snapshot_path(
     dependencies: tuple[CadSnapshotDependency, ...],
     summary: SnapshotSummary,
     source_sha256: str,
+    dxf_version: str = "unknown",
     scratch_root: Path,
     capacity: SourceGeometryCapacity | None = None,
     verified_dependencies: dict[str, str] | None = None,
@@ -361,7 +364,7 @@ def build_dxf_import_from_snapshot_path(
         geometry=GeometrySnapshot(
             feature_collection={"type": "FeatureCollection", "features": []}
         ),
-        dxf_version=f"AutoCAD {extraction.autocad_version}",
+        dxf_version=dxf_version,
         units=units,
         entity_count=summary.source_instances,
         coordinate_reference=CoordinateReference(
@@ -622,9 +625,8 @@ def build_dxf_import_from_snapshot_path(
             f"{name}: {count}" for name, count in sorted(remaining_unsupported.items())
         )
         result.warnings.append(
-            f"Часть типов доступна только в исходном файле: {labels}. "
-            "Если такой слой назначен физическим ограничением, расчёт будет остановлен; "
-            "проверьте назначение слоя и подготовьте расчётное представление его физических объектов."
+            f"Не извлечены для расчёта: {labels}. "
+            "Исходный чертёж сохранён; эти объекты пока не участвуют в проверках."
         )
     result.bounds = list(_bounds(features) or ()) or None
     result.cad_snapshot_provenance = CadSnapshotProvenance(
@@ -905,5 +907,7 @@ def apply_cad_snapshot(
         native_geometry=len(snapshot.geometry),
         unresolved_instances=snapshot.summary.unresolved,
         dependencies=[item.model_copy(deep=True) for item in dependencies],
+        live_capture=snapshot.source.live_capture,
+        live_references=snapshot.live_references,
     )
     return result

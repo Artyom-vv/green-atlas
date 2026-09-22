@@ -26,6 +26,7 @@ const project = (version: number): Project => ({
   geometry_version: 1,
   map_ready: false,
   source_file: {
+    accept_partial_geometry: false,
     name: 'site.dxf',
     size: 10,
     imported_at: '2026-09-14T10:00:00Z',

@@ -428,6 +428,13 @@ class PositionChecker:
             for _, (feature, _) in group.index.within_distance(center, radius + group.axis_radius_m)
         ]
         if not uncertain_sources:
+            if self.project.geometry and self.project.geometry.calculation_scope == "available_data":
+                return PositionAdvisory(
+                    code="SOURCE_GEOMETRY_PARTIAL",
+                    title="Проверено по доступным данным",
+                    description="Известные ограничения учтены. В исходном комплекте есть пропуски, поэтому полная безопасность посадки не подтверждена.",
+                    suggested_action="Проверьте замечания к исходным данным",
+                )
             return None
         labels = sorted({str(feature.get("properties", {}).get("source_layer", "")) for feature in uncertain_sources})
         source_layer = ", ".join(labels) or None

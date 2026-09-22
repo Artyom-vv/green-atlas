@@ -1,0 +1,187 @@
+{
+  "schema": "green-atlas.orthophoto-surface-trace.v1",
+  "scene_id": "kustanayskaya-supermarket-entry-v1",
+  "source": {
+    "orthophoto_manifest": ".runtime/nspd-ortho2000-kustanayskaya-20260920/manifest.json",
+    "orthophoto_sha256": "a90643b617a96587a8a3ed3cb4f5c845402dea39e6841a18868293f66ed14eae",
+    "world": ".runtime/map-first-world-20260920/world.json",
+    "world_sha256": "a5cfc643bcadd1a64a06f35186422a962bd02ef04eb686b4172491f49e5486ef",
+    "kartaview_manifest": ".runtime/kartaview-kustanayskaya-20260920/evidence/manifest.json"
+  },
+  "scene_roi_pixels": [390, 340, 690, 710],
+  "features": [
+    {
+      "id": "nspd-trace:parking:supermarket-front:v1",
+      "semantic": "parking_apron",
+      "pixel_geometry": {
+        "type": "Polygon",
+        "coordinates": [[[567, 475], [595, 515], [618, 548], [610, 561], [600, 570], [582, 578], [563, 572], [548, 560], [529, 558], [515, 570], [505, 558], [507, 545], [516, 530], [532, 516], [548, 501], [567, 475]]]
+      },
+      "review": {
+        "status": "visual_trace_candidate",
+        "boundary_visibility": "mixed_visible_and_tree_shadow",
+        "horizontal_uncertainty_m": 1.5,
+        "evidence": ["NSPD orthophoto", "KartaView sequence 3838297 camera path and frames"],
+        "limitation": "Outer edge is partly obscured by parked cars, canopy shadow and grass islands; this is a reviewable trace, not survey geometry."
+      }
+    },
+    {
+      "id": "nspd-trace:sidewalk:east-north:v1",
+      "semantic": "sidewalk",
+      "pixel_geometry": {
+        "type": "Polygon",
+        "coordinates": [[[382, 349], [389, 345], [476, 460], [469, 464], [382, 349]]]
+      },
+      "review": {
+        "status": "visual_trace_candidate",
+        "boundary_visibility": "mostly_visible_with_short_canopy_occlusion",
+        "horizontal_uncertainty_m": 0.75,
+        "evidence": ["NSPD orthophoto"],
+        "limitation": "Width follows the two visible pavement edges at approximately 2.4-2.8 m; ends before the supermarket driveway, and no sidewalk is inferred across the occluded driveway."
+      }
+    },
+    {
+      "id": "nspd-trace:sidewalk:east-south:v1",
+      "semantic": "sidewalk",
+      "pixel_geometry": {
+        "type": "Polygon",
+        "coordinates": [[[545, 590], [557, 582], [646, 699], [631, 710], [545, 590]]]
+      },
+      "review": {
+        "status": "visual_trace_candidate",
+        "boundary_visibility": "mostly_visible_with_tree_shadow",
+        "horizontal_uncertainty_m": 1.0,
+        "evidence": ["NSPD orthophoto"],
+        "limitation": "Starts after the supermarket driveway; the hidden middle section remains unknown."
+      }
+    },
+    {
+      "id": "nspd-trace:sidewalk:east-entry-connector:v1",
+      "semantic": "sidewalk",
+      "pixel_geometry": {
+        "type": "Polygon",
+        "coordinates": [[[469, 464], [476, 460], [511, 508], [504, 513], [469, 464]]]
+      },
+      "review": {
+        "status": "visual_trace_candidate",
+        "boundary_visibility": "mostly_visible_with_short_canopy_shadow",
+        "horizontal_uncertainty_m": 1.0,
+        "evidence": ["NSPD orthophoto", "KartaView frames 1372828045 and 1372828449"],
+        "limitation": "The connector follows the visible continuation toward the driveway and stops before the curb transition hidden by vehicles and shadow."
+      }
+    },
+    {
+      "id": "nspd-trace:lawn:supermarket-north-verge:v1",
+      "semantic": "lawn",
+      "pixel_geometry": {
+        "type": "Polygon",
+        "coordinates": [[[388, 345], [455, 340], [500, 350], [534, 374], [543, 410], [533, 447], [512, 477], [492, 492], [476, 463], [462, 469], [388, 345]]]
+      },
+      "review": {
+        "status": "visual_trace_candidate",
+        "boundary_visibility": "mixed_visible_and_canopy_occluded",
+        "horizontal_uncertainty_m": 2.0,
+        "evidence": ["NSPD orthophoto", "KartaView frames 1372827985 through 1372828449"],
+        "limitation": "The outer lawn boundary is visible, but internal footpaths and areas under tree crowns remain separate unresolved details."
+      }
+    },
+    {
+      "id": "nspd-trace:lawn:supermarket-entry-island:v1",
+      "semantic": "lawn",
+      "pixel_geometry": {
+        "type": "Polygon",
+        "coordinates": [[[476, 463], [492, 492], [512, 477], [532, 516], [516, 530], [507, 545], [500, 552], [489, 550], [475, 530], [466, 500], [476, 463]]]
+      },
+      "review": {
+        "status": "visual_trace_candidate",
+        "boundary_visibility": "mixed_visible_and_tree_shadow",
+        "horizontal_uncertainty_m": 1.5,
+        "evidence": ["NSPD orthophoto", "KartaView frames 1372828045 and 1372828449"],
+        "limitation": "The lawn island is visible between the road-side walk and parking entry; higher-priority road, sidewalk and parking masks remove shared uncertain edges."
+      }
+    }
+  ],
+  "vegetation_candidates": [
+    {
+      "id": "nspd-tree:front-verge:01",
+      "pixel_xy": [445, 438],
+      "asset_species": "Tilia-europaea",
+      "height_m": 11.5,
+      "canopy_radius_m": 4.2,
+      "horizontal_uncertainty_m": 2.0,
+      "height_status": "appearance_proxy_from_kartaview",
+      "position_status": "canopy_center_candidate_confirmed_by_street_presence",
+      "evidence_photo_ids": ["1372827985", "1372828009", "1372828045"]
+    },
+    {
+      "id": "nspd-tree:front-verge:02",
+      "pixel_xy": [479, 431],
+      "asset_species": "Picea-abies",
+      "height_m": 9.0,
+      "canopy_radius_m": 3.2,
+      "horizontal_uncertainty_m": 2.0,
+      "height_status": "appearance_proxy_from_kartaview",
+      "position_status": "canopy_center_candidate_confirmed_by_street_presence",
+      "evidence_photo_ids": ["1372827985", "1372828449"]
+    },
+    {
+      "id": "nspd-tree:front-verge:03",
+      "pixel_xy": [514, 421],
+      "asset_species": "Betula-pendula",
+      "height_m": 10.5,
+      "canopy_radius_m": 3.8,
+      "horizontal_uncertainty_m": 2.0,
+      "height_status": "appearance_proxy_from_kartaview",
+      "position_status": "canopy_center_candidate_confirmed_by_street_presence",
+      "evidence_photo_ids": ["1372828009", "1372828045", "1372828449"]
+    },
+    {
+      "id": "nspd-tree:front-verge:04",
+      "pixel_xy": [520, 390],
+      "asset_species": "Tilia-europaea",
+      "asset_species_status": "visual_form_proxy_not_botanical_identification",
+      "height_m": 12.5,
+      "canopy_radius_m": 4.6,
+      "horizontal_uncertainty_m": 2.0,
+      "height_status": "appearance_proxy_from_kartaview",
+      "position_status": "canopy_center_candidate_confirmed_by_street_presence",
+      "evidence_photo_ids": ["1372827985", "1372828009", "1372828045"]
+    },
+    {
+      "id": "nspd-tree:front-verge:05",
+      "pixel_xy": [540, 420],
+      "asset_species": "Acer-pseudoplatanus",
+      "asset_species_status": "visual_form_proxy_not_botanical_identification",
+      "height_m": 10.8,
+      "canopy_radius_m": 4.0,
+      "horizontal_uncertainty_m": 2.0,
+      "height_status": "appearance_proxy_from_kartaview",
+      "position_status": "canopy_center_candidate_confirmed_by_street_presence",
+      "evidence_photo_ids": ["1372828009", "1372828045", "1372828449"]
+    }
+  ],
+  "referenced_world_features": [
+    {
+      "id": "overture:segment:8251fb62-04c7-4f29-b380-183d292775be:0",
+      "semantic": "road",
+      "admission": "independent_satellite_width_corroborated"
+    },
+    {
+      "id": "overture:building:62a4274b-4f85-4bc9-859f-3225c9c13f48:0",
+      "semantic": "building",
+      "admission": "independently_corroborated_footprint_with_bounded_height_proxy"
+    }
+  ],
+  "camera_support": {
+    "parking_apron": {
+      "outside_sequence_indices": [0, 7, 13],
+      "inside_sequence_indices": [20, 26, 33, 40, 46, 53],
+      "evidence": "Frames 0-13 show the vehicle on Kustanayskaya; frame 20 enters the supermarket apron and frames 26-53 remain on it."
+    }
+  },
+  "admission": {
+    "status": "candidate_pending_overlay_review",
+    "allowed_use": "surface boundary diagnostic and deterministic scene prototype",
+    "forbidden_use": ["survey export", "automatic replacement of project geometry", "curb elevation inference"]
+  }
+}

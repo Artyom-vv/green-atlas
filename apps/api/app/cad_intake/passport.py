@@ -35,9 +35,10 @@ def make_passport(
                 normalized_sha256=hashes.get(item.path),
                 inspection=inspection,
                 status=item.status,
-                message="Чертёж не прочитан; подробности сохранены в серверном журнале"
-                if item.message
-                else None,
+                message={
+                    "NATIVE_SNAPSHOT_MISSING": "Нет снимка AutoCAD. Добавьте рядом с DXF файл .green-atlas.snapshot.json.",
+                    "NATIVE_SNAPSHOT_INVALID": "Снимок AutoCAD не прошёл проверку. Создайте его заново для этого DXF.",
+                }.get(item.message, "Чертёж не прочитан; подробности сохранены в серверном журнале") if item.message else None,
             )
         )
     return CadPackagePassport(

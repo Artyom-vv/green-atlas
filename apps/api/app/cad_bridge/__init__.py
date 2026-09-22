@@ -2,7 +2,15 @@
 
 from .compiler import CadSnapshotAdmissionError, compile_region_probe
 from .contracts import CadSnapshot, CadSnapshotProvenance
-from .provider import CadSnapshotProviderError, verify_cad_snapshot_integrity
+
+
+def __getattr__(name: str):
+    # Source contracts import this package; the provider in turn consumes
+    # those contracts. Load runtime services only when explicitly requested.
+    if name in {"CadSnapshotProviderError", "verify_cad_snapshot_integrity"}:
+        from . import provider
+        return getattr(provider, name)
+    raise AttributeError(name)
 
 __all__ = [
     "CadSnapshot",

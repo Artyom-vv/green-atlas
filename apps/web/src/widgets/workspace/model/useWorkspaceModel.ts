@@ -65,7 +65,7 @@ import {
 } from '@/features/workspace/zoneSelection';
 import { useLatestPreview } from '@/shared/async/useLatestPreview';
 import { featureAvailability } from '@/shared/config/featureAvailability';
-import { paddedMapExtent } from '@/shared/geometry/mapExtent';
+import { initialWorkspaceExtent } from './initialWorkspaceExtent';
 import { useViewportGeometry } from '@/widgets/map/api/useViewportGeometry';
 import {
   type MapAreaTarget,
@@ -562,12 +562,12 @@ export function useWorkspaceModel(projectId: string) {
 
   const initialExtent = useMemo(
     () =>
-      paddedMapExtent(
+      initialWorkspaceExtent(
         project?.source_file?.bounds,
-        20,
-        sourcePreview ? 0.3 : 0,
+        layers,
+        Boolean(sourcePreview),
       ),
-    [project?.source_file?.bounds, sourcePreview],
+    [project?.source_file?.bounds, layers, sourcePreview],
   );
   const activeLayer = useMemo(
     () => layers.find((layer) => layer.id === activeLayerId),
@@ -1361,8 +1361,7 @@ export function useWorkspaceModel(projectId: string) {
           ),
       )
       .sort((a, b) => b.submittedAt - a.submittedAt)[0]?.error ??
-    mapGeometryQuery.error ??
-    cad.error;
+    mapGeometryQuery.error;
   const showMapStatus = Boolean(
     (placementCheck && (tool === 'add_tree' || tool === 'add_shrub')) ||
     (moveLiveCheck && (tool === 'move' || tool === 'select')) ||
@@ -1458,6 +1457,7 @@ export function useWorkspaceModel(projectId: string) {
     mapGeometryQuery,
     mapGeometryDelivery,
     cadSource: cad.source,
+    cadDisplayWarning: cad.displayWarning,
     onCadRenderState: cad.onRenderState,
     mapInfoTarget,
     mapInspectTarget,

@@ -55,6 +55,12 @@ def _header_values(content: bytes | bytearray) -> dict[str, str]:
     }
 
 
+def declared_dxf_version(content: bytes | bytearray) -> str | None:
+    """Read the file format tag, never infer it from the AutoCAD product year."""
+    version = _header_values(content).get("ACADVER", "").upper()
+    return version if re.fullmatch(r"AC\d{4}", version) else None
+
+
 def _is_utf8_dxf(version: str | None) -> bool:
     if not version:
         return False

@@ -2,6 +2,9 @@ import { api } from '@green/api-client';
 
 // Bind only this scenario's ports; transport and wire contracts remain in the client.
 export const preparationApi = {
+  acceptPartialGeometry: (
+    ...args: Parameters<typeof api.acceptPartialGeometry>
+  ) => api.acceptPartialGeometry(...args),
   openSourceEditor: (projectId: string) => api.openSourceEditor(projectId),
   getProject: (...args: Parameters<typeof api.getProject>) =>
     api.getProject(...args),

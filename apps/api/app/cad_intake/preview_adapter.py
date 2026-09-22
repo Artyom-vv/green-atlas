@@ -1,5 +1,4 @@
 import os
-import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -11,6 +10,7 @@ from app.cad_intake.preview_contracts import CadPreviewRequest
 from app.cad_intake.preview_work import PreviewWork
 from app.operations.adapters import SqliteOperationRepository
 from app.operations.progress import WorkProgress
+from app.shared.python_worker import worker_command
 
 MAX_PREVIEW_RECEIPT_BYTES = 64 * 1024
 
@@ -60,7 +60,7 @@ class ProcessCadPreviewPreparation:
         )
         task.write_text(work.model_dump_json(), encoding="utf-8")
         result = run_converter(
-            [sys.executable, "-m", "app.cad_intake.preview_worker", str(task)],
+            worker_command("app.cad_intake.preview_worker", str(task)),
             receipt,
             directory / "preview-worker.log",
             replace(self.config.policy, max_output_bytes=MAX_PREVIEW_RECEIPT_BYTES),

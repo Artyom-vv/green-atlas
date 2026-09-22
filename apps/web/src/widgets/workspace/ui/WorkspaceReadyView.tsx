@@ -38,6 +38,7 @@ import {
   WorkspaceDialogsPropsFor,
 } from './dialogs/WorkspaceDialogs';
 import { workspaceResults, workspaceResultsPropsFor } from './workspaceResults';
+import { partialGeometryAccepted } from '@/entities/source-data/model/partialGeometryAccepted';
 
 interface WorkspaceReadyViewProps {
   model: WorkspaceReadyModel;
@@ -53,9 +54,12 @@ export const WorkspaceReadyView: FC<WorkspaceReadyViewProps> = ({ model }) => {
         header={
           <div>
             <WorkspaceHeader {...WorkspaceHeaderPropsFor(model)} />
-            {model.project.source_review && (
+            {(model.project.source_review || model.cadDisplayWarning ||
+              partialGeometryAccepted(model.project)) && (
               <SourceReviewNotice
-                incompleteGeometry={model.project.source_review.issues?.some(
+                calculationPending={Boolean(model.project.source_review)}
+                displayWarning={model.cadDisplayWarning}
+                incompleteGeometry={partialGeometryAccepted(model.project) || model.project.source_review?.issues?.some(
                   (issue) => issue.code === 'incomplete_layer',
                 )}
                 onReview={() =>

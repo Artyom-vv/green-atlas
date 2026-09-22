@@ -22,6 +22,18 @@ afterEach(() => {
 });
 
 describe('operation error read recovery', () => {
+  it('offers preparation without retrying a failed operation or accepting layers', () => {
+    vi.mocked(projectConflict.isProjectConflict).mockReturnValue(false);
+    const onPrepare = vi.fn();
+    const onClose = vi.fn();
+    const onReload = vi.fn();
+    render(<OperationErrorDialog open error={new Error('Требуется расчёт')}
+      onPrepare={onPrepare} onClose={onClose} onReload={onReload} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Подготовить расчёт' }));
+    expect(onPrepare).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onReload).not.toHaveBeenCalled();
+  });
   it('keeps the original dialog open when asynchronous project reload fails', async () => {
     const onReload = vi.fn().mockRejectedValue(new Error('Нет соединения'));
     const onClose = vi.fn();

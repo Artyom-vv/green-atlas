@@ -8,6 +8,7 @@ from app.dxf_import.contracts import ImportMode, SourceFile
 from app.dxf_import.encoding import (
     DXF_HEADER_PROBE_BYTES,
     DeclaredDxfEncoding,
+    declared_dxf_version,
     declared_text_encoding,
     validate_text_encoding,
 )
@@ -47,7 +48,18 @@ def _native_source(project: Project) -> SourceFile:
 
 
 def _encoding(content: bytes, source: SourceFile) -> DeclaredDxfEncoding:
-    encoding = declared_text_encoding(content, expected_version=source.dxf_version)
+    expected_version = source.dxf_version
+    provenance = source.cad_snapshot_provenance
+    # Bridge <=0.1.28 stored the application version in the file-format field.
+    # Read compatibility only: retain source SHA/size/download verification and
+    # do not weaken real ACxxxx mismatch detection or rewrite user projects.
+    if (
+        provenance is not None
+        and provenance.source_sha256 == source.content_sha256
+        and expected_version == f"AutoCAD {provenance.autocad_version}"
+    ):
+        expected_version = declared_dxf_version(content) or expected_version
+    encoding = declared_text_encoding(content, expected_version=expected_version)
     if encoding is None:
         raise NativeDxfAssetUnavailable()
     return encoding
@@ -105,6 +117,8 @@ class NativeDxfSourceApplication:
         self, project_id: str, expected_source_sha256: str | None = None
     ) -> NativeSourceDownload:
         project = self.repository.get(project_id, lightweight=True)
+        if project.import_status.mode == ImportMode.AUTOCAD_LIVE:
+            raise NativeDxfAssetUnavailable()
         source = project.source_file
         if expected_source_sha256 is not None:
             source = _native_source(project)

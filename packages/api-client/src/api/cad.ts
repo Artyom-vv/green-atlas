@@ -1,4 +1,7 @@
 import type {
+  CadTransferReview,
+  CadTransferDecision,
+  CadTransferStatus,
   CadDirectory,
   CadFingerprint,
   CadIntakeRequest,
@@ -20,6 +23,16 @@ const assetPath = (projectId: string, operationId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/operations/${encodeURIComponent(operationId)}/cad-asset`;
 
 export const cadApi = {
+  getCadTransferReview: (id: string, signal?: AbortSignal) =>
+    request<CadTransferReview>(
+      `/api/cad-bridge/approvals/${encodeURIComponent(id)}`,
+      { signal },
+    ),
+  decideCadTransfer: (id: string, decision: CadTransferDecision) =>
+    request<CadTransferStatus>(
+      `/api/cad-bridge/approvals/${encodeURIComponent(id)}`,
+      json(decision),
+    ),
   uploadCadPackage: (files: File[]) => {
     const body = new FormData();
     files.forEach((file) => body.append('files', file));

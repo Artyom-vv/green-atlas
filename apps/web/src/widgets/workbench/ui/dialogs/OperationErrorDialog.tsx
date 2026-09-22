@@ -9,6 +9,7 @@ export interface OperationErrorDialogProps {
   error: unknown;
   onClose: () => void;
   onReload: () => Promise<void>;
+  onPrepare?: () => void;
 }
 
 export const OperationErrorDialog: FC<OperationErrorDialogProps> = ({
@@ -16,6 +17,7 @@ export const OperationErrorDialog: FC<OperationErrorDialogProps> = ({
   error,
   onClose,
   onReload,
+  onPrepare,
 }) => {
   const [reloading, setReloading] = useState(false);
   const [recoveryError, setRecoveryError] = useState<unknown>();
@@ -67,6 +69,11 @@ export const OperationErrorDialog: FC<OperationErrorDialogProps> = ({
           <Button variant="primary" onClick={close}>
             Вернуться к работе
           </Button>
+          {onPrepare && !isProjectConflict(error) && (
+            <Button variant="primary" onClick={() => { close(); onPrepare(); }}>
+              Подготовить расчёт
+            </Button>
+          )}
         </FormActions>
       }
     >

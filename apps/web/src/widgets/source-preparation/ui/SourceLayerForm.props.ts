@@ -4,6 +4,8 @@ export interface SourceLayerFormProps extends Pick<
   | 'sourceWarnings'
   | 'unconfirmedMappings'
   | 'incompleteConstraintLayers'
+  | 'partialAccepted'
+  | 'acceptPartialGeometry'
   | 'hasPlanningBoundary'
   | 'reviewOnly'
   | 'preparationBlocked'
@@ -21,6 +23,8 @@ export const SourceLayerFormPropsFor = (
     | 'sourceWarnings'
     | 'unconfirmedMappings'
     | 'incompleteConstraintLayers'
+    | 'partialAccepted'
+    | 'acceptPartialGeometry'
     | 'hasPlanningBoundary'
     | 'reviewOnly'
     | 'preparationBlocked'
@@ -36,6 +40,8 @@ export const SourceLayerFormPropsFor = (
   sourceWarnings: state.sourceWarnings,
   unconfirmedMappings: state.unconfirmedMappings,
   incompleteConstraintLayers: state.incompleteConstraintLayers,
+  partialAccepted: state.partialAccepted,
+  acceptPartialGeometry: state.acceptPartialGeometry,
   hasPlanningBoundary: state.hasPlanningBoundary,
   reviewOnly: state.reviewOnly,
   preparationBlocked: state.preparationBlocked,

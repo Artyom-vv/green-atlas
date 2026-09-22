@@ -70,6 +70,8 @@ export interface WorkspaceDialogsProps
     Pick<
       WorkspaceReadyModel,
       | 'operationError'
+      | 'leaveWorkspace'
+      | 'project'
       | 'dismissedOperationError'
       | 'reviewOpen'
       | 'deleteSelectionOpen'
@@ -96,6 +98,8 @@ export const WorkspaceDialogsPropsFor = (
   ...WorkspaceZoneManagerDialogPropsFor(model),
   ...WorkspaceZoneReviewDialogPropsFor(model),
   operationError: model.operationError,
+  leaveWorkspace: model.leaveWorkspace,
+  project: model.project,
   dismissedOperationError: model.dismissedOperationError,
   reviewOpen: model.reviewOpen,
   deleteSelectionOpen: model.deleteSelectionOpen,
@@ -149,6 +153,9 @@ export const WorkspaceDialogs: FC<WorkspaceDialogsProps> = (model) => {
         error={operationError}
         onClose={() => setDismissedOperationError(operationError)}
         onReload={reloadAfterConflict}
+        onPrepare={model.project.source_review
+          ? () => model.leaveWorkspace(`/projects/${model.project.id}/setup`)
+          : undefined}
       />
       <WorkspaceReleaseDialog {...WorkspaceReleaseDialogPropsFor(model)} />
       <LeaveWorkspaceDialog

@@ -45,6 +45,9 @@ export function useWorkspaceCadSource(project?: Project) {
     onRenderState,
     pending: eligible && !query.error && !failed && state?.status !== 'ready',
     error: eligible ? query.error : undefined,
+    displayWarning: eligible && (query.error || failed)
+      ? 'Полная подложка недоступна. Показана извлечённая геометрия.'
+      : undefined,
     // CAD owns display. Editable projects still need exact vector interaction data.
     vectorGeometryEnabled:
       native || !eligible || Boolean(query.error) || failed,

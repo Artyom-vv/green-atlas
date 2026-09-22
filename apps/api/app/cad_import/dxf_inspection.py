@@ -1,7 +1,6 @@
 """Read native DXF with the existing isolated ezdxf inspection and cache."""
 
 import os
-import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +9,7 @@ from app.cad_import.cache import file_sha256
 from app.cad_import.contracts import CadConversionError, DrawingInspection
 from app.cad_import.policy import ConversionPolicy
 from app.cad_import.process import run_converter
+from app.shared.python_worker import worker_command
 
 INSPECTION_REVISION = "drawing-inspection-v2"
 MAX_INSPECTION_BYTES = 16 * 1024 * 1024
@@ -52,13 +52,7 @@ class DxfInspector:
             work / "inspection.log",
         )
         run = run_converter(
-            [
-                sys.executable,
-                "-m",
-                "app.cad_import.inspection",
-                str(output),
-                str(summary),
-            ],
+            worker_command("app.cad_import.inspection", str(output), str(summary)),
             summary,
             log,
             replace(self.policy, max_output_bytes=MAX_INSPECTION_BYTES),

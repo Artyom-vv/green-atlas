@@ -73,6 +73,15 @@ export const projectsApi = {
       ...json({ mappings }),
       method: 'PUT',
     }),
+  acceptPartialGeometry: (
+    projectId: string,
+    sourceSha256: string,
+    options?: ProjectWriteOptions,
+  ) =>
+    request<Project>(
+      `/api/projects/${projectId}/source-partial-geometry/accept`,
+      withProjectWriteOptions(json({ source_sha256: sourceSha256 }), options),
+    ),
   savePlantingZones: (
     projectId: string,
     zones: PlantingZoneAssignment[],
@@ -111,7 +120,7 @@ export const projectsApi = {
   ) =>
     request<ProjectOperation | null>(
       `/api/projects/${projectId}/operations/latest?kind=${encodeURIComponent(kind)}`,
-      { signal },
+      { signal, cache: 'no-store' },
     ),
   cancelOperation: (projectId: string, operationId: string) =>
     request<ProjectOperation>(

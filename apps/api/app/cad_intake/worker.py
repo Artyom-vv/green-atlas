@@ -61,6 +61,7 @@ class SnapshotInventory:
     dependencies: tuple[CadSnapshotDependency, ...]
     summary: SnapshotSummary
     inspection: DrawingInspection
+    missing_references: tuple[tuple[str, str], ...] = ()
 
 
 _CAD_GEOMETRY = TypeAdapter(CadGeometry)
@@ -178,6 +179,7 @@ def _read_snapshot(path: Path, scratch_root: Path) -> SnapshotInventory:
     status_counts: Counter[str] = Counter()
     layers: set[str] = set()
     referenced_dependencies: set[str] = set()
+    missing_references: dict[str, str] = {}
 
     with TemporaryDirectory(prefix="snapshot-ledger-", dir=scratch_root) as temporary:
         ledger = _open_ledger(Path(temporary) / "coverage.sqlite3")
@@ -216,6 +218,11 @@ def _read_snapshot(path: Path, scratch_root: Path) -> SnapshotInventory:
                 ] += 1
                 layers.add(record.layer)
                 referenced_dependencies.update(record.dependency_ids or [])
+                if record.unresolved_reference is not None:
+                    reference = record.unresolved_reference
+                    previous = missing_references.setdefault(reference.block_name, reference.stored_path)
+                    if previous != reference.stored_path:
+                        raise ValueError("AutoCAD snapshot содержит неоднозначную отсутствующую ссылку")
             payload.end_array()
 
             raw_dependencies = _single_item(path, "dependencies", required=False)
@@ -318,17 +325,22 @@ def _read_snapshot(path: Path, scratch_root: Path) -> SnapshotInventory:
         if dependency.block_name in xrefs:
             raise ValueError("AutoCAD snapshot содержит неоднозначное имя XREF-блока")
         xrefs[dependency.block_name] = dependency.path
+    if set(xrefs) & set(missing_references):
+        raise ValueError("Один XREF одновременно найден и отсутствует")
+    xrefs.update(missing_references)
     return SnapshotInventory(
         source=source,
         extraction=extraction,
         dependencies=dependencies,
         summary=summary,
+        missing_references=tuple(missing_references.items()),
         inspection=DrawingInspection(
             dxf_version=f"AutoCAD {extraction.autocad_version}",
             units=source.units_code,
             modelspace_entities=dict(sorted(entity_counts.items())),
             layer_names=sorted(layers),
             xrefs=xrefs,
+            native_unresolved=summary.unresolved,
         ),
     )
 
@@ -372,11 +384,23 @@ def execute(work: InspectionWork) -> None:
         digest = file_sha256(source)
         if digest != expected_sha256:
             raise ValueError("Исходный DXF изменился после выбора")
-        sidecar = _inside(root, adjacent_cad_snapshot_path(relative))
-        snapshot = _read_snapshot(sidecar, work.cache)
-        if snapshot.source.sha256 != digest:
-            raise ValueError("AutoCAD snapshot принадлежит другому DXF")
         sources[relative] = source
+        try:
+            sidecar = _inside(root, adjacent_cad_snapshot_path(relative))
+            snapshot = _read_snapshot(sidecar, work.cache)
+            if snapshot.source.sha256 != digest:
+                raise ValueError("AutoCAD snapshot принадлежит другому DXF")
+        except (OSError, ValueError) as error:
+            # A bad native sidecar does not erase successful sibling drawings.
+            # Keep diagnostics local; public passport supplies a safe message.
+            drawings.append(PackageDrawing(
+                path=relative, source_sha256=digest, source_bytes=source.stat().st_size,
+                status="rejected", message=(
+                    "NATIVE_SNAPSHOT_MISSING" if isinstance(error, FileNotFoundError)
+                    else "NATIVE_SNAPSHOT_INVALID"
+                ),
+            ))
+            continue
         snapshots[relative] = snapshot
         snapshot_paths[relative] = sidecar
         drawings.append(
@@ -394,6 +418,11 @@ def execute(work: InspectionWork) -> None:
     references: list[PackageReference] = []
     seen_references: set[tuple[str, str]] = set()
     for owner, snapshot in snapshots.items():
+        for block, stored_path in snapshot.missing_references:
+            references.append(PackageReference(
+                owner=owner, block=block, requested_path=stored_path,
+                status="missing", resolution_reason="autocad_unresolved_reference",
+            ))
         for dependency in snapshot.dependencies:
             target = relative_path(dependency.path)
             expected = selected_hashes.get(target)
@@ -428,7 +457,7 @@ def execute(work: InspectionWork) -> None:
     for relative, expected_sha256 in selected:
         if file_sha256(sources[relative]) != expected_sha256:
             raise ValueError("Исходный DXF изменился во время проверки")
-        if not snapshot_paths[relative].is_file():
+        if relative in snapshot_paths and not snapshot_paths[relative].is_file():
             raise ValueError("AutoCAD snapshot исчез во время проверки")
 
     write_package(

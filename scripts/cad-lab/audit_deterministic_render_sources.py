@@ -6,6 +6,7 @@ Every polygon keeps its DXF file hash, entity handle, and source layer.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
@@ -39,8 +40,8 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def find_source(name: str) -> Path:
-    matches = list(DXF_ROOT.rglob(name))
+def find_source(name: str, source_root: Path = DXF_ROOT) -> Path:
+    matches = list(source_root.rglob(name))
     if len(matches) != 1:
         raise RuntimeError(f"Expected one {name}, found {len(matches)}")
     return matches[0]
@@ -82,7 +83,7 @@ def work_boundary(document) -> Polygon:
     return max(candidates)[2]
 
 
-def render_preview(unions, roi, output: Path):
+def render_preview(unions, roi, output: Path, scope_name: str):
     width, height, margin = 1500, 1120, 80
     x0, y0, x1, y1 = roi.bounds
     scale = min((width - 2 * margin) / (x1 - x0), (height - 2 * margin) / (y1 - y0))
@@ -102,7 +103,7 @@ def render_preview(unions, roi, output: Path):
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
         '<g font-family="Arial, sans-serif">',
-        '<text x="80" y="30" font-size="22" font-weight="bold" fill="#172421">Кустанайская · точные проектные HATCH в контрольном окне 53 × 43 м</text>',
+        f'<text x="80" y="30" font-size="22" font-weight="bold" fill="#172421">Кустанайская · точные проектные HATCH · {scope_name}</text>',
         '<text x="80" y="56" font-size="16" fill="#485651">Белое = неизвестно. Никакого фонового заполнения и нейрогенерации.</text>',
     ]
 
@@ -132,15 +133,25 @@ def render_preview(unions, roi, output: Path):
 
 
 def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    project_path = find_source("03_10004141_Проектные решения.dxf")
-    topo_path = find_source("00.1_10004141_Топография.dxf")
-    boundary_path = find_source("01_10004141_Границы работ.dxf")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--roi", type=float, nargs=4, metavar=("X_MIN", "Y_MIN", "X_MAX", "Y_MAX"), default=ROI)
+    parser.add_argument("--output", type=Path, default=OUT)
+    parser.add_argument("--scope-name", default="kustanayskaya-control-53x43m")
+    parser.add_argument("--source-root", type=Path, default=DXF_ROOT)
+    args = parser.parse_args()
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    project_path = find_source("03_10004141_Проектные решения.dxf", args.source_root)
+    topo_path = find_source("00.1_10004141_Топография.dxf", args.source_root)
+    boundary_path = find_source("01_10004141_Границы работ.dxf", args.source_root)
     project = ezdxf.readfile(project_path)
     topo = ezdxf.readfile(topo_path)
     boundary_doc = ezdxf.readfile(boundary_path)
     main_boundary = work_boundary(boundary_doc)
-    roi = box(*ROI)
+    roi_bounds = tuple(args.roi)
+    if not (roi_bounds[0] < roi_bounds[2] and roi_bounds[1] < roi_bounds[3]):
+        raise ValueError(f"Invalid ROI: {roi_bounds}")
+    roi = box(*roi_bounds)
 
     features = []
     rejected = []
@@ -184,13 +195,13 @@ def main() -> None:
 
     geojson = {
         "type": "FeatureCollection",
-        "bbox": list(ROI),
+        "bbox": list(roi_bounds),
         "features": features,
     }
-    (OUT / "authored-surfaces.geojson").write_text(json.dumps(geojson, ensure_ascii=False, indent=2))
+    (output / "authored-surfaces.geojson").write_text(json.dumps(geojson, ensure_ascii=False, indent=2))
     contract = {
         "schema": "green-atlas.render-source-contract.v1",
-        "scope": {"name": "kustanayskaya-control-53x43m", "bbox_local_m": list(ROI), "area_m2": roi.area},
+        "scope": {"name": args.scope_name, "bbox_local_m": list(roi_bounds), "area_m2": roi.area},
         "source_files": [
             {"role": "topography", "path": str(topo_path), "sha256": sha256(topo_path), "insunits": topo.header.get("$INSUNITS"), "has_geodata": has_geodata(topo)},
             {"role": "project_surfaces", "path": str(project_path), "sha256": sha256(project_path), "insunits": project.header.get("$INSUNITS"), "has_geodata": has_geodata(project)},
@@ -233,15 +244,15 @@ def main() -> None:
             "generative_additions_allowed": False,
         },
     }
-    (OUT / "source-contract.json").write_text(json.dumps(contract, ensure_ascii=False, indent=2))
-    render_preview(unions, roi, OUT / "authored-surfaces.svg")
+    (output / "source-contract.json").write_text(json.dumps(contract, ensure_ascii=False, indent=2))
+    render_preview(unions, roi, output / "authored-surfaces.svg", args.scope_name)
     print(json.dumps({
         "features": len(features),
         "classes": contract["surface_counts"],
         "covered_ratio": contract["covered_ratio"],
         "unknown_area_m2": contract["unknown_area_m2"],
         "overlaps": overlaps,
-        "output": str(OUT),
+        "output": str(output),
     }, ensure_ascii=False, indent=2))
 
 

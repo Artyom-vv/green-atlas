@@ -35,8 +35,8 @@ export function CadPassport({
         {historical
           ? 'Паспорт относится к предыдущей версии проекта. Повторите проверку комплекта.'
           : passport.status === 'blocked'
-            ? 'В комплекте есть нерешённые проблемы. Расчёт пока недоступен.'
-            : 'Состав комплекта проверен. Для расчёта ещё нужны рабочая граница, назначение слоёв и проверка полноты данных.'}
+            ? 'Есть замечания к комплекту. Решения можно выбрать в мастере открытия.'
+            : 'Состав проверен. Назначение слоёв можно сверить после открытия.'}
       </InlineMessage>
       {!!passport.blockers.length && (
         <Disclosure title={`Проблемы (${passport.blockers.length})`}>
@@ -79,7 +79,7 @@ export function CadPassport({
                 <Text variant="caption">
                   {referenceLabels[reference.status]}
                   {reference.resolution === 'explicit_override' &&
-                    ' · Назначена явно'}
+                    ' — Назначена явно'}
                 </Text>
                 <Text variant="caption" className="break-words">
                   Из {reference.owner}

@@ -37,6 +37,7 @@ from app.cad_intake.worker import SnapshotInventory, _read_snapshot
 from app.dxf_import.assembly import assemble_imported_project
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.editor_source import open_source_editor
+from app.dxf_import.encoding import declared_dxf_version
 from app.operations.adapters import SqliteOperationRepository
 from app.operations.contracts import OperationKind, OperationStatus
 from app.operations.lifecycle import OperationLifecycle
@@ -47,7 +48,8 @@ from app.shared.identity import random_id, utc_now
 
 
 def _expected_xref_dependencies(
-    passport: CadPackagePassport, root_entry: str
+    passport: CadPackagePassport, root_entry: str,
+    skipped: set[tuple[str, str]] | None = None,
 ) -> dict[str, str]:
     drawing_hashes = {
         item.path: item.source_sha256
@@ -68,6 +70,8 @@ def _expected_xref_dependencies(
         references = references_by_owner.get(owner, [])
         for reference in references:
             if reference.status != "resolved" or reference.target is None:
+                if (reference.owner, reference.block) in (skipped or set()):
+                    continue
                 raise ValueError("DXF-комплект содержит неразрешённый XREF")
             digest = reference.expected_sha256 or drawing_hashes.get(reference.target)
             if digest is None:
@@ -131,7 +135,8 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
         None,
         PREPARE_POLICY,
     )
-    entries = passport.entries or [passport.entry]
+    entries = [path for path in (passport.entries or [passport.entry])
+               if path not in request.opening_review.skipped_drawings]
     selections = _snapshot_selections(passport, request)
     lifecycle.report(
         operation.id,
@@ -155,12 +160,17 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
         if source.drawing.source_sha256 is None:
             raise ValueError("В паспорте не зафиксирован SHA-256 исходного DXF")
         content, digest = _read_source_bytes(source.asset, source.drawing.source_sha256)
-        expected_dependencies = _expected_xref_dependencies(passport, drawing_path)
+        expected_dependencies = _expected_xref_dependencies(
+            passport, drawing_path,
+            {(item.owner, item.block) for item in request.opening_review.skipped_references},
+        )
         selection = selections.get(drawing_path)
         if selection is None:
             raise ValueError("Для каждого DXF нужен проверенный AutoCAD snapshot")
         snapshot_source = resolve_cad_snapshot(canonical_root, selection)
         snapshot = _read_snapshot(snapshot_source.path, work.storage / "cache")
+        if snapshot.summary.unresolved and not request.opening_review.accept_partial_geometry:
+            raise ValueError("В геометрии AutoCAD есть пропуски. Подтвердите открытие доступной части в мастере.")
         verified_dependencies = verify_cad_snapshot_dependency_records(
             canonical_root, snapshot.dependencies
         )
@@ -168,6 +178,7 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
             raise ValueError("CAD snapshot не покрывает точный набор XREF из паспорта")
         imported_drawing = build_dxf_import_from_snapshot_path(
             snapshot_source.path,
+            dxf_version=declared_dxf_version(content) or "unknown",
             source=snapshot.source,
             extraction=snapshot.extraction,
             dependencies=snapshot.dependencies,
@@ -229,6 +240,7 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
         profile_version=request.profile_version,
         entry=passport.entry,
         source_sha256=digest,
+        opening_review=request.opening_review.model_copy(deep=True),
         drawings=[
             PreparedDrawingProvenance(
                 path=path,
@@ -239,6 +251,12 @@ def _execute(work: CadWork, lifecycle: OperationLifecycle) -> None:
             for path in entries
         ],
     )
+    for reference in request.opening_review.skipped_references:
+        project.source_file.warnings.append(f"Открыто без внешней ссылки: {reference.block} ({reference.owner}).")
+    for path in request.opening_review.skipped_drawings:
+        project.source_file.warnings.append(f"По решению пользователя не загружен файл: {path}.")
+    if any(snapshot.summary.unresolved for snapshot in snapshots.values()):
+        project.source_file.warnings.append("Открыта доступная геометрия AutoCAD. Часть объектов не обработана; расчёт по доступным данным неполон.")
     project = open_source_editor(project)
     assert project.geometry is not None
     result = CadPrepareResult(

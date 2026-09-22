@@ -55,6 +55,8 @@ class CadPrepareApplication:
                 item.drawing_path: item for item in request.additional_snapshots
             }
             for drawing_path in entries:
+                if drawing_path in request.opening_review.skipped_drawings:
+                    continue
                 if drawing_path == passport.entry or drawing_path in selected:
                     continue
                 discovered = discover_adjacent_cad_snapshot(

@@ -1,5 +1,4 @@
 import os
-import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -13,6 +12,7 @@ from app.cad_intake.contracts import CadIntakeRequest, CadPackagePassport
 from app.cad_intake.passport import make_passport
 from app.cad_intake.worker import InspectionWork
 from app.operations.progress import WorkProgress
+from app.shared.python_worker import worker_command
 
 
 class ProcessPackageInspection:
@@ -38,7 +38,7 @@ class ProcessPackageInspection:
         request: CadIntakeRequest,
         check_cancelled: Callable[[], None],
     ) -> CadPackagePassport:
-        self.config.require_enabled()
+        self.config.require_enabled(request.root_id)
         root = self.config.root(request.root_id)
         directory = self.config.storage / "operations" / operation_id
         directory.mkdir(parents=True, exist_ok=True)
@@ -58,7 +58,7 @@ class ProcessPackageInspection:
         environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
         environment["PYTHONUTF8"] = "1"
         result = run_converter(
-            [sys.executable, "-m", "app.cad_intake.worker", str(task)],
+            worker_command("app.cad_intake.worker", str(task)),
             output,
             directory / "worker.log",
             replace(policy, max_output_bytes=16 * 1024 * 1024),

@@ -13,10 +13,11 @@ export interface CadPreparationOptions {
   projectId?: string;
   version?: number;
   onNavigate: (path: string) => void;
+  autoOpen?: boolean;
 }
 
 export function useCadPreparation<Request>(
-  { projectId, version, onNavigate }: CadPreparationOptions,
+  { projectId, version, onNavigate, autoOpen = true }: CadPreparationOptions,
   kind: 'prepare_cad_preview' | 'prepare_cad_project',
   startOperation: (
     projectId: string,
@@ -43,15 +44,18 @@ export function useCadPreparation<Request>(
     onSuccess: async (operation) => {
       startedId.current = operation.id;
       await publish(operation);
+      // WKWebView may finish a short local operation before its interval timer
+      // is armed. Read once immediately; an active receipt keeps polling after it.
+      if (operationActive(operation)) await query.refetch();
     },
   });
   const completed = query.data?.status === 'completed' ? query.data : undefined;
   useEffect(() => {
-    if (completed?.id && completed.id === startedId.current) {
+    if (autoOpen && completed?.id && completed.id === startedId.current) {
       startedId.current = undefined;
       opening.mutate(completed);
     }
-  }, [completed, opening]);
+  }, [autoOpen, completed, opening]);
   const busy = pending > 0 || operationActive(query.data);
   return {
     operation: query.data,

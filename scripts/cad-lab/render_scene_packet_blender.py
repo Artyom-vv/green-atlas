@@ -15,6 +15,7 @@ import json
 import math
 import os
 import sys
+from array import array
 from pathlib import Path
 
 import bpy
@@ -55,9 +56,30 @@ def make_mesh_object(name: str, mesh_data: dict, collection: bpy.types.Collectio
     return obj
 
 
+def add_value_aovs(material: bpy.types.Material, semantic_id: int,
+                   roughness: float, height_confidence: float) -> None:
+    if not material.use_nodes:
+        material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    existing = {node.aov_name for node in nodes if node.type == "OUTPUT_AOV"}
+    for aov_name, value in (
+        ("Roughness", roughness),
+        ("SemanticID", float(semantic_id)),
+        ("HeightConfidence", height_confidence),
+    ):
+        if aov_name in existing:
+            continue
+        value_node = nodes.new("ShaderNodeValue")
+        value_node.outputs["Value"].default_value = value
+        aov = nodes.new("ShaderNodeOutputAOV")
+        aov.aov_name = aov_name
+        links.new(value_node.outputs["Value"], aov.inputs["Value"])
+
+
 def pbr_material(name: str, low: tuple[float, float, float], high: tuple[float, float, float],
                  roughness: float, broad_scale: float, micro_scale: float,
-                 bump_strength: float, bump_distance: float) -> bpy.types.Material:
+                 bump_strength: float, bump_distance: float, semantic_id: int) -> bpy.types.Material:
     material = bpy.data.materials.new(name)
     material.use_nodes = True
     nodes = material.node_tree.nodes
@@ -80,13 +102,68 @@ def pbr_material(name: str, low: tuple[float, float, float], high: tuple[float, 
     bump = nodes.new("ShaderNodeBump")
     bump.inputs["Strength"].default_value = bump_strength
     bump.inputs["Distance"].default_value = bump_distance
-    links.new(coordinate.outputs["Generated"], broad.inputs["Vector"])
-    links.new(coordinate.outputs["Generated"], micro.inputs["Vector"])
+    # Object coordinates keep procedural texture scale in scene metres instead
+    # of stretching one normalized 0..1 texture across every differently sized
+    # HATCH fragment.
+    links.new(coordinate.outputs["Object"], broad.inputs["Vector"])
+    links.new(coordinate.outputs["Object"], micro.inputs["Vector"])
     links.new(broad.outputs["Fac"], ramp.inputs["Fac"])
     links.new(ramp.outputs["Color"], shader.inputs["Base Color"])
     links.new(micro.outputs["Fac"], bump.inputs["Height"])
     links.new(bump.outputs["Normal"], shader.inputs["Normal"])
     links.new(shader.outputs["BSDF"], output.inputs["Surface"])
+    add_value_aovs(material, semantic_id, roughness, 0.5)
+    return material
+
+
+def texture_material(name: str, spec: dict, semantic_id: int) -> bpy.types.Material:
+    if not spec["render_enabled"]:
+        raise ValueError(f"Texture material gate failed: {spec['id']}")
+    for row in spec["maps"].values():
+        path = Path(row["path"])
+        if not path.is_file() or path.stat().st_size != row["expected_bytes"] or sha256(path) != row["expected_sha256"]:
+            raise ValueError(f"Texture hash/size gate failed: {path}")
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    nodes.clear()
+    output = nodes.new("ShaderNodeOutputMaterial")
+    shader = nodes.new("ShaderNodeBsdfPrincipled")
+    coordinate = nodes.new("ShaderNodeTexCoord")
+    mapping = nodes.new("ShaderNodeMapping")
+    scale = 1.0 / spec["tile_width_m"]
+    mapping.inputs["Scale"].default_value = (scale, scale, scale)
+    links.new(coordinate.outputs["Object"], mapping.inputs["Vector"])
+
+    textures = {}
+    for role, row in spec["maps"].items():
+        texture = nodes.new("ShaderNodeTexImage")
+        texture.image = bpy.data.images.load(row["path"], check_existing=True)
+        texture.projection = "BOX"
+        texture.projection_blend = 0.18
+        texture.extension = "REPEAT"
+        if role != "diffuse":
+            texture.image.colorspace_settings.name = "Non-Color"
+        links.new(mapping.outputs["Vector"], texture.inputs["Vector"])
+        textures[role] = texture
+
+    hue = nodes.new("ShaderNodeHueSaturation")
+    hue.inputs["Saturation"].default_value = spec["saturation"]
+    mix = nodes.new("ShaderNodeMixRGB")
+    mix.blend_type = "MIX"
+    mix.inputs[0].default_value = 0.35
+    mix.inputs[2].default_value = spec["neutral_base_linear"]
+    links.new(textures["diffuse"].outputs["Color"], hue.inputs["Color"])
+    links.new(hue.outputs["Color"], mix.inputs[1])
+    links.new(mix.outputs["Color"], shader.inputs["Base Color"])
+    links.new(textures["roughness"].outputs["Color"], shader.inputs["Roughness"])
+    normal = nodes.new("ShaderNodeNormalMap")
+    normal.inputs["Strength"].default_value = spec["normal_strength"]
+    links.new(textures["normal_gl"].outputs["Color"], normal.inputs["Color"])
+    links.new(normal.outputs["Normal"], shader.inputs["Normal"])
+    links.new(shader.outputs["BSDF"], output.inputs["Surface"])
+    add_value_aovs(material, semantic_id, spec["roughness_nominal"], 0.5)
     return material
 
 
@@ -103,6 +180,14 @@ def flat_material(name: str, color: tuple[float, float, float, float]) -> bpy.ty
     links.new(emission.outputs["Emission"], output.inputs["Surface"])
     material.diffuse_color = color
     return material
+
+
+def srgb_to_linear(channel: float) -> float:
+    return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+
+def srgb_color(channels: list[int]) -> tuple[float, float, float, float]:
+    return tuple(srgb_to_linear(channel / 255.0) for channel in channels) + (1.0,)
 
 
 def set_world_sky(scene: bpy.types.Scene, config: dict) -> None:
@@ -148,6 +233,28 @@ def save_render(scene: bpy.types.Scene, path: Path, file_format: str, color_mode
     bpy.data.images["Render Result"].save_render(filepath=str(path), scene=scene)
 
 
+def save_alpha_review(scene: bpy.types.Scene, source_path: Path, path: Path,
+                      background=(0.72, 0.76, 0.78)) -> None:
+    source = bpy.data.images.load(str(source_path), check_existing=False)
+    width, height = source.size
+    pixels = array("f", [0.0]) * (width*height*4)
+    source.pixels.foreach_get(pixels)
+    for index in range(0, len(pixels), 4):
+        alpha = pixels[index+3]
+        inverse = 1.0-alpha
+        pixels[index] = pixels[index]*alpha + background[0]*inverse
+        pixels[index+1] = pixels[index+1]*alpha + background[1]*inverse
+        pixels[index+2] = pixels[index+2]*alpha + background[2]*inverse
+        pixels[index+3] = 1.0
+    review = bpy.data.images.new("Beauty review background", width=width, height=height, alpha=True)
+    review.pixels.foreach_set(pixels)
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGBA"
+    review.save_render(filepath=str(path), scene=scene)
+    bpy.data.images.remove(review)
+    bpy.data.images.remove(source)
+
+
 def use_material(obj: bpy.types.Object, material: bpy.types.Material) -> None:
     if len(obj.data.materials):
         obj.data.materials[0] = material
@@ -155,15 +262,45 @@ def use_material(obj: bpy.types.Object, material: bpy.types.Material) -> None:
         obj.data.materials.append(material)
 
 
+def collection_objects(collection: bpy.types.Collection) -> list[bpy.types.Object]:
+    result = list(collection.objects)
+    for child in collection.children:
+        result.extend(collection_objects(child))
+    return result
+
+
+def load_collection_asset(asset: dict) -> tuple[bpy.types.Collection, list[bpy.types.Object]]:
+    path = Path(asset["installed_path"])
+    if sha256(path) != asset["expected_sha256"] or path.stat().st_size != asset["expected_bytes"]:
+        raise ValueError(f"Asset hash/size gate failed: {asset['id']}")
+    requested_names = [asset["collection"]]
+    if asset.get("dependency_collection"):
+        requested_names.append(asset["dependency_collection"])
+    with bpy.data.libraries.load(str(path), link=False) as (available, requested):
+        missing = sorted(set(requested_names)-set(available.collections))
+        if missing:
+            raise ValueError(f"Missing asset collections in {path}: {missing}")
+        requested.collections = [name for name in requested_names]
+    collections = {collection.name: collection for collection in requested.collections if collection}
+    main = collections[asset["collection"]]
+    objects = []
+    for collection in requested.collections:
+        if collection:
+            objects.extend(collection_objects(collection))
+    return main, list({obj.name: obj for obj in objects}.values())
+
+
 def render_flat(scene: bpy.types.Scene, path: Path) -> None:
     scene.render.engine = "BLENDER_EEVEE_NEXT"
+    # Diagnostic products encode unknown/background explicitly in the world.
+    # Transparency would discard that class and many viewers would display it
+    # as black, making the semantic product ambiguous.
     scene.render.film_transparent = False
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGB"
     scene.render.filepath = str(path)
-    scene.render.resolution_percentage = 100
     scene.view_settings.view_transform = "Standard"
-    scene.view_settings.look = "Medium High Contrast"
+    scene.view_settings.look = "None"
     scene.view_settings.exposure = 0.0
     scene.view_settings.gamma = 1.0
     bpy.ops.render.render(write_still=True)
@@ -215,13 +352,13 @@ def main() -> None:
         print(f"Cycles Metal unavailable, using CPU: {error}")
 
     materials = {
-        "road": pbr_material("Road / source", (0.055, 0.06, 0.065), (0.095, 0.10, 0.105), 0.88, 0.38, 38.0, 0.10, 0.0012),
-        "sidewalk": pbr_material("Sidewalk / source", (0.31, 0.30, 0.28), (0.47, 0.45, 0.41), 0.82, 0.22, 28.0, 0.08, 0.0009),
-        "lawn": pbr_material("Lawn substrate / source", (0.045, 0.085, 0.025), (0.105, 0.19, 0.055), 0.93, 0.30, 18.0, 0.07, 0.0018),
+        "road": texture_material("Road / Poly Haven asphalt_01", packet["material_registry"]["road"], 1),
+        "sidewalk": texture_material("Sidewalk / Poly Haven concrete_floor_02", packet["material_registry"]["sidewalk"], 2),
+        "lawn": pbr_material("Lawn substrate / source", (0.045, 0.085, 0.025), (0.105, 0.19, 0.055), 0.93, 0.30, 18.0, 0.07, 0.0018, 3),
     }
     palette = render_config["semantic_palette_srgb"]
     semantic_materials = {
-        key: flat_material("Semantic / " + key, tuple(channel / 255 for channel in value) + (1.0,))
+        key: flat_material("Semantic / " + key, srgb_color(value))
         for key, value in palette.items() if key != "unknown"
     }
     black = flat_material("Mask / known", (0.0, 0.0, 0.0, 1.0))
@@ -250,6 +387,48 @@ def main() -> None:
         obj.hide_render = True
         plan_objects.append(obj)
 
+    assets = {row["id"]: row for row in packet["asset_registry"]}
+    loaded_assets = {}
+    asset_source_objects = []
+    vegetation_instances = []
+    for row in packet["vegetation_candidates"]:
+        if not row["render_enabled"]:
+            continue
+        asset = assets[row["asset_id"]]
+        if row["asset_id"] not in loaded_assets:
+            loaded_assets[row["asset_id"]] = load_collection_asset(asset)
+            asset_source_objects.extend(loaded_assets[row["asset_id"]][1])
+        asset_collection, _objects = loaded_assets[row["asset_id"]]
+        instance = bpy.data.objects.new(row["id"], None)
+        instance.instance_type = "COLLECTION"
+        instance.instance_collection = asset_collection
+        scene.collection.objects.link(instance)
+        scale = row["height_m"] / asset["native_height_m"]
+        min_z = asset["native_bounds_m"][0][2]
+        instance.scale = (scale, scale, scale)
+        instance.location = (
+            row["position_local"][0],
+            row["position_local"][1],
+            row["position_local"][2] - min_z*scale,
+        )
+        instance.rotation_euler.z = row["rotation_z_rad"]
+        instance.pass_index = 10
+        instance["semantic_class"] = row["semantic_class"]
+        instance["inventory_number"] = row["source"]["inventory_number"]
+        instance["source_handle"] = row["source"]["handle"]
+        instance["asset_id"] = row["asset_id"]
+        instance["placement_status"] = row["placement_status"]
+        vegetation_instances.append(instance)
+
+    asset_material_state = []
+    for obj in asset_source_objects:
+        if obj.type != "MESH":
+            continue
+        asset_material_state.append((obj, list(obj.data.materials)))
+        for material in obj.data.materials:
+            if material:
+                add_value_aovs(material, 10, 0.58, 0.5)
+
     camera_data = bpy.data.cameras.new("Camera")
     camera = bpy.data.objects.new("Camera", camera_data)
     scene.collection.objects.link(camera)
@@ -270,9 +449,13 @@ def main() -> None:
     set_world_sky(scene, render_config["world"])
 
     view_layer = scene.view_layers[0]
+    for aov_name in ("Roughness", "SemanticID", "HeightConfidence"):
+        aov = view_layer.aovs.add()
+        aov.name = aov_name
+        aov.type = "VALUE"
     for property_name in (
         "use_pass_z", "use_pass_normal", "use_pass_position", "use_pass_diffuse_color",
-        "use_pass_roughness", "use_pass_shadow", "use_pass_ambient_occlusion", "use_pass_object_index",
+        "use_pass_shadow", "use_pass_ambient_occlusion", "use_pass_object_index",
         "use_pass_cryptomatte_object",
     ):
         if hasattr(view_layer, property_name):
@@ -286,18 +469,44 @@ def main() -> None:
     scene.render.image_settings.exr_codec = "ZIP"
     beauty_exr = output / "beauty-passes.exr"
     scene.render.filepath = str(beauty_exr)
+    scene.render.film_transparent = True
     bpy.ops.render.render(write_still=True)
     beauty_png = output / "beauty.png"
     save_render(scene, beauty_png, "PNG", "RGBA")
+    beauty_review = output / "beauty-review.png"
+    save_alpha_review(scene, beauty_png, beauty_review)
 
     # Perspective semantic diagnostic: the unknown class is the world color.
     original_materials = {obj.name: obj.data.materials[0] for obj in render_objects}
     for obj in render_objects:
         use_material(obj, semantic_materials[obj["semantic_class"]])
-    unknown = tuple(channel / 255 for channel in palette["unknown"]) + (1.0,)
+    for obj, _original in asset_material_state:
+        for slot_index in range(len(obj.data.materials)):
+            obj.data.materials[slot_index] = semantic_materials["existing_tree"]
+    unknown = srgb_color(palette["unknown"])
     set_world_flat(scene, unknown)
     semantic_perspective = output / "semantic-perspective.png"
     render_flat(scene, semantic_perspective)
+
+    # Binary perspective masks for the optional neural material finish. Each
+    # mask contains one ground class only; the tree silhouette, other surface
+    # classes and unknown background remain black. A later stage erodes every
+    # class independently before combining them, so semantic edges cannot be
+    # edited by an image model.
+    class_masks = []
+    for semantic_class in ("road", "sidewalk", "lawn"):
+        for obj in render_objects:
+            use_material(obj, black)
+        for obj in render_objects:
+            if obj["semantic_class"] == semantic_class:
+                use_material(obj, flat_material("Mask / " + semantic_class, (1.0, 1.0, 1.0, 1.0)))
+        for obj, _original in asset_material_state:
+            for slot_index in range(len(obj.data.materials)):
+                obj.data.materials[slot_index] = black
+        set_world_flat(scene, (0.0, 0.0, 0.0, 1.0))
+        mask_path = output / f"neural-{semantic_class}-candidate-mask.png"
+        render_flat(scene, mask_path)
+        class_masks.append(mask_path)
 
     # Orthographic plan products use all exact authored XY, including areas
     # whose Z is unknown and therefore absent from the beauty scene.
@@ -320,6 +529,8 @@ def main() -> None:
     # Dedicated binary unknown pass: white means there is no authored surface.
     for obj in plan_objects:
         use_material(obj, black)
+    for instance in vegetation_instances:
+        instance.hide_render = True
     set_world_flat(scene, (1.0, 1.0, 1.0, 1.0))
     unknown_topdown = output / "unknown-topdown.png"
     render_flat(scene, unknown_topdown)
@@ -341,11 +552,18 @@ def main() -> None:
     for obj in render_objects:
         obj.hide_render = False
         use_material(obj, original_materials[obj.name])
+    for obj, original in asset_material_state:
+        obj.data.materials.clear()
+        for material in original:
+            obj.data.materials.append(material)
+    for instance in vegetation_instances:
+        instance.hide_render = False
     camera.data.type = render_config["camera"]["projection"]
     camera.data.lens = render_config["camera"]["lens_mm"]
     camera.location = render_config["camera"]["position_local"]
     aim(camera, Vector(render_config["camera"]["target_local"]))
     scene.render.engine = "CYCLES"
+    scene.render.film_transparent = True
     scene.render.resolution_x = width
     scene.render.resolution_y = height
     scene.render.resolution_percentage = percent
@@ -353,10 +571,11 @@ def main() -> None:
     scene.view_settings.look = "AgX - Medium High Contrast"
     scene.view_settings.exposure = 0.35
     set_world_sky(scene, render_config["world"])
+    bpy.ops.file.pack_all()
     blend_path = output / "scene.blend"
     bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
 
-    paths = [beauty_exr, beauty_png, semantic_perspective, semantic_topdown,
+    paths = [beauty_exr, beauty_png, beauty_review, semantic_perspective, *class_masks, semantic_topdown,
              unknown_topdown, confidence_topdown, blend_path]
     receipt = {
         "schema": "green-atlas.render-receipt.v1",
@@ -369,9 +588,15 @@ def main() -> None:
         "resolution": [round(width * percent / 100), round(height * percent / 100)],
         "render_objects": len(render_objects),
         "plan_objects": len(plan_objects),
-        "vegetation_rendered": 0,
+        "vegetation_rendered": len(vegetation_instances),
+        "asset_instances": [
+            {"object": instance.name, "asset_id": instance["asset_id"],
+             "source_handle": instance["source_handle"], "inventory_number": instance["inventory_number"]}
+            for instance in vegetation_instances
+        ],
         "unknown_fill_allowed": False,
         "height_extrapolation": False,
+        "passes": render_config["passes"],
         "outputs": [
             {"path": str(path), "bytes": path.stat().st_size, "sha256": sha256(path)} for path in paths
         ],

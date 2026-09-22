@@ -21,7 +21,7 @@ export function ProjectImportChoices({
   ...upload
 }: Props) {
   const [source, setSource] = useState(
-    initialSource === 'cad' ? 'cad' : 'file',
+    initialSource === 'file' ? 'file' : 'cad',
   );
   const checking = useIsMutating({
     mutationKey: ['cad-intake-start', routeKey, projectId],

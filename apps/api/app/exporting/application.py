@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from hashlib import sha256
+from app.dxf_import.contracts import ImportMode
 
 from app.exporting.contracts import (
     ExportArtifact,
@@ -31,6 +32,11 @@ class ExportApplication:
     def _source_components(
         self, project: Project, source_content: bytes
     ) -> dict[str, bytes]:
+        if project.import_status.mode == ImportMode.AUTOCAD_LIVE:
+            raise ValueError(
+                "Этот проект открыт из живого снимка AutoCAD. "
+                "Выпуск DXF для такого источника ещё не подключён; проект сохранён локально."
+            )
         components = self.repository.get_source_components(project.id)
         source_file = project.source_file
         provenance = source_file.prepared_provenance if source_file else None

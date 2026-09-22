@@ -9,6 +9,8 @@ import type {
 import { preparationApi } from '../api/preparationApi';
 import { mappingKey } from './preparationRecovery';
 import { usePreparationCommit } from './usePreparationCommit';
+import { partialGeometryAccepted } from '@/entities/source-data/model/partialGeometryAccepted';
+import { sourceWarningText } from '@/entities/source-data/model/sourceWarningText';
 import {
   EMPTY_LAYERS,
   sourceIdentity,
@@ -79,7 +81,10 @@ export function useSourcePreparation({
     mappingKey(Object.values(savedMappings));
   const setMappings = (next: Record<string, LayerMapping>) =>
     setMappingDraft({ source: currentSource, mappings: next });
-  const sourceWarnings = projectQuery.data?.source_file?.warnings ?? [];
+  const sourceWarnings = (projectQuery.data?.source_file?.warnings ?? []).map(
+    sourceWarningText,
+  );
+  const partialAccepted = partialGeometryAccepted(projectQuery.data);
   const sourceReadOnly = Boolean(
     projectQuery.data?.map_ready &&
     projectQuery.data.plan &&
@@ -139,8 +144,8 @@ export function useSourcePreparation({
         ? 'Назначьте роль обязательным слоям границы перед подготовкой карты.'
         : unconfirmedMappings.length
           ? 'Проверьте предложенные роли слоёв.'
-          : incompleteConstraintLayers.length
-            ? 'В отдельных слоях есть нерассчитанная геометрия. Редактор можно открыть без расчёта.'
+          : incompleteConstraintLayers.length && !partialAccepted
+            ? 'Разрешите расчёт по доступным объектам или исправьте неполные слои.'
             : undefined;
   const hasPlanningBoundary = selectedBoundary;
   const latestOperationQuery = useQuery({
@@ -266,6 +271,25 @@ export function useSourcePreparation({
       navigate(`/projects/${projectId}/workspace`);
     },
   });
+  const acceptPartialGeometry = useMutation({
+    mutationFn: async () => {
+      const project = projectQuery.data;
+      const sha = project?.source_file?.content_sha256;
+      if (!project || !sha) throw new Error('Исходник ещё не загружен');
+      return preparationApi.acceptPartialGeometry(projectId, sha, {
+        expectedStateVersion: project.state_version ?? 0,
+      });
+    },
+    onSuccess: (project) => {
+      queryClient.setQueryData(['setup-project', projectId], project);
+      void queryClient.invalidateQueries({
+        queryKey: ['workspace-project', projectId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['data-passport', projectId],
+      });
+    },
+  });
   const lastKnownOperation =
     operationQuery.data ??
     (!operationId || latestUnfinishedOperation?.id === operationId
@@ -292,6 +316,7 @@ export function useSourcePreparation({
     operationActive(operation);
   const preparationBlocked =
     openEditor.isPending ||
+    acceptPartialGeometry.isPending ||
     calculating ||
     statusUnknown ||
     checkingStatus ||
@@ -299,7 +324,10 @@ export function useSourcePreparation({
     preparationMutation.needsRecovery ||
     Boolean(reloadError);
   const mutationError =
-    saveMutation.error ?? cancelOperation.error ?? openEditor.error;
+    saveMutation.error ??
+    cancelOperation.error ??
+    openEditor.error ??
+    acceptPartialGeometry.error;
 
   const reloadAfterConflict = async () => {
     try {
@@ -312,6 +340,7 @@ export function useSourcePreparation({
       saveMutation.reset();
       cancelOperation.reset();
       openEditor.reset();
+      acceptPartialGeometry.reset();
       setReloadError(undefined);
     } catch (error) {
       // Cached data in a failed refetch is not a fresh basis for the form.
@@ -358,6 +387,8 @@ export function useSourcePreparation({
     readinessBlockedReason,
     unconfirmedMappings,
     incompleteConstraintLayers,
+    partialAccepted,
+    acceptPartialGeometry,
     hasPlanningBoundary,
     operation,
     previousSourceOperation,

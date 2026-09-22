@@ -9,7 +9,7 @@ from shapely.geometry import GeometryCollection, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 
-from app.dxf_import.admission import require_confirmed_layer_mapping
+from app.dxf_import.admission import partial_geometry_accepted, require_confirmed_layer_mapping
 from app.dxf_import.layer_contracts import LayerKind
 from app.dxf_import.utility_mapping import (
     assign_utility_context,
@@ -227,6 +227,9 @@ class ShapelyGeometryEngine:
 
     def calculate(self, project: Project, progress: ProgressReporter | None = None) -> GeometrySnapshot:
         require_confirmed_layer_mapping(project)
+        allow_partial = partial_geometry_accepted(project.source_file)
+        provenance = project.source_file.prepared_provenance if project.source_file else None
+        review = provenance.opening_review if provenance else None
         if project.source_geometry is None:
             raise ValueError("Сначала импортируйте DXF")
         mapping_by_layer = {layer.source_name: layer.mapped_kind for layer in project.layers}
@@ -248,12 +251,12 @@ class ShapelyGeometryEngine:
             for layer in project.layers
             if layer.mapped_kind in PHYSICAL_LAYER_KINDS and not layer.geometry_complete
         )
-        if incomplete_physical_layers:
+        if incomplete_physical_layers and not allow_partial:
             raise ValueError(
                 "Карта содержит только часть объектов в слоях: "
                 f"{', '.join(incomplete_physical_layers)}. Нельзя строить ограничения, иначе занятая "
-                "территория могла бы выглядеть свободной. Загрузите рабочий фрагмент или явно "
-                "сопоставьте неполный слой как неиспользуемый; исходный DXF сохранён без изменений."
+                "территория могла бы выглядеть свободной. В настройке исходных данных можно "
+                "явно разрешить расчёт по доступным объектам; пропуски останутся замечаниями."
             )
         blocking_arrays = [
             feature.get("properties", {})
@@ -514,6 +517,12 @@ class ShapelyGeometryEngine:
             *planting_zone_features,
         ]
         return GeometrySnapshot(
+            calculation_scope="available_data" if (
+                incomplete_physical_layers or
+                (project.source_file and project.source_file.cad_snapshot_provenance
+                 and project.source_file.cad_snapshot_provenance.unresolved_instances) or
+                (review and (review.skipped_drawings or review.skipped_references))
+            ) else "complete_source",
             feature_collection={"type": "FeatureCollection", "features": [*visible_features, *derived_features]},
             # Regulatory calculation remains strictly 2D. Carry the source
             # XYZ evidence through unchanged for the scene instead of

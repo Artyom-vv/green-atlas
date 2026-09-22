@@ -1,6 +1,5 @@
 import json
 import os
-import sys
 from collections.abc import Callable
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -13,6 +12,7 @@ from app.cad_intake.prepare_policy import MAX_PREPARE_RECEIPT_BYTES, PREPARE_POL
 from app.cad_intake.work import CadWork
 from app.operations.adapters import SqliteOperationRepository
 from app.operations.progress import WorkProgress
+from app.shared.python_worker import worker_command
 
 
 class ProcessCadProjectPreparation:
@@ -49,7 +49,7 @@ class ProcessCadProjectPreparation:
             task = directory / "prepare-request.json"
             task.write_text(work.model_dump_json(), encoding="utf-8")
             result = run_converter(
-                [sys.executable, "-m", "app.cad_intake.prepare_worker", str(task)],
+                worker_command("app.cad_intake.prepare_worker", str(task)),
                 work.receipt,
                 directory / "prepare-worker.log",
                 replace(PREPARE_POLICY, max_output_bytes=MAX_PREPARE_RECEIPT_BYTES),

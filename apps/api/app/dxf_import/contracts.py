@@ -22,6 +22,7 @@ class ImportMode(StrEnum):
     """
 
     SOURCE_DXF = "source_dxf"
+    AUTOCAD_LIVE = "autocad_live"
     RELEASE_BUNDLE = "release_bundle"
     PLAIN_DXF_FALLBACK = "plain_dxf_fallback"
     CAD_PREVIEW = "cad_preview"
@@ -54,6 +55,13 @@ class SourceFile(BaseModel):
     preview_provenance: CadPreviewProvenance | None = None
     prepared_provenance: PreparedSourceProvenance | None = None
     cad_snapshot_provenance: CadSnapshotProvenance | None = None
+    # Explicit operator decision for this immutable source. Not a claim that
+    # missing objects were recovered, and never copied to a replacement source.
+    accept_partial_geometry: bool = False
+
+
+class AcceptPartialGeometryRequest(BaseModel):
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class DxfImportResult(BaseModel):

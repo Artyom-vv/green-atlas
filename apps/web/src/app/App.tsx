@@ -14,6 +14,9 @@ const WorkspacePage = lazy(async () => ({
 const ProjectsPage = lazy(async () => ({
   default: (await import('@/pages/ProjectsPage')).ProjectsPage,
 }));
+const AutoCadConnectPage = lazy(async () => ({
+  default: (await import('@/pages/AutoCadConnectPage')).AutoCadConnectPage,
+}));
 
 export const App: FC = () => {
   return (
@@ -29,6 +32,10 @@ export const App: FC = () => {
         }
       >
         <Routes>
+          <Route
+            path="/connect/autocad/:transferId"
+            element={<AutoCadConnectPage />}
+          />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new/import" element={<ImportPage />} />
           <Route path="/projects/:projectId/import" element={<ImportPage />} />

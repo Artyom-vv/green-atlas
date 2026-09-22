@@ -392,6 +392,12 @@ def test_full_worker_retains_far_geometry_original_bytes_and_editability(fixture
     assert project.geometry is not None and project.source_geometry is None
     assert len(project.geometry.feature_collection["features"]) == 3
     assert project.source_file.bounds == [-10.0, 0.0, 200.0, 200.0]
+    from app.dxf_import.encoding import declared_dxf_version
+    from app.dxf_import.native_application import NativeDxfSourceApplication
+    assert project.source_file.dxf_version == declared_dxf_version(fixture.source.read_bytes())
+    native = NativeDxfSourceApplication(fixture.runtime.project_repository)
+    asset = native.metadata(project.id)
+    assert native.download(project.id, asset.source_sha256).content == fixture.source.read_bytes()
     assert (
         fixture.runtime.project_repository.get_source(project.id)
         == fixture.source.read_bytes()

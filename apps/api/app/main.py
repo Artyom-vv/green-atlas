@@ -7,6 +7,7 @@ from app.agent_conversations import router as agent_conversations_router
 from app.agent_runtime.preview_routes import router as agent_preview_router
 from app.agent_runtime.routes import router as agent_runtime_router
 from app.api import router
+from app.cad_delivery.routes import router as cad_delivery_router
 from app.cad_intake.asset_routes import router as cad_asset_router
 from app.cad_intake.routes import router as cad_intake_router
 from app.composition import get_application
@@ -71,6 +72,7 @@ async def validation_error(_: Request, error: RequestValidationError) -> JSONRes
 
 
 app.include_router(router)
+app.include_router(cad_delivery_router)
 app.include_router(cad_intake_router)
 app.include_router(cad_asset_router)
 app.include_router(planning_assistant_router)

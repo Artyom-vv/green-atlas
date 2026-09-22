@@ -80,7 +80,7 @@ class RuleBasedPlanValidator:
                     title=advisory.title,
                     description=advisory.description,
                     object_id=object_.id,
-                    rule_id="source_review" if advisory.code == "SOURCE_REVIEW_PENDING" else "untyped_utility",
+                    rule_id="source_review" if advisory.code in {"SOURCE_REVIEW_PENDING", "SOURCE_GEOMETRY_PARTIAL"} else "untyped_utility",
                     x=object_.x,
                     y=object_.y,
                     suggested_action=advisory.suggested_action,

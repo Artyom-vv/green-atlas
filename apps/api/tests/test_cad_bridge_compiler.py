@@ -103,6 +103,46 @@ def compile(probe: dict, package_root: Path | None = None):
     )
 
 
+def probe_with_failed_region() -> dict:
+    probe = valid_probe()
+    probe["regions"].append({
+        "handle": "FA1ED", "instance_chain": [], "status": "unresolved",
+        "error_status": 1, "loops": [],
+    })
+    probe["coverage"].append({
+        "handle": "FA1ED", "instance_chain": [], "entity_type": "AcDbHatch",
+        "layer": "SITE", "status": "unresolved", "method": "native-topology-failed",
+        "reason": "native HATCH topology extraction failed",
+    })
+    probe["summary"].update(regions=2, unresolved=1, source_instances=4, unresolved_instances=2)
+    return probe
+
+
+def test_failed_region_keeps_healthy_geometry_and_explicit_gap() -> None:
+    snapshot = compile(probe_with_failed_region())
+    assert len(snapshot.geometry) == 1
+    assert snapshot.summary.unresolved == 2
+    assert snapshot.coverage[-1].status == "unresolved"
+    assert snapshot.coverage[-1].geometry_ids == []
+    assert snapshot.coverage[-1].reason == "native HATCH topology extraction failed"
+
+
+@pytest.mark.parametrize("fault", ["missing_coverage", "native_coverage", "missing_reason", "wrong_counts"])
+def test_failed_region_cannot_hide_inconsistent_extraction(fault: str) -> None:
+    probe = probe_with_failed_region()
+    if fault == "missing_coverage":
+        probe["coverage"].pop()
+        probe["summary"]["source_instances"] -= 1
+    elif fault == "native_coverage":
+        probe["coverage"][-1]["status"] = "native"
+    elif fault == "missing_reason":
+        probe["coverage"][-1]["reason"] = None
+    else:
+        probe["summary"]["unresolved"] = 0
+    with pytest.raises(CadSnapshotAdmissionError):
+        compile(probe)
+
+
 def probe_with_xref(package_root: Path) -> dict:
     child = package_root / "references" / "child.dxf"
     child.parent.mkdir()
@@ -136,6 +176,44 @@ def probe_with_xref(package_root: Path) -> dict:
         source_instances=4,
         context=2,
         xref_block_references=1,
+        xref_dependency_records=1,
+    )
+    return probe
+
+
+def probe_with_missing_xref() -> dict:
+    probe = valid_probe()
+    probe["plugin_version"] = "0.1.21"
+    probe["coverage"].append(
+        {
+            "handle": "20",
+            "instance_chain": [],
+            "entity_type": "AcDbBlockReference",
+            "layer": "BASE",
+            "status": "unresolved",
+            "method": "xref-not-resolved",
+            "reason": "external reference status is not resolved",
+            "xref_dependency_id": "xref/AA",
+        }
+    )
+    probe["xref_dependencies"] = [
+        {
+            "record_handle": "AA",
+            "block_name": "MISSING",
+            "stored_path": "references/missing.dxf",
+            "resolved_path": "",
+            "sha256": "",
+            "bytes": 0,
+            "status": "unresolved",
+        }
+    ]
+    probe["summary"].update(
+        paths=0,
+        points=0,
+        source_instances=4,
+        unresolved_instances=2,
+        xref_block_references=1,
+        unresolved_xref_block_references=1,
         xref_dependency_records=1,
     )
     return probe
@@ -223,6 +301,31 @@ def test_compiles_native_curve_and_point_without_portable_reader() -> None:
     assert snapshot.summary.native == 3
 
 
+def test_quarantines_zero_area_closed_path_without_rejecting_snapshot() -> None:
+    probe = probe_with_native_primitives()
+    probe["plugin_version"] = "0.1.28"
+    probe["paths"][0]["coordinates"] = [
+        [0, 0, 150],
+        [20, 0, 150.1],
+        [10, 0, 150.2],
+        [0, 0, 150],
+    ]
+
+    snapshot = compile(probe)
+
+    assert [geometry.kind for geometry in snapshot.geometry] == ["region", "point"]
+    path_coverage = next(
+        record for record in snapshot.coverage if record.identity.handle == "C1"
+    )
+    assert path_coverage.status == "unresolved"
+    assert path_coverage.method == "autocad-wcs-xy-quarantined"
+    assert path_coverage.geometry_ids == []
+    assert "no usable WCS XY area" in (path_coverage.reason or "")
+    assert snapshot.summary.native == 2
+    assert snapshot.summary.unresolved == 2
+    assert snapshot.summary.complete is True
+
+
 def test_compiles_latest_autocad_bridge_contract() -> None:
     probe = probe_with_native_primitives()
     probe["plugin_version"] = "0.1.20"
@@ -255,10 +358,6 @@ def test_compiles_latest_autocad_bridge_contract() -> None:
         ),
         (
             lambda value: value["summary"].update(unreadable_entities=1),
-            "traversal is incomplete",
-        ),
-        (
-            lambda value: value["summary"].update(unresolved_xref_block_references=1),
             "traversal is incomplete",
         ),
         (
@@ -317,6 +416,24 @@ def test_compiles_xref_only_when_exact_package_dependency_is_verified(
     (tmp_path / "references" / "child.dxf").write_bytes(b"changed")
     with pytest.raises(CadSnapshotAdmissionError, match="differs from the file"):
         compile(probe, tmp_path)
+
+
+def test_missing_xref_is_admitted_as_explicit_unresolved_coverage() -> None:
+    snapshot = compile(probe_with_missing_xref())
+
+    assert snapshot.dependencies is None
+    assert snapshot.coverage[-1].status == "unresolved"
+    assert snapshot.coverage[-1].dependency_ids is None
+    assert snapshot.summary.unresolved == 2
+    assert snapshot.summary.complete is True
+
+
+def test_missing_xref_cannot_masquerade_as_traversed_context() -> None:
+    probe = probe_with_missing_xref()
+    probe["coverage"][-1]["status"] = "context"
+
+    with pytest.raises(CadSnapshotAdmissionError, match="must remain unresolved"):
+        compile(probe)
 
 
 def test_rejects_xref_probe_without_complete_dependency_coverage(

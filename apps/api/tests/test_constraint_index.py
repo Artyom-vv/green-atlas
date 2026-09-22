@@ -178,7 +178,8 @@ def test_occupied_actual_uses_nearest_object_even_outside_polygonal_footprint() 
     assert asdict(current)["actual"] == 99.95
 
 
-def test_no_geometry_and_untyped_sources_keep_their_existing_statuses() -> None:
+@pytest.mark.parametrize("scope", ["complete_source", "available_data"])
+def test_no_geometry_and_untyped_sources_keep_their_existing_statuses(scope) -> None:
     assert (
         PositionChecker(Project(name="No geometry")).check(0, 0, 1).code
         == "GEOMETRY_NOT_READY"
@@ -186,6 +187,7 @@ def test_no_geometry_and_untyped_sources_keep_their_existing_statuses() -> None:
     project = project_with(
         [feature("utility", Point(0, 0)), feature("unknown", box(-10, -10, 10, 10))]
     )
+    project.geometry.calculation_scope = scope
     checker = PositionChecker(project)
     assert checker.check(0, 0, 1) is None
     assert checker.advisory(0, 0, 1).code == "UNTYPED_UTILITY_REVIEW"

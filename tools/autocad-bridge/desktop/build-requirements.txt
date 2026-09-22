@@ -1,0 +1,7 @@
+# Build tools only; install in the qualified API build environment, not on user PCs.
+pyinstaller==6.22.0
+pyinstaller-hooks-contrib==2026.7
+altgraph==0.17.5
+macholib==1.16.4; sys_platform == "darwin"
+packaging==26.2
+setuptools==84.0.0

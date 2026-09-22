@@ -36,6 +36,10 @@ def validate_prepared_intake(
     if len(entries) != len(set(entries)) or passport.entry not in entries:
         raise ValueError("Паспорт содержит противоречивый список самостоятельных DXF")
     drawings = {item.path: item for item in passport.drawings}
+    omitted = set(request.opening_review.skipped_drawings)
+    if passport.entry in omitted or not omitted.issubset(entries):
+        raise ValueError("Нельзя пропустить основной или посторонний чертёж")
+    entries = [path for path in entries if path not in omitted]
     for path in entries:
         drawing = drawings.get(path)
         if (
@@ -57,9 +61,12 @@ def validate_prepared_intake(
         for block in (drawing.inspection.xrefs or {})
     }
     recorded_xrefs = {(item.owner, item.block) for item in passport.references}
+    accepted = {(item.owner, item.block) for item in request.opening_review.skipped_references}
+    unresolved = {(item.owner, item.block) for item in passport.references if item.status != "resolved"}
+    if accepted != unresolved:
+        raise ValueError("Выберите решение для каждой неразрешённой внешней ссылки")
     if declared_xrefs or passport.references:
-        unresolved = [item for item in passport.references if item.status != "resolved"]
-        if declared_xrefs != recorded_xrefs or unresolved:
+        if declared_xrefs != recorded_xrefs:
             raise ValueError(
                 "DXF-комплект содержит неразрешённые внешние ссылки"
             )

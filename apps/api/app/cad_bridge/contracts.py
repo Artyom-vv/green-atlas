@@ -12,11 +12,30 @@ class SourceIdentity(BaseModel):
     instance_chain: list[str] = Field(default_factory=list)
 
 
+class LiveDocumentCapture(BaseModel):
+    """Disk identity is context, not proof that unsaved geometry matches it."""
+
+    mode: Literal["live_document"] = "live_document"
+    original_path: str
+    original_disk_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    database_modified_flags: int = Field(ge=0)
+
+
+class LiveCadReference(BaseModel):
+    """A reference traversed in memory, not a verified/archived package file."""
+
+    id: str = Field(pattern=r"^xref/[0-9A-F]+$")
+    record_handle: str = Field(pattern=r"^[0-9A-F]+$")
+    block_name: str = Field(min_length=1)
+    stored_path: str = Field(min_length=1)
+
+
 class SnapshotSource(BaseModel):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     saved: Literal[True]
     units_code: int = Field(ge=0)
     document_revision: str = Field(min_length=1)
+    live_capture: LiveDocumentCapture | None = None
 
 
 class CadSnapshotDependency(BaseModel):
@@ -56,6 +75,11 @@ class ExtractionEvidence(BaseModel):
     requested_tolerance_m: float = Field(gt=0, allow_inf_nan=False)
 
 
+class UnresolvedCadReference(BaseModel):
+    block_name: str = Field(min_length=1)
+    stored_path: str = Field(min_length=1)
+
+
 class CoverageRecord(BaseModel):
     identity: SourceIdentity
     entity_type: str = Field(min_length=1)
@@ -65,9 +89,12 @@ class CoverageRecord(BaseModel):
     reason: str | None = None
     geometry_ids: list[str] = Field(default_factory=list)
     dependency_ids: list[str] | None = None
+    unresolved_reference: UnresolvedCadReference | None = None
 
     @model_validator(mode="after")
     def require_explicit_resolution(self) -> CoverageRecord:
+        if self.unresolved_reference is not None and self.status != "unresolved":
+            raise ValueError("unresolved reference cannot authorize geometry")
         if self.status in {"native", "converted"} and not self.geometry_ids:
             raise ValueError("resolved coverage must reference geometry")
         if self.status in {"context", "unresolved"} and not self.reason:
@@ -172,6 +199,8 @@ class CadSnapshotProvenance(BaseModel):
     native_geometry: int = Field(ge=0)
     unresolved_instances: int = Field(ge=0)
     dependencies: list[CadSnapshotDependency] = Field(default_factory=list)
+    live_capture: LiveDocumentCapture | None = None
+    live_references: list[LiveCadReference] | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -181,6 +210,7 @@ class CadSnapshot(BaseModel):
     source: SnapshotSource
     extraction: ExtractionEvidence
     dependencies: list[CadSnapshotDependency] | None = None
+    live_references: list[LiveCadReference] | None = None
     coverage: list[CoverageRecord]
     geometry: list[CadGeometry]
     summary: SnapshotSummary
@@ -201,7 +231,13 @@ class CadSnapshot(BaseModel):
         referenced: list[str] = []
         coverage_by_key = {identity_key(item.identity): item for item in self.coverage}
         dependencies_by_id = {item.id: item for item in (self.dependencies or [])}
-        if len(dependencies_by_id) != len(self.dependencies or []):
+        if self.live_references:
+            if self.source.live_capture is None or self.dependencies:
+                raise ValueError("live references require a live document source")
+            dependencies_by_id = {item.id: item for item in self.live_references}
+            if len(dependencies_by_id) != len(self.live_references):
+                raise ValueError("duplicate live CAD reference id")
+        elif len(dependencies_by_id) != len(self.dependencies or []):
             raise ValueError("duplicate CAD dependency id")
         referenced_dependencies: list[str] = []
         for item in self.coverage:

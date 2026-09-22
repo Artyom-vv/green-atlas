@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime
 from threading import RLock
+from uuid import UUID
 
 from app.data_passport import build_data_passport
 from app.dxf_import.evidence_contracts import DataPassport
@@ -38,6 +39,23 @@ class ProjectCatalogApplication:
                 updated_at=self._now().isoformat(),
             )
         )
+
+    def ensure_import_project(self, project_id: str, name: str) -> Project:
+        """Internal durable intake intent: recover creation without overwriting edits.
+
+        Callers must reserve a random UUID in their own persistent intake journal.
+        This is not exposed as a browser create/update endpoint.
+        """
+        if str(UUID(project_id)) != project_id:
+            raise ValueError("Expected a canonical project UUID")
+        with self._operation_commit_lock:
+            try:
+                return self.repository.get(project_id, lightweight=True)
+            except KeyError:
+                return self.repository.create(Project(
+                    id=project_id, name=name, created_at=self._now().isoformat(),
+                    updated_at=self._now().isoformat(),
+                ))
 
     def get(self, project_id: str, *, lightweight: bool = False) -> Project:
         return self.repository.get(project_id, lightweight=lightweight)

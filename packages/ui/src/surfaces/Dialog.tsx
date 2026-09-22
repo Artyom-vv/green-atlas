@@ -14,7 +14,7 @@ export interface DialogProps {
   onClose: () => void;
   size?: DialogSize;
   keepMounted?: boolean;
-  stableHeight?: boolean;
+  stableHeight?: boolean | 'compact';
 }
 
 export const Dialog: FC<DialogProps> = ({
