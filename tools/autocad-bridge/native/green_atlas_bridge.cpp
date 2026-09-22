@@ -28,18 +28,23 @@
 #include "geintrvl.h"
 #include "geplane.h"
 #include "core_rxmfcapi.h"
+#include "delivery_command.h"
+#include "reference_search.h"
+#include "delivery_ui.h"
 
 #include <CommonCrypto/CommonDigest.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cmath>
 #include <dirent.h>
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
@@ -49,16 +54,41 @@
 namespace {
 
 constexpr const ACHAR* kCommandGroup = _T("GREEN_ATLAS");
-constexpr const char* kPluginVersion = "0.1.20";
+constexpr const char* kPluginVersion = "0.1.33";
+constexpr const char* kMcpQueueVersion = "v033";
 constexpr double kRequestedToleranceMetres = 0.0001;
 constexpr int kMaximumSamplingDepth = 24;
 constexpr std::size_t kMaximumSampledPointsPerLoop = 16384;
+constexpr std::size_t kMaximumTopologyElementsPerEntity = 16384;
 bool gSideDatabaseCapture = false;
 std::string gSideDatabaseSourcePath;
 bool gLastTopologyExportSucceeded = false;
 std::string gLastTopologyExportPath;
 std::string gLastTopologyExportError;
 bool gMcpRequestInProgress = false;
+std::string gActiveMcpRequestId;
+bool gMcpCancellationObserved = false;
+std::size_t gMcpProcessedEntities = 0;
+std::chrono::steady_clock::time_point gMcpRequestStarted;
+std::chrono::steady_clock::time_point gNextMcpControlCheck;
+
+std::string mcpDirectory();
+bool writeAtomicText(const std::string& path, const std::string& payload);
+void publishMcpProgress(const std::string& phase, std::size_t processedEntities);
+
+bool mcpCancellationRequested() {
+    if (gActiveMcpRequestId.empty()) return false;
+    if (gMcpCancellationObserved) return true;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < gNextMcpControlCheck) return false;
+    gNextMcpControlCheck = now + std::chrono::milliseconds(200);
+    const std::string cancellationPath =
+        mcpDirectory() + "/cancel-" + gActiveMcpRequestId + ".txt";
+    if (access(cancellationPath.c_str(), F_OK) == 0) {
+        gMcpCancellationObserved = true;
+    }
+    return gMcpCancellationObserved;
+}
 
 std::string utf8(const ACHAR* value) {
     return value == nullptr ? std::string() : AcString(value).utf8Str();
@@ -201,16 +231,6 @@ struct EntityCoverage {
     std::string xrefDependencyId;
 };
 
-struct HatchTopologyCacheEntry {
-    RegionTopology topology;
-    bool regionAvailable = false;
-    int regionTopologyStatus = 0;
-    bool usedLoopFallback = false;
-    int loopFallbackStatus = 0;
-};
-
-using HatchTopologyCache = std::map<std::string, HatchTopologyCacheEntry>;
-
 struct XrefDependency {
     std::string recordHandle;
     std::string blockName;
@@ -332,6 +352,7 @@ bool sampleCurveInterval(const AcGeCurve3d& curve,
                          const int depth,
                          std::vector<Point3>& output,
                          double& sampledMaximumDeviation) {
+    if (mcpCancellationRequested()) return false;
     if (output.size() >= kMaximumSampledPointsPerLoop) return false;
     const double span = endParameter - startParameter;
     const double quarterParameter = startParameter + span * 0.25;
@@ -427,6 +448,7 @@ bool sampleCurve2dInterval(const AcGeCurve2d& curve,
                            const int depth,
                            std::vector<Point3>& output,
                            double& sampledMaximumDeviation) {
+    if (mcpCancellationRequested()) return false;
     if (output.size() >= kMaximumSampledPointsPerLoop) return false;
     const double span = endParameter - startParameter;
     const double parameters[] = {
@@ -506,6 +528,7 @@ bool sampleDatabaseCurveInterval(const AcDbCurve* curve,
                                  const int depth,
                                  std::vector<Point3>& output,
                                  double& sampledMaximumDeviation) {
+    if (mcpCancellationRequested()) return false;
     if (output.size() >= kMaximumSampledPointsPerLoop) return false;
     const double span = endParameter - startParameter;
     const double parameters[] = {
@@ -558,7 +581,13 @@ bool extractLightweightPolyline(const AcDbPolyline* polyline,
     }
     const bool authoredClosed = polyline->isClosed();
     const unsigned int segmentCount = authoredClosed ? vertexCount : vertexCount - 1;
+    if (segmentCount > kMaximumTopologyElementsPerEntity) {
+        result.errorStatus = static_cast<int>(Acad::eOutOfRange);
+        result.reason = "native curve exceeded the bounded topology-element budget";
+        return false;
+    }
     for (unsigned int index = 0; index < segmentCount; ++index) {
+        if (mcpCancellationRequested()) return false;
         const AcDbPolyline::SegType segmentType = polyline->segType(index);
         bool sampled = false;
         if (segmentType == AcDbPolyline::kLine) {
@@ -587,9 +616,33 @@ bool extractLightweightPolyline(const AcDbPolyline* polyline,
                     : Acad::eInvalidInput);
             if (samplingBudgetExhausted(result.coordinates)) {
                 result.reason = "native curve exceeded the bounded sampling budget";
+            } else {
+                result.reason = "AutoCAD could not sample a lightweight-polyline segment";
             }
             return false;
         }
+    }
+    // A PDF import commonly contains thousands of coincident-vertex strokes.
+    // AutoCAD explicitly classifies every segment as kCoincident/kPoint/kEmpty.
+    // Keep them in coverage as context, not as thousands of failed contours.
+    // Do not apply this to failed sampling, non-zero loops or unsupported types.
+    if (result.coordinates.empty()) {
+        result.calculationContext = true;
+        result.method = "autodesk-acdbpolyline-degenerate-segments";
+        result.reason = "AutoCAD classifies every polyline segment as coincident, point or empty";
+        return false;
+    }
+    if (authoredClosed && vertexCount == 2 &&
+        polyline->segType(0) == AcDbPolyline::kLine &&
+        polyline->segType(1) == AcDbPolyline::kLine &&
+        result.coordinates.size() == 3) {
+        // Two straight segments A->B->A have length but no surface. Preserve
+        // their exact locus as a line; never invent a filled polygon or drop it.
+        result.coordinates.pop_back();
+        result.closed = false;
+        result.resolved = true;
+        result.method = "autodesk-acdbpolyline-retraced-line";
+        return true;
     }
     result.closed = authoredClosed ||
         (result.coordinates.size() >= 2 &&
@@ -600,6 +653,7 @@ bool extractLightweightPolyline(const AcDbPolyline* polyline,
             pointDistance(result.coordinates.front(), result.coordinates.back()) >
                 tolerance) {
             result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            result.reason = "closed AcDbPolyline does not form a valid closed path";
             return false;
         }
         result.coordinates.back() = result.coordinates.front();
@@ -607,8 +661,49 @@ bool extractLightweightPolyline(const AcDbPolyline* polyline,
                pointDistance(result.coordinates.front(), result.coordinates.back()) <=
                    tolerance) {
         result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        result.reason = "open AcDbPolyline has no usable length";
         return false;
     }
+    result.resolved = true;
+    return true;
+}
+
+bool extractSolidBoundary(const AcDbSolid* solid,
+                          const AcGeMatrix3d& transform,
+                          const double tolerance,
+                          NativePath& result) {
+    result.method = "autodesk-acdbsolid-wcs-corners";
+    // SOLID is a triangle strip, not a cyclic 0,1,2,3 polygon. Its perimeter
+    // follows 0,1,3,2. Triangles duplicate corner 2 at corner 3.
+    for (const Adesk::UInt16 index : {0, 1, 3, 2}) {
+        AcGePoint3d vertex;
+        const auto status = solid->getPointAt(index, vertex);
+        if (status != Acad::eOk) {
+            result.errorStatus = static_cast<int>(status);
+            result.reason = "AutoCAD could not read a SOLID corner";
+            return false;
+        }
+        vertex.transformBy(transform);
+        const auto point = point3(vertex);
+        if (!finitePoint(point)) {
+            result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+            result.reason = "SOLID has a non-finite transformed corner";
+            return false;
+        }
+        if (result.coordinates.empty() ||
+            pointDistance(result.coordinates.back(), point) > tolerance)
+            result.coordinates.push_back(point);
+    }
+    if (result.coordinates.size() > 1 &&
+        pointDistance(result.coordinates.front(), result.coordinates.back()) <= tolerance)
+        result.coordinates.pop_back();
+    if (result.coordinates.size() < 3) {
+        result.calculationContext = true;
+        result.reason = "SOLID has fewer than three distinct corners at the requested tolerance";
+        return false;
+    }
+    result.coordinates.push_back(result.coordinates.front());
+    result.closed = true;
     result.resolved = true;
     return true;
 }
@@ -624,7 +719,14 @@ bool extractMlineAxis(const AcDbMline* mline,
         result.reason = "AcDbMline has fewer than two axis vertices";
         return false;
     }
+    if (static_cast<std::size_t>(vertexCount) >
+        kMaximumTopologyElementsPerEntity) {
+        result.errorStatus = static_cast<int>(Acad::eOutOfRange);
+        result.reason = "AcDbMline exceeded the bounded vertex budget";
+        return false;
+    }
     for (int index = 0; index < vertexCount; ++index) {
+        if (mcpCancellationRequested()) return false;
         AcGePoint3d vertex = mline->vertexAt(index);
         vertex.transformBy(transform);
         const Point3 transformed = point3(vertex);
@@ -831,7 +933,12 @@ bool extractRegionTopology(AcDbRegion* region,
 
     std::size_t faceCount = 0;
     while (!faceTraverser.done() && status == AcBr::eOk) {
+        if (mcpCancellationRequested()) return false;
         ++faceCount;
+        if (faceCount > 1) {
+            result.errorStatus = static_cast<int>(AcBr::eUnsuitableTopology);
+            return false;
+        }
         AcBrFace face;
         status = faceTraverser.getFace(face);
         if (status != AcBr::eOk) break;
@@ -840,7 +947,13 @@ bool extractRegionTopology(AcDbRegion* region,
         status = loopTraverser.setFace(face);
         if (status != AcBr::eOk) break;
 
+        std::size_t traversedLoops = 0;
         while (!loopTraverser.done() && status == AcBr::eOk) {
+            if (mcpCancellationRequested()) return false;
+            if (++traversedLoops > kMaximumTopologyElementsPerEntity) {
+                result.errorStatus = static_cast<int>(AcBr::eUnsuitableTopology);
+                return false;
+            }
             AcBrLoop loop;
             status = loopTraverser.getLoop(loop);
             if (status != AcBr::eOk) break;
@@ -861,7 +974,13 @@ bool extractRegionTopology(AcDbRegion* region,
             status = edgeTraverser.setLoop(loopTraverser);
             if (status != AcBr::eOk) break;
 
+            std::size_t traversedEdges = 0;
             while (!edgeTraverser.done() && status == AcBr::eOk) {
+                if (mcpCancellationRequested()) return false;
+                if (++traversedEdges > kMaximumTopologyElementsPerEntity) {
+                    result.errorStatus = static_cast<int>(AcBr::eUnsuitableTopology);
+                    return false;
+                }
                 AcGeCurve3d* curve = nullptr;
                 status = edgeTraverser.getOrientedCurve(curve);
                 if (status != AcBr::eOk || curve == nullptr) {
@@ -915,24 +1034,10 @@ bool extractRegionTopology(AcDbRegion* region,
     return true;
 }
 
-double projectedLoopArea(const std::vector<Point3>& coordinates) {
-    double doubledArea = 0.0;
-    for (std::size_t index = 1; index < coordinates.size(); ++index) {
-        const Point3& previous = coordinates[index - 1];
-        const Point3& current = coordinates[index];
-        doubledArea += previous.x * current.y - current.x * previous.y;
-    }
-    return std::abs(doubledArea) * 0.5;
-}
-
-double loopPerimeter(const std::vector<Point3>& coordinates) {
-    double perimeter = 0.0;
-    for (std::size_t index = 1; index < coordinates.size(); ++index) {
-        perimeter += pointDistance(coordinates[index - 1], coordinates[index]);
-    }
-    return perimeter;
-}
-
+#if 0
+// AutoCAD 2027 can enter its fatal signal handler from both getRegionArea()
+// and getLoopAt() on malformed authored HATCH data. Keep the former extractor
+// out of the binary until Autodesk provides an isolated/fallible boundary API.
 bool extractHatchLoopTopology(const AcDbHatch* hatch,
                               const AcGeMatrix3d& transform,
                               const double tolerance,
@@ -940,6 +1045,11 @@ bool extractHatchLoopTopology(const AcDbHatch* hatch,
     const int loopCount = hatch->numLoops();
     if (loopCount < 1) {
         result.errorStatus = static_cast<int>(Acad::eInvalidInput);
+        return false;
+    }
+    if (static_cast<std::size_t>(loopCount) >
+        kMaximumTopologyElementsPerEntity) {
+        result.errorStatus = static_cast<int>(Acad::eOutOfRange);
         return false;
     }
     AcGePlane plane;
@@ -954,6 +1064,7 @@ bool extractHatchLoopTopology(const AcDbHatch* hatch,
     double area = 0.0;
     double perimeter = 0.0;
     for (int loopIndex = 0; loopIndex < loopCount; ++loopIndex) {
+        if (mcpCancellationRequested()) return false;
         const Adesk::Int32 declaredType = hatch->loopTypeAt(loopIndex);
         if ((declaredType & (AcDbHatch::kNotClosed |
                              AcDbHatch::kSelfIntersecting |
@@ -980,6 +1091,10 @@ bool extractHatchLoopTopology(const AcDbHatch* hatch,
                     loopIndex, returnedType, vertices, bulges) == Acad::eOk &&
                 vertices.length() >= 2) {
                 unsigned int vertexCount = vertices.length();
+                if (vertexCount > kMaximumTopologyElementsPerEntity) {
+                    result.errorStatus = static_cast<int>(Acad::eOutOfRange);
+                    return false;
+                }
                 if (vertexCount > 2) {
                     const AcGePoint2d& first = vertices[0];
                     const AcGePoint2d& last = vertices[vertexCount - 1];
@@ -1018,9 +1133,11 @@ bool extractHatchLoopTopology(const AcDbHatch* hatch,
                 loopIndex, returnedType, edgePointers, edgeTypes);
             extracted = loopStatus == Acad::eOk &&
                 edgePointers.length() > 0 &&
-                edgePointers.length() == edgeTypes.length();
+                edgePointers.length() == edgeTypes.length() &&
+                edgePointers.length() <= kMaximumTopologyElementsPerEntity;
             for (unsigned int edgeIndex = 0;
                  edgeIndex < edgePointers.length(); ++edgeIndex) {
+                if (mcpCancellationRequested()) extracted = false;
                 AcGeCurve2d* edge = static_cast<AcGeCurve2d*>(
                     edgePointers[edgeIndex]);
                 if (edge == nullptr || !extracted ||
@@ -1077,8 +1194,12 @@ bool extractHatchLoopTopology(const AcDbHatch* hatch,
     result.resolved = true;
     return true;
 }
+#endif
+
+#include "hatch_polyline.inc"
 
 struct RegionTraversalDiagnostics {
+    std::size_t visitedEntities = 0;
     std::size_t blockReferences = 0;
     std::size_t traversedBlockReferences = 0;
     std::size_t cyclicBlockReferences = 0;
@@ -1090,6 +1211,56 @@ struct RegionTraversalDiagnostics {
     std::size_t unreadableBlockRecords = 0;
     std::size_t unreadableEntities = 0;
     std::map<std::string, XrefDependency> xrefDependencies;
+};
+
+struct ExternalDatabaseCache {
+    std::map<std::string, std::unique_ptr<AcDbDatabase>> databases;
+
+    bool modelSpace(const std::string& path, AcDbObjectId& modelSpaceId,
+                    std::string& reason) {
+        auto found = databases.find(path);
+        if (found == databases.end()) {
+            auto database = std::make_unique<AcDbDatabase>(false, true);
+            std::string extension = path.size() >= 4
+                ? path.substr(path.size() - 4) : std::string();
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](const unsigned char value) {
+                               return static_cast<char>(std::tolower(value));
+                           });
+            Acad::ErrorStatus status = Acad::eInvalidInput;
+            if (extension == ".dwg") {
+                status = database->readDwgFile(
+                    AcString(path.c_str()).kwszPtr(),
+                    AcDbDatabase::kForReadAndAllShare, true);
+            } else if (extension == ".dxf") {
+                const std::string logPath = path + ".green-atlas.xref.dxf.log";
+                status = database->dxfIn(
+                    AcString(path.c_str()).kwszPtr(),
+                    AcString(logPath.c_str()).kwszPtr());
+            }
+            if (status != Acad::eOk) {
+                reason = "AutoCAD could not open package-local XREF database "
+                    "(status=" + std::to_string(static_cast<int>(status)) + ")";
+                return false;
+            }
+            found = databases.emplace(path, std::move(database)).first;
+        }
+        AcDbBlockTable* table = nullptr;
+        const Acad::ErrorStatus tableStatus =
+            found->second->getBlockTable(table, AcDb::kForRead);
+        if (tableStatus != Acad::eOk || table == nullptr) {
+            reason = "AutoCAD could not open package-local XREF block table";
+            return false;
+        }
+        const Acad::ErrorStatus modelStatus =
+            table->getAt(ACDB_MODEL_SPACE, modelSpaceId);
+        table->close();
+        if (modelStatus != Acad::eOk || modelSpaceId.isNull()) {
+            reason = "AutoCAD could not open package-local XREF model space";
+            return false;
+        }
+        return true;
+    }
 };
 
 XrefDependency inspectXrefDependency(AcDbBlockTableRecord* record) {
@@ -1124,6 +1295,67 @@ XrefDependency inspectXrefDependency(AcDbBlockTableRecord* record) {
     return dependency;
 }
 
+std::string parentDirectory(const std::string& path) {
+    const auto separator = path.find_last_of("/\\");
+    return separator == std::string::npos ? std::string(".")
+                                          : path.substr(0, separator);
+}
+
+AcDbObjectIdArray relinkUniquePackageLocalXrefs(AcDbDatabase* database,
+                                                const std::string& sourcePath) {
+    AcDbObjectIdArray relinked;
+    AcDbBlockTable* tablePointer = nullptr;
+    if (database->getBlockTable(tablePointer, AcDb::kForRead) != Acad::eOk ||
+        tablePointer == nullptr) return relinked;
+    std::unique_ptr<AcDbBlockTable, void(*)(AcDbBlockTable*)> table(
+        tablePointer, [](AcDbBlockTable* value) { if (value) value->close(); });
+    AcDbBlockTableIterator* iteratorPointer = nullptr;
+    if (table->newIterator(iteratorPointer) != Acad::eOk || iteratorPointer == nullptr)
+        return relinked;
+    std::unique_ptr<AcDbBlockTableIterator> iterator(iteratorPointer);
+    struct PendingReference {
+        AcDbObjectId id;
+        gaDelivery::ReferencePathRequest request;
+    };
+    std::vector<PendingReference> pending;
+    for (; !iterator->done(); iterator->step()) {
+        AcDbBlockTableRecord* recordPointer = nullptr;
+        if (iterator->getRecord(recordPointer, AcDb::kForRead) != Acad::eOk ||
+            recordPointer == nullptr) continue;
+        std::unique_ptr<AcDbBlockTableRecord, void(*)(AcDbBlockTableRecord*)> record(
+            recordPointer,
+            [](AcDbBlockTableRecord* value) { if (value) value->close(); });
+        if (!record->isFromExternalReference() || !record->isUnloaded()) continue;
+        AcString name, storedPath;
+        if (record->getName(name) != Acad::eOk ||
+            record->pathName(storedPath) != Acad::eOk || storedPath.isEmpty()) continue;
+        pending.push_back({record->objectId(), {utf8(name.kwszPtr()),
+                                               utf8(storedPath.kwszPtr())}});
+    }
+    if (pending.empty()) return relinked;
+    std::vector<gaDelivery::ReferencePathRequest> requests;
+    requests.reserve(pending.size());
+    for (const auto& item : pending) requests.push_back(item.request);
+    std::vector<gaDelivery::ReferencePathMatch> matches;
+    try {
+        matches = gaDelivery::findReferencePaths(parentDirectory(sourcePath), requests);
+    } catch (...) {
+        return relinked;
+    }
+    for (std::size_t index = 0; index < pending.size() && index < matches.size(); ++index) {
+        if (matches[index].path.empty()) continue;
+        AcDbBlockTableRecord* recordPointer = nullptr;
+        if (acdbOpenObject(recordPointer, pending[index].id, AcDb::kForWrite) != Acad::eOk ||
+            recordPointer == nullptr) continue;
+        if (recordPointer->setPathName(
+                AcString(matches[index].path.c_str()).kwszPtr()) == Acad::eOk) {
+            relinked.append(pending[index].id);
+        }
+        recordPointer->close();
+    }
+    return relinked;
+}
+
 std::string mInsertCellToken(const std::string& handle,
                              const Adesk::UInt16 row,
                              const Adesk::UInt16 column) {
@@ -1147,6 +1379,7 @@ AcGeVector3d mInsertCellOffset(const AcDbMInsertBlock* block,
 void collectAttachedAttributes(AcDbBlockReference* blockReference,
                                const std::vector<std::string>& instanceChain,
                                const std::string& effectiveLayer,
+                               const std::string& layerNamespace,
                                std::vector<EntityCoverage>& coverage,
                                RegionTraversalDiagnostics& diagnostics) {
     AcDbObjectIterator* attributeIterator = blockReference->attributeIterator();
@@ -1166,7 +1399,10 @@ void collectAttachedAttributes(AcDbBlockReference* blockReference,
         attributeRecord.sourceLayer = utf8(attribute->layer());
         attributeRecord.layer = attributeRecord.sourceLayer == "0"
             ? effectiveLayer
-            : attributeRecord.sourceLayer;
+            : (layerNamespace.empty() ||
+               attributeRecord.sourceLayer.rfind(layerNamespace + "|", 0) == 0
+                ? attributeRecord.sourceLayer
+                : layerNamespace + "|" + attributeRecord.sourceLayer);
         attributeRecord.instanceChain = instanceChain;
         attributeRecord.status = "context";
         attributeRecord.method = "autodesk-non-calculation-context";
@@ -1178,44 +1414,33 @@ void collectAttachedAttributes(AcDbBlockReference* blockReference,
     delete attributeIterator;
 }
 
+std::string effectiveEntityLayer(const std::string& sourceLayer,
+                                 const std::string& inheritedLayer,
+                                 const std::string& layerNamespace) {
+    const std::string layer = sourceLayer == "0" ? inheritedLayer : sourceLayer;
+    if (layerNamespace.empty() || layer.empty() || layer == "0" ||
+        layer.rfind(layerNamespace + "|", 0) == 0) {
+        return layer;
+    }
+    return layerNamespace + "|" + layer;
+}
+
 bool objectIdIn(const std::vector<AcDbObjectId>& values, const AcDbObjectId& candidate) {
     return std::find(values.begin(), values.end(), candidate) != values.end();
-}
-
-std::string hatchTopologyCacheKey(const AcDbHatch* hatch,
-                                  const AcGeMatrix3d& transform) {
-    std::ostringstream key;
-    key << hatch->objectId().asOldId() << std::hexfloat;
-    for (int row = 0; row < 3; ++row) {
-        for (int column = 0; column < 3; ++column) {
-            key << '|' << transform.entry[row][column];
-        }
-    }
-    return key.str();
-}
-
-void translateTopology(RegionTopology& topology,
-                       const AcGeVector3d& translation) {
-    for (RegionLoop& loop : topology.loops) {
-        for (Point3& point : loop.coordinates) {
-            point.x += translation.x;
-            point.y += translation.y;
-            point.z += translation.z;
-        }
-    }
 }
 
 void collectRegionInstances(const AcDbObjectId& recordId,
                             const AcGeMatrix3d& accumulatedTransform,
                             const std::vector<std::string>& instanceChain,
                             const std::string& inheritedLayer,
+                            const std::string& layerNamespace,
                             const double tolerance,
                             std::vector<AcDbObjectId>& activeRecords,
                             std::vector<RegionTopology>& regions,
                             std::vector<NativePath>& paths,
                             std::vector<NativePoint>& points,
                             std::vector<EntityCoverage>& coverage,
-                            HatchTopologyCache& hatchTopologyCache,
+                            ExternalDatabaseCache& externalDatabases,
                             RegionTraversalDiagnostics& diagnostics) {
     if (recordId.isNull() || objectIdIn(activeRecords, recordId)) {
         ++diagnostics.cyclicBlockReferences;
@@ -1238,6 +1463,12 @@ void collectRegionInstances(const AcDbObjectId& recordId,
     }
 
     for (iterator->start(); !iterator->done(); iterator->step()) {
+        if (mcpCancellationRequested()) break;
+        ++diagnostics.visitedEntities;
+        gMcpProcessedEntities = diagnostics.visitedEntities;
+        if (diagnostics.visitedEntities % 10000 == 0) {
+            publishMcpProgress("collecting", diagnostics.visitedEntities);
+        }
         AcDbEntity* entity = nullptr;
         if (iterator->getEntity(entity, AcDb::kForRead) != Acad::eOk || entity == nullptr) {
             ++diagnostics.unreadableEntities;
@@ -1253,8 +1484,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             std::vector<std::string> nestedChain(instanceChain);
             nestedChain.push_back(entityHandle(blockReference));
             const std::string sourceLayer = utf8(blockReference->layer());
-            const std::string effectiveLayer =
-                sourceLayer == "0" ? inheritedLayer : sourceLayer;
+            const std::string effectiveLayer = effectiveEntityLayer(
+                sourceLayer, inheritedLayer, layerNamespace);
             EntityCoverage record;
             record.handle = entityHandle(blockReference);
             record.entityType = utf8(entity->isA()->name());
@@ -1270,7 +1501,11 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             bool isXref = false;
             bool isUnloadedXref = false;
             bool isUnresolvedXref = false;
+            bool traversesExternalDatabase = false;
+            std::string nestedLayerNamespace = layerNamespace;
             std::string xrefDependencyId;
+            std::string xrefTraversalFailure;
+            AcDbObjectId traversalRecordId = nestedRecordId;
             int xrefStatus = static_cast<int>(AcDb::kXrfNotAnXref);
             AcDbBlockTableRecord* nestedRecord = nullptr;
             if (acdbOpenObject(nestedRecord, nestedRecordId, AcDb::kForRead) == Acad::eOk &&
@@ -1284,7 +1519,19 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                     isUnresolvedXref = status != AcDb::kXrfResolved;
                     XrefDependency dependency = inspectXrefDependency(nestedRecord);
                     xrefDependencyId = "xref/" + dependency.recordHandle;
-                    if (dependency.status != "resolved") {
+                    if (isUnresolvedXref && !dependency.resolvedPath.empty() &&
+                        dependency.bytes > 0 && !dependency.sha256.empty() &&
+                        externalDatabases.modelSpace(
+                            dependency.resolvedPath, traversalRecordId,
+                            xrefTraversalFailure)) {
+                        isUnresolvedXref = false;
+                        isUnloadedXref = false;
+                        traversesExternalDatabase = true;
+                        nestedLayerNamespace = layerNamespace.empty()
+                            ? dependency.blockName
+                            : layerNamespace + "|" + dependency.blockName;
+                        dependency.status = "resolved";
+                    } else if (dependency.status != "resolved") {
                         isUnresolvedXref = true;
                     }
                     diagnostics.xrefDependencies[dependency.recordHandle] =
@@ -1297,17 +1544,31 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             if (isUnresolvedXref) ++diagnostics.unresolvedXrefBlockReferences;
             if (isInvalidMInsert) ++diagnostics.unexpandedMInsertBlocks;
             record.status = (isInvalidMInsert || isUnresolvedXref) ? "unresolved" : "context";
-            record.method = isInvalidMInsert ? "minsert-not-expanded" :
-                (isUnresolvedXref ? "xref-not-resolved" :
-                (isXref ? "traverse-xref-reference" :
-                (isMInsert ? "traverse-minsert-cells" : "traverse-block-reference")));
+            if (isInvalidMInsert) {
+                record.method = "minsert-not-expanded";
+            } else if (isUnresolvedXref) {
+                record.method = "xref-not-resolved";
+            } else if (traversesExternalDatabase) {
+                record.method = "traverse-package-local-xref-database";
+            } else if (isXref) {
+                record.method = "traverse-xref-reference";
+            } else if (isMInsert) {
+                record.method = "traverse-minsert-cells";
+            } else {
+                record.method = "traverse-block-reference";
+            }
             record.reason = isInvalidMInsert
                 ? "MINSERT has invalid row, column or spacing data"
                 : (isUnresolvedXref
-                    ? "external reference status is not resolved (status=" +
-                        std::to_string(xrefStatus) + ")"
+                    ? "external reference could not be traversed (status=" +
+                        std::to_string(xrefStatus) +
+                        (xrefTraversalFailure.empty()
+                            ? std::string()
+                            : ", detail=" + xrefTraversalFailure) + ")"
                     : (isXref
-                        ? "resolved external reference traversed with a hashed dependency"
+                        ? (traversesExternalDatabase
+                            ? "package-local external reference opened read-only by AutoCAD and traversed with a hashed dependency"
+                            : "resolved external reference traversed with a hashed dependency")
                     : (isMInsert
                         ? "container expanded into " +
                             std::to_string(static_cast<std::size_t>(mInsert->rows()) *
@@ -1319,12 +1580,13 @@ void collectRegionInstances(const AcDbObjectId& recordId,
 
             if (isInvalidMInsert || isUnresolvedXref) {
                 collectAttachedAttributes(blockReference, nestedChain, effectiveLayer,
+                                          layerNamespace,
                                           coverage, diagnostics);
                 entity->close();
                 continue;
             }
 
-            if (objectIdIn(activeRecords, nestedRecordId)) {
+            if (objectIdIn(activeRecords, traversalRecordId)) {
                 ++diagnostics.cyclicBlockReferences;
                 entity->close();
                 continue;
@@ -1340,25 +1602,28 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                                 mInsertCellOffset(mInsert, row, column)) *
                             blockTransform;
                         collectAttachedAttributes(blockReference, cellChain,
-                                                  effectiveLayer, coverage,
+                                                  effectiveLayer, layerNamespace, coverage,
                                                   diagnostics);
                         ++diagnostics.expandedMInsertCells;
                         ++diagnostics.traversedBlockReferences;
-                        collectRegionInstances(nestedRecordId, cellTransform, cellChain,
-                                               effectiveLayer, tolerance, activeRecords,
+                        collectRegionInstances(traversalRecordId, cellTransform, cellChain,
+                                               effectiveLayer, nestedLayerNamespace,
+                                               tolerance, activeRecords,
                                                regions, paths, points, coverage,
-                                               hatchTopologyCache,
+                                               externalDatabases,
                                                diagnostics);
                     }
                 }
             } else {
                 collectAttachedAttributes(blockReference, nestedChain, effectiveLayer,
+                                          layerNamespace,
                                           coverage, diagnostics);
                 ++diagnostics.traversedBlockReferences;
-                collectRegionInstances(nestedRecordId, nestedTransform, nestedChain,
-                                       effectiveLayer, tolerance, activeRecords,
+                collectRegionInstances(traversalRecordId, nestedTransform, nestedChain,
+                                       effectiveLayer, nestedLayerNamespace,
+                                       tolerance, activeRecords,
                                        regions, paths, points, coverage,
-                                       hatchTopologyCache,
+                                       externalDatabases,
                                        diagnostics);
             }
             entity->close();
@@ -1369,9 +1634,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             RegionTopology topology;
             topology.measurement.handle = entityHandle(region);
             topology.sourceLayer = utf8(region->layer());
-            topology.measurement.layer = topology.sourceLayer == "0"
-                ? inheritedLayer
-                : topology.sourceLayer;
+            topology.measurement.layer = effectiveEntityLayer(
+                topology.sourceLayer, inheritedLayer, layerNamespace);
             topology.instanceChain = instanceChain;
             extractRegionTopology(region, accumulatedTransform, tolerance, topology);
             EntityCoverage record;
@@ -1392,108 +1656,33 @@ void collectRegionInstances(const AcDbObjectId& recordId,
         } else if (AcDbHatch* hatch = AcDbHatch::cast(entity)) {
             const std::string handle = entityHandle(hatch);
             const std::string sourceLayer = utf8(hatch->layer());
-            const std::string cacheKey = hatchTopologyCacheKey(
-                hatch, accumulatedTransform);
-            auto cached = hatchTopologyCache.find(cacheKey);
-            if (cached == hatchTopologyCache.end()) {
-                HatchTopologyCacheEntry entry;
-                entry.topology.measurement.handle = handle;
-                entry.topology.sourceLayer = sourceLayer;
-                AcGeMatrix3d linearTransform = accumulatedTransform;
-                linearTransform.setTranslation(AcGeVector3d(0.0, 0.0, 0.0));
-                AcDbRegion* region = hatch->getRegionArea();
-                entry.regionAvailable = region != nullptr;
-                if (region != nullptr) {
-                    extractRegionTopology(
-                        region, linearTransform, tolerance, entry.topology);
-                    delete region;
-                }
-                entry.regionTopologyStatus = entry.topology.errorStatus;
-                if (!entry.topology.resolved) {
-                    RegionTopology fallback;
-                    fallback.measurement.handle = handle;
-                    fallback.sourceLayer = sourceLayer;
-                    entry.usedLoopFallback = extractHatchLoopTopology(
-                        hatch, linearTransform, tolerance, fallback);
-                    entry.loopFallbackStatus = fallback.errorStatus;
-                    if (entry.usedLoopFallback) {
-                        entry.topology = std::move(fallback);
-                    }
-                }
-                cached = hatchTopologyCache.emplace(
-                    cacheKey, std::move(entry)).first;
-            }
-            RegionTopology topology = cached->second.topology;
-            translateTopology(topology, accumulatedTransform.translation());
-            topology.measurement.handle = handle;
-            topology.sourceLayer = sourceLayer;
-            topology.measurement.layer = sourceLayer == "0"
-                ? inheritedLayer
-                : sourceLayer;
-            topology.instanceChain = instanceChain;
-            const bool regionAvailable = cached->second.regionAvailable;
-            const int regionTopologyStatus =
-                cached->second.regionTopologyStatus;
-            const bool usedLoopFallback = cached->second.usedLoopFallback;
-            const int loopFallbackStatus = cached->second.loopFallbackStatus;
+            const std::string effectiveLayer = effectiveEntityLayer(
+                sourceLayer, inheritedLayer, layerNamespace);
             EntityCoverage record;
-            record.handle = topology.measurement.handle;
+            record.handle = handle;
             record.entityType = utf8(entity->isA()->name());
-            record.sourceLayer = topology.sourceLayer;
-            record.layer = topology.measurement.layer;
+            record.sourceLayer = sourceLayer;
+            record.layer = effectiveLayer;
             record.instanceChain = instanceChain;
+            RegionTopology topology;
+            topology.measurement.handle = handle;
+            topology.measurement.layer = effectiveLayer;
+            topology.sourceLayer = sourceLayer;
+            topology.instanceChain = instanceChain;
+            std::string reason;
+            extractPolylineHatchTopology(
+                hatch, accumulatedTransform, tolerance, topology, reason);
             record.status = topology.resolved ? "native" : "unresolved";
-            record.method = topology.resolved
-                ? (usedLoopFallback
-                    ? "autodesk-hatch-getloopat-native"
-                    : "autodesk-hatch-region-acbr-local-affine")
-                : "autodesk-hatch-native-topology-failed";
-            if (!topology.resolved) {
-                double hatchArea = 0.0;
-                const Acad::ErrorStatus areaStatus = hatch->getArea(hatchArea);
-                std::size_t openLoops = 0;
-                std::size_t selfIntersectingLoops = 0;
-                std::size_t polylineLoops = 0;
-                std::size_t textLoops = 0;
-                const int loopCount = hatch->numLoops();
-                for (int loopIndex = 0; loopIndex < loopCount; ++loopIndex) {
-                    const Adesk::Int32 loopType = hatch->loopTypeAt(loopIndex);
-                    if ((loopType & AcDbHatch::kNotClosed) != 0) ++openLoops;
-                    if ((loopType & AcDbHatch::kSelfIntersecting) != 0) {
-                        ++selfIntersectingLoops;
-                    }
-                    if ((loopType & AcDbHatch::kPolyline) != 0) ++polylineLoops;
-                    if ((loopType & (AcDbHatch::kTextbox |
-                                     AcDbHatch::kTextIsland)) != 0) {
-                        ++textLoops;
-                    }
-                }
-                record.reason =
-                    "native HATCH topology extraction failed: region=" +
-                    std::string(regionAvailable ? "available" : "null") +
-                    ", topology_status=" +
-                    std::to_string(regionTopologyStatus) +
-                    ", loop_fallback_status=" +
-                    std::to_string(loopFallbackStatus) +
-                    ", area_status=" + std::to_string(static_cast<int>(areaStatus)) +
-                    ", area=" +
-                    (areaStatus == Acad::eOk && std::isfinite(hatchArea)
-                        ? std::to_string(hatchArea)
-                        : std::string("unavailable")) +
-                    ", loops=" + std::to_string(loopCount) +
-                    ", polyline_loops=" + std::to_string(polylineLoops) +
-                    ", open_loops=" + std::to_string(openLoops) +
-                    ", self_intersecting_loops=" +
-                    std::to_string(selfIntersectingLoops) +
-                    ", text_loops=" + std::to_string(textLoops);
-            }
+            record.method = "autodesk-hatch-polyline-values";
+            record.reason = reason;
             coverage.push_back(std::move(record));
-            regions.push_back(std::move(topology));
+            if (topology.resolved) regions.push_back(std::move(topology));
         } else if (AcDbMline* mline = AcDbMline::cast(entity)) {
             NativePath path;
             path.handle = entityHandle(mline);
             path.sourceLayer = utf8(mline->layer());
-            path.layer = path.sourceLayer == "0" ? inheritedLayer : path.sourceLayer;
+            path.layer = effectiveEntityLayer(
+                path.sourceLayer, inheritedLayer, layerNamespace);
             path.instanceChain = instanceChain;
             extractMlineAxis(mline, accumulatedTransform, tolerance, path);
             EntityCoverage record;
@@ -1514,11 +1703,31 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             }
             coverage.push_back(std::move(record));
             if (path.resolved) paths.push_back(std::move(path));
+        } else if (AcDbSolid* solid = AcDbSolid::cast(entity)) {
+            NativePath path;
+            path.handle = entityHandle(solid);
+            path.sourceLayer = utf8(solid->layer());
+            path.layer = effectiveEntityLayer(
+                path.sourceLayer, inheritedLayer, layerNamespace);
+            path.instanceChain = instanceChain;
+            extractSolidBoundary(solid, accumulatedTransform, tolerance, path);
+            EntityCoverage record;
+            record.handle = path.handle;
+            record.entityType = utf8(entity->isA()->name());
+            record.sourceLayer = path.sourceLayer;
+            record.layer = path.layer;
+            record.instanceChain = instanceChain;
+            record.status = path.resolved ? "native" : (path.calculationContext ? "context" : "unresolved");
+            record.method = path.method;
+            record.reason = path.reason;
+            coverage.push_back(std::move(record));
+            if (path.resolved) paths.push_back(std::move(path));
         } else if (AcDbCurve* curve = AcDbCurve::cast(entity)) {
             NativePath path;
             path.handle = entityHandle(curve);
             path.sourceLayer = utf8(curve->layer());
-            path.layer = path.sourceLayer == "0" ? inheritedLayer : path.sourceLayer;
+            path.layer = effectiveEntityLayer(
+                path.sourceLayer, inheritedLayer, layerNamespace);
             path.instanceChain = instanceChain;
             extractDatabaseCurve(curve, accumulatedTransform, tolerance, path);
             EntityCoverage record;
@@ -1543,9 +1752,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             NativePoint nativePoint;
             nativePoint.handle = entityHandle(point);
             nativePoint.sourceLayer = utf8(point->layer());
-            nativePoint.layer = nativePoint.sourceLayer == "0"
-                ? inheritedLayer
-                : nativePoint.sourceLayer;
+            nativePoint.layer = effectiveEntityLayer(
+                nativePoint.sourceLayer, inheritedLayer, layerNamespace);
             nativePoint.instanceChain = instanceChain;
             AcGePoint3d position = point->position();
             position.transformBy(accumulatedTransform);
@@ -1565,7 +1773,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             record.handle = entityHandle(entity);
             record.entityType = utf8(entity->isA()->name());
             record.sourceLayer = utf8(entity->layer());
-            record.layer = record.sourceLayer == "0" ? inheritedLayer : record.sourceLayer;
+            record.layer = effectiveEntityLayer(
+                record.sourceLayer, inheritedLayer, layerNamespace);
             record.instanceChain = instanceChain;
             if (isNonCalculationContext(entity)) {
                 record.status = "context";
@@ -1684,7 +1893,6 @@ void exportProbe() {
         acutPrintf(_T("\nGreen Atlas: cannot create the sidecar file."));
         return;
     }
-
     output << std::setprecision(17);
     output << "{\n"
            << "  \"schema\": \"green-atlas.autocad-probe/1\",\n"
@@ -1825,14 +2033,19 @@ void exportRegionTopologyProbe() {
     std::vector<NativePath> paths;
     std::vector<NativePoint> points;
     std::vector<EntityCoverage> coverage;
-    HatchTopologyCache hatchTopologyCache;
+    ExternalDatabaseCache externalDatabases;
     RegionTraversalDiagnostics traversal;
     const AcGeMatrix3d rootTransform = AcGeMatrix3d::kIdentity;
     std::vector<std::string> instanceChain;
     std::vector<AcDbObjectId> activeRecords;
-    collectRegionInstances(modelSpaceId, rootTransform, instanceChain, "0",
+    collectRegionInstances(modelSpaceId, rootTransform, instanceChain, "0", "",
                            toleranceUnits, activeRecords, regions, paths, points,
-                           coverage, hatchTopologyCache, traversal);
+                           coverage, externalDatabases, traversal);
+    if (mcpCancellationRequested()) {
+        gLastTopologyExportError = "native topology export cancelled";
+        return;
+    }
+    publishMcpProgress("serializing", traversal.visitedEntities);
 
     std::size_t resolvedCount = 0;
     std::size_t loopCount = 0;
@@ -1857,6 +2070,13 @@ void exportRegionTopologyProbe() {
         acutPrintf(_T("\nGreen Atlas: cannot create the topology sidecar file."));
         return;
     }
+    const auto abortSerializationIfCancelled = [&]() {
+        if (!mcpCancellationRequested()) return false;
+        output.close();
+        std::remove(temporaryPath.c_str());
+        gLastTopologyExportError = "native topology export cancelled";
+        return true;
+    };
 
     output << std::setprecision(17);
     output << "{\n"
@@ -1895,6 +2115,7 @@ void exportRegionTopologyProbe() {
 
     for (std::size_t coverageIndex = 0;
          coverageIndex < coverage.size(); ++coverageIndex) {
+        if (coverageIndex % 10000 == 0 && abortSerializationIfCancelled()) return;
         const EntityCoverage& record = coverage[coverageIndex];
         output << (coverageIndex == 0 ? "\n" : ",\n")
                << "    {\"handle\": \"" << jsonEscape(record.handle)
@@ -1922,6 +2143,7 @@ void exportRegionTopologyProbe() {
            << "  \"regions\": [";
 
     for (std::size_t regionIndex = 0; regionIndex < regions.size(); ++regionIndex) {
+        if (regionIndex % 1000 == 0 && abortSerializationIfCancelled()) return;
         const RegionTopology& region = regions[regionIndex];
         output << (regionIndex == 0 ? "\n" : ",\n")
                << "    {\"handle\": \"" << jsonEscape(region.measurement.handle)
@@ -1950,6 +2172,7 @@ void exportRegionTopologyProbe() {
                    << loop.sampledMaximumDeviation
                    << ", \"coordinates\": [";
             for (std::size_t pointIndex = 0; pointIndex < loop.coordinates.size(); ++pointIndex) {
+                if (pointIndex % 4096 == 0 && abortSerializationIfCancelled()) return;
                 const Point3& point = loop.coordinates[pointIndex];
                 output << (pointIndex == 0 ? "" : ",")
                        << '[' << point.x << ',' << point.y << ',' << point.z << ']';
@@ -1962,6 +2185,7 @@ void exportRegionTopologyProbe() {
     output << "  ],\n"
            << "  \"paths\": [";
     for (std::size_t pathIndex = 0; pathIndex < paths.size(); ++pathIndex) {
+        if (pathIndex % 1000 == 0 && abortSerializationIfCancelled()) return;
         const NativePath& path = paths[pathIndex];
         output << (pathIndex == 0 ? "\n" : ",\n")
                << "    {\"handle\": \"" << jsonEscape(path.handle)
@@ -1980,6 +2204,7 @@ void exportRegionTopologyProbe() {
                << ", \"coordinates\": [";
         for (std::size_t pointIndex = 0;
              pointIndex < path.coordinates.size(); ++pointIndex) {
+            if (pointIndex % 4096 == 0 && abortSerializationIfCancelled()) return;
             const Point3& point = path.coordinates[pointIndex];
             output << (pointIndex == 0 ? "" : ",")
                    << '[' << point.x << ',' << point.y << ',' << point.z << ']';
@@ -1990,6 +2215,7 @@ void exportRegionTopologyProbe() {
     output << "  ],\n"
            << "  \"points\": [";
     for (std::size_t pointIndex = 0; pointIndex < points.size(); ++pointIndex) {
+        if (pointIndex % 10000 == 0 && abortSerializationIfCancelled()) return;
         const NativePoint& point = points[pointIndex];
         output << (pointIndex == 0 ? "\n" : ",\n")
                << "    {\"handle\": \"" << jsonEscape(point.handle)
@@ -2031,6 +2257,7 @@ void exportRegionTopologyProbe() {
            << traversal.unexpandedMInsertBlocks
            << ", \"unreadable_block_records\": " << traversal.unreadableBlockRecords
            << ", \"unreadable_entities\": " << traversal.unreadableEntities
+           << ", \"visited_entities\": " << traversal.visitedEntities
            << ", \"source_instances\": " << coverage.size()
            << ", \"native\": " << coverageStatusCounts["native"]
            << ", \"context\": " << coverageStatusCounts["context"]
@@ -2072,41 +2299,72 @@ bool exportRegionTopologyFromPath(const std::string& sourcePath) {
     gLastTopologyExportSucceeded = false;
     gLastTopologyExportPath.clear();
     gLastTopologyExportError.clear();
-    if (sourcePath.size() < 4 ||
-        sourcePath.substr(sourcePath.size() - 4) != ".dxf") {
-        gLastTopologyExportError = "only saved DXF sources are accepted";
-        acutPrintf(_T("\nGreen Atlas: file-based topology export currently accepts DXF only."));
+    std::string extension = sourcePath.size() >= 4
+        ? sourcePath.substr(sourcePath.size() - 4) : std::string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char value) {
+                       return static_cast<char>(std::tolower(value));
+                   });
+    const bool isDxf = extension == ".dxf";
+    const bool isDwg = extension == ".dwg";
+    if (!isDxf && !isDwg) {
+        gLastTopologyExportError = "only saved DWG or DXF sources are accepted";
+        acutPrintf(_T("\nGreen Atlas: file-based topology export accepts saved DWG or DXF only."));
         return false;
     }
 
     AcDbDatabase sourceDatabase(false, true);
-    const std::string logPath = sourcePath + ".green-atlas.dxf.log";
-    const Acad::ErrorStatus importStatus = sourceDatabase.dxfIn(
-        AcString(sourcePath.c_str()).kwszPtr(), AcString(logPath.c_str()).kwszPtr());
+    Acad::ErrorStatus importStatus = Acad::eOk;
+    if (isDxf) {
+        const std::string logPath = sourcePath + ".green-atlas.dxf.log";
+        importStatus = sourceDatabase.dxfIn(
+            AcString(sourcePath.c_str()).kwszPtr(),
+            AcString(logPath.c_str()).kwszPtr());
+    } else {
+        importStatus = sourceDatabase.readDwgFile(
+            AcString(sourcePath.c_str()).kwszPtr(),
+            AcDbDatabase::kForReadAndAllShare,
+            true);
+    }
     if (importStatus != Acad::eOk) {
         gLastTopologyExportError =
-            "isolated AutoCAD DXF import failed with status " +
+            "isolated AutoCAD drawing import failed with status " +
             std::to_string(static_cast<int>(importStatus));
         const AcString statusText(std::to_string(static_cast<int>(importStatus)).c_str());
-        acutPrintf(_T("\nGreen Atlas: isolated DXF import failed (status=%s)."),
+        acutPrintf(_T("\nGreen Atlas: isolated drawing import failed (status=%s)."),
                    statusText.kwszPtr());
         return false;
     }
 
-    // Resolve package-local XREF databases in memory. The root DXF and every
-    // referenced file remain read-only; the emitted ledger binds native
-    // descendants to the exact dependency bytes used by AutoCAD.
-    acdbResolveCurrentXRefs(&sourceDatabase, false, false);
-
     AcDbHostApplicationServices* services = acdbHostApplicationServices();
     AcDbDatabase* previousDatabase = services->workingDatabase();
+    struct RestoreCapture {
+        AcDbHostApplicationServices* services;
+        AcDbDatabase* previous;
+        ~RestoreCapture() {
+            gSideDatabaseSourcePath.clear();
+            gSideDatabaseCapture = false;
+            services->setWorkingDatabase(previous);
+        }
+    } restore{services, previousDatabase};
     services->setWorkingDatabase(&sourceDatabase);
+
+    // Repair only deterministic package-local references in the isolated
+    // database. Unique basenames, exact relative suffixes and byte-identical
+    // duplicates are accepted; ambiguous different-content files stay
+    // unresolved for explicit user review.
+    const AcDbObjectIdArray packageLocalXrefs =
+        relinkUniquePackageLocalXrefs(&sourceDatabase, sourcePath);
+
+    // Do not call acdbResolveCurrentXRefs for a side database in AutoCAD for
+    // Mac. It enters document-only interaction setup and can wait forever.
+    // collectRegionInstances opens every deterministic package-local XREF as
+    // its own read-only AcDbDatabase and applies the authored block transform.
+    (void)packageLocalXrefs;
+
     gSideDatabaseCapture = true;
     gSideDatabaseSourcePath = sourcePath;
     exportRegionTopologyProbe();
-    gSideDatabaseSourcePath.clear();
-    gSideDatabaseCapture = false;
-    services->setWorkingDatabase(previousDatabase);
     return gLastTopologyExportSucceeded;
 }
 
@@ -2119,7 +2377,7 @@ void exportRegionTopologyFromSourceFile() {
     const ACHAR* sourceName = nullptr;
     if (liveDatabase->getFilename(sourceName) != Acad::eOk ||
         sourceName == nullptr || *sourceName == 0) {
-        acutPrintf(_T("\nGreen Atlas: open a saved DXF before file-based export."));
+        acutPrintf(_T("\nGreen Atlas: open a saved DWG or DXF before file-based export."));
         return;
     }
     exportRegionTopologyFromPath(utf8(sourceName));
@@ -2127,7 +2385,8 @@ void exportRegionTopologyFromSourceFile() {
 
 std::string mcpDirectory() {
     return "/tmp/green-atlas-autocad-mcp-" +
-        std::to_string(static_cast<unsigned long>(getuid()));
+        std::to_string(static_cast<unsigned long>(getuid())) + "-" +
+        kMcpQueueVersion;
 }
 
 bool ensureMcpDirectory() {
@@ -2148,6 +2407,24 @@ bool writeAtomicText(const std::string& path, const std::string& payload) {
         return false;
     }
     return true;
+}
+
+void publishMcpProgress(const std::string& phase,
+                        const std::size_t processedEntities) {
+    if (gActiveMcpRequestId.empty()) return;
+    const double elapsedSeconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - gMcpRequestStarted).count();
+    std::ostringstream payload;
+    payload << std::setprecision(6)
+            << "{\"schema\":\"green-atlas.autocad-mcp-progress/1\","
+            << "\"request_id\":\"" << gActiveMcpRequestId << "\","
+            << "\"plugin_version\":\"" << kPluginVersion << "\","
+            << "\"phase\":\"" << jsonEscape(phase) << "\","
+            << "\"processed_entities\":" << processedEntities << ','
+            << "\"elapsed_seconds\":" << elapsedSeconds << "}\n";
+    writeAtomicText(
+        mcpDirectory() + "/progress-" + gActiveMcpRequestId + ".json",
+        payload.str());
 }
 
 void publishMcpStatus(const bool ready) {
@@ -2178,8 +2455,9 @@ bool isMcpRequestName(const std::string& name) {
 void processMcpRequestsOnIdle() {
     static auto nextPoll = std::chrono::steady_clock::now();
     const auto now = std::chrono::steady_clock::now();
-    if (gMcpRequestInProgress || now < nextPoll) return;
+    if (gMcpRequestInProgress || gaDeliveryActive() || now < nextPoll) return;
     nextPoll = now + std::chrono::milliseconds(200);
+    gaDelivery::installMenu(gaQueueOpenInService); // Main menu may not exist at module startup.
     if (!ensureMcpDirectory()) return;
 
     DIR* directory = opendir(mcpDirectory().c_str());
@@ -2202,6 +2480,12 @@ void processMcpRequestsOnIdle() {
     if (std::rename(requestPath.c_str(), processingPath.c_str()) != 0) return;
 
     gMcpRequestInProgress = true;
+    gActiveMcpRequestId = requestId;
+    gMcpCancellationObserved = false;
+    gMcpProcessedEntities = 0;
+    gMcpRequestStarted = std::chrono::steady_clock::now();
+    gNextMcpControlCheck = gMcpRequestStarted;
+    publishMcpProgress("accepted", 0);
     std::ifstream request(processingPath, std::ios::binary);
     std::ostringstream requestBuffer;
     requestBuffer << request.rdbuf();
@@ -2236,11 +2520,27 @@ void processMcpRequestsOnIdle() {
         mcpDirectory() + "/response-" + requestId + ".json",
         response.str());
     std::remove(processingPath.c_str());
+    std::remove((mcpDirectory() + "/cancel-" + requestId + ".txt").c_str());
+    std::remove((mcpDirectory() + "/progress-" + requestId + ".json").c_str());
     publishMcpStatus(true);
+    gActiveMcpRequestId.clear();
+    gMcpCancellationObserved = false;
+    gMcpProcessedEntities = 0;
     gMcpRequestInProgress = false;
 }
 
+#ifdef GA_GEOMETRY_SELFTEST
+#include "geometry_selftest.inc"
+#endif
+
 void initialize() {
+#ifdef GA_GEOMETRY_SELFTEST
+    acedRegCmds->addCommand(kCommandGroup, _T("GAGEOMETRYSELFTEST"),
+                            _T("GAGEOMETRYSELFTEST"), ACRX_CMD_MODAL, geometrySelftest);
+#endif
+    acedRegCmds->addCommand(kCommandGroup, _T("GAOPEN"), _T("GAOPEN"),
+                            ACRX_CMD_MODAL, gaOpenInService);
+    gaDelivery::installMenu(gaQueueOpenInService);
     acedRegCmds->addCommand(kCommandGroup, _T("GAEXPORTPROBE"),
                             _T("GAEXPORTPROBE"), ACRX_CMD_MODAL, exportProbe);
     acedRegCmds->addCommand(kCommandGroup, _T("GAEXPORTREGIONPROBE"),
@@ -2254,12 +2554,23 @@ void initialize() {
 }
 
 void unload() {
+    gaDelivery::removeMenu();
     acedRemoveOnIdleWinMsg(processMcpRequestsOnIdle);
     publishMcpStatus(false);
     acedRegCmds->removeGroup(kCommandGroup);
 }
 
 }  // namespace
+
+bool gaExportPreparedSnapshot(const std::string& path, std::string& error) {
+    if (gMcpRequestInProgress || gSideDatabaseCapture) {
+        error = "AutoCAD уже подготавливает другой снимок. Повторите после завершения.";
+        return false;
+    }
+    const bool result = exportRegionTopologyFromPath(path);
+    error = gLastTopologyExportError;
+    return result;
+}
 
 extern "C" AcRx::AppRetCode acrxEntryPoint(AcRx::AppMsgCode message, void* appId) {
     switch (message) {

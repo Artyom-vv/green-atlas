@@ -1,10 +1,22 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+from pathlib import Path
+from types import SimpleNamespace
 
 import green_atlas_autocad_mcp
-from green_atlas_autocad_mcp import TOOLS, _bridge_status, _compiler_python, _handle
+from green_atlas_autocad_mcp import (
+    PLUGIN_VERSION,
+    TOOLS,
+    ToolFailure,
+    _bridge_status,
+    _compiler_python,
+    _handle,
+    _prepare_dxf,
+    _request_native_export,
+)
 
 
 def test_initialize_and_list_tools() -> None:
@@ -46,7 +58,7 @@ def test_bridge_status_accepts_sandboxed_process_probe(tmp_path, monkeypatch) ->
     queue = tmp_path / "queue"
     queue.mkdir()
     (queue / "status.json").write_text(
-        json.dumps({"ready": True, "plugin_version": "test", "pid": 42})
+        json.dumps({"ready": True, "plugin_version": PLUGIN_VERSION, "pid": 42})
     )
     monkeypatch.setattr(green_atlas_autocad_mcp, "_queue_directory", lambda: queue)
 
@@ -62,6 +74,73 @@ def test_bridge_status_accepts_sandboxed_process_probe(tmp_path, monkeypatch) ->
     assert status["process_check"] == "permission-denied"
 
 
+def test_bridge_status_reports_native_progress(tmp_path, monkeypatch) -> None:
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    (queue / "status.json").write_text(
+        json.dumps({"ready": True, "plugin_version": PLUGIN_VERSION, "pid": 42})
+    )
+    progress = {
+        "schema": "green-atlas.autocad-mcp-progress/1",
+        "request_id": "a" * 32,
+        "phase": "collecting",
+        "processed_entities": 20000,
+    }
+    (queue / f"progress-{'a' * 32}.json").write_text(json.dumps(progress))
+    monkeypatch.setattr(green_atlas_autocad_mcp, "_queue_directory", lambda: queue)
+    monkeypatch.setattr(green_atlas_autocad_mcp.os, "kill", lambda _pid, _signal: None)
+
+    status = _bridge_status()
+
+    assert status["active_request"] == progress
+
+
+def test_bridge_status_rejects_stale_plugin_version(tmp_path, monkeypatch) -> None:
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    (queue / "status.json").write_text(
+        json.dumps({"ready": True, "plugin_version": "0.1.28", "pid": 42})
+    )
+    monkeypatch.setattr(green_atlas_autocad_mcp, "_queue_directory", lambda: queue)
+    monkeypatch.setattr(green_atlas_autocad_mcp.os, "kill", lambda _pid, _signal: None)
+
+    status = _bridge_status()
+
+    assert status["ready"] is False
+    assert "expected 0.1.33, got 0.1.28" in status["reason"]
+
+
+def test_timeout_requests_native_cancellation(tmp_path, monkeypatch) -> None:
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    source = tmp_path / "source.dxf"
+    source.write_text("fixture")
+    request_id = "b" * 32
+    (queue / f"processing-{request_id}.txt").write_text(str(source))
+    clock = iter((0.0, 0.0, 0.0, 6.0))
+    monkeypatch.setattr(green_atlas_autocad_mcp, "_queue_directory", lambda: queue)
+    monkeypatch.setattr(
+        green_atlas_autocad_mcp,
+        "_bridge_status",
+        lambda: {"ready": True},
+    )
+    monkeypatch.setattr(
+        green_atlas_autocad_mcp.uuid,
+        "uuid4",
+        lambda: SimpleNamespace(hex=request_id),
+    )
+    monkeypatch.setattr(green_atlas_autocad_mcp.time, "monotonic", lambda: next(clock))
+
+    try:
+        _request_native_export(source, 0)
+    except ToolFailure as exc:
+        assert "native cancellation was requested" in str(exc)
+    else:
+        raise AssertionError("timeout must fail")
+
+    assert (queue / f"cancel-{request_id}.txt").read_text() == "cancel\n"
+
+
 def test_compiler_uses_project_api_environment(tmp_path, monkeypatch) -> None:
     interpreter = tmp_path / "apps" / "api" / ".venv" / "bin" / "python"
     interpreter.parent.mkdir(parents=True)
@@ -71,3 +150,107 @@ def test_compiler_uses_project_api_environment(tmp_path, monkeypatch) -> None:
 
     assert _compiler_python() == interpreter.absolute()
     assert _compiler_python().is_symlink()
+
+
+def test_prepare_accepts_dwg_through_autocad_native_boundary(
+    tmp_path, monkeypatch
+) -> None:
+    source = tmp_path / "street.DWG"
+    source.write_bytes(b"native-dwg-fixture")
+    probe = tmp_path / "street.geometry.json"
+    probe.write_text(json.dumps({"summary": {"native": 4}, "limitations": []}))
+    snapshot = tmp_path / "street.snapshot.json"
+    snapshot.write_text("{}")
+    monkeypatch.setattr(
+        green_atlas_autocad_mcp,
+        "_request_native_export",
+        lambda path, timeout: {"output_path": str(probe)},
+    )
+    monkeypatch.setattr(
+        green_atlas_autocad_mcp.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, json.dumps({"output": str(snapshot)}), ""
+        ),
+    )
+
+    result = _prepare_dxf({"source_path": str(source)})
+
+    assert result["source_path"] == str(source)
+    assert result["snapshot_path"] == str(snapshot)
+    assert result["native_probe"]["summary"] == {"native": 4}
+
+
+def test_admission_failure_keeps_autocad_native_diagnostics(
+    tmp_path, monkeypatch
+) -> None:
+    source = tmp_path / "partial.dwg"
+    source.write_bytes(b"dwg")
+    probe = tmp_path / "partial.geometry.json"
+    probe.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "source_instances": 12,
+                    "native": 9,
+                    "unresolved_instances": 3,
+                },
+                "limitations": ["three unresolved instances"],
+            }
+        )
+    )
+    monkeypatch.setattr(
+        green_atlas_autocad_mcp,
+        "_request_native_export",
+        lambda path, timeout: {"output_path": str(probe), "output_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        green_atlas_autocad_mcp.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 2, "", "unresolved XREF"
+        ),
+    )
+
+    try:
+        _prepare_dxf({"source_path": str(source)})
+    except ToolFailure as error:
+        assert error.details["admission_status"] == "rejected"
+        assert error.details["native_probe"]["summary"]["native"] == 9
+        assert error.details["native_probe"]["summary"]["unresolved_instances"] == 3
+    else:
+        raise AssertionError("incomplete native evidence was admitted")
+
+
+def test_native_hatch_path_guards_edge_apis_and_preserves_islands() -> None:
+    """Typed polyline value arrays must not re-enable unsafe edge conversion."""
+
+    source = (
+        Path(__file__).resolve().parents[1] / "native" / "green_atlas_bridge.cpp"
+    ).read_text()
+
+    assert "hatch->getRegionArea" not in source
+    assert "hatch->getArea" not in source
+    active_hatch_branch = source.split(
+        "} else if (AcDbHatch* hatch = AcDbHatch::cast(entity)) {", 1
+    )[1].split("} else if (AcDbMline* mline", 1)[0]
+    assert "getLoopAt" not in active_hatch_branch
+    assert "numLoops" not in active_hatch_branch
+    assert "extractPolylineHatchTopology" in active_hatch_branch
+    extractor = (
+        Path(__file__).resolve().parents[1] / "native" / "hatch_polyline.inc"
+    ).read_text()
+    assert "AcGeVoidPointerArray" not in extractor
+    assert "hatch->getRegionArea" in extractor
+    assert "delete areaRegion" in extractor
+    assert "hatch->getArea" not in extractor
+    call = extractor.index("hatch->getLoopAt(")
+    assert extractor.index("hatch->numLoops()") < call
+    assert extractor.index("!(type & AcDbHatch::kPolyline)") < call
+    assert extractor.index("AcDbHatch::kSelfIntersecting") < call
+    assert "getAssocObjIdsAt" in extractor
+    assert "relinkUniquePackageLocalXrefs" in source
+    assert "findReferencePaths(parentDirectory(sourcePath), requests)" in source
+    assert "traverse-package-local-xref-database" in source
+    assert "acdbResolveCurrentXRefs(&sourceDatabase" not in source
+    assert "externalDatabases.modelSpace(" in source

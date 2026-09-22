@@ -28,6 +28,16 @@ SUPPORTED_PLUGIN_VERSIONS = {
     "0.1.17",
     "0.1.19",
     "0.1.20",
+    "0.1.21",
+    "0.1.22",
+    "0.1.23",
+    "0.1.24",
+    "0.1.25",
+    "0.1.26",
+    "0.1.27",
+    "0.1.28",
+    "0.1.30",
+    "0.1.33",
 }
 XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.6",
@@ -44,11 +54,27 @@ XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.17",
     "0.1.19",
     "0.1.20",
+    "0.1.21",
+    "0.1.22",
+    "0.1.23",
+    "0.1.24",
+    "0.1.25",
+    "0.1.26",
+    "0.1.27",
+    "0.1.28",
+    "0.1.30",
+    "0.1.33",
 }
-BLOCKING_DIAGNOSTICS = (
+TRAVERSAL_DIAGNOSTICS = (
     "cyclic_block_references",
     "unloaded_xref_block_references",
     "unresolved_xref_block_references",
+    "unexpanded_minsert_blocks",
+    "unreadable_block_records",
+    "unreadable_entities",
+)
+BLOCKING_DIAGNOSTICS = (
+    "cyclic_block_references",
     "unexpanded_minsert_blocks",
     "unreadable_block_records",
     "unreadable_entities",
@@ -111,8 +137,8 @@ def _length_3d(coordinates: list[list[float]]) -> float:
 
 
 def _compile_xref_dependencies(
-    probe: dict[str, Any], package_root: Path | None
-) -> tuple[list[dict[str, Any]] | None, set[str]]:
+    probe: dict[str, Any], package_root: Path | None, *, live: bool = False
+) -> tuple[list[dict[str, Any]] | None, set[str], set[str]]:
     summary = probe.get("summary") or {}
     xref_references = summary.get("xref_block_references")
     if not isinstance(xref_references, int) or xref_references < 0:
@@ -123,14 +149,10 @@ def _compile_xref_dependencies(
             raise CadSnapshotAdmissionError(
                 "native probe declares XREF dependencies without XREF references"
             )
-        return None, set()
+        return None, set(), set()
     if probe.get("plugin_version") not in XREF_DEPENDENCY_PLUGIN_VERSIONS:
         raise CadSnapshotAdmissionError(
             "native probe cannot prove the exact XREF dependency files"
-        )
-    if package_root is None:
-        raise CadSnapshotAdmissionError(
-            "package root is required to verify native XREF dependencies"
         )
     if not isinstance(raw_dependencies, list) or not raw_dependencies:
         raise CadSnapshotAdmissionError("native probe has no XREF dependency ledger")
@@ -139,22 +161,18 @@ def _compile_xref_dependencies(
             "native XREF dependency count differs from its ledger"
         )
 
-    try:
-        canonical_root = package_root.resolve(strict=True)
-    except OSError as error:
-        raise CadSnapshotAdmissionError("CAD package root is unavailable") from error
     dependencies: list[dict[str, Any]] = []
     dependency_ids: set[str] = set()
+    unresolved_dependency_ids: set[str] = set()
     record_handles: set[str] = set()
+    canonical_root: Path | None = None
     for raw in raw_dependencies:
-        if not isinstance(raw, dict) or raw.get("status") != "resolved":
-            raise CadSnapshotAdmissionError("native XREF dependency is not resolved")
+        if not isinstance(raw, dict):
+            raise CadSnapshotAdmissionError("native XREF dependency is invalid")
         record_handle = raw.get("record_handle")
         block_name = raw.get("block_name")
         stored_path = raw.get("stored_path")
-        resolved_path = raw.get("resolved_path")
-        claimed_sha256 = raw.get("sha256")
-        claimed_bytes = raw.get("bytes")
+        status = raw.get("status")
         if (
             not isinstance(record_handle, str)
             or not record_handle
@@ -162,7 +180,37 @@ def _compile_xref_dependencies(
             or not block_name
             or not isinstance(stored_path, str)
             or not stored_path
-            or not isinstance(resolved_path, str)
+            or status not in {"resolved", "unresolved"}
+        ):
+            raise CadSnapshotAdmissionError(
+                "native XREF dependency metadata is incomplete"
+            )
+        dependency_id = f"xref/{record_handle}"
+        if (
+            dependency_id in dependency_ids
+            or dependency_id in unresolved_dependency_ids
+            or record_handle in record_handles
+        ):
+            raise CadSnapshotAdmissionError("duplicate native XREF dependency record")
+        record_handles.add(record_handle)
+        if status == "unresolved":
+            unresolved_dependency_ids.add(dependency_id)
+            continue
+
+        if live:
+            # The source is captured geometry, not another read of an XREF file.
+            dependency_ids.add(dependency_id)
+            dependencies.append({
+                "id": dependency_id, "record_handle": record_handle,
+                "block_name": block_name, "stored_path": stored_path,
+            })
+            continue
+
+        resolved_path = raw.get("resolved_path")
+        claimed_sha256 = raw.get("sha256")
+        claimed_bytes = raw.get("bytes")
+        if (
+            not isinstance(resolved_path, str)
             or not resolved_path
             or not isinstance(claimed_sha256, str)
             or not isinstance(claimed_bytes, int)
@@ -171,6 +219,17 @@ def _compile_xref_dependencies(
             raise CadSnapshotAdmissionError(
                 "native XREF dependency metadata is incomplete"
             )
+        if package_root is None:
+            raise CadSnapshotAdmissionError(
+                "package root is required to verify native XREF dependencies"
+            )
+        if canonical_root is None:
+            try:
+                canonical_root = package_root.resolve(strict=True)
+            except OSError as error:
+                raise CadSnapshotAdmissionError(
+                    "CAD package root is unavailable"
+                ) from error
         candidate = Path(resolved_path)
         if candidate.is_symlink():
             raise CadSnapshotAdmissionError(
@@ -192,11 +251,7 @@ def _compile_xref_dependencies(
             raise CadSnapshotAdmissionError(
                 "native XREF dependency differs from the file AutoCAD reported"
             )
-        dependency_id = f"xref/{record_handle}"
-        if dependency_id in dependency_ids or record_handle in record_handles:
-            raise CadSnapshotAdmissionError("duplicate native XREF dependency record")
         dependency_ids.add(dependency_id)
-        record_handles.add(record_handle)
         dependencies.append(
             {
                 "id": dependency_id,
@@ -209,7 +264,7 @@ def _compile_xref_dependencies(
                 "stored_path": stored_path,
             }
         )
-    return dependencies, dependency_ids
+    return dependencies or None, dependency_ids, unresolved_dependency_ids
 
 
 def compile_region_probe(
@@ -218,6 +273,31 @@ def compile_region_probe(
     autocad_version: str,
     target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
     package_root: Path | None = None,
+) -> CadSnapshot:
+    return _compile_probe(
+        probe, autocad_version=autocad_version, target=target,
+        package_root=package_root,
+    )
+
+
+def compile_live_document(
+    content: bytes | bytearray, *, autocad_version: str,
+    target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
+) -> CadSnapshot:
+    """The immutable native capture is the source, not the older disk DXF."""
+    probe = json.loads(content)
+    if not isinstance(probe, dict):
+        raise CadSnapshotAdmissionError("native capture must be an object")
+    return _compile_probe(
+        probe, autocad_version=autocad_version, target=target,
+        live_source_sha256=hashlib.sha256(content).hexdigest(),
+    )
+
+
+def _compile_probe(
+    probe: dict[str, Any], *, autocad_version: str,
+    target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
+    package_root: Path | None = None, live_source_sha256: str | None = None,
 ) -> CadSnapshot:
     """Compile admitted native AutoCAD evidence into the stable API contract.
 
@@ -231,12 +311,15 @@ def compile_region_probe(
         raise CadSnapshotAdmissionError("unsupported native probe schema")
     if probe.get("plugin_version") not in SUPPORTED_PLUGIN_VERSIONS:
         raise CadSnapshotAdmissionError("unsupported native probe plugin version")
-    if probe.get("capture_mode") != "side_database_dxf":
-        raise CadSnapshotAdmissionError("only side-database capture can be admitted")
+    live = live_source_sha256 is not None
+    expected_mode = "live_document" if live else "side_database_dxf"
+    if probe.get("capture_mode") != expected_mode:
+        label = "live_document" if live else "side-database"
+        raise CadSnapshotAdmissionError(f"only {label} capture can be admitted")
     source = probe.get("source") or {}
-    if source.get("database_modified_flags") != 0:
+    if not live and source.get("database_modified_flags") != 0:
         raise CadSnapshotAdmissionError("native database reports unsaved modifications")
-    if source.get("live_database_matches_disk") is not True:
+    if not live and source.get("live_database_matches_disk") is not True:
         raise CadSnapshotAdmissionError(
             "native database is not proven equal to source DXF"
         )
@@ -257,7 +340,7 @@ def compile_region_probe(
 
     summary = probe.get("summary") or {}
     missing_diagnostics = [
-        field for field in BLOCKING_DIAGNOSTICS if field not in summary
+        field for field in TRAVERSAL_DIAGNOSTICS if field not in summary
     ]
     if missing_diagnostics:
         raise CadSnapshotAdmissionError(
@@ -271,7 +354,9 @@ def compile_region_probe(
     if blockers:
         raise CadSnapshotAdmissionError(f"native traversal is incomplete: {blockers}")
 
-    dependencies, dependency_ids = _compile_xref_dependencies(probe, package_root)
+    dependencies, dependency_ids, unresolved_dependency_ids = (
+        _compile_xref_dependencies(probe, package_root, live=live)
+    )
 
     raw_coverage = probe.get("coverage")
     raw_regions = probe.get("regions")
@@ -297,6 +382,21 @@ def compile_region_probe(
     raw_regions_by_key = {_identity_key(region): region for region in raw_regions}
     if len(raw_regions_by_key) != len(raw_regions):
         raise CadSnapshotAdmissionError("duplicate REGION instance in native geometry")
+    # A failed native extraction is a coverage gap, not geometry. Keep its
+    # ledger entry and admit healthy siblings; never relabel failed data native.
+    failed_regions = [region for region in raw_regions if region.get("status") == "unresolved"]
+    coverage_by_key = {_identity_key(record): record for record in raw_coverage}
+    for region in failed_regions:
+        record = coverage_by_key.get(_identity_key(region))
+        if not record or record.get("status") != "unresolved" or not record.get("reason"):
+            raise CadSnapshotAdmissionError("failed REGION lacks explicit unresolved coverage")
+    if summary.get("regions") != len(raw_regions):
+        raise CadSnapshotAdmissionError("native REGION count differs from geometry")
+    if (summary.get("resolved") != len(raw_regions) - len(failed_regions)
+            or summary.get("unresolved") != len(failed_regions)):
+        raise CadSnapshotAdmissionError("native REGION outcome counts differ from geometry")
+    raw_regions = [region for region in raw_regions if region.get("status") != "unresolved"]
+    raw_regions_by_key = {_identity_key(region): region for region in raw_regions}
     raw_paths_by_key = {_identity_key(path): path for path in raw_paths}
     raw_points_by_key = {_identity_key(point): point for point in raw_points}
     if len(raw_paths_by_key) != len(raw_paths):
@@ -321,10 +421,6 @@ def compile_region_probe(
         raise CadSnapshotAdmissionError(
             "native coverage does not match emitted AutoCAD geometry"
         )
-    if summary.get("regions") != len(raw_regions):
-        raise CadSnapshotAdmissionError("native REGION count differs from geometry")
-    if summary.get("resolved") != len(raw_regions) or summary.get("unresolved") != 0:
-        raise CadSnapshotAdmissionError("not every REGION instance was resolved")
     if probe.get("plugin_version") in {
         "0.1.7",
         "0.1.8",
@@ -339,6 +435,16 @@ def compile_region_probe(
         "0.1.17",
         "0.1.19",
         "0.1.20",
+        "0.1.21",
+        "0.1.22",
+        "0.1.23",
+        "0.1.24",
+        "0.1.25",
+        "0.1.26",
+        "0.1.27",
+        "0.1.28",
+        "0.1.30",
+        "0.1.33",
     }:
         if summary.get("paths") != len(raw_paths):
             raise CadSnapshotAdmissionError("native path count differs from geometry")
@@ -471,8 +577,11 @@ def compile_region_probe(
         )
         geometry.append(normalized_geometry)
 
+    admitted_paths: list[dict[str, Any]] = []
+    quarantined_path_reasons: dict[tuple[str, tuple[str, ...]], str] = {}
     for path in raw_paths:
         geometry_id = _geometry_id(path, "path")
+        identity_key = _identity_key(path)
         coordinates = path.get("coordinates")
         closed = path.get("closed")
         if path.get("status") != "native" or path.get("error_status") is not None:
@@ -506,15 +615,19 @@ def compile_region_probe(
             for left, right in zip(coordinates, coordinates[1:], strict=False)
         )
         if projected_length * metres_per_unit <= requested_tolerance_m:
-            raise CadSnapshotAdmissionError(
-                f"path {geometry_id} degenerates under WCS XY projection"
+            quarantined_path_reasons[identity_key] = (
+                "AutoCAD path has no usable WCS XY length at the requested "
+                "tolerance; excluded from calculation geometry"
             )
+            continue
         if closed and abs(_signed_xy_area(coordinates)) * metres_per_unit**2 <= (
             requested_tolerance_m**2
         ):
-            raise CadSnapshotAdmissionError(
-                f"closed path {geometry_id} has no WCS XY area"
+            quarantined_path_reasons[identity_key] = (
+                "closed AutoCAD path has no usable WCS XY area at the requested "
+                "tolerance; excluded from calculation geometry"
             )
+            continue
         sampled_deviation = path.get("sampled_max_deviation_units")
         if (
             not isinstance(sampled_deviation, (int, float))
@@ -550,6 +663,7 @@ def compile_region_probe(
             }
         )
         geometry.append(normalized_geometry)
+        admitted_paths.append(path)
 
     for point in raw_points:
         geometry_id = _geometry_id(point, "point")
@@ -588,7 +702,7 @@ def compile_region_probe(
 
     geometry_ids_by_key = {
         **{_identity_key(region): _geometry_id(region) for region in raw_regions},
-        **{_identity_key(path): _geometry_id(path, "path") for path in raw_paths},
+        **{_identity_key(path): _geometry_id(path, "path") for path in admitted_paths},
         **{_identity_key(point): _geometry_id(point, "point") for point in raw_points},
     }
     coverage: list[dict[str, Any]] = []
@@ -596,6 +710,13 @@ def compile_region_probe(
     xref_coverage_count = 0
     for record in raw_coverage:
         status = record.get("status")
+        quarantined_reason = quarantined_path_reasons.get(_identity_key(record))
+        method = record["method"]
+        reason = record.get("reason")
+        if quarantined_reason is not None:
+            status = "unresolved"
+            method = "autocad-wcs-xy-quarantined"
+            reason = quarantined_reason
         if status not in {"native", "converted", "context", "unresolved"}:
             raise CadSnapshotAdmissionError(f"unsupported coverage status: {status}")
         geometry_id = geometry_ids_by_key.get(_identity_key(record))
@@ -603,25 +724,40 @@ def compile_region_probe(
         dependency_refs = None
         if dependency_id is not None:
             xref_coverage_count += 1
-            if dependency_id not in dependency_ids:
+            if dependency_id in unresolved_dependency_ids:
+                if status != "unresolved":
+                    raise CadSnapshotAdmissionError(
+                        "missing XREF coverage must remain unresolved"
+                    )
+            elif dependency_id not in dependency_ids:
                 raise CadSnapshotAdmissionError(
                     "XREF coverage references an unknown dependency"
                 )
-            dependency_refs = [dependency_id]
-            referenced_dependency_ids.add(dependency_id)
+            else:
+                dependency_refs = [dependency_id]
+                referenced_dependency_ids.add(dependency_id)
         coverage_record = {
             "identity": _identity(record),
             "entity_type": record["entity_type"],
             "layer": record.get("layer", ""),
             "status": status,
-            "method": record["method"],
-            "reason": record.get("reason"),
+            "method": method,
+            "reason": reason,
             "geometry_ids": [geometry_id] if geometry_id else [],
         }
         if dependency_refs is not None:
             coverage_record["dependency_ids"] = dependency_refs
+        if dependency_id in unresolved_dependency_ids:
+            raw_dependency = next(
+                item for item in probe["xref_dependencies"]
+                if f"xref/{item['record_handle']}" == dependency_id
+            )
+            coverage_record["unresolved_reference"] = {
+                "block_name": raw_dependency["block_name"],
+                "stored_path": raw_dependency["stored_path"],
+            }
         coverage.append(coverage_record)
-    if dependencies is not None:
+    if dependency_ids or unresolved_dependency_ids:
         if xref_coverage_count != summary.get("xref_block_references"):
             raise CadSnapshotAdmissionError(
                 "native XREF reference count differs from dependency coverage"
@@ -635,7 +771,7 @@ def compile_region_probe(
     snapshot_without_hash = {
         "schema": SNAPSHOT_SCHEMA,
         "source": {
-            "sha256": source["sha256"],
+            "sha256": live_source_sha256 or source["sha256"],
             "saved": True,
             "units_code": source["units_code"],
             "document_revision": source["document_revision"],
@@ -650,8 +786,14 @@ def compile_region_probe(
         "coverage": coverage,
         "geometry": geometry,
     }
+    if live:
+        snapshot_without_hash["source"]["live_capture"] = {
+            "mode": "live_document", "original_path": source["path"],
+            "original_disk_sha256": source["sha256"],
+            "database_modified_flags": source["database_modified_flags"],
+        }
     if dependencies is not None:
-        snapshot_without_hash["dependencies"] = dependencies
+        snapshot_without_hash["live_references" if live else "dependencies"] = dependencies
     snapshot = {
         **snapshot_without_hash,
         "summary": {

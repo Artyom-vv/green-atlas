@@ -2,7 +2,7 @@
 """Local MCP transport for the Green Atlas ObjectARX bridge.
 
 The server does not parse CAD geometry. It asks the already-running AutoCAD
-plugin to open the exact DXF in an isolated AcDbDatabase, waits for the native
+plugin to open the exact DWG or DXF in an isolated AcDbDatabase, waits for the native
 evidence file, and then runs the deterministic admission compiler.
 """
 
@@ -20,12 +20,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPILER = ROOT / "scripts" / "cad-lab" / "compile_autocad_region_probe.py"
-PLUGIN_VERSION = "0.1.20"
+PLUGIN_VERSION = "0.1.33"
+QUEUE_VERSION = "v033"
 PROTOCOL_VERSION = "2025-06-18"
 
 
 class ToolFailure(RuntimeError):
-    pass
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.details = details or {}
 
 
 def _compiler_python() -> Path:
@@ -49,7 +52,7 @@ def _compiler_python() -> Path:
 
 
 def _queue_directory() -> Path:
-    return Path("/tmp") / f"green-atlas-autocad-mcp-{os.getuid()}"
+    return Path("/tmp") / f"green-atlas-autocad-mcp-{os.getuid()}-{QUEUE_VERSION}"
 
 
 def _sha256(path: Path) -> str:
@@ -95,14 +98,40 @@ def _bridge_status() -> dict[str, Any]:
             process_check = "not-found"
         except OSError:
             process_check = "unavailable"
-    ready = bool(status.get("ready")) and process_alive is not False
+    reported_version = status.get("plugin_version")
+    ready = (
+        bool(status.get("ready"))
+        and process_alive is not False
+        and reported_version == PLUGIN_VERSION
+    )
+    progress = None
+    progress_paths = sorted(
+        _queue_directory().glob("progress-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if progress_paths:
+        try:
+            progress = json.loads(progress_paths[0].read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            progress = None
     return {
         **status,
         "ready": ready,
         "process_alive": process_alive,
         "process_check": process_check,
         "status_path": str(status_path),
-        "reason": None if ready else "AutoCAD plugin is not active",
+        "reason": (
+            None
+            if ready
+            else (
+                "AutoCAD plugin version mismatch: "
+                f"expected {PLUGIN_VERSION}, got {reported_version}"
+                if reported_version
+                else "AutoCAD plugin is not active"
+            )
+        ),
+        "active_request": progress,
     }
 
 
@@ -118,6 +147,8 @@ def _request_native_export(source: Path, timeout_seconds: int) -> dict[str, Any]
     request_path = queue / f"request-{request_id}.txt"
     temporary_path = request_path.with_suffix(".tmp")
     response_path = queue / f"response-{request_id}.json"
+    processing_path = queue / f"processing-{request_id}.txt"
+    cancellation_path = queue / f"cancel-{request_id}.txt"
     temporary_path.write_text(f"{source}\n", encoding="utf-8")
     os.chmod(temporary_path, 0o600)
     temporary_path.replace(request_path)
@@ -144,8 +175,27 @@ def _request_native_export(source: Path, timeout_seconds: int) -> dict[str, Any]
             }
         time.sleep(0.1)
 
+    cancellation_path.write_text("cancel\n", encoding="utf-8")
+    os.chmod(cancellation_path, 0o600)
     request_path.unlink(missing_ok=True)
-    raise ToolFailure(f"AutoCAD did not answer within {timeout_seconds} seconds")
+    cancellation_deadline = time.monotonic() + 5
+    while time.monotonic() < cancellation_deadline:
+        if response_path.is_file():
+            try:
+                response = json.loads(response_path.read_text(encoding="utf-8"))
+            finally:
+                response_path.unlink(missing_ok=True)
+            raise ToolFailure(
+                str(response.get("error") or "AutoCAD export cancelled after timeout")
+            )
+        if not processing_path.exists():
+            cancellation_path.unlink(missing_ok=True)
+            break
+        time.sleep(0.1)
+    raise ToolFailure(
+        f"AutoCAD did not answer within {timeout_seconds} seconds; "
+        "native cancellation was requested"
+    )
 
 
 def _prepare_dxf(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -153,12 +203,12 @@ def _prepare_dxf(arguments: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_path, str) or not raw_path:
         raise ToolFailure("source_path is required")
     source = Path(raw_path).expanduser().resolve()
-    if not source.is_absolute() or source.suffix.lower() != ".dxf":
-        raise ToolFailure("source_path must be an absolute DXF path")
+    if not source.is_absolute() or source.suffix.lower() not in {".dwg", ".dxf"}:
+        raise ToolFailure("source_path must be an absolute DWG or DXF path")
     if not source.is_file():
-        raise ToolFailure(f"DXF does not exist: {source}")
+        raise ToolFailure(f"drawing does not exist: {source}")
     if "\n" in str(source) or "\r" in str(source):
-        raise ToolFailure("DXF path contains a line break")
+        raise ToolFailure("drawing path contains a line break")
 
     timeout = arguments.get("timeout_seconds", 600)
     if not isinstance(timeout, int) or not 10 <= timeout <= 1800:
@@ -166,6 +216,17 @@ def _prepare_dxf(arguments: dict[str, Any]) -> dict[str, Any]:
 
     native = _request_native_export(source, timeout)
     probe = Path(native["output_path"])
+    try:
+        probe_payload = json.loads(probe.read_bytes())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ToolFailure(
+            "AutoCAD returned unreadable native evidence",
+            details={"native_evidence": native},
+        ) from exc
+    probe_diagnostics = {
+        "summary": probe_payload.get("summary"),
+        "limitations": probe_payload.get("limitations", []),
+    }
     command = [
         str(_compiler_python()),
         str(COMPILER),
@@ -193,7 +254,14 @@ def _prepare_dxf(arguments: dict[str, Any]) -> dict[str, Any]:
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
-        raise ToolFailure(f"native snapshot admission failed: {detail}")
+        raise ToolFailure(
+            f"native snapshot admission failed: {detail}",
+            details={
+                "native_evidence": native,
+                "native_probe": probe_diagnostics,
+                "admission_status": "rejected",
+            },
+        )
     try:
         admitted = json.loads(completed.stdout.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError) as exc:
@@ -205,6 +273,7 @@ def _prepare_dxf(arguments: dict[str, Any]) -> dict[str, Any]:
         "source_path": str(source),
         "source_sha256": _sha256(source),
         "native_evidence": native,
+        "native_probe": probe_diagnostics,
         "snapshot_path": str(snapshot_path),
         "snapshot_sha256": _sha256(snapshot_path),
         "snapshot_bytes": snapshot_path.stat().st_size,
@@ -235,14 +304,14 @@ TOOLS = [
     {
         "name": "autocad_prepare_dxf",
         "description": (
-            "Use full AutoCAD, not ezdxf, to extract complete native geometry "
-            "evidence from a saved DXF and compile the adjacent verified Green "
+            "Use full AutoCAD, not a portable parser, to extract native geometry "
+            "evidence from a saved DWG or DXF and compile the adjacent verified Green "
             "Atlas snapshot. AutoCAD must be running with the bridge loaded."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "source_path": {"type": "string", "description": "Absolute DXF path"},
+                "source_path": {"type": "string", "description": "Absolute DWG or DXF path"},
                 "package_root": {
                     "type": "string",
                     "description": "Package root used to verify contributing XREF files",
@@ -308,7 +377,12 @@ def _handle(message: dict[str, Any]) -> dict[str, Any] | None:
                 result = _tool_result(_prepare_dxf(arguments))
             else:
                 result = _tool_result({"error": f"unknown tool: {name}"}, error=True)
-        except (ToolFailure, OSError, subprocess.SubprocessError) as exc:
+        except ToolFailure as exc:
+            result = _tool_result(
+                {"error": str(exc), **exc.details},
+                error=True,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
             result = _tool_result({"error": str(exc)}, error=True)
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
     return {
