@@ -74,6 +74,13 @@ it('shows an interrupted check as paused, not still running', () => {
     screen.getByRole('heading', { name: 'Проверка области приостановлена' }),
   ).toBeVisible();
 });
+it('identifies local checks without claiming additional AutoCAD verification', () => {
+  const domains = [{ ...preview.search_domains![0], method: 'hybrid' as const,
+    final_check: 'prepared_geometry' as const }];
+  render(<SearchDomainProgress preview={{ ...preview, search_domains: domains }} running />);
+  expect(screen.getByText('Расчёт по сохранённой геометрии AutoCAD. Подбор и проверка посадок выполняются локально.')).toBeVisible();
+  expect(screen.queryByText(/дополнительно проверяет AutoCAD/)).not.toBeInTheDocument();
+});
 it('never rounds a nonempty queue to 100 percent', () => {
   const domains = [
     {

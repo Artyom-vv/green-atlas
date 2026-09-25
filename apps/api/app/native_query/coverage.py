@@ -22,9 +22,15 @@ def source_coverage(engine, project):
         if engine._hybrid is None:
             engine._hybrid = HybridSearch(engine, project)
         layers = {name: LayerGeometryCoverage() for name in engine._layers}
-        for item in engine.inventory.objects:
-            if item.context and item.layer in layers:
-                layers[item.layer].context_count += 1
+        contexts = getattr(engine, "context_counts", None)
+        if contexts is None:
+            contexts = {}
+            for item in engine.inventory.objects:
+                if item.context:
+                    contexts[item.layer] = contexts.get(item.layer, 0) + 1
+        for name, count in contexts.items():
+            if name in layers:
+                layers[name].context_count = count
         for item in engine._objects:
             layer = engine._layers.get(item.layer)
             if not layer or (layer.mapped_kind == 'ignore' and layer.mapping_confirmed):

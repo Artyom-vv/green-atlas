@@ -35,7 +35,8 @@ def uses_linear_geometry(item, layer, linear_layers):
 
 
 class HybridGeometry:
-    def __init__(self, engine, project):
+    def __init__(self, engine, project, *, require_accuracy=False):
+        self.require_accuracy = require_accuracy
         source = project.source_geometry or project.geometry
         if source is None:
             raise ValueError("Геометрия захвата AutoCAD недоступна для подготовки области")
@@ -111,7 +112,10 @@ class HybridGeometry:
                     or geometry.geom_type not in {"Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point"}
                     or any(not isfinite(v) for v in geometry.bounds)):
                     return Projection(reason="projection_invalid", detail="Некорректная проекция без автоматического ремонта")
-                sampling = float(props.get("source_sampling_tolerance_m", 0))
+                accuracy = props.get("source_sampling_tolerance_m")
+                if self.require_accuracy and accuracy is None and geometry.geom_type != "Point":
+                    return Projection(reason="projection_accuracy_missing", detail="В захвате AutoCAD не указана точность контура; требуется обновление подготовки")
+                sampling = float(accuracy or 0)
                 if not isfinite(sampling) or sampling < 0:
                     return Projection(reason="projection_invalid", detail="Неизвестная точность проекции")
                 tolerance = max(tolerance, sampling)

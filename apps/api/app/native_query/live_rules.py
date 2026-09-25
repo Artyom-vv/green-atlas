@@ -1,20 +1,33 @@
 """Existing planting rules applied to native measurements, not display polygons."""
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from app.dxf_import.layer_contracts import Layer
 from app.geometry.domain import PositionViolation
 from app.native_query.calculation_rules import calculation_rule
-from app.native_query.contracts import NativeObjectMeasurement, NativePointMeasurement
 from app.native_query.live_inventory import QueryObject
 from app.regulations.network_rules import DISTANCE_TOLERANCE_M
+
+
+class ObjectMeasurement(Protocol):
+    interior_known: bool
+    capability: str
+    preparation_error: str
+
+
+class PointMeasurement(Protocol):
+    membership: str
+    distance_units: float | None
+    status: int
+    error: str
 
 
 @dataclass(frozen=True)
 class MeasuredObstacle:
     item: QueryObject
-    measurement: NativeObjectMeasurement | None
-    answer: NativePointMeasurement | None
+    measurement: ObjectMeasurement | None
+    answer: PointMeasurement | None
 
 
 def required_distance(layer: Layer, kind: str, radius: float) -> float | None:

@@ -127,7 +127,7 @@ def explain_position(engine, project, x, y, radius, kind, canopy=0, roots=0):
                     source_feature_ids=[
                         route for r in sites for route in r.item.routes
                     ],
-                    query_sent=any(r.measurement is not None for r in sites),
+                    query_sent=getattr(engine, "sends_cad_queries", True) and any(r.measurement is not None for r in sites),
                 )
             )
         for row in rows:
@@ -150,6 +150,12 @@ def explain_position(engine, project, x, y, radius, kind, canopy=0, roots=0):
             code = detail.reason
             if code == "source_object":
                 code, stage, message, action = failure_reason(row, layer)
+                if not getattr(engine, "sends_cad_queries", True) and layer and layer.mapping_confirmed:
+                    code, stage, message, action = (
+                        "prepared_geometry_missing", "area",
+                        row.measurement.preparation_error if row.measurement else "Нет подготовленной геометрии",
+                        "Обновить подготовку геометрии из AutoCAD",
+                    )
             elif code.startswith("utility_"):
                 stage, message, action = (
                     "rule",
@@ -204,11 +210,12 @@ def explain_position(engine, project, x, y, radius, kind, canopy=0, roots=0):
                         or row.item.error
                     )
                     or None,
-                    query_sent=row.measurement is not None,
+                    query_sent=getattr(engine, "sends_cad_queries", True) and row.measurement is not None,
                 )
             )
         engine.assert_current(project)
         return GeometryEvidence(
+            measurement_backend=getattr(engine, "final_check", "autocad"),
             state=verdict.state,
             radius_m=radius,
             canopy_radius_m=canopy,

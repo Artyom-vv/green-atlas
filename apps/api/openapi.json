@@ -11046,6 +11046,15 @@
       },
       "GeometryEvidence": {
         "properties": {
+          "measurement_backend": {
+            "type": "string",
+            "enum": [
+              "autocad",
+              "prepared_geometry"
+            ],
+            "title": "Measurement Backend",
+            "default": "autocad"
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -17876,7 +17885,10 @@
           },
           "final_check": {
             "type": "string",
-            "const": "autocad",
+            "enum": [
+              "autocad",
+              "prepared_geometry"
+            ],
             "title": "Final Check",
             "default": "autocad"
           },

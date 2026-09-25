@@ -86,10 +86,16 @@ std::set<int> bridges(Graph& graph) {
     return result;
 }
 void displayEdge(Face& face,const Edge& edge,bool reverse) {
-    // Visual chord error only. This does not participate in face validation.
+    // LINE/ARC are the only primitives admitted by the face graph. Record the
+    // analytic sagitta, not a claimed zero tolerance for an arc approximation.
     constexpr double kMaxDisplayAngle=0.05;
     const auto* arc=AcDbArc::cast(edge.fragment.curve.get());
     const int samples=arc?std::max(1,int(std::ceil(edge.length/arc->radius()/kMaxDisplayAngle))):1;
+    if(arc) {
+        const double halfAngle=edge.length/arc->radius()/samples/2;
+        face.samplingToleranceUnits=std::max(face.samplingToleranceUnits,
+            2*arc->radius()*std::pow(std::sin(halfAngle/2),2));
+    }
     double first=0,initial=0;
     require(edge.fragment.curve->getStartParam(first),"display first");
     require(edge.fragment.curve->getDistAtParam(first,initial),"display distance");
@@ -159,6 +165,9 @@ void collectFaces(Graph& graph,const std::vector<Connector>& repairs,
             face.query=std::make_unique<ga::nativeQuery::AreaGroupQuery>();
             face.query->prepare(curves,AcGeMatrix3d::kIdentity);
             face.display.push_back(face.display.front());
+            // Endpoints associated with one graph node may differ by twice
+            // the equality tolerance. Include that join displacement too.
+            face.samplingToleranceUnits += 2*kEquality;
             result.faces.push_back(std::move(face));
         } catch(const std::exception& error) {
             result.issues.push_back(*graph.edges[directed.front()/2].fragment.routes.begin()+": "+error.what());

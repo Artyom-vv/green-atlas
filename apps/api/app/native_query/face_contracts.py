@@ -1,4 +1,4 @@
-"""AutoCAD area evidence; display coordinates may filter search, not validate positions."""
+"""AutoCAD areas and optional explicit error bounds for their exported contours."""
 
 from typing import Annotated
 
@@ -25,6 +25,7 @@ class NativeFace(NativeDto):
     area: Annotated[FiniteFloat, Field(gt=0)]
     bounds: tuple[FiniteFloat, FiniteFloat, FiniteFloat, FiniteFloat]
     display: tuple[Point, ...] = Field(min_length=4)
+    sampling_tolerance_units: Annotated[FiniteFloat, Field(ge=0)] | None = None
     repairs: tuple[FaceRepair, ...] = ()
 
     @model_validator(mode="after")

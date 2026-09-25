@@ -20,6 +20,7 @@ const reasonLabels: Record<string, string> = {
   projection_missing: 'Не передана геометрия объекта',
   projection_invalid: 'Ошибка передачи контура',
   projection_area_mismatch: 'Расхождение площади с AutoCAD',
+  projection_accuracy_missing: 'В захвате не указана точность контура',
 };
 
 export function SearchDomainSummary({
@@ -57,8 +58,9 @@ export function SearchDomainSummary({
       <h4 className="m-0 text-xs font-semibold">Область поиска</h4>
       {domains.some((domain) => domain.method === 'hybrid') && (
         <p className="m-0 text-xs text-neutral-600">
-          По подготовленным ограничениям. Найденные посадки дополнительно
-          проверяет AutoCAD.
+          {domains.every((domain) => domain.final_check === 'prepared_geometry')
+            ? 'Расчёт по сохранённой геометрии AutoCAD. Подбор и проверка посадок выполняются локально.'
+            : 'По подготовленным ограничениям. Найденные посадки дополнительно проверяет AutoCAD.'}
         </p>
       )}
       <dl className="m-0 grid gap-2 text-xs">

@@ -28,8 +28,10 @@ struct Face {
     std::vector<Fragment> fragments;
     std::vector<Connector> repairs;
     std::unique_ptr<ga::nativeQuery::AreaGroupQuery> query;
-    // Display only; calculation always uses query, never this polyline.
+    // Polyline export with an explicit maximum circular-arc chord deviation.
+    // Native queries remain exact; local consumers must honour this error bound.
     std::vector<AcGePoint3d> display;
+    double samplingToleranceUnits = 0;
     std::set<std::string> routes, physicalRoutes;
 };
 struct Result {

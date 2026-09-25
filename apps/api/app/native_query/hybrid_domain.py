@@ -40,7 +40,7 @@ class Mask:
 
 class HybridSearch:
     def __init__(self, engine, project):
-        self.projection = HybridGeometry(engine, project)
+        self.projection = getattr(engine, "projection", None) or HybridGeometry(engine, project)
         self.masks = OrderedDict()
         self.jobs = OrderedDict()
 
@@ -93,7 +93,7 @@ class HybridSearch:
         if work.is_empty or not work.is_valid or work.geom_type not in {"Polygon", "MultiPolygon"}:
             raise ValueError("Рабочий участок должен быть корректной замкнутой областью")
         key = sha256(json.dumps([
-            REVISION, engine._basis_key, engine.session.model_dump(mode="json"),
+            REVISION, getattr(engine, "final_check", "autocad"), engine._basis_key, engine.session.model_dump(mode="json"),
             sorted(engine.linear_layers), geometry, radius, kind, canopy, roots,
         ], sort_keys=True).encode()).hexdigest()
         store = engine._domain_checkpoints
@@ -188,7 +188,7 @@ class HybridSearch:
         result = {
             **mapping(free), "ga_work_zone": geometry,
             "ga_search_domain": {
-                "revision": REVISION, "method": "hybrid", "final_check": "autocad",
+                "revision": REVISION, "method": "hybrid", "final_check": getattr(engine, "final_check", "autocad"),
                 "geometry": mapping(free), "unresolved_geometry": mapping(unknown),
                 "pending_geometry": mapping(pending),
                 "available_area_m2": free.area, "excluded_area_m2": excluded_area,

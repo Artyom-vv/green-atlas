@@ -8,7 +8,7 @@ const stages = {
   area: 'Внутренняя область', rule: 'Правило посадки', clearance: 'Геометрическое ограничение', site: 'Граница территории',
 };
 
-export function GeometryEvidenceList({ causes }: { causes: Cause[] }) {
+export function GeometryEvidenceList({ causes, local = false }: { causes: Cause[]; local?: boolean }) {
   const groups = new Map<string, Cause[]>();
   for (const cause of causes) {
     const key = JSON.stringify([cause.source_layer, cause.code, cause.stage, cause.requirement_basis]);
@@ -21,7 +21,7 @@ export function GeometryEvidenceList({ causes }: { causes: Cause[] }) {
       <span className="text-xs font-normal text-neutral-600">{first.source_layer?.split('|').at(-1) ?? 'Территория'} ({items.length})</span>
     </span>}>
       <div className="grid gap-2 break-words">
-        <p className="m-0 text-neutral-600">{stages[first.stage]}</p>
+        <p className="m-0 text-neutral-600">{local && first.stage === 'query' ? 'Локальное измерение' : stages[first.stage]}</p>
         {first.source_layer && <p className="m-0">{first.source_layer}</p>}
         {first.requirement_basis && <p className="m-0">Основание: {first.requirement_basis === 'roots' ? 'прогноз корней' : first.requirement_basis === 'canopy' ? 'прогноз кроны' : 'правило отступа'}</p>}
         <p className="m-0">{first.action}</p>
@@ -32,7 +32,7 @@ export function GeometryEvidenceList({ causes }: { causes: Cause[] }) {
           <Disclosure title="Технические сведения">
             <dl className="m-0 grid gap-1">
               <dt>Код причины</dt><dd className="m-0">{cause.code}</dd>
-              <dt>Запрос объекта</dt><dd className="m-0">{cause.query_sent ? 'Передан в AutoCAD' : 'Не передан в AutoCAD'}</dd>
+              <dt>Проверка объекта</dt><dd className="m-0">{local ? 'По сохранённой геометрии, без запроса в AutoCAD' : cause.query_sent ? 'Передан в AutoCAD' : 'Не передан в AutoCAD'}</dd>
               <dt>Идентификаторы</dt><dd className="m-0 break-all">{cause.source_feature_ids?.join(', ') || 'Нет'}</dd>
               {cause.native_error && <><dt>Ответ обработчика</dt><dd className="m-0">{cause.native_error}</dd></>}
             </dl>

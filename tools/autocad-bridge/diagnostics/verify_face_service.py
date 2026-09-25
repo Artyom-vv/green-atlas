@@ -132,9 +132,11 @@ def main():
         project = runtime.application.get(project.id)
         engine = runtime.application.geometry.engine(project)
         engine.assert_current(project)
+        capture_engine = runtime.application.geometry.live_engine(project)
         report["faces_by_layer"] = dict(Counter(f.layer for f in engine._faces))
-        report["linear_remainders"] = len(engine.inventory.linear_routes)
-        report["face_issues"] = list(engine.inventory.face_issues)
+        report["linear_remainders"] = len(capture_engine.inventory.linear_routes)
+        report["face_issues"] = list(capture_engine.inventory.face_issues)
+        report["final_check"] = getattr(engine, "final_check", "autocad")
         features = project.geometry.feature_collection["features"]
         retained_shapes = Counter(
             json.dumps(f["geometry"], sort_keys=True)

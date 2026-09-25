@@ -19,6 +19,8 @@ from uuid import uuid4
 from app.data_passport import build_data_passport
 from app.native_query.live_client import LiveQueryClient, LiveSession
 from app.native_query.live_provider import LiveNativeGeometryEngine
+from app.native_query.prepared_provider import PreparedGeometryEngine
+from app.native_query.prepared_snapshot import PreparedStore
 from app.planning.changes import ChangeSetApplication
 from app.planning.evaluation import PlanEvaluation
 from app.planning.pattern_application import PatternApplication
@@ -40,6 +42,7 @@ def main():
     parser.add_argument("--species", choices=[s.species_id for s in CATALOG if s.kind == "shrub"])
     parser.add_argument("--size-class", choices=["unspecified", "sapling", "standard", "large"], default="standard")
     parser.add_argument("--domain-only", action="store_true")
+    parser.add_argument("--prepared", action="store_true", help="Use the persisted prepared snapshot, never open a live session")
     parser.add_argument("--session-receipt", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -58,8 +61,18 @@ def main():
                 raise ValueError(f"Несовпадение захвата: {name}")
         session = current
         project.source_file.native_session = current
-    engine = LiveNativeGeometryEngine(session, LiveQueryClient(pid=session.pid))
+    engine_started = monotonic()
+    if args.prepared:
+        from app.native_query.prepared_snapshot import preparation_key
+        store = PreparedStore(Path(str(args.database) + ".prepared-geometry"))
+        snapshot = store.load(preparation_key(project, session))
+        if snapshot is None:
+            raise ValueError("Сначала подготовьте и сохраните геометрию проекта")
+        engine = PreparedGeometryEngine(snapshot, project)
+    else:
+        engine = LiveNativeGeometryEngine(session, LiveQueryClient(pid=session.pid))
     engine._domain_checkpoints = None
+    engine_load_s = monotonic() - engine_started
     zone = next(z for z in project.planting_zones if z.id == args.zone)
     revision = next((s for s in CATALOG if s.species_id == args.species), None)
     request = FillPatternRequest(base_plan_version=project.plan.version, zone_ids=[zone.id],
@@ -80,6 +93,8 @@ def main():
     engine.automatic_safe_geometry(project, zone.geometry, .65, "shrub", *growth)
     warm_s = monotonic() - start
     result = {"project_id": project.id, "state_version": project.state_version,
+              "final_check": getattr(engine, "final_check", "autocad"),
+              "engine_load_s": engine_load_s,
               "geometry_version": project.geometry_version, "zone": zone.id,
               "cold_s": cold_s, "warm_s": warm_s,
               "domain": {k: v for k, v in summary.items() if k not in {"geometry", "unresolved_geometry", "pending_geometry", "source_issues"}},

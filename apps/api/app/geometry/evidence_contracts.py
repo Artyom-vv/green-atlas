@@ -22,6 +22,7 @@ class GeometryEvidenceItem(BaseModel):
 
 
 class GeometryEvidence(BaseModel):
+    measurement_backend: Literal["autocad", "prepared_geometry"] = "autocad"
     state: Literal["available", "excluded", "unknown", "boundary"]
     radius_m: float
     canopy_radius_m: float

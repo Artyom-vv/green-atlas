@@ -43,7 +43,7 @@ SUPPORTED_PLUGIN_VERSIONS = {
     "0.1.36",
     "0.1.37",
     "0.1.38",
-    "0.1.40",
+    "0.1.40", "0.1.41",
 }
 XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.6",
@@ -75,7 +75,7 @@ XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.36",
     "0.1.37",
     "0.1.38",
-    "0.1.40",
+    "0.1.40", "0.1.41",
 }
 TRAVERSAL_DIAGNOSTICS = (
     "cyclic_block_references",
@@ -415,7 +415,7 @@ def _compile_probe(
     raw_regions_by_key = {_identity_key(region): region for region in raw_regions}
     if len(raw_regions_by_key) != len(raw_regions):
         raise CadSnapshotAdmissionError("duplicate REGION instance in native geometry")
-    if probe.get("plugin_version") not in {"0.1.34", "0.1.35", "0.1.36", "0.1.37", "0.1.38", "0.1.40"} and any(
+    if probe.get("plugin_version") not in {"0.1.34", "0.1.35", "0.1.36", "0.1.37", "0.1.38", "0.1.40", "0.1.41"} and any(
         region.get("source_handles") for region in raw_regions
     ):
         raise CadSnapshotAdmissionError(
@@ -440,15 +440,15 @@ def _compile_probe(
     if summary.get("regions") != len(raw_regions):
         raise CadSnapshotAdmissionError("native REGION count differs from geometry")
     if raw_area_proposals:
-        if probe.get("plugin_version") not in {"0.1.36", "0.1.37", "0.1.38", "0.1.40"}:
+        if probe.get("plugin_version") not in {"0.1.36", "0.1.37", "0.1.38", "0.1.40", "0.1.41"}:
             raise CadSnapshotAdmissionError(
                 "native area proposals require producer 0.1.36"
             )
-    if probe.get("plugin_version") in {"0.1.36", "0.1.37", "0.1.38", "0.1.40"} and summary.get(
+    if probe.get("plugin_version") in {"0.1.36", "0.1.37", "0.1.38", "0.1.40", "0.1.41"} and summary.get(
         "area_proposals"
     ) != len(raw_area_proposals):
         raise CadSnapshotAdmissionError("native area proposal count differs from geometry")
-    if probe.get("plugin_version") in {"0.1.36", "0.1.37", "0.1.38", "0.1.40"}:
+    if probe.get("plugin_version") in {"0.1.36", "0.1.37", "0.1.38", "0.1.40", "0.1.41"}:
         if (
             summary.get("area_proposal_candidates")
             != len(raw_area_proposals) + len(raw_area_proposal_rejections)
@@ -529,7 +529,7 @@ def _compile_probe(
         "0.1.36",
         "0.1.37",
         "0.1.38",
-        "0.1.40",
+        "0.1.40", "0.1.41",
     }:
         if summary.get("paths") != len(raw_paths):
             raise CadSnapshotAdmissionError("native path count differs from geometry")
@@ -672,7 +672,7 @@ def _compile_probe(
             raise CadSnapshotAdmissionError(
                 f"REGION {_geometry_id(region)} has no loops"
             )
-        if outer_count > 1 and probe.get("plugin_version") not in {"0.1.35", "0.1.36", "0.1.37", "0.1.38", "0.1.40"}:
+        if outer_count > 1 and probe.get("plugin_version") not in {"0.1.35", "0.1.36", "0.1.37", "0.1.38", "0.1.40", "0.1.41"}:
             raise CadSnapshotAdmissionError(
                 f"REGION {_geometry_id(region)} has multiple outer loops "
                 "without native producer 0.1.35"

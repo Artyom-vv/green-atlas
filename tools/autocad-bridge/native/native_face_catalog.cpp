@@ -173,7 +173,7 @@ void emitCatalog(std::ostream& out,const std::set<std::string>& layers) {
         first=false;
         out<<",\"physical_routes\":";strings(out,face.physicalRoutes);
         out<<",\"area\":"<<e.localArea*e.jacobian<<",\"bounds\":["<<e.low.x<<','<<e.low.y<<','<<e.high.x<<','<<e.high.y
-            <<"],\"display\":[";
+            <<"],\"sampling_tolerance_units\":"<<face.samplingToleranceUnits<<",\"display\":[";
         for(std::size_t p=0;p<face.display.size();++p) {out<<(p?",":"");point(out,face.display[p]);}
         out<<"],\"repairs\":[";
         for(std::size_t r=0;r<face.repairs.size();++r) {

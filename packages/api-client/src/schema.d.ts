@@ -3352,6 +3352,12 @@ export interface components {
         /** GeometryEvidence */
         GeometryEvidence: {
             /**
+             * Measurement Backend
+             * @default autocad
+             * @enum {string}
+             */
+            measurement_backend: "autocad" | "prepared_geometry";
+            /**
              * State
              * @enum {string}
              */
@@ -5751,9 +5757,9 @@ export interface components {
             /**
              * Final Check
              * @default autocad
-             * @constant
+             * @enum {string}
              */
-            final_check: "autocad";
+            final_check: "autocad" | "prepared_geometry";
             /** Minimum Cell M */
             minimum_cell_m?: number | null;
             /** Measured Cells */

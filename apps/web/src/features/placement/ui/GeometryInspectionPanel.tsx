@@ -14,7 +14,7 @@ export function GeometryInspectionPanel({ inspection, plant }: { inspection?: Ca
         Проверить точку на карте
       </Button>
       {diagnosing && picking && <p className="m-0" role="status">Выберите точку на карте</p>}
-      {diagnosing && checking && <p className="m-0" role="status">Проверяем объекты AutoCAD</p>}
+      {diagnosing && checking && <p className="m-0" role="status">Проверяем геометрию и отступы</p>}
       {diagnosing && inspection.error && <p className="m-0 text-red-700" role="alert">{inspection.error}</p>}
       {diagnosis && <>
         <p className="m-0 font-semibold">{evidence?.state === 'available'
@@ -22,7 +22,7 @@ export function GeometryInspectionPanel({ inspection, plant }: { inspection?: Ca
           : evidence?.state === 'excluded' ? 'В этой точке есть запрет'
             : 'Для этой точки нужны уточнения'}</p>
         {diagnosis.status !== 'allowed' && <p className="m-0">{diagnosis.reason}</p>}
-        {!evidence && <p className="m-0">Подробный ответ AutoCAD недоступен</p>}
+        {!evidence && <p className="m-0">Подробности геометрической проверки недоступны</p>}
         {evidence && <>
           <dl className="m-0 grid gap-1">
             <div className="flex justify-between gap-2"><dt>Проверяется</dt><dd className="m-0">{diagnosis.kind === 'shrub' ? 'Кустарник' : 'Дерево'}</dd></div>
@@ -31,7 +31,7 @@ export function GeometryInspectionPanel({ inspection, plant }: { inspection?: Ca
             <div className="flex justify-between gap-2"><dt>Расчётные корни</dt><dd className="m-0">{meters(evidence.root_radius_m)}</dd></div>
           </dl>
           <p className="m-0 text-neutral-600">Проверена точка с выбранными параметрами растения, не весь участок</p>
-          <GeometryEvidenceList causes={evidence.causes ?? []} />
+          <GeometryEvidenceList causes={evidence.causes ?? []} local={evidence.measurement_backend === 'prepared_geometry'} />
           {evidence.unlocated_objects > 0 && <p className="m-0">Объекты без положения на карте: {evidence.unlocated_objects}</p>}
         </>}
       </>}

@@ -30,6 +30,7 @@ from app.geometry.ports import GeometryEnginePort
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import SqliteProjectHistory
 from app.native_query.live_runtime import configured_live_engine
+from app.native_query.prepared_snapshot import PreparedStore
 from app.native_query.project_runtime import ProjectLiveGeometry
 from app.operations.adapters import SqliteOperationRepository
 from app.planning.patterns import ShapelyCandidateGenerator
@@ -111,7 +112,9 @@ def create_runtime(database_path: str | os.PathLike[str], *, geometry_engine: Ge
     geometry = geometry_engine if geometry_engine is not None else ShapelyGeometryEngine()
     if geometry_engine is None:
         geometry, native_zones = configured_live_engine(path, geometry)
-        geometry = ProjectLiveGeometry(geometry, native_zones)
+        geometry = ProjectLiveGeometry(geometry, native_zones, prepared_store=PreparedStore(
+            Path(str(path) + ".prepared-geometry"),
+        ))
         if zone_validator is None:
             zone_validator = geometry.validate_zones
     application = ProjectApplication(

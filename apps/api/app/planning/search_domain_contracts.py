@@ -16,7 +16,7 @@ class SearchDomain(BaseModel):
     unresolved_area_m2: float = Field(ge=0)
     pending_area_m2: float = Field(default=0, ge=0)
     method: Literal["native_cells", "hybrid"] = "native_cells"
-    final_check: Literal["autocad"] = "autocad"
+    final_check: Literal["autocad", "prepared_geometry"] = "autocad"
     minimum_cell_m: float | None = Field(default=None, gt=0)
     measured_cells: int = Field(ge=0)
     processed_objects: int = Field(default=0, ge=0)

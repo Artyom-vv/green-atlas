@@ -35,7 +35,7 @@ def area_layers(layers, linear_layers=frozenset()):
 
 def face_key(face):
     # IDs belong to a running capture; decisions survive a cache rebuild.
-    value = face.model_dump(by_alias=True, exclude={"id"})
+    value = face.model_dump(by_alias=True, exclude={"id", "sampling_tolerance_units"})
     return sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -116,6 +116,10 @@ def face_features(faces, factor):
                 "source_native_face_id": face.id,
                 "source_native_geometry": True,
                 "source_native_area_units2": face.area,
+                "source_sampling_tolerance_m": (
+                    face.sampling_tolerance_units * factor
+                    if face.sampling_tolerance_units is not None else None
+                ),
                 "source_derived_from": members,
                 "source_native_repairs": [
                     r.model_dump(by_alias=True) for r in face.repairs
