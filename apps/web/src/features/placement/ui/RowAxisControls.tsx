@@ -59,7 +59,7 @@ export const RowAxisControls: FC<RowAxisControlsProps> = ({
     {mode === 'draw' ? (
       <>
         <p className="m-0 text-xs leading-4 text-neutral-600">
-          Отметьте точки на карте. Завершите двойным щелчком или кнопкой.
+          Отметьте точки на карте
         </p>
         <FormActions layout="equal">
           <Button variant="secondary" disabled={points < 2} onClick={onFinish}>
@@ -70,7 +70,7 @@ export const RowAxisControls: FC<RowAxisControlsProps> = ({
     ) : (
       mode === 'pick' && (
         <p className="m-0 text-xs leading-4 text-neutral-600">
-          Наведите на линию чертежа и выберите её щелчком.
+          Выберите линию на карте
         </p>
       )
     )}

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from threading import RLock
 from typing import Protocol
 
@@ -5,6 +6,8 @@ from app.planting_zones.change_contracts import ZoneChangeResult
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 from app.projects.ports import ProjectReader, ProjectSnapshotRepository
+
+ZoneValidator = Callable[[Project, list[PlantingZoneAssignment]], None]
 
 
 class ZoneProjectRepository(ProjectSnapshotRepository, Protocol):

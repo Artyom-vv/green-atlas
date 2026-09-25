@@ -10,6 +10,7 @@ interface PreviewState<Request, Response> {
   ticket: number;
   scopeKey: string;
   data?: Response;
+  progress?: Response;
   variables?: Request;
   error?: unknown;
   isPending: boolean;
@@ -18,7 +19,11 @@ interface PreviewState<Request, Response> {
 
 export interface LatestPreviewOptions<Request, Response> {
   scopeKey?: string;
-  execute: (request: Request, signal: AbortSignal) => Promise<Response>;
+  execute: (
+    request: Request,
+    signal: AbortSignal,
+    publish: (progress: Response) => void,
+  ) => Promise<Response>;
   onAccepted?: (response: Response, request: Request) => void;
 }
 
@@ -81,7 +86,19 @@ export function useLatestPreview<Request, Response>({
         currentScope.current === scopeKey &&
         !ownController.signal.aborted;
       void Promise.resolve()
-        .then(() => execute(request, ownController.signal))
+        .then(() =>
+          execute(request, ownController.signal, (progress) => {
+            if (!isCurrent()) return;
+            setState({
+              ticket,
+              scopeKey,
+              progress,
+              variables: request,
+              isPending: true,
+              submittedAt,
+            });
+          }),
+        )
         .then((data) => {
           if (!isCurrent()) return;
           onAccepted?.(data, request);
@@ -97,14 +114,15 @@ export function useLatestPreview<Request, Response>({
         })
         .catch((error: unknown) => {
           if (!isCurrent()) return;
-          setState({
+          setState((current) => ({
             ticket,
             scopeKey,
             error,
+            progress: current.ticket === ticket ? current.progress : undefined,
             variables: request,
             isPending: false,
             submittedAt,
-          });
+          }));
         });
     },
     [execute, invalidate, onAccepted, scopeKey],
@@ -117,6 +135,7 @@ export function useLatestPreview<Request, Response>({
   return {
     ...state,
     data: valid ? state.data : undefined,
+    progress: valid ? state.progress : undefined,
     error: valid ? state.error : undefined,
     isPending: valid && state.isPending,
     mutate,

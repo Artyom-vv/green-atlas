@@ -108,6 +108,7 @@ def test_wide_closed_boundary_uses_authored_center_ring_for_calculation():
     assert imported_layer.boundary_candidate is not None
     assert imported_layer.boundary_candidate.status == BoundaryCandidateStatus.USABLE
     assert imported_layer.boundary_candidate.area_m2 == 10_000.0
+    imported_layer.mapping_confirmed = True
     project = Project(
         name="Wide boundary",
         layers=imported.layers,
@@ -192,5 +193,5 @@ def test_multiple_usable_boundaries_require_an_explicit_choice():
         for layer in imported.layers
     )
     assert all(layer.suggested_kind == LayerKind.IGNORE for layer in imported.layers)
-    assert all(layer.mapping_confirmed for layer in imported.layers)
+    assert all(not layer.mapping_confirmed for layer in imported.layers)
     assert all(layer.required is False for layer in imported.layers)

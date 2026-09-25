@@ -4,6 +4,7 @@ export const MAP_DESIGN_PALETTE: Readonly<
   building: ['#e0e4e8', '#85919e'],
   road: ['#fafbfc', '#c7ced6'],
   existing_green: ['#d1eadc', '#7daa90'],
+  lawn: ['#e5efdb', '#839b70'],
   water: ['#cad8ff', '#9db6ff'],
   planting_area: ['rgba(0,0,0,0)', '#84948c'],
   site_border: ['rgba(0,0,0,0)', '#35414e'],

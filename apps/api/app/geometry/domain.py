@@ -13,6 +13,7 @@ from shapely.prepared import prep
 from app.geometry.constraint_index import ConstraintIndex
 from app.geometry.network_constraints import NetworkConstraints
 from app.projects.contracts import Project
+from app.regulations.placement_config import PLACEMENT_CONFIG
 
 
 @dataclass(frozen=True)
@@ -21,8 +22,8 @@ class PositionViolation:
     title: str
     description: str
     rule_id: str
-    actual: float
-    required: float
+    actual: float | None
+    required: float | None
     suggested_action: str
     source_layer: str | None = None
     source_feature_ids: tuple[str, ...] = ()
@@ -46,16 +47,9 @@ class PositionAdvisory:
 # water, heat, gas and cable networks have different rows and evidence needs.
 # Those objects stay visible as source context until their subtype is known.
 CONSTRAINT_KINDS: dict[str, tuple[str, str, dict[str, float]]] = {
-    "building": (
-        "pp743-3.6.3-building",
-        "Отступ от наружной стены здания",
-        {"tree": 5.0, "shrub": 1.5},
-    ),
-    "road": (
-        "pp743-3.6.3-road-edge",
-        "Отступ от края проезжей части",
-        {"tree": 2.0, "shrub": 1.0},
-    ),
+    role: (row.id, row.label, {"tree": row.tree_m, "shrub": row.shrub_m})
+    for role, key in (("building", "building"), ("road", "carriageway"))
+    for row in (PLACEMENT_CONFIG.setbacks[key],)
 }
 
 OCCUPIED_KINDS: dict[str, tuple[str, str]] = {

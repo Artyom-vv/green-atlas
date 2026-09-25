@@ -11,7 +11,7 @@ from html import escape
 from io import BytesIO, StringIO
 from pathlib import Path
 from posixpath import normpath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.contracts import (
     GeometrySnapshot,
@@ -34,6 +34,9 @@ from app.regulations.registry import (
     registry_snapshot,
 )
 from app.species.catalog import forecast_at, get_species
+
+if TYPE_CHECKING:
+    from app.geometry.ports import GeometryEnginePort
 
 RULE_SET_REVISION = "green-atlas-spatial-draft@2026-08-28.1"
 SPECIES_CATALOG_REVISION = "green-atlas-species@2026-08-28.1"
@@ -467,6 +470,8 @@ def build_release(
     scene: SceneSnapshot,
     source_content: bytes,
     source_components: dict[str, bytes] | None = None,
+    *,
+    geometry: GeometryEnginePort | None = None,
 ) -> tuple[ReleasePackage, dict[str, bytes]]:
     assert project.plan is not None and project.source_file is not None
     stem = Path(project.source_file.name).stem or "green-atlas"
@@ -525,7 +530,7 @@ def build_release(
     geometry_payload = project.geometry.model_dump(mode="json") if project.geometry is not None else None
     planting_zone_payload = [zone.model_dump(mode="json") for zone in project.planting_zones]
     groups = sorted({group_id for item in project.plan.objects for group_id in item.group_ids})
-    traces = project_rule_traces(project)
+    traces = project_rule_traces(project, geometry=geometry)
     network_limitation = network_review_reason(traces.values())
     if network_limitation:
         warnings.append(network_limitation)
@@ -618,7 +623,7 @@ def build_release(
             "pp_1160": "release decision gate implemented; permit service outcome remains external",
         },
         "regulatory_basis": request.regulatory_basis.model_dump(mode="json") if request.regulatory_basis is not None else None,
-        "data_passport": build_data_passport(project).model_dump(mode="json"),
+        "data_passport": build_data_passport(project, geometry=geometry).model_dump(mode="json"),
         "data_gaps": scene.data_gaps,
         "limitations": warnings,
         "files": entry_hashes,

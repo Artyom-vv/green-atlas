@@ -42,6 +42,28 @@ class CandidateRejected(ValueError):
         self.issue = issue
 
 
+def accepted_partial_source_warning(
+    project: Project, *, status: str, code: str
+) -> bool:
+    """Only an explicitly accepted, global source gap is reviewable in bulk.
+
+    This does not authorize unknown utility types, growth conflicts, or a
+    missing calculation. Their candidate-specific uncertainty remains blocked.
+    """
+    if status != "unknown" or code != "SOURCE_GEOMETRY_PARTIAL":
+        return False
+    if project.geometry is None or project.geometry.calculation_scope != "available_data":
+        return False
+    source = project.source_file
+    if source is None:
+        return False
+    provenance = source.prepared_provenance
+    return bool(
+        source.accept_partial_geometry
+        or (provenance and provenance.opening_review.accept_partial_geometry)
+    )
+
+
 def _violation_issue(violation: PositionViolation) -> CandidateIssue:
     return CandidateIssue(
         status="blocked",
@@ -146,7 +168,7 @@ class PlanEvaluation:
                 )
             )
         advisory = self.geometry.placement_advisory_detail(
-            project, payload.x, payload.y, radius
+            project, payload.x, payload.y, radius, payload.kind
         )
         object_ = PlanObject(
             id=self.new_id(),
@@ -178,8 +200,14 @@ class PlanEvaluation:
                     object_.y,
                     canopy_20.radius_max_m,
                     roots_20.radius_max_m,
+                    object_.kind,
                 )
-                advisory = advisory or growth_advisory
+                # A global source-coverage notice must not conceal a local
+                # growth conflict at this specific candidate position.
+                if growth_advisory and (
+                    advisory is None or advisory.code == "SOURCE_GEOMETRY_PARTIAL"
+                ):
+                    advisory = growth_advisory
         if not (spacing_index or PlantSpacingIndex(plan.objects)).respects(object_):
             raise CandidateRejected(
                 CandidateIssue(
@@ -246,7 +274,7 @@ class PlanEvaluation:
         updates["layout_radius_m"] = next_radius
         updates["planting_zone_id"] = zone.id if zone else None
         advisory = self.geometry.placement_advisory(
-            project, next_x, next_y, next_radius
+            project, next_x, next_y, next_radius, current.kind
         )
         updates["status"] = "warning" if advisory else "valid"
         next_revision_id = updates.get(
@@ -270,6 +298,7 @@ class PlanEvaluation:
                         next_y,
                         canopy_20.radius_max_m,
                         roots_20.radius_max_m,
+                        current.kind,
                     )
                     or advisory
                 )

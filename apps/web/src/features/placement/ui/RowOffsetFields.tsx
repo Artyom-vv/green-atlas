@@ -21,7 +21,7 @@ export const RowOffsetFields: FC<RowOffsetFieldsProps> = ({
     values.endOffset ? `Конец ${values.endOffset} м` : '',
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(', ');
 
   return (
     <>
@@ -87,8 +87,9 @@ export const RowOffsetFields: FC<RowOffsetFieldsProps> = ({
               id={errorId}
               className="col-span-full m-0 text-xs leading-4 text-red-700"
             >
-              Сумма отступов не должна превышать длину линии —{' '}
-              {axisLength.toFixed(1)} м. Уменьшите отступ от начала или конца.
+              Сумма отступов больше длины линии —{' '}
+              {axisLength.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}{' '}
+              м
             </p>
           )}
         </FieldGrid>

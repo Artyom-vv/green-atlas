@@ -13,6 +13,7 @@ WORKER_MODULES = frozenset(
         "app.cad_intake.preview_worker",
         "app.cad_import.inspection",
         "app.cad_import.aoi_worker",
+        "app.dxf_import.live_worker",
     }
 )
 

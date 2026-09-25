@@ -10,7 +10,7 @@ from shapely.geometry.base import BaseGeometry
 
 from app.dxf_import.contracts import ImportMode
 from app.geometry.contracts import GeometrySnapshot
-from app.geometry.source_overview import source_overview
+from app.geometry.source_overview import SourceOverviewCache
 from app.geometry.viewport_admission import (
     PreparedViewportFeature,
     admit_fair_features,
@@ -53,6 +53,7 @@ class _ProjectIndex:
         default_factory=OrderedDict
     )
     simplifier: ViewportSimplifier = field(default_factory=ViewportSimplifier)
+    source_overviews: SourceOverviewCache = field(default_factory=SourceOverviewCache)
 
 
 class IndexedGeometryQuery:
@@ -289,9 +290,9 @@ class IndexedGeometryQuery:
         }
         overview = None
         if truncated and project.import_status.mode == ImportMode.AUTOCAD_LIVE:
-            overview = source_overview(
+            overview = indexed.source_overviews.render(
                 ((indexed.features[int(index)], indexed.geometries[int(index)])
-                 for index in matched_indexes), extent, resolution,
+                 for index in matched_indexes), extent, resolution, matched_indexes.tobytes(),
             )
         return GeometrySnapshot(
             feature_collection={

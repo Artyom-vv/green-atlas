@@ -3,6 +3,7 @@ import { attachTranslation } from './attachTranslation';
 import { loadViewportGeometry } from './loadViewportGeometry';
 import { useCadSourceLayer } from './useCadSourceLayer';
 import { useSourceOverviewLayer } from './useSourceOverviewLayer';
+import { useSearchDomainLayer } from './useSearchDomainLayer';
 import type { CadGeometryLayers } from './cadGeometryDisplay';
 import { attachMapPerformanceProbe } from './performance/attachMapPerformanceProbe';
 import { attachSnapping } from './attachSnapping';
@@ -135,6 +136,9 @@ export function useOpenLayersViewport(
     highlightedPlantingZoneIds,
     focusGeometry,
     placementPreview,
+    inspectionPreview,
+    searchDomains,
+    onProbeCoordinate,
     changePreview,
     zoneChangePreview,
     changeDraft,
@@ -325,6 +329,7 @@ export function useOpenLayersViewport(
   const brushModeRef = useRef<BrushDrawMode>('replace');
   const spacePanRef = useRef(false);
   const callbackRef = useRef({
+    onProbeCoordinate,
     onSelect,
     onSelectMany,
     onCoordinate,
@@ -353,6 +358,7 @@ export function useOpenLayersViewport(
   brushOperationRef.current = brushOperation;
   initialExtentRef.current = initialExtent;
   callbackRef.current = {
+    onProbeCoordinate,
     onSelect,
     onSelectMany,
     onCoordinate,
@@ -851,11 +857,16 @@ export function useOpenLayersViewport(
     // is handled on the immediate click event so Draw cannot swallow the
     // later synthetic singleclick and make DXF line selection appear dead.
     const handleMapClick = (event: MapBrowserEvent) => {
+      if (callbackRef.current.onProbeCoordinate) return;
       selectRowAxisAtClick(event);
     };
     map.on('click', handleMapClick);
     map.on('singleclick', (event) => {
       const activeTool = toolRef.current;
+      if (callbackRef.current.onProbeCoordinate) {
+        callbackRef.current.onProbeCoordinate([event.coordinate[0], event.coordinate[1]]);
+        return;
+      }
       callbackRef.current.onMapInspect?.(undefined);
       if (activeTool === 'pattern_row') return;
       if (
@@ -1003,6 +1014,14 @@ export function useOpenLayersViewport(
         event.coordinate[0],
         event.coordinate[1],
       ];
+      if (callbackRef.current.onProbeCoordinate) {
+        clearTransientSource(mapHoverSourceRef.current);
+        callbackRef.current.onMapHover?.(undefined);
+        hoveredMapFeatureRef.current = null;
+        hoveredMapGeometryKeyRef.current = undefined;
+        target.style.cursor = 'crosshair';
+        return;
+      }
       clearTransientSource(brushCursorSourceRef.current);
       if (toolRef.current === 'brush' && brushEnabledRef.current) {
         brushCursorSourceRef.current.addFeature(
@@ -1418,6 +1437,7 @@ export function useOpenLayersViewport(
     mapRef, targetRef, layersRef: geometryLayersRef,
     geometry, hiddenNames: hiddenLayerNames, disabled: Boolean(cadSource),
   });
+  useSearchDomainLayer(mapRef, searchDomains);
 
   useEffect(() => {
     const source = planSourceRef.current;
@@ -1612,19 +1632,19 @@ export function useOpenLayersViewport(
   useEffect(() => {
     const source = placementPreviewSourceRef.current;
     source.clear();
-    if (!placementPreview || (tool !== 'add_tree' && tool !== 'add_shrub'))
-      return;
+    const preview = inspectionPreview ?? ((tool === 'add_tree' || tool === 'add_shrub') ? placementPreview : undefined);
+    if (!preview) return;
     source.addFeature(
       new Feature({
         geometry: new Circle(
-          placementPreview.coordinate,
-          placementPreview.radius,
+          preview.coordinate,
+          preview.radius,
         ),
-        markerGeometry: new Point(placementPreview.coordinate),
-        placementStatus: placementPreview.status,
+        markerGeometry: new Point(preview.coordinate),
+        placementStatus: preview.status,
       }),
     );
-  }, [placementPreview, placementPreviewSourceRef, tool]);
+  }, [placementPreview, inspectionPreview, placementPreviewSourceRef, tool]);
 
   useEffect(() => {
     for (const feature of planSourceRef.current.getFeatures()) {

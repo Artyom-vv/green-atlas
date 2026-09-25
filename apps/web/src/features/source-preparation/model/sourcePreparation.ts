@@ -7,6 +7,7 @@ export const sourceIdentity = (project?: Project) =>
     project?.source_file?.imported_at,
     project?.source_file?.name,
     project?.source_file?.size,
+    project?.source_file?.content_sha256,
   ]);
 export const layerMappings = (layers: Layer[]) =>
   Object.fromEntries(layers.map((layer) => [layer.id, toLayerMapping(layer)]));

@@ -125,11 +125,53 @@ class RegionGeometry(BaseModel):
     native_perimeter_units: float = Field(ge=0, allow_inf_nan=False)
     achieved_tolerance_m: float = Field(ge=0, allow_inf_nan=False)
     content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    # None for an authored REGION/HATCH. A generated AutoCAD region preserves
+    # every original curve identity while those paths remain independently visible.
+    derived_from: list[SourceIdentity] | None = None
 
     @model_validator(mode="after")
     def require_outer_loop(self) -> RegionGeometry:
         if not any(loop.role == "outer" for loop in self.loops):
             raise ValueError("region must contain an outer loop")
+        if self.derived_from is not None:
+            members = [
+                (item.handle, tuple(item.instance_chain)) for item in self.derived_from
+            ]
+            if len(members) < 2 or len(members) != len(set(members)):
+                raise ValueError("derived region needs distinct source curves")
+            anchor = (self.identity.handle, tuple(self.identity.instance_chain))
+            if anchor not in members or any(chain != anchor[1] for _, chain in members):
+                raise ValueError(
+                    "derived region members must share the anchor instance"
+                )
+        return self
+
+
+class NativeAreaProposal(BaseModel):
+    """A measured region from a temporary native clone, never an active obstacle.
+
+    The immutable capture contains evidence only.  Accept/reject is a separate
+    project decision tied to this source and proposal hash, not a CAD mutation.
+    """
+
+    id: str = Field(min_length=1)
+    source: SourceIdentity
+    source_path_content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    layer: str = Field(min_length=1)
+    method: Literal["explicit-chord-closure"]
+    closure_gap_wcs_xy_units: float = Field(gt=0, allow_inf_nan=False)
+    preview: RegionGeometry
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def require_separate_preview(self) -> NativeAreaProposal:
+        path = "/".join([*self.source.instance_chain, self.source.handle])
+        if self.id != f"area-proposal/{path}":
+            raise ValueError("area proposal id must encode its source instance")
+        if self.preview.identity != self.source or self.preview.derived_from is not None:
+            raise ValueError("area proposal preview must belong to its one source path")
+        if self.preview.id != f"{self.id}/region":
+            raise ValueError("area proposal preview has an unrelated id")
         return self
 
 
@@ -213,6 +255,8 @@ class CadSnapshot(BaseModel):
     live_references: list[LiveCadReference] | None = None
     coverage: list[CoverageRecord]
     geometry: list[CadGeometry]
+    # Absent in older captures; None preserves their signed payload exactly.
+    area_proposals: list[NativeAreaProposal] | None = None
     summary: SnapshotSummary
 
     model_config = {"populate_by_name": True}
@@ -260,9 +304,57 @@ class CadSnapshot(BaseModel):
             raise ValueError("geometry referenced by multiple source instances")
         if set(referenced) != set(geometry_by_id):
             raise ValueError("unreferenced geometry in snapshot")
+        derived_members: set[tuple[str, tuple[str, ...]]] = set()
         for geometry in self.geometry:
             if identity_key(geometry.identity) not in coverage_by_key:
                 raise ValueError(f"geometry has no coverage record: {geometry.id}")
+            if isinstance(geometry, RegionGeometry) and geometry.derived_from:
+                anchor_coverage = coverage_by_key[identity_key(geometry.identity)]
+                for member in geometry.derived_from:
+                    key = identity_key(member)
+                    source_coverage = coverage_by_key.get(key)
+                    if (
+                        source_coverage is None
+                        or source_coverage.status != "native"
+                        or source_coverage.layer != anchor_coverage.layer
+                        or not any(
+                            isinstance(geometry_by_id.get(item_id), PathGeometry)
+                            for item_id in source_coverage.geometry_ids
+                        )
+                    ):
+                        raise ValueError(
+                            f"derived region source is not a native path: {key}"
+                        )
+                    if key in derived_members:
+                        raise ValueError("source path contributes to multiple regions")
+                    derived_members.add(key)
+        proposal_keys: set[tuple[str, tuple[str, ...]]] = set()
+        proposal_ids: set[str] = set()
+        for proposal in self.area_proposals or []:
+            key = identity_key(proposal.source)
+            source_coverage = coverage_by_key.get(key)
+            if (
+                source_coverage is None
+                or source_coverage.status != "native"
+                or source_coverage.layer != proposal.layer
+                or key in derived_members
+                or key in proposal_keys
+                or proposal.id in proposal_ids
+            ):
+                raise ValueError("area proposal lacks a unique native source path")
+            paths = [
+                geometry_by_id[item_id]
+                for item_id in source_coverage.geometry_ids
+                if isinstance(geometry_by_id.get(item_id), PathGeometry)
+            ]
+            if (
+                len(paths) != 1
+                or paths[0].closed
+                or paths[0].content_sha256 != proposal.source_path_content_sha256
+            ):
+                raise ValueError("area proposal does not match its open source path")
+            proposal_keys.add(key)
+            proposal_ids.add(proposal.id)
         if set(referenced_dependencies) != set(dependencies_by_id):
             raise ValueError("unreferenced CAD dependency in snapshot")
 

@@ -1,0 +1,16 @@
+[
+  {"route":"6DE6/1ACA/6E2","mode":"area","distance":1},
+  {"route":"6DE6/1ACA/6E4","mode":"area","distance":1},
+  {"route":"6E16/B21A","mode":"area","distance":1.5},
+  {"route":"6E16/B355","mode":"area","distance":1.5},
+  {"route":"6E16/B211/B214","mode":"curve","distance":1.5},
+  {"route":"6E16/B239/B23C","mode":"curve","distance":1.5},
+  {"route":"6E16/B472","mode":"curve","distance":2},
+  {"route":"6E16/C0BF/C0C4","mode":"curve","distance":0.7},
+  {"route":"6E16/C0BF/C0C5","mode":"curve","distance":0.7},
+  {"route":"6E16/D881/D884","mode":"area","distance":1},
+  {"route":"6E29/3862/3867/386A","mode":"curve","distance":1},
+  {"route":"6E29/6A53/6A56","mode":"curve","distance":2},
+  {"route":"6DE6/2918D5","mode":"area","distance":1},
+  {"route":"6DE6/2DCAD9","mode":"area","distance":0.5}
+]

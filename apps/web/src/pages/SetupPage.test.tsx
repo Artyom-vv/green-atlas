@@ -460,7 +460,7 @@ describe('geometry operation status recovery', () => {
     );
     expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
       { layer_id: 'boundary-a', kind: 'site_border', visible: true },
-      { layer_id: 'building-a', kind: 'water', visible: true },
+      { layer_id: 'building-a', kind: 'water', visible: true, confirmed: true },
     ]);
     expect(
       screen.queryByRole('heading', { name: 'Карта проекта' }),
@@ -652,7 +652,7 @@ describe('geometry operation status recovery', () => {
     );
     expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
       { layer_id: 'boundary-a', kind: 'site_border', visible: true },
-      { layer_id: 'building-a', kind: 'utility', visible: true },
+      { layer_id: 'building-a', kind: 'utility', visible: true, confirmed: true },
     ]);
     expect(
       vi.mocked(api.saveMappings).mock.invocationCallOrder[0],
@@ -736,11 +736,13 @@ describe('geometry operation status recovery', () => {
         ),
       );
       expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
-        { layer_id: 'boundary-a', kind: 'site_border', visible: true },
+        { layer_id: 'boundary-a', kind: 'site_border', visible: true,
+          ...(!scenario.incomplete ? { confirmed: true } : {}) },
         {
           layer_id: 'building-a',
           kind: scenario.incomplete ? 'ignore' : 'building',
           visible: true,
+          ...(scenario.incomplete ? { confirmed: true } : {}),
         },
       ]);
       expect(

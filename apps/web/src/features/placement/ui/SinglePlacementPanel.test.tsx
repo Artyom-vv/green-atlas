@@ -4,19 +4,32 @@ import type { SpeciesRevision } from '@green/api-client';
 import { SinglePlacementPanel } from '@/features/placement/ui/SinglePlacementPanel';
 
 afterEach(cleanup);
-const tree = {
+const tree: SpeciesRevision = {
   id: 'tree@1',
   species_id: 'tree',
   common_name: 'Липа',
   scientific_name: 'Tilia',
   kind: 'tree',
-} as SpeciesRevision;
-const shrub = {
+  revision: 1,
+  crown_shape: 'round',
+  mature_height_min_m: 10,
+  mature_height_max_m: 20,
+  mature_crown_diameter_min_m: 5,
+  mature_crown_diameter_max_m: 8,
+  growth_rate: 'moderate',
+  root_architecture: 'mixed',
+  provenance: 'native',
+  territory_policy: 'general_draft',
+  risk_flags: [],
+  evidence_note: 'Test fixture',
+  source_urls: [],
+};
+const shrub: SpeciesRevision = {
   ...tree,
   id: 'shrub@1',
   common_name: 'Сирень',
   kind: 'shrub',
-} as SpeciesRevision;
+};
 
 it('returns the species directly from one catalog to the active planting task', () => {
   const onSpeciesChange = vi.fn();
@@ -30,12 +43,14 @@ it('returns the species directly from one catalog to the active planting task', 
       onFinish={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Выбрать породу' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть каталог растений: Выбрать породу' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(
-    screen.queryByRole('button', { name: 'Выбрать: Сирень' }),
+    screen.queryByRole('button', { name: 'Сведения: Сирень' }),
   ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Выбрать: Липа' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сведения: Липа' }));
+  expect(onSpeciesChange).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Выбрать растение' }));
   expect(onSpeciesChange).toHaveBeenCalledWith(tree.id);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(
@@ -55,12 +70,12 @@ it('locks species and finish while the clicked planting is being checked and sav
       onFinish={vi.fn()}
     />,
   );
-  expect(screen.getByRole('button', { name: 'Выбрать породу' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Изменить растение в каталоге: Выбрать породу' })).toBeDisabled();
   expect(
     screen.getByRole('button', { name: 'Завершить посадку' }),
   ).toBeDisabled();
   expect(screen.getByRole('status')).toHaveTextContent(
-    'Проверяем выбранное место и сохраняем посадку',
+    'Проверка и сохранение',
   );
 });
 it('offers a project refresh instead of another planting when a committed write could not refresh the map', () => {

@@ -13,6 +13,33 @@ function deferred<T>() {
 }
 
 describe('latest preview ownership', () => {
+  it('publishes intermediate evidence without accepting it, and retains it on failure', async () => {
+    const completion = deferred<string>();
+    const accepted = vi.fn();
+    let publish!: (value: string) => void;
+    const { result } = renderHook(() =>
+      useLatestPreview({
+        execute: (_request: number, _signal, report) => {
+          publish = report;
+          return completion.promise;
+        },
+        onAccepted: accepted,
+      }),
+    );
+    await act(async () => result.current.mutate(1));
+    act(() => publish('32 percent'));
+    expect(result.current.progress).toBe('32 percent');
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.data).toBeUndefined();
+    expect(accepted).not.toHaveBeenCalled();
+    await act(async () => completion.reject(new Error('offline')));
+    expect(result.current.progress).toBe('32 percent');
+    expect(result.current.isPending).toBe(false);
+    act(() => result.current.reset());
+    act(() => publish('late'));
+    expect(result.current.progress).toBeUndefined();
+  });
+
   it('does not rerender consumers for repeated resets of an idle preview', () => {
     let renders = 0;
     const execute = vi.fn(async () => 'preview');

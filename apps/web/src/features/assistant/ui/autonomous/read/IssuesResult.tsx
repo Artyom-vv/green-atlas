@@ -16,7 +16,7 @@ export const IssuesResult: FC<IssuesResultProps> = ({ issues, project }) => (
         <span className="text-xs font-medium text-neutral-600">
           Результат проверки
           {issues.planVersion !== undefined
-            ? ` · План ${issues.planVersion}`
+            ? `, план ${issues.planVersion}`
             : ''}
         </span>
         <Text as="h3" variant="heading" className="m-0 wrap-anywhere">

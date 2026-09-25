@@ -1,7 +1,7 @@
-import type { Layer, LayerKind, LayerMapping } from '@green/api-client';
+import type { Layer, LayerKind, LayerMapping, LayerRecognition } from '@green/api-client';
 import { Button, DataTable, Disclosure } from '@green/ui';
 import type { FC } from 'react';
-import { LAYER_KIND_LABELS } from '../model/layerKinds';
+import { changeLayerRole, LAYER_KIND_LABELS, toLayerMapping } from '../model/layerKinds';
 import { LayerMappingTable } from './LayerMappingTable';
 
 interface LayerMappingReviewProps {
@@ -9,6 +9,7 @@ interface LayerMappingReviewProps {
   mappings: Record<string, LayerMapping>;
   onChange: (next: Record<string, LayerMapping>) => void;
   readOnly?: boolean;
+  recognition?: LayerRecognition;
 }
 
 function layerWord(count: number) {
@@ -25,16 +26,23 @@ export const LayerMappingReview: FC<LayerMappingReviewProps> = ({
   mappings,
   onChange,
   readOnly = false,
+  recognition,
 }) => {
   const groups = Object.entries(
-    layers.reduce<Partial<Record<LayerKind, Layer[]>>>((result, layer) => {
-      const kind = mappings[layer.id]?.kind ?? 'ignore';
-      (result[kind] ??= []).push(layer);
+    layers.reduce<Record<string, Layer[]>>((result, layer) => {
+      const mapping = mappings[layer.id] ?? toLayerMapping(layer);
+      const key = mapping.category ? `category:${mapping.category}` : mapping.kind;
+      (result[key] ??= []).push(layer);
       return result;
     }, {}),
-  ) as [LayerKind, Layer[]][];
+  );
+  const categoryFor = (key: string) => recognition?.categories.find(
+    (item) => `category:${item.category}` === key,
+  );
+  const labelFor = (key: string) => categoryFor(key)?.label ??
+    LAYER_KIND_LABELS[key as LayerKind] ?? 'Тип не определён';
   groups.sort(([left], [right]) =>
-    LAYER_KIND_LABELS[left].localeCompare(LAYER_KIND_LABELS[right], 'ru'),
+    labelFor(left).localeCompare(labelFor(right), 'ru'),
   );
 
   return (
@@ -47,7 +55,7 @@ export const LayerMappingReview: FC<LayerMappingReviewProps> = ({
         </colgroup>
         <thead>
           <tr>
-            <th scope="col">Предложенная роль</th>
+            <th scope="col">Тип объектов</th>
             <th scope="col">Состав</th>
             <th scope="col" className="text-right">
               Проверка
@@ -57,12 +65,14 @@ export const LayerMappingReview: FC<LayerMappingReviewProps> = ({
         <tbody>
           {groups.map(([kind, group]) => (
             <tr key={kind} className="bg-yellow-100/50">
-              <td className="font-medium">{LAYER_KIND_LABELS[kind]}</td>
+              <td className="font-medium">{kind === 'ignore' ? 'Тип не определён' : labelFor(kind)}</td>
               <td className="text-neutral-600">
                 {group.length} {layerWord(group.length)}
               </td>
               <td className="text-right">
-                {readOnly ? (
+                {kind === 'ignore' ? (
+                  <span className="text-xs text-amber-700">Выберите тип объектов</span>
+                ) : readOnly ? (
                   <span className="text-xs text-amber-700">
                     не подтверждено
                   </span>
@@ -72,9 +82,11 @@ export const LayerMappingReview: FC<LayerMappingReviewProps> = ({
                     onClick={() => {
                       const next = { ...mappings };
                       for (const layer of group) {
-                        const mapping = mappings[layer.id];
-                        if (mapping)
-                          next[layer.id] = { ...mapping, confirmed: true };
+                        const mapping = mappings[layer.id] ?? toLayerMapping(layer);
+                        const category = categoryFor(kind);
+                        next[layer.id] = category
+                          ? changeLayerRole(mapping, category.kind ?? 'restricted', category.category)
+                          : { ...mapping, confirmed: true };
                       }
                       onChange(next);
                     }}
@@ -89,6 +101,7 @@ export const LayerMappingReview: FC<LayerMappingReviewProps> = ({
       </DataTable>
       <Disclosure variant="plain" title="Состав предложений">
         <LayerMappingTable
+          recognition={recognition}
           readOnly={readOnly}
           layers={layers}
           mappings={mappings}

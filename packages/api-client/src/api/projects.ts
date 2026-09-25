@@ -2,6 +2,16 @@ import type {
   DataPassport,
   GeometrySnapshot,
   LayerMapping,
+  LayerRecognition,
+  NativeAreaPreview,
+  SourceObjectReviewPage,
+  SourceObjectContext,
+  SourceAreaGroupRequest,
+  SourceAreaGroupCheck,
+  SourceReadIssues,
+  NativeFaceReview,
+  NativeFaceDecision,
+  SourceObjectDecisionRequest,
   NativeDxfSourceAsset,
   OperationKind,
   PlantingZoneAssignment,
@@ -15,6 +25,9 @@ import { API_URL, json, request } from '../transport/request';
 import { withProjectWriteOptions } from '../transport/projectWrite';
 
 export const projectsApi = {
+  getNativeFaces: (projectId: string) => request<NativeFaceReview>(`/api/projects/${projectId}/source-native-faces`),
+  decideNativeFace: (projectId: string, input: NativeFaceDecision, options: ProjectWriteOptions) =>
+    request<Project>(`/api/projects/${projectId}/source-native-faces/decision`, withProjectWriteOptions(json(input), options)),
   createProject: (name: string) =>
     request<Project>('/api/projects', json({ name })),
   listProjects: () => request<ProjectSummary[]>('/api/projects'),
@@ -44,6 +57,26 @@ export const projectsApi = {
   },
   getDataPassport: (projectId: string) =>
     request<DataPassport>(`/api/projects/${projectId}/data-passport`),
+  getLayerRecognition: (projectId: string) =>
+    request<LayerRecognition>(`/api/projects/${projectId}/source-layer-review`),
+  getSourceObjectReview: (projectId: string, layer: string, offset = 0) => {
+    const params = new URLSearchParams({ layer, offset: String(offset), limit: '30' });
+    return request<SourceObjectReviewPage>(`/api/projects/${projectId}/source-object-review?${params}`);
+  },
+  decideSourceObject: (projectId: string, input: SourceObjectDecisionRequest, options: ProjectWriteOptions) =>
+    request<Project>(`/api/projects/${projectId}/source-object-review/decision`,
+      withProjectWriteOptions(json(input), options)),
+  getSourceObjectContext: (projectId: string, route: string, scale = 1) =>
+    request<SourceObjectContext>(`/api/projects/${projectId}/source-object-context?${new URLSearchParams({route, scale:String(scale)})}`),
+  getSourceReadIssues: (projectId: string) => request<SourceReadIssues>(`/api/projects/${projectId}/source-read-issues`),
+  checkSourceAreaGroup: (projectId: string, input: SourceAreaGroupRequest) =>
+    request<SourceAreaGroupCheck>(`/api/projects/${projectId}/source-area-groups/check`, json(input)),
+  acceptSourceAreaGroup: (projectId: string, input: SourceAreaGroupRequest, options: ProjectWriteOptions) =>
+    request<Project>(`/api/projects/${projectId}/source-area-groups`, withProjectWriteOptions(json(input), options)),
+  removeSourceAreaGroup: (projectId: string, groupId: string, options: ProjectWriteOptions) =>
+    request<Project>(`/api/projects/${projectId}/source-area-groups/${groupId}`, withProjectWriteOptions({method:'DELETE'}, options)),
+  getNativeAreaPreview: (projectId: string, proposalId: string) =>
+    request<NativeAreaPreview>(`/api/projects/${projectId}/source-native-area/preview?proposal_id=${encodeURIComponent(proposalId)}`),
   uploadDxf: (projectId: string, file: File) => {
     const body = new FormData();
     body.append('file', file);
@@ -81,6 +114,20 @@ export const projectsApi = {
     request<Project>(
       `/api/projects/${projectId}/source-partial-geometry/accept`,
       withProjectWriteOptions(json({ source_sha256: sourceSha256 }), options),
+    ),
+  decideNativeArea: (
+    projectId: string,
+    input: {
+      source_sha256: string;
+      proposal_id: string;
+      proposal_sha256: string;
+      decision: 'accepted' | 'rejected';
+    },
+    options?: ProjectWriteOptions,
+  ) =>
+    request<Project>(
+      `/api/projects/${projectId}/source-native-area/decision`,
+      withProjectWriteOptions(json(input), options),
     ),
   savePlantingZones: (
     projectId: string,

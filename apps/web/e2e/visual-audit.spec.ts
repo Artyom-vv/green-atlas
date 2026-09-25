@@ -972,7 +972,7 @@ test('placement flow creates a typed group across the selected area as one revis
   expect(new Set(generated.map((item) => item.x)).size).toBe(generated.length);
   expect(new Set(generated.map((item) => item.y)).size).toBe(generated.length);
   await expect(page.getByText(/Найдено \d+/)).toBeVisible();
-  await expect(page.getByText('Почему меньше')).toBeVisible();
+  await expect(page.getByText('Причины недобора')).toBeVisible();
   const horizon = page.getByRole('slider', { name: 'Горизонт прогноза' });
   await expect(horizon).toHaveValue('0');
   await horizon.fill('23');
@@ -1063,7 +1063,11 @@ test('primary workspace previews only after explicit confirmation and accepts a 
   expect(preview.generated_count).toBeGreaterThan(0);
   expect(preview.accepted_count + preview.rejected_count + preview.capacity_shortfall).toBe(5000);
   expect(previewRequests).toBe(1);
-  await expect(page.getByText(preview.accepted_count ? `Найдено ${preview.accepted_count}` : 'Мест не найдено')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Результат расчёта' }).getByRole('heading')).toHaveText(
+    preview.accepted_count
+      ? `Найдено ${preview.accepted_count} из ${preview.requested_count}`
+      : /Не удалось подтвердить места|Предложенные позиции не приняты/,
+  );
   await expect(page.getByRole('status', { name: /Этапы настройки: 3 из 3/ })).toBeVisible();
 });
 
@@ -1580,7 +1584,7 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
   expect(denseMixed.accepted_count).toBeGreaterThan(1);
   expect(new Set(denseMixed.change_set?.additions.map((item) => item.kind))).toEqual(new Set(['tree', 'shrub']));
   await expect(page.getByText(`шаг ${denseMixed.effective_spacing_m} м`)).toBeVisible();
-  if (denseMixed.reason_summary.length) await expect(page.getByText('Почему меньше')).toBeVisible();
+  if (denseMixed.reason_summary.length) await expect(page.getByText('Причины недобора')).toBeVisible();
 
   await page.getByRole('button', { name: 'Изменить' }).click();
   await page.getByLabel('Состав группы').selectOption('trees');
@@ -1597,7 +1601,7 @@ test('real and dense DXF files remain interactive behind the viewport budget', a
   expect(denseMixed.effective_spacing_m).toBeLessThan(openTrees.effective_spacing_m);
   expect(denseMixed.accepted_count).toBeGreaterThanOrEqual(openTrees.accepted_count);
   await expect(page.getByText(`шаг ${openTrees.effective_spacing_m} м`)).toBeVisible();
-  if (openTrees.reason_summary.length) await expect(page.getByText('Почему меньше')).toBeVisible();
+  if (openTrees.reason_summary.length) await expect(page.getByText('Причины недобора')).toBeVisible();
 
   await page.getByRole('button', { name: 'Изменить' }).click();
   await page.getByLabel('Состав группы').selectOption('mixed');

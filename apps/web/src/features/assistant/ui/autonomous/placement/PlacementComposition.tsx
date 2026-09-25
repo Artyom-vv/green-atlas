@@ -53,7 +53,7 @@ export const PlacementComposition: FC<PlacementCompositionProps> = ({
           count(kinds?.shrub) ? `Кустарники: ${kinds?.shrub}` : '',
         ]
           .filter(Boolean)
-          .join(' · ')}
+          .join(', ')}
       </Text>
     )}
   </>

@@ -343,7 +343,7 @@ describe('server project assistant', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Агент' }));
     expect(screen.getByLabelText('Выделение на карте')).toHaveTextContent(
-      '1 посадка · 1 участок',
+      '1 посадка, 1 участок',
     );
     fireEvent.change(screen.getByLabelText('Задача для автономного агента'), {
       target: { value: 'Проверь выделенные посадки' },

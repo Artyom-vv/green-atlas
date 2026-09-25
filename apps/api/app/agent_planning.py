@@ -147,7 +147,8 @@ def prepare_placement(application, project_id: str, task: TaskState,
         raise ValueError("Сначала необходимо подготовить план проекта")
     events = []
     zones = _resolve_zone_ids(application, project_id, task, events)
-    condition_check = bind_placement_conditions(project, values.constraints, values.exclusions)
+    condition_check = bind_placement_conditions(project, values.constraints, values.exclusions,
+        passport=application.projects.get_data_passport(project_id) if values.constraints else None)
     if values.plant_kind == 'mixed':
         return prepare_mixed_placement(application, project_id, task, agent_species_revision_ids,
                                        events=events, resolved_zone_ids=zones)
@@ -225,7 +226,8 @@ def prepare_mixed_placement(application, project_id: str, task: TaskState,
     if not project.plan or not zones or (not values.quantity and values.quantity_mode != "fill_available"):
         raise ValueError('Укажите участок и общее количество растений')
     quantity = values.quantity if values.quantity is not None else 30
-    condition_check = bind_placement_conditions(project, values.constraints, values.exclusions)
+    condition_check = bind_placement_conditions(project, values.constraints, values.exclusions,
+        passport=application.projects.get_data_passport(project_id) if values.constraints else None)
     def call(name, arguments):
         event = execute_tool(application, project_id, name, arguments)
         if event['state_version'] != project.state_version:

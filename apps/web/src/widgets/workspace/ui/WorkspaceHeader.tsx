@@ -1,11 +1,14 @@
 import { EditorHeader } from '@/widgets/workbench/ui/EditorHeader';
+import { partialGeometryAccepted } from '@/entities/source-data/model/partialGeometryAccepted';
 import { Button, IconButton } from '@green/ui';
 import { Package, Redo2, Undo2 } from 'lucide-react';
 import type { FC } from 'react';
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
+import { SourceReviewNotice } from './SourceReviewNotice';
 
 export interface WorkspaceHeaderProps extends Pick<
   WorkspaceReadyModel,
+  | 'cadDisplayWarning'
   | 'changePreview'
   | 'createRelease'
   | 'editorBusy'
@@ -19,6 +22,7 @@ export interface WorkspaceHeaderProps extends Pick<
   | 'undoChange'
 > {}
 export const WorkspaceHeaderPropsFor = (model: WorkspaceReadyModel) => ({
+  cadDisplayWarning: model.cadDisplayWarning,
   changePreview: model.changePreview,
   createRelease: model.createRelease,
   editorBusy: model.editorBusy,
@@ -32,6 +36,7 @@ export const WorkspaceHeaderPropsFor = (model: WorkspaceReadyModel) => ({
   undoChange: model.undoChange,
 });
 export const WorkspaceHeader: FC<WorkspaceHeaderProps> = ({
+  cadDisplayWarning,
   changePreview,
   createRelease,
   editorBusy,
@@ -45,6 +50,16 @@ export const WorkspaceHeader: FC<WorkspaceHeaderProps> = ({
   undoChange,
 }) => (
   <EditorHeader name={project.name} onBack={() => leaveWorkspace('/projects')}>
+    {(project.source_review || cadDisplayWarning || partialGeometryAccepted(project)) && (
+      <SourceReviewNotice
+        calculationPending={Boolean(project.source_review)}
+        displayWarning={cadDisplayWarning}
+        incompleteGeometry={partialGeometryAccepted(project) || project.source_review?.issues?.some(
+          (issue) => issue.code === 'incomplete_layer',
+        )}
+        onReview={() => leaveWorkspace(`/projects/${project.id}/setup`)}
+      />
+    )}
     <IconButton
       icon={Undo2}
       label="Отменить"

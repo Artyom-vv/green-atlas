@@ -44,7 +44,7 @@ export const CanvasActivity: FC<CanvasActivityProps> = ({
   tool,
 }) => (
   <>
-    {showMapStatus && (
+    {showMapStatus && (placementCheck || moveLiveCheck) && (
       <div className="pointer-events-none absolute top-33 left-18 z-40 flex max-w-[calc(100%-10rem)] flex-col items-start gap-1">
         {placementCheck && (tool === 'add_tree' || tool === 'add_shrub') && (
           <MapFeedback status={placementCheck.status}>
@@ -56,26 +56,27 @@ export const CanvasActivity: FC<CanvasActivityProps> = ({
             {moveLiveCheck.reason}
           </MapFeedback>
         )}
-        {mapGeometryQuery.isFetching && (
-          <span className="rounded-control bg-white px-3 py-2 text-xs text-neutral-600">
-            {cadBaseReady ? 'Обновляем объекты для выбора' : 'Обновляем карту'}
-          </span>
-        )}
-        {mapGeometryMetadata?.truncated && (
-          <span
-            className="rounded-control text-warning-strong bg-white px-3 py-2 text-xs font-medium"
-            role="status"
-          >
-            {cadBaseReady
-              ? 'Приблизьте карту, чтобы выбрать отдельные объекты'
-              : 'Приблизьте карту, чтобы увидеть детали'}
-          </span>
-        )}
       </div>
     )}
+    {showMapStatus &&
+      (mapGeometryQuery.isFetching || mapGeometryMetadata?.truncated) && (
+        <div
+          className="pointer-events-none absolute right-3 bottom-3 z-30 max-w-[calc(100%-6rem)] rounded-control bg-white/90 px-2 py-1 text-xs text-neutral-600"
+          role="status"
+          aria-live="polite"
+        >
+          {mapGeometryQuery.isFetching
+            ? cadBaseReady
+              ? 'Обновляем объекты для выбора…'
+              : 'Обновляем карту…'
+            : cadBaseReady
+              ? 'Приблизьте для выбора отдельных объектов'
+              : 'Приблизьте карту для деталей'}
+        </div>
+      )}
     {(savingPlan ||
       previewChanges.isPending ||
-      previewPattern.isPending ||
+      (previewPattern.isPending && tool === 'pattern_row') ||
       previewRecommendation.isPending) && (
       <div className="rounded-card absolute top-16 left-1/2 z-40 w-65 max-w-[calc(100%-2rem)] -translate-x-1/2 border border-solid border-neutral-200 bg-white p-3">
         <Progress

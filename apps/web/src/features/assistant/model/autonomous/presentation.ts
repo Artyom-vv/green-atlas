@@ -326,7 +326,7 @@ export function issueMeasurement(issue: Data) {
         ? [`${label}: ${value.toLocaleString('ru-RU')}${unit}`]
         : [],
     )
-    .join(' · ');
+    .join(', ');
 }
 
 export function capacityText(result: Capacity) {

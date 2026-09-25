@@ -23,6 +23,19 @@ export type DataPassport = Schemas['DataPassport'];
 export type LayerKind = Schemas['LayerKind'];
 
 export type LayerMapping = Schemas['LayerMapping'];
+export type LayerCategory = Schemas['LayerCategory'];
+export type LayerRecognition = Schemas['LayerRecognition'];
+export type NativeAreaPreview = Schemas['NativeAreaPreview'];
+export type SourceObjectReviewPage = Schemas['SourceObjectReviewPage'];
+export type SourceObjectContext = Schemas['SourceObjectContext'];
+export type SourceContextObject = Schemas['SourceContextObject'];
+export type SourceAreaGroupRequest = Schemas['SourceAreaGroupRequest'];
+export type SourceAreaGroupCheck = Schemas['SourceAreaGroupCheck'];
+export type SourceReadIssues = Schemas['SourceReadIssues'];
+export type NativeFaceReview = Schemas['NativeFaceReview'];
+export type NativeFaceDecision = Schemas['NativeFaceDecision'];
+export type SourceObjectReviewItem = Schemas['SourceObjectReviewItem'];
+export type SourceObjectDecisionRequest = Schemas['SourceObjectDecisionRequest'];
 
 export type PlantingZoneAssignment = Schemas['PlantingZoneAssignment'];
 

@@ -26,10 +26,14 @@ from app.cad_intake.preview_application import CadPreviewApplication
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
+from app.geometry.ports import GeometryEnginePort
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import SqliteProjectHistory
+from app.native_query.live_runtime import configured_live_engine
+from app.native_query.project_runtime import ProjectLiveGeometry
 from app.operations.adapters import SqliteOperationRepository
 from app.planning.patterns import ShapelyCandidateGenerator
+from app.planting_zones.ports import ZoneValidator
 from app.projects.adapters import SqliteProjectRepository
 from app.shared.identity import random_id, utc_now
 from app.validation.adapters import RuleBasedPlanValidator
@@ -96,23 +100,31 @@ class Runtime:
             self.project_repository.close()
 
 
-def create_runtime(database_path: str | os.PathLike[str]) -> Runtime:
+def create_runtime(database_path: str | os.PathLike[str], *, geometry_engine: GeometryEnginePort | None = None,
+                   zone_validator: ZoneValidator | None = None) -> Runtime:
     """Build an isolated application graph for one database path."""
 
     path = str(Path(database_path))
     cad_config = CadIntakeConfig.from_environment(path)
     project_repository = SqliteProjectRepository(path)
     operation_repository = SqliteOperationRepository(path)
+    geometry = geometry_engine if geometry_engine is not None else ShapelyGeometryEngine()
+    if geometry_engine is None:
+        geometry, native_zones = configured_live_engine(path, geometry)
+        geometry = ProjectLiveGeometry(geometry, native_zones)
+        if zone_validator is None:
+            zone_validator = geometry.validate_zones
     application = ProjectApplication(
         repository=project_repository,
         operation_repository=operation_repository,
         history=SqliteProjectHistory(project_repository),
         dxf_reader=EzdxfReader(),
-        geometry=ShapelyGeometryEngine(),
+        geometry=geometry,
         geometry_query=IndexedGeometryQuery(),
-        validator=RuleBasedPlanValidator(),
+        validator=RuleBasedPlanValidator(geometry=geometry),
         writer=DxfRoundTripWriter(),
         candidate_generator=ShapelyCandidateGenerator(),
+        zone_validator=zone_validator,
         now=utc_now,
         new_id=random_id,
     )

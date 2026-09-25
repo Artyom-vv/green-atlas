@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.geometry.contracts import CoordinateReference
+from app.geometry.coverage_contracts import LayerGeometryCoverage
 
 
 class DataPassportEntry(BaseModel):
@@ -21,6 +22,7 @@ class DataPassportEntry(BaseModel):
         "road",
         "utility",
         "existing_green",
+        "lawn",
         "water",
         "restricted",
         "unclassified",
@@ -29,7 +31,10 @@ class DataPassportEntry(BaseModel):
     status: Literal["verified", "partial", "missing", "excluded"]
     layer_names: list[str] = Field(default_factory=list)
     object_count: int = Field(default=0, ge=0)
-    used_object_count: int = Field(default=0, ge=0)
+    # Historical clients called display-feature counts "objects in calculation".
+    # There is no object-level query ledger here. None means not measured, not 0.
+    used_object_count: int | None = Field(default=None, ge=0, deprecated=True)
+    display_feature_count: int | None = Field(default=None, ge=0)
     used_in_calculation: bool = False
     semantic_confidence: Literal["high", "medium", "low"] = "low"
     decision_level: Literal["stop", "warning", "advisory"] = "advisory"
@@ -37,6 +42,7 @@ class DataPassportEntry(BaseModel):
     source_imported_at: str | None = None
     source_owner: str | None = None
     note: str
+    geometry_coverage: LayerGeometryCoverage | None = None
 
 
 class DataPassport(BaseModel):

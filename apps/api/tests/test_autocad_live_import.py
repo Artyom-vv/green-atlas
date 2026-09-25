@@ -4,11 +4,15 @@ from hashlib import sha256
 
 import pytest
 from fastapi.testclient import TestClient
+from test_cad_bridge_compiler import (
+    near_closed_building_proposal_probe,
+    probe_with_xref,
+    valid_probe,
+)
 
 from app.cad_bridge.compiler import compile_live_document, compile_region_probe
 from app.cad_bridge.provider import verify_cad_snapshot_integrity
 from app.main import app
-from test_cad_bridge_compiler import valid_probe, probe_with_xref
 
 
 def live_bytes(probe=None):
@@ -20,6 +24,120 @@ def live_bytes(probe=None):
 
 def compile_live(content):
     return compile_live_document(content, autocad_version='2027.0.1', target='macos-arm64')
+
+
+def live_area_probe():
+    probe = near_closed_building_proposal_probe()
+    probe['coverage'].append({
+        'handle': 'C0', 'instance_chain': [], 'entity_type': 'AcDbRegion',
+        'source_layer': 'Граница участка', 'layer': 'Граница участка',
+        'status': 'native', 'method': 'AcBr loop traversal', 'reason': None,
+    })
+    probe['regions'].append({
+        'handle': 'C0', 'instance_chain': [],
+        'source_layer': 'Граница участка', 'layer': 'Граница участка',
+        'status': 'native', 'error_status': None,
+        'native_area_units2': 1500, 'native_perimeter_units': 160,
+        'loops': [{
+            'role': 'outer', 'sampled_max_deviation_units': 0,
+            'coordinates': [[-10, -10, 0], [40, -10, 0], [40, 20, 0],
+                            [-10, 20, 0], [-10, -10, 0]],
+        }],
+    })
+    probe['summary']['regions'] += 1
+    probe['summary']['resolved'] += 1
+    probe['summary']['source_instances'] += 1
+    probe['summary']['native'] += 1
+    return probe
+
+
+def test_native_area_requires_explicit_decision_and_reaches_calculation(monkeypatch):
+    monkeypatch.setattr(
+        'app.dxf_import.adapters.EzdxfReader.read',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('live area review must not use portable DXF')
+        ),
+    )
+    client = TestClient(app)
+    pid = client.post('/api/projects', json={'name': 'Native area review'}).json()['id']
+    url = f'/api/projects/{pid}'
+    captured = live_bytes(live_area_probe())
+    response = client.post(url + '/source-autocad-live',
+        data={'autocad_version': '2027.0.1', 'target': 'macos-arm64'},
+        files={'file': ('document.json', captured, 'application/json')})
+    assert response.status_code == 200, response.text
+    opened = response.json()
+    proposal = opened['source_file']['native_area_proposals'][0]
+    assert proposal['decision'] == 'pending'
+    assert proposal['area_m2'] == 100
+    assert proposal['area_gap_entity_type'] == 'LWPOLYLINE'
+    preview = client.get(url + '/source-native-area/preview', params={'proposal_id': proposal['id']})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()['source_sha256'] == opened['source_file']['content_sha256']
+    assert preview.json()['proposal_sha256'] == proposal['proposal_sha256']
+    assert len(preview.json()['source_path']) >= 4
+    assert preview.json()['proposed_rings']
+    before = client.get(url, params={'include_geometry': 'true'}).json()
+    assert not any(
+        feature['properties'].get('source_area_proposal_id')
+        for feature in before['geometry']['feature_collection']['features']
+    )
+    request = {
+        'source_sha256': opened['source_file']['content_sha256'],
+        'proposal_id': proposal['id'],
+        'proposal_sha256': proposal['proposal_sha256'],
+        'decision': 'accepted',
+    }
+    stale = client.post(url + '/source-native-area/decision',
+        json={**request, 'proposal_sha256': '0' * 64})
+    assert stale.status_code == 400
+    assert client.get(url).json()['state_version'] == before['state_version']
+    accepted = client.post(url + '/source-native-area/decision',
+        headers={'If-Match': str(before['state_version'])}, json=request)
+    assert accepted.status_code == 200, accepted.text
+    after = client.get(url, params={'include_geometry': 'true'}).json()
+    assert after['source_file']['native_area_proposals'][0]['decision'] == 'accepted'
+    source_features = after['geometry']['feature_collection']['features']
+    assert any(feature['properties'].get('source_area_proposal_id') == proposal['id']
+               and feature['geometry']['type'] == 'Polygon'
+               for feature in source_features)
+    assert any(feature['properties'].get('source_handle') == 'BEEF'
+               and feature['geometry']['type'] == 'LineString'
+               for feature in source_features)
+    assert next(layer for layer in after['layers'] if layer['source_name'] == 'Здания')['geometry_complete']
+    mappings = [
+        {'layer_id': layer['id'],
+         'kind': 'site_border' if layer['source_name'] == 'Граница участка' else 'building',
+         'confirmed': True}
+        for layer in after['layers']
+    ]
+    mapped = client.put(url + '/layer-mappings', json={'mappings': mappings})
+    assert mapped.status_code == 200, mapped.text
+    started = client.post(url + '/operations/geometry')
+    assert started.status_code == 202, started.text
+    operation = client.get(url + '/operations/' + started.json()['id']).json()
+    assert operation['status'] == 'completed', operation
+    calculated = client.get(url, params={'include_geometry': 'true'}).json()
+    assert calculated['allowed_area_m2'] is not None
+    assert any(
+        feature['properties'].get('kind') == 'forbidden'
+        and 'building' in feature['properties'].get('rule_id', '')
+        for feature in calculated['geometry']['feature_collection']['features']
+    )
+    rejected = client.post(url + '/source-native-area/decision',
+        headers={'If-Match': str(calculated['state_version'])},
+        json={**request, 'decision': 'rejected'})
+    assert rejected.status_code == 200, rejected.text
+    reverted = client.get(url, params={'include_geometry': 'true'}).json()
+    assert reverted['source_file']['native_area_proposals'][0]['decision'] == 'rejected'
+    assert not next(layer for layer in reverted['layers']
+                    if layer['source_name'] == 'Здания')['geometry_complete']
+    assert reverted['allowed_area_m2'] is None
+    assert not any(feature['properties'].get('source_area_proposal_id')
+                   for feature in reverted['geometry']['feature_collection']['features'])
+    assert client.post(url + '/source-native-area/decision',
+        headers={'If-Match': str(calculated['state_version'])}, json=request
+    ).status_code in (409, 412)
 
 
 def test_live_capture_hashes_geometry_payload_not_stale_disk_file():

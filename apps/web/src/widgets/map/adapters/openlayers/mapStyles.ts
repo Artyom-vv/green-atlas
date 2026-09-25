@@ -26,6 +26,7 @@ export const colors: Record<string, string> = {
   road: '#7A8795',
   utility: '#4E78B8',
   existing_green: '#2E9C67',
+  lawn: '#839b70',
   water: '#4E91B8',
   restricted: '#9A6700',
   allowed: '#91CFAE',
@@ -455,6 +456,18 @@ export function designGeometryStyle(
   resolution: number,
 ): Style | Style[] | undefined {
   const kind = String(feature.get('kind') ?? 'ignore');
+  // Development inspection aid: append ?debugLayer=building (or road,
+  // utility, existing_green, etc.) to paint one mapped role in red. This is
+  // intentionally URL-driven and dev-only so production styling is unchanged.
+  const debugLayer = import.meta.env.DEV
+    ? new URLSearchParams(window.location.search).get('debugLayer')
+    : null;
+  if (debugLayer && debugLayer === kind) {
+    return new Style({
+      fill: new Fill({ color: 'rgba(220, 38, 38, 0.42)' }),
+      stroke: new Stroke({ color: '#DC2626', width: 3 }),
+    });
+  }
   if (kind === 'allowed' && !feature.get('source_layer')) return undefined;
   if (
     kind === 'forbidden' &&
@@ -891,4 +904,3 @@ export function planStyle(
   planStyles.set(key, styles);
   return styles;
 }
-

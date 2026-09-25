@@ -127,6 +127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lawn-microgeometry", action="store_true")
     parser.add_argument("--botaniq-lawn", action="store_true")
     parser.add_argument("--scene-state", choices=("project", "existing_context"), default="project")
+    parser.add_argument("--lighting-profile", choices=("source", "stable_daylight"), default="source")
     parser.add_argument("--presentation-population", action="store_true")
     argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     return parser.parse_args(argv)
@@ -1426,6 +1427,28 @@ def repair_botaniq_textures():
     return repaired
 
 
+def tune_stable_leaf_materials():
+    """Restore the leaf smoothing used for the 21 September stable views."""
+    changes = []
+    targets = {"Value": 1.22, "Roughness": 0.62, "Normal Strength": 0.25,
+               "Bump Strength": 0.18, "Translucency Factor": 0.6}
+    for material in bpy.data.materials:
+        if not material.use_nodes or not material.name.startswith("bq_Leaf_"):
+            continue
+        for node in material.node_tree.nodes:
+            if node.type != "GROUP":
+                continue
+            applied = {}
+            for key, value in targets.items():
+                socket = node.inputs.get(key)
+                if socket is not None and not socket.is_linked:
+                    applied[key] = {"before": float(socket.default_value), "after": value}
+                    socket.default_value = value
+            if applied:
+                changes.append({"material": material.name, "changes": applied})
+    return changes
+
+
 def look_at(obj, target):
     obj.rotation_euler = (Vector(target) - obj.location).to_track_quat("-Z", "Y").to_euler()
 
@@ -1744,6 +1767,9 @@ def main() -> None:
                 "native_height_m": native_height,
             })
     repaired_textures = repair_botaniq_textures()
+    stable_leaf_tuning = tune_stable_leaf_materials() if args.lighting_profile == "stable_daylight" else []
+    if args.lighting_profile == "stable_daylight" and args.engine == "cycles":
+        scene.cycles.seed = 271828
     for row in packet["vegetation"]:
         collection, native_height = loaded[row["render_asset_path"]]
         obj = bpy.data.objects.new(row["id"], None)
@@ -1835,6 +1861,28 @@ def main() -> None:
     elevation = math.radians(packet["lighting"]["sun_elevation_deg"])
     azimuth = math.radians(packet["lighting"]["sun_azimuth_deg"])
     sun.rotation_euler = (math.pi / 2.0 - elevation, 0.0, azimuth)
+    effective_lighting = {"profile": args.lighting_profile, "source": packet["lighting"]}
+    if args.lighting_profile == "stable_daylight":
+        # Retained native presentation preset from the controlled multiview
+        # renderer. It changes illumination only; geometry and vegetation stay
+        # anchored to the packet. The HDRI is loaded but disconnected here.
+        for link in list(background.inputs["Color"].links):
+            world.node_tree.links.remove(link)
+        background.inputs["Color"].default_value = (0.83, 0.90, 1.0, 1.0)
+        background.inputs["Strength"].default_value = 1.0
+        sun_data.energy = 2.0
+        sun_data.angle = math.radians(2.5)
+        sun.rotation_euler = (math.radians(38), 0.0, math.radians(215))
+        scene.view_settings.exposure = 0.45
+        effective_lighting["appearance_override"] = {
+            "world_color": [0.83, 0.90, 1.0], "world_strength": 1.0,
+            "sun_energy": 2.0, "sun_angle_degrees": 2.5,
+            "sun_rotation_degrees": [38.0, 0.0, 215.0], "exposure": 0.45,
+            "hdri_used": False,
+        }
+        for asset in native_appearance_assets:
+            if asset.get("id") == "polyhaven.kloofendal_48d_partly_cloudy.1k-hdr":
+                asset["use"] = "loaded but disconnected by stable_daylight appearance preset"
 
     camera_data = bpy.data.cameras.new("KartaView source camera")
     camera = bpy.data.objects.new("KartaView source camera", camera_data)
@@ -1873,11 +1921,13 @@ def main() -> None:
             "samples_requested": args.samples,
             "adaptive_threshold": args.adaptive_threshold if beauty_engine == "CYCLES" else None,
             "appearance_profile": args.appearance_profile,
+            "lighting_profile": effective_lighting,
             "native_appearance_assets": native_appearance_assets,
             "camera": packet["camera"],
             "lighting": packet["lighting"],
             "assets": asset_receipt,
             "repaired_texture_images": repaired_textures,
+            "stable_leaf_tuning": stable_leaf_tuning,
             "counts": {"surfaces": len(packet["surfaces"]), "automatic_context_surfaces": len(packet.get("automatic_context_surfaces", [])), "curbs": len(packet["curbs"]), "road_markings": len(packet.get("road_markings", [])), "project_marking_surfaces_rendered": rendered_project_marking_surfaces, "project_marking_surfaces_hidden": hidden_project_marking_surfaces, "buildings": len(packet["buildings"]), "vegetation": len(packet["vegetation"]), "lawn_blade_clumps": lawn_blade_clumps, "facade_joint_proxies": facade_joint_count, "automatic_infrastructure_source": len(packet.get("automatic_infrastructure", [])), "automatic_infrastructure_rendered": rendered_infrastructure, "context_window_proxies": window_count, "retail_glazing_proxies": retail_glazing_count},
             "presentation_population_rendered": args.presentation_population,
             "presentation_population_counts": presentation_counts,
@@ -1979,11 +2029,13 @@ def main() -> None:
         "samples_requested": args.samples,
         "adaptive_threshold": args.adaptive_threshold if beauty_engine == "CYCLES" else None,
         "appearance_profile": args.appearance_profile,
+        "lighting_profile": effective_lighting,
         "native_appearance_assets": native_appearance_assets,
         "camera": packet["camera"],
         "lighting": packet["lighting"],
         "assets": asset_receipt,
         "repaired_texture_images": repaired_textures,
+        "stable_leaf_tuning": stable_leaf_tuning,
         "counts": {"surfaces": len(packet["surfaces"]), "automatic_context_surfaces": len(packet.get("automatic_context_surfaces", [])), "curbs": len(packet["curbs"]), "road_markings": len(packet.get("road_markings", [])), "project_marking_surfaces_rendered": rendered_project_marking_surfaces, "project_marking_surfaces_hidden": hidden_project_marking_surfaces, "buildings": len(packet["buildings"]), "vegetation": len(packet["vegetation"]), "lawn_blade_clumps": lawn_blade_clumps, "facade_joint_proxies": facade_joint_count, "automatic_infrastructure_source": len(packet.get("automatic_infrastructure", [])), "automatic_infrastructure_rendered": rendered_infrastructure, "context_window_proxies": window_count, "retail_glazing_proxies": retail_glazing_count},
         "presentation_population": packet.get("presentation_population"),
         "presentation_population_rendered": args.presentation_population,

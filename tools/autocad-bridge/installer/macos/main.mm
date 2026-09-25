@@ -310,6 +310,29 @@ int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc == 2 && strcmp(argv[1], "--self-test") == 0)
             return selfTest([NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:PackageName]);
+        // The CLI uses exactly the GUI's ownership, signature and running-app
+        // guards; a failed update never discards the previous installation.
+        if (argc == 2 && strcmp(argv[1], "--install") == 0) {
+            if (productRunning()) {
+                fprintf(stderr, "Close AutoCAD and Green Atlas before installing. No files changed.\n");
+                return 2;
+            }
+            NSError *error = nil;
+            NSURL *backup = nil;
+            NSURL *source = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:PackageName];
+            if (!installPackage(source, userAddins(), &backup, &error)) {
+                fprintf(stderr, "%s\n", error.localizedDescription.UTF8String);
+                return 1;
+            }
+            NSDictionary *receipt = @{@"installed": @YES,
+                @"version": bridgeInfo(source)[@"CFBundleShortVersionString"] ?: @"unknown",
+                @"target": [userAddins() URLByAppendingPathComponent:PackageName].path,
+                @"backup": backup.path ?: [NSNull null]};
+            NSData *json = [NSJSONSerialization dataWithJSONObject:receipt options:0 error:nil];
+            fwrite(json.bytes, 1, json.length, stdout);
+            printf("\n");
+            return 0;
+        }
         [NSApplication sharedApplication];
         Installer *delegate = [[Installer alloc] init];
         NSApp.delegate = delegate;

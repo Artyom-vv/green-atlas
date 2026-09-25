@@ -1,17 +1,33 @@
 # Green Atlas — контекст для новых задач
 
-Сначала прочитайте `HANDOFF.md`, затем актуальный перенос на Mac:
-`docs/implementation/2026-09-17-mac-autocad-handoff.md` (M3 Pro, AutoCAD for Mac
-2027.0.1; ObjectARX bridge 0.1.3 реализован и подключён как необязательный
-провайдер REGION). Предыдущий срез ПК:
-`docs/implementation/2026-09-16-pc-dxf-handoff.md`. Рабочий маршрут: полный комплект DXF → сервис → DXF;
-DWG-датасет готовится заранее вне сервиса. Основной пример — Кустанайская улица,
-не Парковая. Исторический оставшийся объём описан в
+Сначала прочитайте `HANDOFF.md`, затем **действующий контракт направления**
+`docs/architecture/autocad-contract.md` и реестр разрывов
+`docs/audits/2026-09-22-cad-pipeline.md`.
+Основной и единственный развиваемый вход: открытый DWG/DXF в AutoCAD → плагин
+→ локальное приложение Green Atlas. Хранение и расчёты локальные. AutoCAD не
+является необязательным REGION-provider. Прямой upload через ezdxf, старые
+конвертеры и DXF-only flow — совместимость, не альтернативная ветка разработки.
+Не добавлять новый CAD-парсер/fallback. Целевой расчёт использует прямой AutoCAD API. Действующий план:
+`docs/implementation/2026-09-23-native-query-integration-plan.md`.
+Не развивать sampled-преобразователь; native-запросы должны быть едиными для
+ручной/автоматической посадки и повторной проверки, привязаны к одному захвату.
+Разрешение на внедрение не является отчётом о готовности: backend ещё старый.
+Пропуски отдельных объектов/ссылок должны оставлять доступную работу с явными
+замечаниями, без выдуманной безопасности и без снятия проверок целостности.
+Перед CAD-изменениями: `python3 scripts/architecture/cad_dependencies.py --check`.
+Baseline legacy-связей нельзя расширять ради зелёных тестов.
+
+Исторический перенос Mac: `docs/implementation/2026-09-17-mac-autocad-handoff.md`
+(M3 Pro, AutoCAD for Mac 2027.0.1); предыдущий ПК:
+`docs/implementation/2026-09-16-pc-dxf-handoff.md`. Их DXF-only/optional-provider
+формулировки не переопределяют текущий контракт. Кустанайская — пример,
+не исключение из общего сценария. Исторический оставшийся объём описан в
 `docs/implementation/2026-09-10-remaining-scope.md`, локальный запуск Windows —
 в `docs/implementation/windows-local-runtime.md`, выкладка — в
 `deploy/adminvps/README.md`.
 
-Основная локальная папка с 14 сентября 2026 года: `D:\current-projects\green-atlas`.
+Рабочая папка текущего Mac: `/Users/artem/Documents/ЛЦТ`;
+историческая папка ПК: `D:\current-projects\green-atlas`.
 Ветка: `codex/field-audit-fixes`. Перенос 17 сентября сохраняет накопленные
 изменения в Git; перед работой проверяйте status и сохраняйте последующие
 незакоммиченные изменения пользователя.

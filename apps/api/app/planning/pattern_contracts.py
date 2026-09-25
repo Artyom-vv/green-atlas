@@ -5,10 +5,13 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.planning.change_contracts import ChangeSetPreview
+from app.planning.contracts import PlanObjectCreate
+from app.planning.search_domain_contracts import SearchDomain
 from app.planning.types import (
     RejectedCategory,
     RejectedStatus,
 )
+from app.regulations.placement_config import PLACEMENT_CONFIG
 
 
 class RowPatternRequest(BaseModel):
@@ -109,7 +112,7 @@ class PlacementMaskRequest(BaseModel):
     seed: int = Field(default=1, ge=0, le=2_147_483_647)
     # Road-edge masks follow the recognised road footprint at this offset.
     # The statutory check is still performed independently for every point.
-    road_offset_m: float = Field(default=3, ge=0.5, le=30, allow_inf_nan=False)
+    road_offset_m: float = Field(default=3, ge=0.5, le=PLACEMENT_CONFIG.layout.maximum_road_offset_m, allow_inf_nan=False)
     # Cluster centres stay separated while plants inside a grove use the
     # ordinary spacing policy and mature-crown calculation.
     cluster_gap_m: float = Field(default=18, ge=3, le=100, allow_inf_nan=False)
@@ -162,6 +165,7 @@ class PatternSkippedCandidate(BaseModel):
     required_distance_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     suggested_action: str | None = None
     zone_id: str | None = None
+    candidate: PlanObjectCreate | None = None
 
 
 class CandidateReasonSummary(BaseModel):
@@ -193,6 +197,13 @@ class PatternPreview(BaseModel):
     ) = None
     requested_count: int = Field(ge=0)
     generated_count: int = Field(default=0, ge=0)
+    search_stop_reason: (
+        Literal["target_reached", "candidate_limit", "time_limit", "domain_exhausted"]
+        | None
+    ) = None
+    search_candidate_limit: int | None = Field(default=None, ge=1)
+    search_elapsed_s: float | None = Field(default=None, ge=0)
+    search_domains: list[SearchDomain] = Field(default_factory=list)
     accepted_count: int = Field(ge=0)
     rejected_count: int = Field(default=0, ge=0)
     capacity_shortfall: int = Field(default=0, ge=0)

@@ -65,6 +65,45 @@ xcrun clang++ \
   "$plugins/AcGeomentObj.dbx/AcGeomentObj" \
   "$plugins/AcBr.dbx/AcBr" \
   "$source_root/green_atlas_bridge.cpp" \
+  "$source_root/cad_utils.cpp" \
+  "$source_root/file_io.cpp" \
+  "$source_root/geometry_math.cpp" \
+  "$source_root/direct_query_kernel.cpp" \
+  "$source_root/native_affine_query.cpp" \
+  "$source_root/native_area_group.cpp" \
+  "$source_root/native_area_candidates.cpp" \
+  "$source_root/planar_faces.cpp" \
+  "$source_root/planar_face_split.cpp" \
+  "$source_root/planar_face_repairs.cpp" \
+  "$source_root/planar_face_graph.cpp" \
+  "$source_root/native_face_catalog.cpp" \
+  "$source_root/native_curve_query.cpp" \
+  "$source_root/native_clearance.cpp" \
+  "$source_root/native_clearance_cache.cpp" \
+  "$source_root/native_clearance_targets.cpp" \
+  "$source_root/native_clearance_domain.cpp" \
+  "$source_root/native_query_batch.cpp" \
+  "$source_root/native_query_command.cpp" \
+  "$source_root/live_query_session.cpp" \
+  "$source_root/live_inventory.cpp" \
+  "$source_root/live_query_transport.cpp" \
+  "$source_root/xref_instance_access.cpp" \
+  "$source_root/operation_control.cpp" \
+  "$source_root/curve_sampling.cpp" \
+  "$source_root/curve_extraction.cpp" \
+  "$source_root/region_extraction.cpp" \
+  "$source_root/hatch_loop_roles.cpp" \
+  "$source_root/hatch_extraction.cpp" \
+  "$source_root/xref_resolver.cpp" \
+  "$source_root/drawing_traversal.cpp" \
+  "$source_root/exact_polyline_pairs.cpp" \
+  "$source_root/block_traversal.cpp" \
+  "$source_root/entity_extraction.cpp" \
+  "$source_root/snapshot_writer.cpp" \
+  "$source_root/capture_commands.cpp" \
+  "$source_root/probe_command.cpp" \
+  "$source_root/mcp_transport.cpp" \
+  "$source_root/geometry_selftest.cpp" \
   "$source_root/delivery_command.cpp" \
   "$source_root/delivery_recovery.cpp" \
   "$build_root/delivery_ui.o" "$build_root/reference_search.o" -framework AppKit -framework Foundation \
@@ -77,6 +116,11 @@ cp "$repo_root/tools/autocad-bridge/PackageContents.xml" \
 cp "$source_root/green_atlas_loader.lsp" \
   "$package_root/Contents/green_atlas_loader.lsp"
 ditto "$bundle_root" "$package_root/Contents/MacOS/GreenAtlasBridge.bundle"
+# The background worker uses the same native query sources, without editor
+# menus or the editor MCP queue. It is shipped with the matching plugin build.
+query_worker_bundle="$(bash "$repo_root/tools/autocad-bridge/build-query-worker-macos.sh")"
+mkdir -p "$package_root/Contents/Workers"
+ditto "$query_worker_bundle" "$package_root/Contents/Workers/GreenAtlasQuery.bundle"
 desktop_app="${GREEN_ATLAS_DESKTOP_APP:-}"
 if [[ -z "$desktop_app" ]]; then
   echo 'Set GREEN_ATLAS_DESKTOP_APP to a qualified local app before packaging.' >&2

@@ -24,8 +24,8 @@ export const BrushGuide: FC<BrushGuideProps> = ({
   else if (needsSpecies)
     message =
       operation === 'add'
-        ? 'Выберите породу перед рисованием. Она нужна для прогноза роста.'
-        : 'Выберите породу для добавляющих мазков. Она нужна для прогноза роста.';
+        ? 'Выберите породу перед рисованием'
+        : 'Выберите породу для добавляющих мазков';
   else if (!hasStrokes) message = 'Рисуйте по участку';
   else if (!hasPreview || loading)
     message = 'Контуры — ещё не проверенные места';

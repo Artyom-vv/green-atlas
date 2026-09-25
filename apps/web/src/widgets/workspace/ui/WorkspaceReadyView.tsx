@@ -1,10 +1,10 @@
 import type { FC } from 'react';
+import { WorkspacePlantCatalog } from './WorkspacePlantCatalog';
 import { featureAvailability } from '@/shared/config/featureAvailability';
 import { IDEWorkspaceShell } from '@/widgets/workbench';
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
 import { WorkspaceCanvas, WorkspaceCanvasPropsFor } from './WorkspaceCanvas';
 import { WorkspaceHeader, WorkspaceHeaderPropsFor } from './WorkspaceHeader';
-import { SourceReviewNotice } from './SourceReviewNotice';
 import {
   WorkspaceResources,
   WorkspaceResourcesPropsFor,
@@ -38,7 +38,6 @@ import {
   WorkspaceDialogsPropsFor,
 } from './dialogs/WorkspaceDialogs';
 import { workspaceResults, workspaceResultsPropsFor } from './workspaceResults';
-import { partialGeometryAccepted } from '@/entities/source-data/model/partialGeometryAccepted';
 
 interface WorkspaceReadyViewProps {
   model: WorkspaceReadyModel;
@@ -49,26 +48,9 @@ export const WorkspaceReadyView: FC<WorkspaceReadyViewProps> = ({ model }) => {
     <WorkspacePatternTool {...WorkspacePatternToolPropsFor(model)} />
   );
   return (
-    <>
+    <WorkspacePlantCatalog>
       <IDEWorkspaceShell
-        header={
-          <div>
-            <WorkspaceHeader {...WorkspaceHeaderPropsFor(model)} />
-            {(model.project.source_review || model.cadDisplayWarning ||
-              partialGeometryAccepted(model.project)) && (
-              <SourceReviewNotice
-                calculationPending={Boolean(model.project.source_review)}
-                displayWarning={model.cadDisplayWarning}
-                incompleteGeometry={partialGeometryAccepted(model.project) || model.project.source_review?.issues?.some(
-                  (issue) => issue.code === 'incomplete_layer',
-                )}
-                onReview={() =>
-                  model.leaveWorkspace(`/projects/${model.project.id}/setup`)
-                }
-              />
-            )}
-          </div>
-        }
+        header={<WorkspaceHeader {...WorkspaceHeaderPropsFor(model)} />}
         map={<WorkspaceCanvas {...WorkspaceCanvasPropsFor(model)} />}
         resources={
           <WorkspaceResources {...WorkspaceResourcesPropsFor(model)} />
@@ -113,6 +95,6 @@ export const WorkspaceReadyView: FC<WorkspaceReadyViewProps> = ({ model }) => {
         }
       />
       <WorkspaceDialogs {...WorkspaceDialogsPropsFor(model)} />
-    </>
+    </WorkspacePlantCatalog>
   );
 };

@@ -3,14 +3,16 @@ import { countLabel } from '@/shared/format/countLabel';
 
 export function projectState(project: ProjectSummary) {
   if (!project.source_name)
-    return { title: 'Нужен DXF', detail: 'Исходник не загружен' };
+    return { title: 'Нужен исходник', detail: 'Откройте чертёж через AutoCAD' };
   if (!project.has_geometry)
-    return { title: 'Подготовьте карту', detail: 'Проверьте слои DXF' };
+    return { title: 'Проверьте источник', detail: 'Геометрия ещё не открыта' };
   if (!project.planting_zone_count)
-    return { title: 'Выберите участки', detail: 'Карта подготовлена' };
+    return { title: 'Выберите участки', detail: 'Геометрия открыта' };
   const detail = `${countLabel(project.plan_object_count, 'посадка', 'посадки', 'посадок')}, ${countLabel(project.planting_zone_count, 'участок', 'участка', 'участков')}`;
   return {
-    title: project.plan_object_count ? 'Редактируется' : 'Готов к размещению',
+    // Display geometry and zones do not prove calculation readiness. The
+    // workspace owns that status; this summary only describes saved content.
+    title: project.plan_object_count ? 'Редактируется' : 'Участки созданы',
     detail,
   };
 }

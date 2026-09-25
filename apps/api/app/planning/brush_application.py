@@ -13,7 +13,7 @@ from app.planning.change_contracts import (
     PlanObjectDeleteOperation,
 )
 from app.planning.domain import PlanVersionConflict
-from app.planning.evaluation import PlanEvaluation
+from app.planning.evaluation import PlanEvaluation, accepted_partial_source_warning
 from app.planning.pattern_contracts import (
     BrushPreview,
     BrushPreviewRequest,
@@ -192,7 +192,9 @@ class BrushApplication:
         accepted_additions = 0
         accepted_removals = 0
         for result in initial.candidate_results:
-            if result.status != "allowed":
+            if result.status != "allowed" and not accepted_partial_source_warning(
+                project, status=result.status, code=result.code
+            ):
                 x, y = operation_points[result.operation_index]
                 skipped.append(
                     PatternSkippedCandidate(

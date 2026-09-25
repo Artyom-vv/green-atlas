@@ -44,18 +44,18 @@ export const SinglePlacementPanel: FC<SinglePlacementPanelProps> = ({
   onFinish,
 }) => {
   const status = placing
-    ? 'Проверяем выбранное место и сохраняем посадку…'
+    ? 'Проверка и сохранение'
     : needsRefresh
-      ? 'Обновите проект, чтобы продолжить размещение.'
+      ? 'Требуется обновление проекта'
       : !speciesId
-        ? 'Выберите породу, затем кликните в нужном месте на карте.'
+        ? 'Выберите породу'
         : (notice ??
           (checking
-            ? 'Проверяем место…'
+            ? 'Проверка места'
             : (check?.reason ??
               (sourceReviewPending
-                ? 'Кликните в пределах рабочего участка. Ограничения исходных данных пока не проверены.'
-                : 'Кликните в нужном месте на карте. Перед посадкой проверим ограничения.'))));
+                ? 'Укажите место в участке — исходные ограничения не проверены'
+                : 'Укажите место на карте'))));
   return (
     <PlacementToolSurface
       title={kind === 'tree' ? 'Посадить дерево' : 'Посадить кустарник'}
@@ -80,9 +80,10 @@ export const SinglePlacementPanel: FC<SinglePlacementPanelProps> = ({
           disabled={disabled || placing}
         />
       </Field>
-      <p className="m-0 text-xs leading-4 text-neutral-600">
-        Посадочный материал: стандартный.
-      </p>
+      <dl className="m-0 flex justify-between gap-3 text-xs text-neutral-600">
+        <dt>Посадочный материал</dt>
+        <dd className="m-0">Стандартный</dd>
+      </dl>
       <InlineMessage
         tone={
           check && !check.allowed && !checking && !placing ? 'warning' : 'info'

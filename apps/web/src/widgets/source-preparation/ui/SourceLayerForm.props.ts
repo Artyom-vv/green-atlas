@@ -16,6 +16,10 @@ export interface SourceLayerFormProps extends Pick<
   | 'mutationError'
   | 'reloadAfterConflict'
   | 'projectQuery'
+  | 'nativeAreaProposals'
+  | 'decideNativeArea'
+  | 'layerRecognition'
+  | 'layerRecognitionQuery'
 > {}
 export const SourceLayerFormPropsFor = (
   state: Pick<
@@ -35,6 +39,10 @@ export const SourceLayerFormPropsFor = (
     | 'mutationError'
     | 'reloadAfterConflict'
     | 'projectQuery'
+    | 'nativeAreaProposals'
+    | 'decideNativeArea'
+    | 'layerRecognition'
+    | 'layerRecognitionQuery'
   >,
 ) => ({
   sourceWarnings: state.sourceWarnings,
@@ -52,4 +60,8 @@ export const SourceLayerFormPropsFor = (
   mutationError: state.mutationError,
   reloadAfterConflict: state.reloadAfterConflict,
   projectQuery: state.projectQuery,
+  nativeAreaProposals: state.nativeAreaProposals,
+  decideNativeArea: state.decideNativeArea,
+  layerRecognition: state.layerRecognition,
+  layerRecognitionQuery: state.layerRecognitionQuery,
 });

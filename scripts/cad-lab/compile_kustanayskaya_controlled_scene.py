@@ -201,8 +201,8 @@ def main() -> None:
     # It does not survey individual paint dashes, so the centreline is an
     # explicit presentation proxy with a stable phase, never exact geometry.
     inferred_road_markings = []
+    axis_line = LineString(axis_points)
     if int(float(axis.get("lanes") or 0)) == 2:
-        axis_line = LineString(axis_points)
         dash_length_m, period_m = 3.0, 9.0
         cursor = 0.0
         while cursor < axis_line.length:

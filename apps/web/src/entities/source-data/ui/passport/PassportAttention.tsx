@@ -21,7 +21,7 @@ export const PassportAttention: FC<PassportAttentionProps> = ({
     {entries.length > 0 && (
       <section aria-label="Данные, требующие внимания">
         <Text as="h3" variant="label" className="mb-2">
-          Что не учтено полностью
+          Что требует уточнения
         </Text>
         <ul className="m-0 grid list-none p-0">
           {entries.map((entry) => (
@@ -35,12 +35,6 @@ export const PassportAttention: FC<PassportAttentionProps> = ({
                 </Text>
                 <Text variant="caption">{STATUS_LABELS[entry.status]}</Text>
               </div>
-              <Text as="p" variant="caption" className="my-1">
-                {entry.used_in_calculation
-                  ? 'Участвует в расчёте частично'
-                  : 'Не участвует в расчёте'}
-                {entry.decision_level === 'stop' ? '. Блокирует расчёт' : ''}
-              </Text>
               <EntryDetails entry={entry} passport={passport} />
             </li>
           ))}

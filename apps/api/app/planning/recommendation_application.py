@@ -6,7 +6,7 @@ from typing import Literal
 
 from app.planning.change_contracts import PlanChangeSetDraft, PlanObjectAddOperation
 from app.planning.domain import PlanVersionConflict
-from app.planning.evaluation import PlanEvaluation
+from app.planning.evaluation import PlanEvaluation, accepted_partial_source_warning
 from app.planning.pattern_contracts import FillPatternRequest, PatternSkippedCandidate
 from app.planning.ports import CandidateGeneratorPort, ChangeSetPreviewPort
 from app.planning.recommendation_config import RECOMMENDATION_PROFILES
@@ -123,7 +123,12 @@ class RecommendationApplication:
             for result in initial.candidate_results:
                 candidate = candidates[result.operation_index]
                 if (
-                    result.status == "allowed"
+                    (
+                        result.status == "allowed"
+                        or accepted_partial_source_warning(
+                            project, status=result.status, code=result.code
+                        )
+                    )
                     and len(accepted_operations) < request.max_sites
                 ):
                     accepted_operations.append(operations[result.operation_index])

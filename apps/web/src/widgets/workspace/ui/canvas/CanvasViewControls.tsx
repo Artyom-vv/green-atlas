@@ -48,7 +48,11 @@ export const CanvasViewControls: FC<CanvasViewControlsProps> = ({
           }
         >
           <option value="design">Проектный вид</option>
-          <option value="cad">Исходный DXF</option>
+          <option value="cad">
+            {project.import_status?.mode === 'autocad_live'
+              ? 'Геометрия AutoCAD'
+              : 'Исходный DXF'}
+          </option>
         </Select>
       )}
       {project.map_ready && (

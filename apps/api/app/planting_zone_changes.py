@@ -130,6 +130,8 @@ class ZoneChangeService:
         if not blockers and project.plan is not None:
             before = {zone.id: shape(zone.geometry) for zone in project.planting_zones}
             after = {zone.id: shape(zone.geometry) for zone in zones}
+            before_json = {zone.id: zone.geometry for zone in project.planting_zones}
+            after_json = {zone.id: zone.geometry for zone in zones}
             # A source contour may contain many CAD vertices. Calculate its
             # changed area once per zone, not again for every existing plant.
             changed_areas = [
@@ -137,6 +139,7 @@ class ZoneChangeService:
                 if identity in before and identity in after
                 else before.get(identity) if identity in before else after[identity]
                 for identity in set(before) | set(after)
+                if before_json.get(identity) != after_json.get(identity)
             ]
             changed_areas = [area for area in changed_areas if not area.is_empty]
             before_order = {identity: index for index, identity in enumerate(before)}

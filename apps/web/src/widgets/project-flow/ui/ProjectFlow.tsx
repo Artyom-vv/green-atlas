@@ -67,7 +67,7 @@ export const ProjectSteps: FC<ProjectStepsProps> = ({
 
 export interface FlowDocumentProps {
   title: ReactNode;
-  description: ReactNode;
+  description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   header?: ReactNode;
@@ -87,9 +87,11 @@ export const FlowDocument: FC<FlowDocumentProps> = ({
           <Text as="h1" variant="pageHeading">
             {title}
           </Text>
-          <Text as="p" tone="muted" className="max-w-165">
-            {description}
-          </Text>
+          {description ? (
+            <Text as="p" tone="muted" className="max-w-165">
+              {description}
+            </Text>
+          ) : null}
         </header>
       ) : (
         header

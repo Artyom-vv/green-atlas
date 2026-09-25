@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.geometry.evidence_contracts import GeometryEvidence
 from app.regulations.trace_contracts import PlantingRuleTrace
 from app.species.contracts import GrowthEnvelopeForecast
 from app.validation.contracts import PlanValidationBasis, ValidationIssue
@@ -104,6 +105,7 @@ class PlacementCheck(BaseModel):
     geometry_version: int | None = None
     state_version: int | None = None
     rule_trace: PlantingRuleTrace | None = None
+    geometry_evidence: GeometryEvidence | None = None
 
 
 class PlanObjectCreate(BaseModel):
@@ -128,6 +130,7 @@ class PlacementCheckRequest(PlanObjectCreate):
     base_plan_version: int | None = Field(default=None, ge=1)
     geometry_version: int | None = Field(default=None, ge=0)
     state_version: int | None = Field(default=None, ge=1)
+    explain_geometry: bool = False
 
 
 class PlanObjectUpdate(BaseModel):

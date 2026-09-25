@@ -20,6 +20,7 @@ import { usePatternForm } from '../model/usePatternForm';
 import { usePatternWorkflow } from '../model/usePatternWorkflow';
 import { PatternFooter } from './PatternFooter';
 import { PatternFormContent } from './PatternFormContent';
+import type { CandidateInspection } from '../model/useCandidateInspection';
 export interface PatternToolPanelProps {
   mode: PatternMode;
   form?: UseFormReturn<PatternFormValues>;
@@ -44,6 +45,8 @@ export interface PatternToolPanelProps {
   onCancelCalculation?: () => void;
   error?: string;
   preview?: PatternPreview;
+  preparation?: PatternPreview;
+  inspection?: CandidateInspection;
   growthHorizon?: GrowthHorizon;
   onGrowthHorizon?: (year: GrowthHorizon) => void;
   onSelectedZoneIdsChange?: (ids: string[]) => void;
@@ -76,7 +79,7 @@ export const PatternToolPanel: FC<PatternToolPanelProps> = (props) =>
 const PatternForm: FC<PatternToolPanelProps> = (props) => {
   const workflow = usePatternWorkflow({
     ...props,
-    hasPreview: Boolean(props.preview),
+    hasPreview: Boolean(props.preview || props.preparation),
   });
   const {
     mode,
@@ -97,7 +100,7 @@ const PatternForm: FC<PatternToolPanelProps> = (props) => {
         guided && (
           <WorkflowSteps
             labels={['Участки', 'Состав', 'Размещение', 'Проверка']}
-            current={preview ? 3 : workflow.step}
+            current={preview || props.preparation || calculating ? 3 : workflow.step}
             label="Шаги размещения"
           />
         )
@@ -117,6 +120,7 @@ const PatternForm: FC<PatternToolPanelProps> = (props) => {
             guided={guided}
             catalogOpen={Boolean(workflow.catalog)}
             preview={preview}
+            preparation={props.preparation}
             loading={loading}
             calculating={calculating}
             canPreview={workflow.canPreview}

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { api } from '@green/api-client';
 
 describe('assisted planning product surface', () => {
-  it('exposes only the DXF-to-change-set workflow to the web app', () => {
+  it('exposes the CAD review and planning workflow to the web app', () => {
     expect(Object.keys(api).sort()).toEqual([
+      'acceptPartialGeometry',
       'addPlanObject',
       'answerAgentRun',
       'appendConversationMessage',
@@ -20,6 +21,8 @@ describe('assisted planning product surface', () => {
       'createManualPlan',
       'createProject',
       'createRelease',
+      'decideCadTransfer',
+      'decideNativeArea',
       'declineConversationProposal',
       'deletePlanObjects',
       'deleteProject',
@@ -29,13 +32,17 @@ describe('assisted planning product surface', () => {
       'getAgentRun',
       'getAgentRunPreview',
       'getAgentRunZonePreview',
+      'getAssortment',
       'getBuildingScreenTargets',
       'getCadSourceAsset',
+      'getCadTransferReview',
       'getConversation',
       'getConversationProposalStatus',
       'getDataPassport',
       'getLatestOperation',
+      'getLayerRecognition',
       'getMapFeatures',
+      'getNativeAreaPreview',
       'getNativeDxfSourceAsset',
       'getOperation',
       'getPlanHistory',
@@ -53,6 +60,7 @@ describe('assisted planning product surface', () => {
       'listProjects',
       'listSpecies',
       'nativeDxfSourceFileUrl',
+      'openSourceEditor',
       'planningAssistantStatus',
       'prepareConversationTask',
       'previewBrush',
@@ -71,10 +79,12 @@ describe('assisted planning product surface', () => {
       'shortlistSpecies',
       'sourceDownloadUrl',
       'startCadIntake',
+      'startCadPrepare',
       'startCadPreview',
       'startGeometryOperation',
       'undoPlanChange',
       'updatePlanObject',
+      'uploadCadPackage',
       'uploadDxf',
       'uploadReleaseBundle',
     ]);

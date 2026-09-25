@@ -18,7 +18,20 @@ from app.planning.pattern_contracts import (
 )
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
+from app.regulations.placement_config import PLACEMENT_CONFIG
 from app.species.catalog import get_species, growth_forecasts
+
+
+def road_growth_request(request: PatternPreviewRequest) -> PatternPreviewRequest:
+    """Keep road-edge candidate axes outside the forecast canopy envelope."""
+    if isinstance(request, PlacementMaskRequest) and request.mask_id == "road_edges":
+        radii = pattern_growth_radii(request)
+        if radii:
+            return request.model_copy(update={
+                "road_offset_m": min(PLACEMENT_CONFIG.layout.maximum_road_offset_m,
+                    max(request.road_offset_m, radii[0] + request.edge_offset_m + PLACEMENT_CONFIG.layout.road_edge_extra_m))
+            })
+    return request
 
 
 def compiled_planting_zones(

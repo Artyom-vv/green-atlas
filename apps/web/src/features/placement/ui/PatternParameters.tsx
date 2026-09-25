@@ -59,13 +59,15 @@ export const PatternParameters: FC<PatternParametersProps> = ({
           />
         </Field>
       )}
-      <Field label="Плотность">
-        <Select aria-label="Плотность группы" {...register('spacingPolicy')}>
-          <option value="canopy">Плотно</option>
-          <option value="balanced">Естественно</option>
-          <option value="open">Свободно</option>
-        </Select>
-      </Field>
+      {tree && (
+        <Field label="Плотность" hint="Расстояние между деревьями">
+          <Select aria-label="Плотность группы" {...register('spacingPolicy')}>
+            <option value="canopy">Сближенные посадки</option>
+            <option value="balanced">Средний шаг</option>
+            <option value="open">Разреженные посадки</option>
+          </Select>
+        </Field>
+      )}
       {mode === 'fill' && zoneCount > 1 && (
         <Field
           label="Между участками"

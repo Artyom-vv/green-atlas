@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from app.regulations.trace_contracts import PlantingRuleTrace
 
 NETWORK_REVIEW_LABELS = {
+    "GEOMETRY_RULE_ASSUMPTION": "расстояния проверены по доступной геометрии с допущениями о характеристиках сети",
     "NO_NETWORK_FEATURES": "сети отсутствуют в модели",
     "NETWORK_CONTEXT_UNKNOWN": "тип сети не подтверждён",
     "NETWORK_SOURCE_UNCONFIRMED": "источник сети не подтверждён",

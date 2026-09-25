@@ -10,6 +10,14 @@ import {
   type GrowthHorizon,
 } from '@/entities/planting-forecast';
 import { PlacementAllocation } from './PlacementAllocation';
+import { PlacementCandidateDetails } from './PlacementCandidateDetails';
+import { SearchDomainSummary } from './SearchDomainSummary';
+import { GeometryInspectionPanel } from './GeometryInspectionPanel';
+import {
+  patternResultHeading,
+  patternResultReasons,
+} from '../model/patternResultPresentation';
+import type { CandidateInspection } from '../model/useCandidateInspection';
 
 export interface PatternResultProps {
   preview: PatternPreview;
@@ -20,6 +28,7 @@ export interface PatternResultProps {
   growthHorizon?: GrowthHorizon;
   onGrowthHorizon?: (year: GrowthHorizon) => void;
   onAlternative: (id: string) => void;
+  inspection?: CandidateInspection;
 }
 
 export const PatternResult: FC<PatternResultProps> = ({
@@ -31,23 +40,54 @@ export const PatternResult: FC<PatternResultProps> = ({
   growthHorizon,
   onGrowthHorizon,
   onAlternative,
+  inspection,
 }) => (
   <section className="grid gap-3" aria-label="Результат расчёта">
     <h3 className="m-0 text-sm font-semibold">
-      {preview.accepted_count
-        ? `Найдено ${preview.accepted_count} из ${preview.requested_count}`
-        : 'Мест не найдено'}
+      {patternResultHeading(preview)}
     </h3>
-    {!preview.accepted_count && (
-      <p className="m-0 text-xs text-neutral-600">
-        Запрошено: {preview.requested_count}
-      </p>
-    )}
-    {!!preview.effective_spacing_m && (
-      <p className="m-0 text-xs text-neutral-600">
-        Минимальное расстояние: {preview.effective_spacing_m} м
-      </p>
-    )}
+    <dl className="m-0 grid gap-2 text-xs" aria-label="Параметры результата">
+      {!preview.accepted_count && (
+        <div className="flex justify-between gap-3">
+          <dt className="text-neutral-600">Запрошено</dt>
+          <dd className="m-0 tabular-nums">{preview.requested_count}</dd>
+        </div>
+      )}
+      {preview.generated_count != null && (
+        <div className="flex justify-between gap-3">
+          <dt className="text-neutral-600">Проверено позиций</dt>
+          <dd className="m-0 tabular-nums">{preview.generated_count}</dd>
+        </div>
+      )}
+      {!!preview.effective_spacing_m && (
+        <div className="flex justify-between gap-3">
+          <dt className="text-neutral-600">Шаг между растениями</dt>
+          <dd className="m-0 whitespace-nowrap tabular-nums">
+            {preview.effective_spacing_m.toLocaleString('ru-RU')} м
+          </dd>
+        </div>
+      )}
+    </dl>
+    <SearchDomainSummary domains={preview.search_domains} />
+    <GeometryInspectionPanel inspection={inspection} />
+    {preview.search_stop_reason &&
+      preview.search_stop_reason !== 'target_reached' && (
+        <p className="m-0 text-xs text-neutral-600" role="status">
+          {preview.search_stop_reason === 'time_limit'
+            ? 'Достигнут лимит времени поиска'
+            : preview.search_stop_reason === 'domain_exhausted'
+              ? preview.search_domains?.some(
+                  (domain) => (domain.pending_area_m2 ?? 0) > 0,
+                )
+                ? 'Поиск ожидает завершения проверки области'
+                : preview.search_domains?.some(
+                      (domain) => domain.unresolved_area_m2 > 0,
+                    )
+                  ? 'Для поиска нужна подтверждённая область'
+                  : 'В подготовленной области нет позиций для выбранных условий'
+              : 'Проверена выборка, не весь участок'}
+        </p>
+      )}
     {preview.accepted_count > 0 && selectedSpecies && onGrowthHorizon && (
       <section aria-label="Прогноз на карте">
         <GrowthHorizonControl
@@ -65,17 +105,21 @@ export const PatternResult: FC<PatternResultProps> = ({
       />
     )}
     {preview.accepted_count < preview.requested_count &&
-      !!preview.reason_summary?.length && (
-        <Disclosure title="Почему меньше">
+      !!patternResultReasons(preview).length && (
+        <Disclosure title="Причины недобора">
           <ul className="m-0 grid gap-2 pl-4 text-xs leading-4">
-            {preview.reason_summary.map((item, index) => (
-              <li key={`${item.status}:${item.code}:${index}`}>
-                {item.count} — {item.message}
-              </li>
+            {patternResultReasons(preview).map((item) => (
+              <li key={item.key}>{item.message}</li>
             ))}
           </ul>
         </Disclosure>
       )}
+    <PlacementCandidateDetails
+      key={preview.pattern_id}
+      skipped={preview.skipped ?? []}
+      inspection={inspection}
+      spacing={preview.effective_spacing_m ?? 0}
+    />
     {!!preview.unverified_data?.length && (
       <Disclosure title="Ограничения проверки">
         <ul className="m-0 grid gap-2 pl-4 text-xs leading-4">

@@ -10,10 +10,10 @@ describe('PlacementScenarioPicker', () => {
     render(<PlacementScenarioPicker value="natural" onChange={onChange} />);
 
     expect(screen.getAllByRole('radio')).toHaveLength(4);
-    expect(screen.getByRole('radio', { name: 'Свободно' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Без рядов' })).toBeChecked();
     expect(
-      screen.getByRole('radio', { name: 'Свободно' }),
-    ).toHaveAccessibleDescription(/Естественно/);
+      screen.getByRole('radio', { name: 'Без рядов' }),
+    ).toHaveAccessibleDescription('Нерегулярное размещение внутри участка');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Куртины' }));
     expect(onChange).toHaveBeenCalledWith('cluster_groves');
@@ -65,7 +65,7 @@ describe('PlacementScenarioPicker', () => {
         <PlacementScenarioPicker value="natural" onChange={vi.fn()} />
       </>,
     );
-    const natural = screen.getAllByRole('radio', { name: 'Свободно' });
+    const natural = screen.getAllByRole('radio', { name: 'Без рядов' });
     const clusters = screen.getAllByRole('radio', { name: 'Куртины' });
 
     expect(natural).toHaveLength(2);

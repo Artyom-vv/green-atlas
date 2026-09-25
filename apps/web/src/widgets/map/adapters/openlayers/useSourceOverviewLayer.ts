@@ -37,11 +37,13 @@ export function useSourceOverviewLayer({
     container.style.position = 'absolute';
     container.style.inset = '0';
     container.style.pointerEvents = 'none';
+    container.style.overflow = 'hidden';
     container.append(drawing.element);
     const layer = new Layer({
       zIndex: 0.5,
       render: (frame) => {
-        drawing.render(frame.size, frame.coordinateToPixelTransform);
+        drawing.render(frame.size, frame.coordinateToPixelTransform,
+          Boolean(frame.viewHints[0] || frame.viewHints[1]));
         return container;
       },
     });

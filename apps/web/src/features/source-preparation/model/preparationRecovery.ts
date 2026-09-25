@@ -38,7 +38,25 @@ export class UnconfirmedPreparation extends Error {}
 export const mappingKey = (mappings: LayerMapping[]) =>
   JSON.stringify(
     mappings
-      .map(({ layer_id, kind, visible }) => [layer_id, kind, visible ?? true])
+      .map(
+        ({
+          layer_id,
+          kind,
+          visible,
+          category,
+          confirmed,
+          utility_context,
+          utility_axis_bindings,
+        }) => [
+          layer_id,
+          kind,
+          visible ?? true,
+          category ?? null,
+          confirmed ?? true,
+          utility_context ?? null,
+          utility_axis_bindings ?? [],
+        ],
+      )
       .sort((left, right) => String(left[0]).localeCompare(String(right[0]))),
   );
 

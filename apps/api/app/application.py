@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from threading import RLock
 from typing import Literal
 
@@ -39,6 +40,13 @@ from app.contracts import (
     SpeciesShortlistItem,
 )
 from app.dxf_import.application import ImportApplication
+from app.dxf_import.capacity import SourceCapacityExceeded
+from app.dxf_import.live_process import (
+    LIVE_PROCESS_THRESHOLD_BYTES,
+    can_supervise_live,
+    import_autocad_live_file_supervised,
+    import_autocad_live_supervised,
+)
 from app.dxf_import.native_application import NativeDxfSourceApplication
 from app.dxf_import.ports import DxfReaderPort
 from app.exporting.application import ExportApplication
@@ -59,11 +67,13 @@ from app.planning.recommendation_application import RecommendationApplication
 from app.planting_zone_changes import ZoneChangeService
 from app.planting_zones.application import PlantingZoneApplication
 from app.planting_zones.change_contracts import ZoneChangeResult
+from app.planting_zones.ports import ZoneValidator
 from app.projects.application import ProjectCatalogApplication
 from app.projects.ports import ProjectRepository
 from app.scene.application import SceneApplication
 from app.shared.identity import random_id, utc_now
 from app.species.application import SpeciesApplication
+from app.species.assortment_inventory import AssortmentInventory
 from app.species.catalog import get_species
 from app.validation.application import PlanValidation
 from app.validation.ports import PlanValidatorPort
@@ -84,6 +94,7 @@ class ProjectApplication:
         validator: PlanValidatorPort,
         writer: DxfWriterPort,
         candidate_generator: CandidateGeneratorPort,
+        zone_validator: ZoneValidator | None = None,
         now: Callable[[], datetime] = utc_now,
         new_id: Callable[[], str] = random_id,
     ) -> None:
@@ -118,6 +129,7 @@ class ProjectApplication:
             validation=self.validation,
             edit_lock=self._manual_edit_lock,
             invalidate_spatial=self.spatial.invalidate,
+            zone_validator=zone_validator,
         )
         self.zone_changes = ZoneChangeService(self.zones, clock=now, new_id=new_id)
         self.evaluation = PlanEvaluation(geometry, new_id)
@@ -153,6 +165,7 @@ class ProjectApplication:
             new_id=new_id,
         )
         self.projects = ProjectCatalogApplication(
+            geometry=geometry,
             repository=repository,
             history=history,
             commit_lock=self._operation_commit_lock,
@@ -178,7 +191,8 @@ class ProjectApplication:
         )
         self._scene = SceneApplication(repository, get_species)
         self._exports = ExportApplication(
-            repository=repository, writer=writer, scene=self._scene.get_scene
+            repository=repository, writer=writer, scene=self._scene.get_scene,
+            geometry=geometry,
         )
 
     def get_operation(self, project_id: str, operation_id: str) -> ProjectOperation:
@@ -239,10 +253,55 @@ class ProjectApplication:
         autocad_version: str,
         target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
     ) -> Project:
-        return self._imports.import_autocad_live(
-            project_id, filename, content,
-            autocad_version=autocad_version, target=target,
-        )
+        if len(content) >= LIVE_PROCESS_THRESHOLD_BYTES and can_supervise_live(self.repository):
+            imported = import_autocad_live_supervised(
+                self.repository,
+                project_id,
+                filename,
+                content,
+                autocad_version=autocad_version,
+                target=target,
+            )
+            self.spatial.invalidate(project_id)
+            return imported
+
+        try:
+            return self._imports.import_autocad_live(
+                project_id, filename, content,
+                autocad_version=autocad_version, target=target,
+            )
+        except SourceCapacityExceeded:
+            # A compact capture can still contain >100k very short CAD
+            # objects. Nothing was published before the capacity guard; retry
+            # that same native capture inside the supervised process.
+            if not can_supervise_live(self.repository):
+                raise
+            imported = import_autocad_live_supervised(
+                self.repository,
+                project_id,
+                filename,
+                content,
+                autocad_version=autocad_version,
+                target=target,
+            )
+            self.spatial.invalidate(project_id)
+            return imported
+
+    def import_autocad_live_file(
+        self, project_id: str, filename: str, capture_path: Path,
+        capture_sha256: str, *, autocad_version: str,
+        target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
+        check_cancelled: Callable[[], None] | None = None,
+    ) -> Project:
+        """Private GAOPEN handoff; the browser never supplies a filesystem path."""
+        with self._operation_commit_lock:
+            imported = import_autocad_live_file_supervised(
+                self.repository, project_id, filename, capture_path,
+                capture_sha256, autocad_version=autocad_version, target=target,
+                check_cancelled=check_cancelled,
+            )
+            self.spatial.invalidate(project_id)
+            return imported
 
     def open_source_editor(self, project_id: str) -> Project:
         return self._imports.open_editor(project_id)
@@ -250,6 +309,84 @@ class ProjectApplication:
     def accept_partial_geometry(self, project_id: str, source_sha256: str) -> Project:
         with self._operation_commit_lock:
             return self._imports.accept_partial_geometry(project_id, source_sha256)
+
+    def native_area_preview(self, project_id: str, proposal_id: str):
+        return self._imports.native_area_preview(project_id, proposal_id)
+
+    def source_object_review(self, project_id: str, **filters):
+        return self._imports.source_object_review(project_id, **filters)
+
+    def source_object_context(self, project_id: str, route: str, scale: float):
+        if route.startswith('native-face:'):
+            from app.native_query.face_review import face_context
+            current = self.repository.get(project_id)
+            review = self.geometry.native_face_review(current)
+            item = next((item for item in review.items if item.key == route.removeprefix('native-face:')), None)
+            if item is None:
+                raise ValueError('Собранная область не найдена')
+            return face_context(current, item, scale)
+        return self._imports.source_object_context(project_id, route, scale)
+
+    def source_read_issues(self, project_id: str):
+        return self._imports.source_read_issues(project_id)
+
+    def review_source_area_group(self, project_id: str, request):
+        from app.dxf_import.area_group_review import validate_members
+        current = self.repository.get(project_id)
+        validate_members(current, request)
+        review = getattr(self.geometry, 'review_area_group', None)
+        if review is None:
+            raise ValueError('Для проверки области нужен подключённый сеанс AutoCAD')
+        return review(current, request)
+
+    def native_face_review(self, project_id: str):
+        current = self.repository.get(project_id)
+        review = getattr(self.geometry, 'native_face_review', None)
+        if review is None:
+            raise ValueError('Для просмотра областей нужен подключённый сеанс AutoCAD')
+        return review(current)
+
+    def decide_native_face(self, project_id: str, request):
+        from app.native_query.face_review import change_face_decision
+        with self._operation_commit_lock:
+            review = self.native_face_review(project_id)
+            current = self.repository.get(project_id)
+            changed = change_face_decision(current, request, review)
+            return self._imports.save_native_face_decision(current, changed)
+
+    def accept_source_area_group(self, project_id: str, request):
+        # Recheck native admission at commit; never trust a browser preview flag.
+        with self._operation_commit_lock:
+            result = self.review_source_area_group(project_id, request)
+            if not result.valid:
+                raise ValueError(result.reason)
+            return self._imports.save_area_group(self.repository.get(project_id), request)
+
+    def remove_source_area_group(self, project_id: str, group_id: str):
+        with self._operation_commit_lock:
+            return self._imports.remove_area_group(project_id, group_id)
+
+    def decide_source_object(self, project_id: str, request):
+        with self._operation_commit_lock:
+            return self._imports.decide_source_object(project_id, request)
+
+    def decide_native_area(
+        self,
+        project_id: str,
+        *,
+        source_sha256: str,
+        proposal_id: str,
+        proposal_sha256: str,
+        decision: Literal["accepted", "rejected"],
+    ) -> Project:
+        with self._operation_commit_lock:
+            return self._imports.decide_native_area(
+                project_id,
+                source_sha256=source_sha256,
+                proposal_id=proposal_id,
+                proposal_sha256=proposal_sha256,
+                decision=decision,
+            )
 
     def import_release_bundle(
         self, project_id: str, filename: str, content: bytes | bytearray
@@ -329,6 +466,10 @@ class ProjectApplication:
     @staticmethod
     def species_catalog(kind: str | None = None) -> list[SpeciesRevision]:
         return SpeciesApplication.species_catalog(kind)
+
+    @staticmethod
+    def assortment_catalog(kind: str | None = None) -> AssortmentInventory:
+        return SpeciesApplication.assortment_catalog(kind)
 
     def shortlist_species(
         self,

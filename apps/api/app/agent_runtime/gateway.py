@@ -227,7 +227,8 @@ class ToolGateway:
             if requirements and set(arguments.get("condition_rule_ids") or []) != set(requirements.rule_ids):
                 raise GatewayRejected("Required policy bindings do not match the user's conditions")
         if capability.effect in {"preview", "write"} and requirements and requirements.rule_ids:
-            binding = bind_placement_conditions(self.application.get(context.project_id), ["нормативные отступы"], [])
+            binding = bind_placement_conditions(self.application.get(context.project_id), ["нормативные отступы"], [],
+                passport=self.application.projects.get_data_passport(context.project_id))
             missing = [rule["obstacle_kind"] for rule in binding["rules"]
                        if rule["rule_id"] in requirements.rule_ids and rule["status"] != "geometry_available"]
             if missing:

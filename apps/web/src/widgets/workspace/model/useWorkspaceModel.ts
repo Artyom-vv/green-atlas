@@ -1,4 +1,5 @@
 import { useAssistantMapBridge } from './useAssistantMapBridge';
+import { useCandidateInspection } from '@/features/placement/model/useCandidateInspection';
 import { useWorkspaceCadSource } from './useWorkspaceCadSource';
 import { useWorkspaceRefresh } from '@/features/workspace/api/useWorkspaceRefresh';
 import { useWorkspaceNavigation } from './useWorkspaceNavigation';
@@ -319,8 +320,8 @@ export function useWorkspaceModel(projectId: string) {
       rowAxis,
       selectedPatternZoneIds,
     ]),
-    execute: (request, signal) =>
-      previewWorkspacePattern(projectId, request, signal),
+    execute: (request, signal, publish) =>
+      previewWorkspacePattern(projectId, request, signal, publish),
     onAccepted: (result) => {
       setPatternSettingsOpen(true);
       const frame = placementPreviewFrame(result.change_set?.additions ?? []);
@@ -408,6 +409,17 @@ export function useWorkspaceModel(projectId: string) {
     [subscribeBrush, invalidateBrush],
   );
   const patternPreview = previewPattern.data;
+  const candidateInspection = useCandidateInspection({
+    project, preview: patternPreview, zoneIds: selectedPatternZoneIds,
+    request: previewPattern.variables,
+    onFocus: ([x, y]) => {
+      if (sceneOpen) changeMapMode('2d');
+      mapViewport.current?.fitGeometry({ type: 'Polygon', coordinates: [[
+        [x - 15, y - 15], [x + 15, y - 15], [x + 15, y + 15], [x - 15, y + 15], [x - 15, y - 15],
+      ]] });
+    },
+    onApply: (result) => { applyChanges.mutate(result); },
+  });
   const recommendationPreview = previewRecommendation.data;
   const brushPreview = previewBrush.data;
   const changePreview =
@@ -811,7 +823,7 @@ export function useWorkspaceModel(projectId: string) {
     refresh: () => refresh({ strict: true }),
     onCommitted: (result, accepted) => {
       setReviewOpen(false);
-      if (accepted.id === patternPreview?.change_set?.id) {
+      if (accepted.id === patternPreview?.change_set?.id || accepted.id === candidateInspection.trial?.id) {
         previewPattern.reset();
         setRowAxis(undefined);
         setRowAxisSource(undefined);
@@ -1476,6 +1488,7 @@ export function useWorkspaceModel(projectId: string) {
     panel,
     patternForm,
     patternPreview,
+    candidateInspection,
     patternSettingsOpen,
     pendingScene,
     pendingTool,

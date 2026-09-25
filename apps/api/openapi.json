@@ -72,6 +72,68 @@
         }
       }
     },
+    "/api/species/assortment": {
+      "get": {
+        "summary": "Get Assortment Catalog",
+        "operationId": "get_assortment_catalog_api_species_assortment_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentInventory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -323,6 +385,61 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-layer-review": {
+      "get": {
+        "summary": "Source Layer Review",
+        "operationId": "source_layer_review_api_projects__project_id__source_layer_review_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerRecognition"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -802,6 +919,741 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-native-area/decision": {
+      "post": {
+        "summary": "Decide Native Area",
+        "operationId": "decide_native_area_api_projects__project_id__source_native_area_decision_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeAreaProposalDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-object-review": {
+      "get": {
+        "summary": "Source Object Review",
+        "operationId": "source_object_review_api_projects__project_id__source_object_review_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "layer",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Layer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceObjectReviewPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-object-context": {
+      "get": {
+        "summary": "Source Object Context",
+        "operationId": "source_object_context_api_projects__project_id__source_object_context_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "route",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Route"
+            }
+          },
+          {
+            "name": "scale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 8,
+              "minimum": 0.25,
+              "default": 1,
+              "title": "Scale"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceObjectContext"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-read-issues": {
+      "get": {
+        "summary": "Source Read Issues",
+        "operationId": "source_read_issues_api_projects__project_id__source_read_issues_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceReadIssues"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-native-faces": {
+      "get": {
+        "summary": "Source Native Faces",
+        "operationId": "source_native_faces_api_projects__project_id__source_native_faces_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeFaceReview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-native-faces/decision": {
+      "post": {
+        "summary": "Decide Source Native Face",
+        "operationId": "decide_source_native_face_api_projects__project_id__source_native_faces_decision_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeFaceDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-area-groups/check": {
+      "post": {
+        "summary": "Review Source Area Group",
+        "operationId": "review_source_area_group_api_projects__project_id__source_area_groups_check_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceAreaGroupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceAreaGroupCheck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-area-groups": {
+      "post": {
+        "summary": "Accept Source Area Group",
+        "operationId": "accept_source_area_group_api_projects__project_id__source_area_groups_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceAreaGroupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-area-groups/{group_id}": {
+      "delete": {
+        "summary": "Remove Source Area Group",
+        "operationId": "remove_source_area_group_api_projects__project_id__source_area_groups__group_id__delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-object-review/decision": {
+      "post": {
+        "summary": "Decide Source Object",
+        "operationId": "decide_source_object_api_projects__project_id__source_object_review_decision_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceObjectDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/source-native-area/preview": {
+      "get": {
+        "summary": "Native Area Preview",
+        "operationId": "native_area_preview_api_projects__project_id__source_native_area_preview_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "proposal_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Proposal Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeAreaPreview"
                 }
               }
             }
@@ -6082,6 +6934,150 @@
         ],
         "title": "AssistantStatus"
       },
+      "AssortmentEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "main",
+              "additional"
+            ],
+            "title": "Tier"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub",
+              "vine"
+            ],
+            "title": "Kind"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "row": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Row"
+          },
+          "cells": {
+            "type": "string",
+            "pattern": "^[+?\\-]{8}$",
+            "title": "Cells"
+          },
+          "matrix_reviewed": {
+            "type": "boolean",
+            "title": "Matrix Reviewed"
+          },
+          "conditions_reviewed": {
+            "type": "boolean",
+            "title": "Conditions Reviewed"
+          },
+          "calculation_species_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Species Id"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "requires_spread_control": {
+            "type": "boolean",
+            "title": "Requires Spread Control",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "source_name",
+          "tier",
+          "section",
+          "kind",
+          "page",
+          "row",
+          "cells",
+          "matrix_reviewed",
+          "conditions_reviewed"
+        ],
+        "title": "AssortmentEntry"
+      },
+      "AssortmentInventory": {
+        "properties": {
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 8,
+            "title": "Categories"
+          },
+          "special_territories_note": {
+            "type": "string",
+            "title": "Special Territories Note"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AssortmentEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "source_url",
+          "source_sha256",
+          "categories",
+          "special_territories_note",
+          "entries"
+        ],
+        "title": "AssortmentInventory"
+      },
       "AxisDistanceEvidence": {
         "properties": {
           "binding": {
@@ -9051,6 +10047,7 @@
               "road",
               "utility",
               "existing_green",
+              "lawn",
               "water",
               "restricted",
               "unclassified"
@@ -9085,10 +10082,29 @@
             "default": 0
           },
           "used_object_count": {
-            "type": "integer",
-            "minimum": 0.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Used Object Count",
-            "default": 0
+            "deprecated": true
+          },
+          "display_feature_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Feature Count"
           },
           "used_in_calculation": {
             "type": "boolean",
@@ -9151,6 +10167,16 @@
           "note": {
             "type": "string",
             "title": "Note"
+          },
+          "geometry_coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LayerGeometryCoverage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -9993,6 +11019,212 @@
         ],
         "title": "FillPatternRequest"
       },
+      "GeometryCoverageIssue": {
+        "properties": {
+          "routes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Routes"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "detail"
+        ],
+        "title": "GeometryCoverageIssue"
+      },
+      "GeometryEvidence": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "excluded",
+              "unknown",
+              "boundary"
+            ],
+            "title": "State"
+          },
+          "radius_m": {
+            "type": "number",
+            "title": "Radius M"
+          },
+          "canopy_radius_m": {
+            "type": "number",
+            "title": "Canopy Radius M"
+          },
+          "root_radius_m": {
+            "type": "number",
+            "title": "Root Radius M"
+          },
+          "considered_objects": {
+            "type": "integer",
+            "title": "Considered Objects"
+          },
+          "unlocated_objects": {
+            "type": "integer",
+            "title": "Unlocated Objects"
+          },
+          "causes": {
+            "items": {
+              "$ref": "#/components/schemas/GeometryEvidenceItem"
+            },
+            "type": "array",
+            "title": "Causes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "radius_m",
+          "canopy_radius_m",
+          "root_radius_m",
+          "considered_objects",
+          "unlocated_objects"
+        ],
+        "title": "GeometryEvidence"
+      },
+      "GeometryEvidenceItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "mapping",
+              "inventory",
+              "query",
+              "area",
+              "rule",
+              "clearance",
+              "site"
+            ],
+            "title": "Stage"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "excluded",
+              "unknown",
+              "boundary"
+            ],
+            "title": "Outcome"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "source_layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Layer"
+          },
+          "source_feature_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Feature Ids"
+          },
+          "measured_distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Distance M"
+          },
+          "required_distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Distance M"
+          },
+          "requirement_basis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rule",
+                  "canopy",
+                  "roots"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Basis"
+          },
+          "native_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Status"
+          },
+          "native_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Error"
+          },
+          "query_sent": {
+            "type": "boolean",
+            "title": "Query Sent",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "stage",
+          "outcome",
+          "message",
+          "action"
+        ],
+        "title": "GeometryEvidenceItem"
+      },
       "GeometrySnapshot": {
         "properties": {
           "feature_collection": {
@@ -10359,6 +11591,16 @@
               }
             ]
           },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LayerCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "object_count": {
             "type": "integer",
             "title": "Object Count"
@@ -10489,6 +11731,123 @@
         ],
         "title": "Layer"
       },
+      "LayerCategory": {
+        "type": "string",
+        "enum": [
+          "building",
+          "pavilion",
+          "porch",
+          "stairs",
+          "ventilation",
+          "equipment",
+          "canopy",
+          "fence",
+          "retaining_wall",
+          "curb",
+          "manhole",
+          "pole",
+          "monument",
+          "fountain",
+          "geodetic_marker",
+          "open_drain",
+          "carriageway",
+          "parking",
+          "footway",
+          "hard_surface",
+          "lawn",
+          "flowerbed",
+          "tree",
+          "shrub",
+          "mixed_vegetation",
+          "water",
+          "water_network",
+          "sewer_network",
+          "heat_network",
+          "gas_network",
+          "power_network",
+          "communication_network",
+          "drainage_network",
+          "unspecified_network",
+          "project_boundary",
+          "annotation",
+          "boundary_decoration",
+          "road_marking",
+          "survey_reference",
+          "relief_reference",
+          "terrain_slope",
+          "surface_boundary",
+          "demolition_object",
+          "interior_detail",
+          "unspecified_topography",
+          "mixed_source"
+        ],
+        "title": "LayerCategory"
+      },
+      "LayerCategoryOption": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/LayerCategory"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LayerKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "kind",
+          "label"
+        ],
+        "title": "LayerCategoryOption"
+      },
+      "LayerGeometryCoverage": {
+        "properties": {
+          "area_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Area Count",
+            "default": 0
+          },
+          "linear_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Linear Count",
+            "default": 0
+          },
+          "point_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Point Count",
+            "default": 0
+          },
+          "context_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Context Count",
+            "default": 0
+          },
+          "unresolved": {
+            "items": {
+              "$ref": "#/components/schemas/GeometryCoverageIssue"
+            },
+            "type": "array",
+            "title": "Unresolved"
+          }
+        },
+        "type": "object",
+        "title": "LayerGeometryCoverage"
+      },
       "LayerKind": {
         "type": "string",
         "enum": [
@@ -10497,6 +11856,7 @@
           "road",
           "utility",
           "existing_green",
+          "lawn",
           "water",
           "restricted",
           "ignore"
@@ -10511,6 +11871,16 @@
           },
           "kind": {
             "$ref": "#/components/schemas/LayerKind"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LayerCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "confirmed": {
             "anyOf": [
@@ -10568,6 +11938,100 @@
           "mappings"
         ],
         "title": "LayerMappingRequest"
+      },
+      "LayerRecognition": {
+        "properties": {
+          "source_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha256"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/LayerCategoryOption"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/LayerRoleProposal"
+            },
+            "type": "array",
+            "title": "Proposals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "provider",
+          "categories",
+          "proposals"
+        ],
+        "title": "LayerRecognition"
+      },
+      "LayerRoleProposal": {
+        "properties": {
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LayerCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Confidence"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Evidence"
+          },
+          "unresolved": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Unresolved"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "layer_id",
+          "category",
+          "confidence",
+          "evidence",
+          "unresolved"
+        ],
+        "title": "LayerRoleProposal"
       },
       "LayerSuggestionConfidence": {
         "type": "string",
@@ -10712,6 +12176,99 @@
         "title": "LiveDocumentCapture",
         "description": "Disk identity is context, not proof that unsaved geometry matches it."
       },
+      "LiveSession": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Session Id"
+          },
+          "pid": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Pid"
+          },
+          "plugin_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Plugin Version"
+          },
+          "source_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Path"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "snapshot_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Snapshot Path"
+          },
+          "snapshot_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Snapshot Sha256"
+          },
+          "inventory_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventory Path"
+          },
+          "inventory_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventory Sha256"
+          },
+          "units_code": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 0.0,
+            "title": "Units Code"
+          },
+          "watched_databases": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Watched Databases"
+          },
+          "unavailable_xrefs": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unavailable Xrefs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "pid",
+          "plugin_version",
+          "source_path",
+          "source_sha256",
+          "snapshot_path",
+          "snapshot_sha256",
+          "units_code",
+          "watched_databases",
+          "unavailable_xrefs"
+        ],
+        "title": "LiveSession"
+      },
       "MapContext": {
         "properties": {
           "state_version": {
@@ -10769,6 +12326,165 @@
           "state_version"
         ],
         "title": "MapContext"
+      },
+      "NativeAreaPreview": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "proposal_sha256": {
+            "type": "string",
+            "title": "Proposal Sha256"
+          },
+          "source_path": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Source Path"
+          },
+          "proposed_rings": {
+            "items": {
+              "items": {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Proposed Rings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "proposal_sha256",
+          "source_path",
+          "proposed_rings"
+        ],
+        "title": "NativeAreaPreview"
+      },
+      "NativeAreaProposalDecisionRequest": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "proposal_id": {
+            "type": "string",
+            "title": "Proposal Id"
+          },
+          "proposal_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposal Sha256"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Decision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "proposal_id",
+          "proposal_sha256",
+          "decision"
+        ],
+        "title": "NativeAreaProposalDecisionRequest"
+      },
+      "NativeAreaProposalReview": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceIdentity"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer"
+          },
+          "source_path_content_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Path Content Sha256"
+          },
+          "proposal_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposal Sha256"
+          },
+          "closure_gap_m": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Closure Gap M"
+          },
+          "area_m2": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Area M2"
+          },
+          "area_gap_entity_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area Gap Entity Type"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Decision",
+            "default": "pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "layer",
+          "source_path_content_sha256",
+          "proposal_sha256",
+          "closure_gap_m",
+          "area_m2"
+        ],
+        "title": "NativeAreaProposalReview",
+        "description": "Small durable review record; the signed native preview stays in the source capture."
       },
       "NativeDxfSourceAsset": {
         "properties": {
@@ -10868,6 +12584,144 @@
         ],
         "title": "NativeDxfSourceAsset"
       },
+      "NativeFaceDecision": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Key"
+          },
+          "rejected": {
+            "type": "boolean",
+            "title": "Rejected"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "key",
+          "rejected"
+        ],
+        "title": "NativeFaceDecision"
+      },
+      "NativeFaceReview": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NativeFaceReviewItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "items"
+        ],
+        "title": "NativeFaceReview"
+      },
+      "NativeFaceReviewItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Key"
+          },
+          "anchor": {
+            "type": "string",
+            "title": "Anchor"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer"
+          },
+          "area_m2": {
+            "type": "number",
+            "title": "Area M2"
+          },
+          "member_count": {
+            "type": "integer",
+            "title": "Member Count"
+          },
+          "repair_count": {
+            "type": "integer",
+            "title": "Repair Count"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "rejected",
+              "overridden"
+            ],
+            "title": "Status"
+          },
+          "path": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Path"
+          },
+          "repairs": {
+            "items": {
+              "items": {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Repairs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "anchor",
+          "layer",
+          "area_m2",
+          "member_count",
+          "repair_count",
+          "status",
+          "path",
+          "repairs"
+        ],
+        "title": "NativeFaceReviewItem"
+      },
       "OperationError": {
         "properties": {
           "code": {
@@ -10952,6 +12806,54 @@
             "minimum": 0.0,
             "title": "Generated Count",
             "default": 0
+          },
+          "search_stop_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "target_reached",
+                  "candidate_limit",
+                  "time_limit",
+                  "domain_exhausted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Stop Reason"
+          },
+          "search_candidate_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Candidate Limit"
+          },
+          "search_elapsed_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Elapsed S"
+          },
+          "search_domains": {
+            "items": {
+              "$ref": "#/components/schemas/SearchDomain"
+            },
+            "type": "array",
+            "title": "Search Domains"
           },
           "accepted_count": {
             "type": "integer",
@@ -11162,6 +13064,16 @@
               }
             ],
             "title": "Zone Id"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanObjectCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -11402,6 +13314,16 @@
                 "type": "null"
               }
             ]
+          },
+          "geometry_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeometryEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -11551,6 +13473,11 @@
               }
             ],
             "title": "State Version"
+          },
+          "explain_geometry": {
+            "type": "boolean",
+            "title": "Explain Geometry",
+            "default": false
           }
         },
         "type": "object",
@@ -14649,6 +16576,24 @@
         "title": "ResolvedScope",
         "description": "One authoritative scope chosen from explicit input or tool evidence."
       },
+      "ReviewedAreaMember": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SourceIdentity"
+          },
+          "geometry_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "geometry_sha256"
+        ],
+        "title": "ReviewedAreaMember"
+      },
       "RowPatternRequest": {
         "properties": {
           "type": {
@@ -15867,6 +17812,161 @@
         "title": "SceneVerticalPrimitive",
         "description": "Source-proven XYZ translated only in XY into the scene frame."
       },
+      "SearchDomain": {
+        "properties": {
+          "zone_id": {
+            "type": "string",
+            "title": "Zone Id"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geometry"
+          },
+          "unresolved_geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Unresolved Geometry"
+          },
+          "pending_geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Geometry"
+          },
+          "available_area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Available Area M2"
+          },
+          "excluded_area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Excluded Area M2"
+          },
+          "unresolved_area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Unresolved Area M2"
+          },
+          "pending_area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Pending Area M2",
+            "default": 0
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "native_cells",
+              "hybrid"
+            ],
+            "title": "Method",
+            "default": "native_cells"
+          },
+          "final_check": {
+            "type": "string",
+            "const": "autocad",
+            "title": "Final Check",
+            "default": "autocad"
+          },
+          "minimum_cell_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Cell M"
+          },
+          "measured_cells": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Measured Cells"
+          },
+          "processed_objects": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Processed Objects",
+            "default": 0
+          },
+          "total_objects": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Objects",
+            "default": 0
+          },
+          "cache_hits": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cache Hits",
+            "default": 0
+          },
+          "source_issues": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Source Issues"
+          },
+          "elapsed_s": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Elapsed S"
+          },
+          "stop_reason": {
+            "type": "string",
+            "enum": [
+              "resolution",
+              "time_limit",
+              "probe_limit"
+            ],
+            "title": "Stop Reason"
+          },
+          "unresolved_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Unresolved Reasons"
+          },
+          "unresolved_reason_areas_m2": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Unresolved Reason Areas M2"
+          }
+        },
+        "type": "object",
+        "required": [
+          "zone_id",
+          "revision",
+          "geometry",
+          "unresolved_geometry",
+          "available_area_m2",
+          "excluded_area_m2",
+          "unresolved_area_m2",
+          "measured_cells",
+          "elapsed_s",
+          "stop_reason"
+        ],
+        "title": "SearchDomain"
+      },
       "SelectionBinding": {
         "properties": {
           "zone_ids": {
@@ -16044,6 +18144,182 @@
         "type": "object",
         "title": "SelectionReference"
       },
+      "SourceAreaGroup": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewedAreaMember"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "minItems": 2,
+            "title": "Members"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "building",
+              "road",
+              "restricted"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "members",
+          "kind",
+          "id"
+        ],
+        "title": "SourceAreaGroup"
+      },
+      "SourceAreaGroupCheck": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid",
+          "reason"
+        ],
+        "title": "SourceAreaGroupCheck"
+      },
+      "SourceAreaGroupRequest": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewedAreaMember"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "minItems": 2,
+            "title": "Members"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "building",
+              "road",
+              "restricted"
+            ],
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "members",
+          "kind"
+        ],
+        "title": "SourceAreaGroupRequest"
+      },
+      "SourceContextObject": {
+        "properties": {
+          "route": {
+            "type": "string",
+            "title": "Route"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceIdentity"
+          },
+          "geometry_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Sha256"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "paths": {
+            "items": {
+              "items": {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Paths"
+          },
+          "native_area": {
+            "type": "boolean",
+            "title": "Native Area"
+          },
+          "can_join": {
+            "type": "boolean",
+            "title": "Can Join"
+          },
+          "reviewable": {
+            "type": "boolean",
+            "title": "Reviewable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "route",
+          "source",
+          "geometry_sha256",
+          "layer",
+          "kind",
+          "entity_type",
+          "paths",
+          "native_area",
+          "can_join",
+          "reviewable"
+        ],
+        "title": "SourceContextObject"
+      },
       "SourceFile": {
         "properties": {
           "name": {
@@ -16149,6 +18425,44 @@
               }
             ]
           },
+          "native_area_proposals": {
+            "items": {
+              "$ref": "#/components/schemas/NativeAreaProposalReview"
+            },
+            "type": "array",
+            "title": "Native Area Proposals"
+          },
+          "object_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/SourceObjectDecision"
+            },
+            "type": "array",
+            "title": "Object Decisions"
+          },
+          "area_groups": {
+            "items": {
+              "$ref": "#/components/schemas/SourceAreaGroup"
+            },
+            "type": "array",
+            "title": "Area Groups"
+          },
+          "native_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rejected_native_face_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rejected Native Face Keys"
+          },
           "accept_partial_geometry": {
             "type": "boolean",
             "title": "Accept Partial Geometry",
@@ -16165,6 +18479,297 @@
           "entity_count"
         ],
         "title": "SourceFile"
+      },
+      "SourceIdentity": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "pattern": "^[0-9A-F]+$",
+            "title": "Handle"
+          },
+          "instance_chain": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Instance Chain"
+          }
+        },
+        "type": "object",
+        "required": [
+          "handle"
+        ],
+        "title": "SourceIdentity"
+      },
+      "SourceObjectContext": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "focus_route": {
+            "type": "string",
+            "title": "Focus Route"
+          },
+          "extent": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Extent"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/SourceContextObject"
+            },
+            "type": "array",
+            "title": "Objects"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limited": {
+            "type": "boolean",
+            "title": "Limited"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "focus_route",
+          "extent",
+          "objects",
+          "total",
+          "limited"
+        ],
+        "title": "SourceObjectContext"
+      },
+      "SourceObjectDecision": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SourceIdentity"
+          },
+          "geometry_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Sha256"
+          },
+          "interpretation": {
+            "type": "string",
+            "enum": [
+              "area",
+              "linear",
+              "reference"
+            ],
+            "title": "Interpretation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "geometry_sha256",
+          "interpretation"
+        ],
+        "title": "SourceObjectDecision"
+      },
+      "SourceObjectDecisionRequest": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SourceIdentity"
+          },
+          "geometry_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Sha256"
+          },
+          "interpretation": {
+            "type": "string",
+            "enum": [
+              "area",
+              "linear",
+              "reference"
+            ],
+            "title": "Interpretation"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "geometry_sha256",
+          "interpretation",
+          "source_sha256"
+        ],
+        "title": "SourceObjectDecisionRequest"
+      },
+      "SourceObjectReviewItem": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SourceIdentity"
+          },
+          "geometry_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Geometry Sha256"
+          },
+          "interpretation": {
+            "type": "string",
+            "enum": [
+              "area",
+              "linear",
+              "reference"
+            ],
+            "title": "Interpretation"
+          },
+          "route": {
+            "type": "string",
+            "title": "Route"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "path": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Path"
+          },
+          "endpoint_distance_m": {
+            "type": "number",
+            "title": "Endpoint Distance M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "geometry_sha256",
+          "interpretation",
+          "route",
+          "layer",
+          "entity_type",
+          "path",
+          "endpoint_distance_m"
+        ],
+        "title": "SourceObjectReviewItem"
+      },
+      "SourceObjectReviewPage": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceObjectReviewItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "total",
+          "offset",
+          "items"
+        ],
+        "title": "SourceObjectReviewPage"
+      },
+      "SourceReadIssue": {
+        "properties": {
+          "route": {
+            "type": "string",
+            "title": "Route"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "route",
+          "layer",
+          "entity_type",
+          "reason",
+          "detail"
+        ],
+        "title": "SourceReadIssue"
+      },
+      "SourceReadIssues": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "title": "Source Sha256"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReadIssue"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "items"
+        ],
+        "title": "SourceReadIssues"
       },
       "SourceReview": {
         "properties": {

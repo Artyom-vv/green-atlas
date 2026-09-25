@@ -53,7 +53,7 @@ export const ExistingResult: FC<ExistingResultProps> = ({
             ? existingScope.join(', ')
             : 'Участок не назначен'}
           {existing.unassignedZones && existingScope?.length
-            ? ` · Без участка: ${existing.unassignedZones}`
+            ? `, без участка: ${existing.unassignedZones}`
             : ''}
         </Text>
         <Text as="p" variant="body" className="m-0 wrap-anywhere">
@@ -62,7 +62,7 @@ export const ExistingResult: FC<ExistingResultProps> = ({
             existing.kinds.shrub ? `Кустарники: ${existing.kinds.shrub}` : '',
           ]
             .filter(Boolean)
-            .join(' · ')}
+            .join(', ')}
         </Text>
         {!!existingSpecies?.length && (
           <Text as="p" variant="body" className="m-0 wrap-anywhere">
@@ -89,7 +89,7 @@ export const ExistingResult: FC<ExistingResultProps> = ({
             {existing.move.dx.toLocaleString('ru-RU', {
               maximumFractionDigits: 3,
             })}{' '}
-            м · Y {existing.move.dy > 0 ? '+' : ''}
+            м, Y {existing.move.dy > 0 ? '+' : ''}
             {existing.move.dy.toLocaleString('ru-RU', {
               maximumFractionDigits: 3,
             })}{' '}

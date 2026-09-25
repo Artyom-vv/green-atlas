@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
+#import "project-route.h"
 
 @interface Desktop : NSObject <NSApplicationDelegate, WKNavigationDelegate, NSURLSessionTaskDelegate>
 @property(strong) NSWindow *window;
@@ -218,9 +219,8 @@
 }
 - (void)handleReceipt:(NSDictionary *)receipt {
     if ([receipt[@"status"] isEqual:@"needs_review"]) {
-        NSString *path = receipt[@"project_path"];
-        NSRegularExpression *valid = [NSRegularExpression regularExpressionWithPattern:@"^/projects/[a-f0-9-]{36}/import\\?source=cad$" options:0 error:nil];
-        if (![path isKindOfClass:NSString.class] || ![valid numberOfMatchesInString:path options:0 range:NSMakeRange(0, path.length)]) { [self fail:@"Не удалось определить созданный проект."]; return; }
+        NSString *path = GAHandoffProjectPath(receipt);
+        if (!path) { [self fail:@"Проект сохранён, но приложение не смогло открыть его страницу. Адрес проекта несовместим с этой версией приложения."]; return; }
         self.busy = NO; self.activeTicket = nil; self.identifier = nil;
         [self openProject:path]; [self nextTicket]; return;
     }

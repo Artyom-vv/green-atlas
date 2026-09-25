@@ -7,6 +7,10 @@ export interface SourceReadOnlyDocumentProps extends Pick<
   | 'setMappings'
   | 'sourceWarnings'
   | 'downloadSource'
+  | 'startSourceEditing'
+  | 'reviewOnly'
+  | 'layerRecognition'
+  | 'projectQuery'
 > {
   onPlan: () => void;
 }
@@ -19,6 +23,10 @@ export const SourceReadOnlyDocumentPropsFor = (
     | 'setMappings'
     | 'sourceWarnings'
     | 'downloadSource'
+    | 'startSourceEditing'
+    | 'reviewOnly'
+    | 'layerRecognition'
+    | 'projectQuery'
   >,
 ) => ({
   dataPassportQuery: state.dataPassportQuery,
@@ -27,4 +35,8 @@ export const SourceReadOnlyDocumentPropsFor = (
   setMappings: state.setMappings,
   sourceWarnings: state.sourceWarnings,
   downloadSource: state.downloadSource,
+  startSourceEditing: state.startSourceEditing,
+  reviewOnly: state.reviewOnly,
+  layerRecognition: state.layerRecognition,
+  projectQuery: state.projectQuery,
 });

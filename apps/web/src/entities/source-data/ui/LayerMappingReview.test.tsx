@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Layer, LayerMapping } from '@green/api-client';
 import { LayerMappingReview } from './LayerMappingReview';
 
@@ -22,6 +22,7 @@ function layer(id: string, kind: 'utility' | 'building'): Layer {
 }
 
 describe('LayerMappingReview', () => {
+  afterEach(cleanup);
   it('confirms one semantic group without creating an action for every layer', () => {
     const layers = [
       layer('network-a', 'utility'),
@@ -57,5 +58,15 @@ describe('LayerMappingReview', () => {
       'network-a': { ...mappings['network-a'], confirmed: true },
       'network-b': { ...mappings['network-b'], confirmed: true },
     });
+  });
+  it('never offers a bulk confirmation of unidentified layers', () => {
+    const unknown = { ...layer('0', 'building'), mapped_kind: 'ignore' as const };
+    const onChange = vi.fn();
+    render(<LayerMappingReview layers={[unknown]}
+      mappings={{ '0': { layer_id: '0', kind: 'ignore', confirmed: false, visible: true } }}
+      onChange={onChange} />);
+    expect(screen.getByRole('cell', { name: 'Тип не определён' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Подтвердить$/ })).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,8 @@
 from hashlib import sha256
 
 import pytest
-from shapely.geometry import box
 from cad_preview_fixtures import fixture_preview
+from shapely.geometry import box
 from test_cad_prepare import preparation, write_snapshot
 
 from app.cad_bridge import CadSnapshot
@@ -144,7 +144,8 @@ def test_partial_calculation_requires_consent_and_never_claims_full_coverage():
     assert passport.mass_placement_status == "limited"
     assert "Расчёт выполнен по доступным данным" in passport.gaps
     building = next(item for item in passport.entries if item.kind == "building")
-    assert building.used_in_calculation and building.used_object_count == 1
+    assert building.used_in_calculation and building.display_feature_count == 1
+    assert building.used_object_count is None
     assert building.status == "partial"
     from app.geometry.domain import PositionChecker
     checker = PositionChecker(project)
@@ -154,3 +155,24 @@ def test_partial_calculation_requires_consent_and_never_claims_full_coverage():
     assert not checker.automatic_safe_area(
         box(0, 0, 100, 100), 1, "tree"
     ).is_empty
+
+    # A real CAD object without a planar projection must follow the same
+    # explicit partial-data decision. It must not block all available work
+    # after consent, or silently turn into a complete-source calculation.
+    building_layer = next(
+        layer for layer in project.layers if layer.source_name == "BUILDING"
+    )
+    building_layer.entity_types = {"3DSOLID": 1}
+    building_layer.projected_geometry_types = {}
+    building_layer.geometry_complete = True  # simulate a stale completeness flag
+    project.source_file.prepared_provenance.opening_review.accept_partial_geometry = (
+        False
+    )
+    with pytest.raises(ValueError, match="3DSOLID"):
+        engine.calculate(project)
+    project.source_file.prepared_provenance.opening_review.accept_partial_geometry = (
+        True
+    )
+    project.geometry = engine.calculate(project)
+    assert project.geometry.calculation_scope == "available_data"
+    assert PositionChecker(project).check(25, 25, 1, "tree") is not None

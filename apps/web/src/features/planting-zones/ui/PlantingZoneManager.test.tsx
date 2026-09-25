@@ -207,14 +207,15 @@ describe('PlantingZoneManager', () => {
     ).not.toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('requires a replacement before deleting the only area', () => {
+  it('allows deleting the last empty working area without a replacement', () => {
+    const onDelete = vi.fn();
     render(
       <PlantingZoneManager
         zones={[zones[0]]}
         onFocus={vi.fn()}
         onRename={vi.fn()}
         onRedraw={vi.fn()}
-        onDelete={vi.fn()}
+        onDelete={onDelete}
         onDraw={vi.fn()}
         onCancelDraw={vi.fn()}
       />,
@@ -230,10 +231,12 @@ describe('PlantingZoneManager', () => {
     );
     expect(
       screen.getByRole('menuitem', { name: 'Удалить участок' }),
-    ).toHaveAttribute('aria-disabled', 'true');
+    ).not.toHaveAttribute('aria-disabled', 'true');
     expect(
-      screen.getByText('Сначала создайте другой рабочий участок'),
-    ).toBeInTheDocument();
+      screen.queryByText('Сначала создайте другой рабочий участок'),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Удалить участок' }));
+    expect(onDelete).toHaveBeenCalledWith(zones[0]);
   });
 
   it('keeps keyboard navigation and Escape inside the row menu without closing its dialog', async () => {

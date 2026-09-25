@@ -3,14 +3,24 @@ import {
   type BrushPreviewRequest,
   type BuildingScreenRequest,
   type PatternPreviewRequest,
+  type PatternPreview,
   type RecommendationRequest,
 } from '@green/api-client';
+import { completePatternPreview } from './completePatternPreview';
+import { PATTERN_PASS_RESPONSE_TIMEOUT_MS } from './patternPreviewPass';
 
 export const previewWorkspacePattern = (
   projectId: string,
   request: PatternPreviewRequest,
   signal: AbortSignal,
-) => api.previewPlanPattern(projectId, request, signal);
+  publish?: (progress: PatternPreview) => void,
+) =>
+  completePatternPreview(
+    (passSignal) => api.previewPlanPattern(projectId, request, passSignal),
+    signal,
+    publish,
+    PATTERN_PASS_RESPONSE_TIMEOUT_MS * Math.max(1, request.zone_ids.length),
+  );
 
 export const previewWorkspaceBrush = (
   projectId: string,

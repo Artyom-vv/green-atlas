@@ -22,6 +22,7 @@ import type {
   ChangeSetPreview,
   PlanChangeSetDraft,
   PlanObject,
+  PatternPreview,
   PlantingZoneAssignment,
   ZoneChangePreview,
 } from '@green/api-client';
@@ -50,6 +51,9 @@ export interface MapViewportOptions {
   highlightedPlantingZoneIds?: string[];
   focusGeometry?: Record<string, unknown>;
   placementPreview?: PlacementPreview;
+  inspectionPreview?: PlacementPreview;
+  searchDomains?: PatternPreview['search_domains'];
+  onProbeCoordinate?: (coordinate: [number, number]) => void;
   changePreview?: ChangeSetPreview;
   zoneChangePreview?: ZoneChangePreview;
   changeDraft?: PlanChangeSetDraft;

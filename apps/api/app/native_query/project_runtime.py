@@ -1,0 +1,63 @@
+"""Route each new AutoCAD project to its persisted, checked live capture."""
+
+from threading import RLock
+
+from app.native_query.live_client import LiveQueryClient, LiveQueryError
+from app.native_query.live_provider import LiveNativeGeometryEngine
+from app.planting_zones.domain import (
+    validate_changed_planting_zones,
+    validate_planting_zones,
+)
+
+
+class ProjectLiveGeometry:
+    def __init__(self, compatibility, compatibility_zones=None):
+        self.compatibility = compatibility
+        self.compatibility_zones = compatibility_zones
+        self._engines = {}
+        self._lock = RLock()
+
+    def engine(self, project):
+        source = getattr(project, "source_file", None)
+        session = getattr(source, "native_session", None)
+        if session is None:
+            return self.compatibility
+        if source.content_sha256 != session.snapshot_sha256:
+            raise ValueError("Расчётный сеанс не соответствует исходным данным проекта")
+        key = session.model_dump_json()
+        with self._lock:
+            current = self._engines.get(project.id)
+            if current is None or current[0] != key:
+                try:
+                    engine = LiveNativeGeometryEngine(
+                        session, LiveQueryClient(pid=session.pid)
+                    )
+                except FileNotFoundError as error:
+                    raise LiveQueryError("live_session_expired") from error
+                self._engines[project.id] = (key, engine)
+            return self._engines[project.id][1]
+
+    def __getattr__(self, name):
+        def invoke(project, *args, **kwargs):
+            method = getattr(self.engine(project), name, None)
+            if method is None and name in {
+                "prepare_positions",
+                "assert_current",
+                "explain_position",
+                "source_coverage",
+            }:
+                return None
+            if method is None:
+                raise ValueError("Для действия требуется подключённый сеанс AutoCAD")
+            return method(project, *args, **kwargs)
+
+        return invoke
+
+    def validate_zones(self, project, zones):
+        if project.source_file and project.source_file.native_session:
+            return validate_planting_zones(
+                project, zones, changed_only=True, check_source_boundary=False
+            )
+        if self.compatibility_zones:
+            return self.compatibility_zones(project, zones)
+        return validate_changed_planting_zones(project, zones)

@@ -46,10 +46,10 @@ export function createProbeSurface(target: HTMLElement) {
   });
   const button = document.createElement('button');
   button.type = 'button';
-  button.textContent = 'Замер карты · 10 с';
+  button.textContent = 'Замер карты за 10 с';
   const gestureButton = document.createElement('button');
   gestureButton.type = 'button';
-  gestureButton.textContent = 'Записать мои жесты · 10 с';
+  gestureButton.textContent = 'Записать мои жесты за 10 с';
   gestureButton.style.marginLeft = '8px';
   const output = document.createElement('pre');
   output.dataset.mapPerformanceResult = '';

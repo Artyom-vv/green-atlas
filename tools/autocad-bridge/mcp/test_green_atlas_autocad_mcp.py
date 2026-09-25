@@ -107,7 +107,7 @@ def test_bridge_status_rejects_stale_plugin_version(tmp_path, monkeypatch) -> No
     status = _bridge_status()
 
     assert status["ready"] is False
-    assert "expected 0.1.33, got 0.1.28" in status["reason"]
+    assert f"expected {PLUGIN_VERSION}, got 0.1.28" in status["reason"]
 
 
 def test_timeout_requests_native_cancellation(tmp_path, monkeypatch) -> None:
@@ -225,9 +225,8 @@ def test_admission_failure_keeps_autocad_native_diagnostics(
 def test_native_hatch_path_guards_edge_apis_and_preserves_islands() -> None:
     """Typed polyline value arrays must not re-enable unsafe edge conversion."""
 
-    source = (
-        Path(__file__).resolve().parents[1] / "native" / "green_atlas_bridge.cpp"
-    ).read_text()
+    native = Path(__file__).resolve().parents[1] / "native"
+    source = (native / "entity_extraction.cpp").read_text()
 
     assert "hatch->getRegionArea" not in source
     assert "hatch->getArea" not in source
@@ -237,9 +236,7 @@ def test_native_hatch_path_guards_edge_apis_and_preserves_islands() -> None:
     assert "getLoopAt" not in active_hatch_branch
     assert "numLoops" not in active_hatch_branch
     assert "extractPolylineHatchTopology" in active_hatch_branch
-    extractor = (
-        Path(__file__).resolve().parents[1] / "native" / "hatch_polyline.inc"
-    ).read_text()
+    extractor = (native / "hatch_extraction.cpp").read_text()
     assert "AcGeVoidPointerArray" not in extractor
     assert "hatch->getRegionArea" in extractor
     assert "delete areaRegion" in extractor
@@ -249,8 +246,11 @@ def test_native_hatch_path_guards_edge_apis_and_preserves_islands() -> None:
     assert extractor.index("!(type & AcDbHatch::kPolyline)") < call
     assert extractor.index("AcDbHatch::kSelfIntersecting") < call
     assert "getAssocObjIdsAt" in extractor
-    assert "relinkUniquePackageLocalXrefs" in source
-    assert "findReferencePaths(parentDirectory(sourcePath), requests)" in source
-    assert "traverse-package-local-xref-database" in source
-    assert "acdbResolveCurrentXRefs(&sourceDatabase" not in source
-    assert "externalDatabases.modelSpace(" in source
+    capture = (native / "capture_commands.cpp").read_text()
+    references = (native / "xref_resolver.cpp").read_text()
+    traversal = (native / "block_traversal.cpp").read_text()
+    assert "relinkUniquePackageLocalXrefs" in capture
+    assert "findReferencePaths(parentDirectory(sourcePath), requests)" in references
+    assert "traverse-package-local-xref-database" in traversal
+    assert "acdbResolveCurrentXRefs(&sourceDatabase" not in capture
+    assert "externalDatabases.modelSpace(" in traversal

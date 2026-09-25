@@ -18,6 +18,22 @@ static NSPanel* progressPanel;
 static NSTextField* progressLabel;
 
 namespace gaDelivery {
+static NSView* sourceFacts(const std::vector<SourceNotice>& facts) {
+    NSMutableArray* rows = [NSMutableArray new];
+    for (const auto& fact : facts) {
+        NSTextField* label = [NSTextField wrappingLabelWithString:text(fact.label)];
+        label.textColor = NSColor.secondaryLabelColor;
+        NSTextField* value = [NSTextField wrappingLabelWithString:text(fact.value)];
+        value.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightMedium];
+        [rows addObject:@[label, value]];
+    }
+    NSGridView* grid = [NSGridView gridViewWithViews:rows];
+    grid.rowSpacing = 10;
+    grid.columnSpacing = 20;
+    grid.xPlacement = NSGridCellPlacementLeading;
+    [grid.widthAnchor constraintEqualToConstant:380].active = YES;
+    return grid;
+}
 void installMenu(void (*command)()) {
     if (!NSApp.mainMenu) return;
     if (rootMenuItem && rootMenuItem.menu == NSApp.mainMenu) return;
@@ -40,12 +56,25 @@ void removeMenu() {
 }
 bool confirmPreparation(bool modified) {
     NSAlert* alert = [NSAlert new];
-    alert.messageText = @"Открыть чертёж в Green Atlas?";
-    alert.informativeText = modified
-        ? @"Откроем отдельную копию с текущими изменениями и доступными подосновами в локальном Green Atlas. Исходный файл не будет сохранён или изменён."
-        : @"Откроем отдельную копию с доступными подосновами в локальном Green Atlas. Исходный чертёж не изменится.";
-    [alert addButtonWithTitle:@"Подготовить копию"];
+    alert.messageText = @"Открыть в Green Atlas";
+    alert.informativeText = @"";
+    alert.accessoryView = sourceFacts({
+        {"Источник", modified ? "С несохранёнными изменениями" : "Открытый чертёж"},
+        {"Подосновы", "Загруженные в AutoCAD"},
+        {"Исходный файл", "Без изменений"},
+    });
+    [alert addButtonWithTitle:@"Открыть"];
     [alert addButtonWithTitle:@"Отмена"];
+    return [alert runModal] == NSAlertFirstButtonReturn;
+}
+bool confirmLivePartial(const std::vector<SourceNotice>& issues) {
+    NSAlert* alert = [NSAlert new];
+    alert.alertStyle = NSAlertStyleWarning;
+    alert.messageText = @"Есть замечания к исходнику";
+    alert.informativeText = @"";
+    alert.accessoryView = sourceFacts(issues);
+    [alert addButtonWithTitle:@"Открыть доступные данные"];
+    [alert addButtonWithTitle:@"Вернуться в AutoCAD"];
     return [alert runModal] == NSAlertFirstButtonReturn;
 }
 bool confirmPartial(const std::vector<std::string>& issues) {
@@ -164,6 +193,82 @@ std::vector<std::string> probeIssues(const std::string& directory) {
             break;
         }
     return issues;
+}
+
+std::vector<SourceNotice> liveProbeIssues(const std::string& directory) {
+    NSURL* root = [NSURL fileURLWithPath:text(directory) isDirectory:YES];
+    NSDictionary* probe = readProbe([root URLByAppendingPathComponent:@"Drawing.autocad.json"]);
+    if (!probe) return {{"Чтение снимка", "Ошибка"}};
+    NSDictionary* summary = probe[@"summary"];
+    NSDictionary* source = probe[@"source"];
+    if (![summary isKindOfClass:NSDictionary.class] || ![source isKindOfClass:NSDictionary.class])
+        return {{"Проверка снимка", "Нет результата"}};
+    std::vector<SourceNotice> issues;
+    auto countNotice = [&](NSString* key, const char* label) {
+        NSNumber* value = summary[key];
+        if ([value isKindOfClass:NSNumber.class] && value.longLongValue > 0)
+            issues.push_back({label, std::to_string(value.unsignedLongLongValue)});
+    };
+    // This is display-extraction coverage, not native calculation coverage.
+    // Unsaved state was already shown before capture and is not a defect.
+    countNotice(@"unresolved_instances", "Без геометрии отображения");
+    countNotice(@"cyclic_block_references", "Циклические ссылки");
+    countNotice(@"unexpanded_minsert_blocks", "Нераскрытые массивы");
+    size_t missingReferences = 0;
+    for (NSDictionary* dependency in probe[@"xref_dependencies"] ?: @[]) {
+        if (![dependency isKindOfClass:NSDictionary.class]) continue;
+        if ([dependency[@"status"] isEqual:@"unresolved"]) {
+            ++missingReferences;
+        }
+    }
+    if (missingReferences) issues.push_back({"Недоступные подосновы", std::to_string(missingReferences)});
+    return issues;
+}
+
+std::string writeLiveTicket(const std::string& directory, const std::string& version,
+                            const std::string& autocadVersion, const std::string& liveSession) {
+    NSURL* root = [NSURL fileURLWithPath:text(directory) isDirectory:YES];
+    NSURL* capture = [root URLByAppendingPathComponent:@"Drawing.autocad.json"];
+    NSURL* destination = [root URLByAppendingPathComponent:@"transfer.gatransfer"];
+    if ([NSFileManager.defaultManager fileExistsAtPath:destination.path]) return {};
+    NSDictionary* probe = readProbe(capture);
+    NSDictionary* source = probe[@"source"];
+    NSString* original = source[@"path"];
+    if (![probe[@"capture_mode"] isEqual:@"live_document"]
+        || ![probe[@"plugin_version"] isEqual:text(version)]
+        || ![original isKindOfClass:NSString.class] || !original.length
+        || ![source[@"sha256"] isKindOfClass:NSString.class]) return {};
+    NSDictionary* captureEntry = fileEntry(capture, @"live_capture");
+    if (!captureEntry || [captureEntry[@"bytes"] unsignedLongLongValue] > 768ULL*1024*1024)
+        return {};
+    // The path is context, not the live geometry source, but a stale disk hash
+    // would make its provenance misleading. Never silently substitute disk data.
+    NSDictionary* diskEntry = fileEntry([NSURL fileURLWithPath:original], @"source_context");
+    if (!diskEntry || ![diskEntry[@"sha256"] isEqual:source[@"sha256"]]) return {};
+    NSString* sourceName = original.lastPathComponent;
+    if (!sourceName.length || sourceName.length > 240) return {};
+#if defined(__arm64__)
+    NSString* target = @"macos-arm64";
+#else
+    NSString* target = @"macos-x86_64";
+#endif
+    NSMutableDictionary* ticket = [@{@"schema":@"green-atlas.transfer/2", @"plugin_version":text(version),
+        @"producer":@{@"autocad_version":text(autocadVersion), @"target":target},
+        @"manifest":@{@"entry":@"Drawing.autocad.json", @"files":@[captureEntry]},
+        @"source_name":sourceName} mutableCopy];
+    if (!liveSession.empty()) {
+        NSData* sessionData = [text(liveSession) dataUsingEncoding:NSUTF8StringEncoding];
+        NSDictionary* session = [NSJSONSerialization JSONObjectWithData:sessionData options:0 error:nil];
+        if (![session isKindOfClass:NSDictionary.class]
+            || ![session[@"snapshot_sha256"] isEqual:captureEntry[@"sha256"]]) return {};
+        ticket[@"schema"] = @"green-atlas.transfer/4";
+        ticket[@"live_session"] = session;
+    }
+    NSData* data = [NSJSONSerialization dataWithJSONObject:ticket options:NSJSONWritingPrettyPrinted error:nil];
+    if (!data) return {};
+    if (![NSFileManager.defaultManager createFileAtPath:destination.path contents:data
+                                            attributes:@{NSFilePosixPermissions:@0600}]) return {};
+    return destination.path.UTF8String;
 }
 
 std::string writeTicket(const std::string& directory, const std::string& version,

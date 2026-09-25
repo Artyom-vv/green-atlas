@@ -13,6 +13,7 @@ from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
 from app.dxf_import import limits
 from app.dxf_import.admission import cad_preview_status
 from app.dxf_import.assembly import assemble_imported_project
+from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.contracts import (
     ImportEditability,
     ImportMode,
@@ -22,6 +23,13 @@ from app.dxf_import.contracts import (
 from app.dxf_import.editor_source import open_source_editor
 from app.dxf_import.encoding import declared_dxf_version
 from app.dxf_import.layer_contracts import LayerKind, LayerMapping
+from app.dxf_import.layer_categories import NETWORK_TYPES
+from app.dxf_import.native_area_review import (
+    append_accepted_areas,
+    decide_native_area,
+    preview_native_area,
+    review_records,
+)
 from app.dxf_import.ports import DxfReaderPort, ImportProjectRepository
 from app.dxf_import.review_contracts import SourceReview
 from app.dxf_import.utility_mapping import (
@@ -75,6 +83,87 @@ class ImportApplication:
         # Only consent changes. Preserve layers, immutable geometry, zones and plan.
         return self.repository.save(project)
 
+    def native_area_preview(self, project_id: str, proposal_id: str):
+        project = self.repository.get(project_id, lightweight=True)
+        source = self.repository.get_source(project_id)
+        if source is None:
+            raise ValueError("Исходный снимок AutoCAD недоступен")
+        return preview_native_area(project, source, proposal_id)
+
+    def source_object_review(self, project_id: str, **filters):
+        from app.dxf_import.object_review import review_objects
+        return review_objects(self.repository.get(project_id), **filters)
+
+    def source_object_context(self, project_id: str, route: str, scale: float):
+        from app.dxf_import.object_context import object_context
+        return object_context(self.repository.get(project_id), route, scale=scale)
+
+    def source_read_issues(self, project_id: str):
+        from app.dxf_import.read_issues import source_read_issues
+        return source_read_issues(self.repository.get(project_id, lightweight=True), self.repository.get_source(project_id))
+
+    def save_area_group(self, current, request):
+        from app.dxf_import.area_group_review import accept_group
+        saved = self.repository.save(open_source_editor(accept_group(current, request)))
+        self.invalidate_spatial(current.id)
+        self.history.clear(current.id)
+        return saved
+
+    def save_native_face_decision(self, current, changed):
+        if changed is current:
+            return current
+        saved = self.repository.save(open_source_editor(changed))
+        self.invalidate_spatial(current.id)
+        self.history.clear(current.id)
+        return saved
+
+    def remove_area_group(self, project_id: str, group_id: str):
+        from app.dxf_import.area_group_review import remove_group
+        saved = self.repository.save(open_source_editor(remove_group(self.repository.get(project_id), group_id)))
+        self.invalidate_spatial(project_id)
+        self.history.clear(project_id)
+        return saved
+
+    def decide_source_object(self, project_id: str, request):
+        from app.dxf_import.object_review import decide_object
+        current = self.repository.get(project_id)
+        changed = decide_object(current, request)
+        if changed is current:
+            return current
+        saved = self.repository.save(open_source_editor(changed))
+        self.invalidate_spatial(project_id)
+        self.history.clear(project_id)
+        return saved
+
+    def decide_native_area(
+        self,
+        project_id: str,
+        *,
+        source_sha256: str,
+        proposal_id: str,
+        proposal_sha256: str,
+        decision: Literal["accepted", "rejected"],
+    ) -> Project:
+        current = self.repository.get(project_id)
+        source = self.repository.get_source(project_id)
+        if source is None:
+            raise ValueError("Исходный снимок AutoCAD недоступен")
+        changed = decide_native_area(
+            current,
+            source,
+            source_sha256=source_sha256,
+            proposal_id=proposal_id,
+            proposal_sha256=proposal_sha256,
+            decision=decision,
+        )
+        if changed is current:
+            return current
+        opened = open_source_editor(changed)
+        saved = self.repository.save(opened)
+        self.invalidate_spatial(project_id)
+        self.history.clear(project_id)
+        return saved
+
     def import_dxf(
         self,
         project_id: str,
@@ -116,6 +205,7 @@ class ImportApplication:
         self, project_id: str, filename: str, content: bytes | bytearray, *,
         autocad_version: str,
         target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
+        capacity: SourceGeometryCapacity | None = None,
     ) -> Project:
         """Open captured native geometry without a DXF round trip or XREF reload."""
         project = self.repository.get(project_id)
@@ -129,12 +219,17 @@ class ImportApplication:
         imported = build_dxf_import_from_snapshot(
             snapshot, source_sha256=sha256(content).hexdigest(),
             dxf_version="AutoCAD live snapshot",
+            capacity=capacity,
         )
         if not imported.geometry.feature_collection.get("features"):
             raise ValueError("AutoCAD не передал доступную геометрию")
         project = assemble_imported_project(
             project, filename, content, imported, self.now().isoformat(),
         )
+        if project.source_file is not None:
+            project.source_file.native_area_proposals = review_records(
+                snapshot, imported.geometry.feature_collection.get("features", [])
+            )
         project.import_status = ImportStatus(
             mode=ImportMode.AUTOCAD_LIVE,
             message="Открыта геометрия текущего документа AutoCAD.",
@@ -374,12 +469,14 @@ class ImportApplication:
     def save_mappings(self, project_id: str, mappings: list[LayerMapping]) -> Project:
         # Reject an invalid binding without mutating even an in-memory repository.
         project = self.repository.get(project_id).model_copy(deep=True)
+        if project.import_status.editability == ImportEditability.READ_ONLY:
+            raise ValueError("Этот источник доступен только для просмотра")
         mapping_by_id = {item.layer_id: item for item in mappings}
         if len(mapping_by_id) != len(mappings):
             raise ValueError("Слой указан в сопоставлении более одного раза")
         known_layers = {layer.id for layer in project.layers}
         if any(
-            item.utility_axis_bindings and item.layer_id not in known_layers
+            item.layer_id not in known_layers
             for item in mappings
         ):
             raise ValueError("Привязка оси ссылается на отсутствующий слой")
@@ -389,11 +486,29 @@ class ImportApplication:
             if layer.id in mapping_by_id:
                 mapping = mapping_by_id[layer.id]
                 meaning_changed = meaning_changed or layer.mapped_kind != mapping.kind
+                category = mapping.category if "category" in mapping.model_fields_set else (
+                    layer.category if layer.mapped_kind == mapping.kind else None
+                )
+                meaning_changed = meaning_changed or layer.category != category
+                layer.category = category
+                meaning_changed = meaning_changed or (
+                    layer.mapping_confirmed != (mapping.confirmed is not False)
+                )
                 context = layer.utility_context
                 if mapping.kind != LayerKind.UTILITY:
                     context = None
                 elif "utility_context" in mapping.model_fields_set:
                     context = mapping.utility_context
+                if mapping.kind == LayerKind.UTILITY and category in NETWORK_TYPES:
+                    if context is None or context.network_type == "unknown":
+                        context = (context or UtilityContext()).model_copy(update={
+                            "network_type": NETWORK_TYPES[category],
+                            "review_status": "unconfirmed",
+                        })
+                # Validate the effective interpretation too: legacy clients may
+                # omit category while changing a previously classified network.
+                LayerMapping(layer_id=layer.id, kind=mapping.kind, category=category,
+                             confirmed=mapping.confirmed, utility_context=context)
                 meaning_changed = meaning_changed or context != layer.utility_context
                 layer.utility_context = context
                 bindings = layer.utility_axis_bindings
@@ -457,6 +572,12 @@ class ImportApplication:
                     snapshot, source_sha256=sha256(source).hexdigest(),
                     dxf_version=source_file.dxf_version,
                 )
+                if source_file.native_area_proposals:
+                    append_accepted_areas(
+                        snapshot,
+                        source_file.native_area_proposals,
+                        original.geometry.feature_collection["features"],
+                    )
             else:
                 original = self.dxf_reader.read(source_file.name, source)
             if original.preview_provenance is not None:

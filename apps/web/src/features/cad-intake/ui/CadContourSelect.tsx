@@ -32,7 +32,7 @@ export function CadContourSelect({
               value={item.handle}
               disabled={!item.available_for_preview}
             >
-              {item.layer} · {item.handle} · {item.vertex_count} вершин
+              {item.layer}, {item.handle}, {item.vertex_count} вершин
               {item.reason ? ` — ${item.reason}` : ''}
             </option>
           ))}

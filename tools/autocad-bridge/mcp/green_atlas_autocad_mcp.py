@@ -20,7 +20,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPILER = ROOT / "scripts" / "cad-lab" / "compile_autocad_region_probe.py"
-PLUGIN_VERSION = "0.1.33"
+PLUGIN_VERSION = "0.1.38"
 QUEUE_VERSION = "v033"
 PROTOCOL_VERSION = "2025-06-18"
 

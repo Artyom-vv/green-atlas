@@ -9,6 +9,7 @@ from datetime import datetime
 from hashlib import sha256
 from threading import RLock
 
+from app.geometry.preparation import prepare_positions
 from app.history.application import PlanHistoryApplication, history_basis
 from app.history.ports import ProjectHistoryPort
 from app.planning.change_contracts import (
@@ -29,6 +30,7 @@ from app.planning.evaluation import (
     CandidateIssue,
     CandidateRejected,
     PlanEvaluation,
+    accepted_partial_source_warning,
     candidate_result,
 )
 from app.planning.rules import compiled_planting_zones
@@ -36,6 +38,8 @@ from app.planning.trace import operation_rule_trace
 from app.projects.contracts import Project, ProjectStatus
 from app.projects.ports import ProjectReader
 from app.validation.application import PlanValidation
+
+_BULK_PLACEMENT_SOURCES = frozenset({"pattern", "recommendation", "brush"})
 
 
 @dataclass
@@ -116,6 +120,28 @@ class ChangeSetApplication:
             raise ValueError("План ещё не создан")
         if project.plan.version != draft.base_plan_version:
             raise PlanVersionConflict(draft.base_plan_version, project.plan.version)
+        possible_positions = {item.id: [(item.x, item.y)] for item in project.plan.objects}
+        points: list[tuple[float, float]] = []
+        for operation in draft.operations:
+            if operation.type == "add":
+                points.append((operation.object.x, operation.object.y))
+            elif operation.type == "update":
+                previous = possible_positions.get(operation.object_id)
+                if previous is not None:
+                    changes = operation.changes.model_dump(exclude_unset=True)
+                    resulting = list(dict.fromkeys(
+                        (changes.get("x", x), changes.get("y", y)) for x, y in previous
+                        if changes.get("x", x) is not None and changes.get("y", y) is not None
+                    ))
+                    points.extend(resulting)
+                    # Repeated partial updates may follow an accepted OR rejected
+                    # move. Warm both possibilities without deciding any rules.
+                    possible_positions[operation.object_id] = list(
+                        dict.fromkeys([*previous, *resulting])
+                    )
+        # Outside candidate rejection handling: a failed provider batch is not
+        # a placement verdict and must never become a cached/applicable preview.
+        prepare_positions(self.evaluation.geometry, project, points)
         working = project.plan.model_copy(deep=True)
         additions: list[PlanObject] = []
         updates: list[PlanObject] = []
@@ -163,10 +189,18 @@ class ChangeSetApplication:
                             candidate.planting_zone_id,
                         )
                     )
-                    # A warning remains visible as a ghost candidate, but it
-                    # must not occupy the temporary spacing index or enter the
-                    # cached plan before an explicit review contract exists.
-                    if issue is None or manual_single_review:
+                    # The opening wizard already records consent for a global
+                    # partial-source gap. Stage those warning candidates so
+                    # later operations still obey plant-to-plant spacing.
+                    # Candidate-specific uncertainty stays a ghost candidate.
+                    reviewed_source_gap = (
+                        draft.source in _BULK_PLACEMENT_SOURCES
+                        and issue is not None
+                        and accepted_partial_source_warning(
+                            project, status=issue.status, code=issue.code
+                        )
+                    )
+                    if issue is None or manual_single_review or reviewed_source_gap:
                         working.objects.append(candidate)
                         spacing_index.add(candidate)
                 elif operation.type == "update":
@@ -268,6 +302,12 @@ class ChangeSetApplication:
         can_apply = all(
             item.status == "allowed"
             or (manual_single_review and item.status in {"unknown", "soft_conflict"})
+            or (
+                draft.source in _BULK_PLACEMENT_SOURCES
+                and accepted_partial_source_warning(
+                    project, status=item.status, code=item.code
+                )
+            )
             for item in results
         )
         if cache_preview:
@@ -507,11 +547,19 @@ class ChangeSetApplication:
                     snapshot.id != project.id
                     or snapshot.state_version != project.state_version
                     or snapshot.geometry_version != project.geometry_version
+                    or snapshot.plan is None
+                    or snapshot.plan.version != project.plan.version
                 ):
                     raise ValueError("Снимок ручной команды устарел. Обновите проект")
                 project = snapshot
             before = history_basis(project)
             before_plan = project.plan.model_copy(deep=True)
+            # Project versions do not change when an external CAD document is
+            # edited. Deletion remains possible while disconnected; additions
+            # and updates must never commit an expired native preview.
+            check_basis = getattr(self.evaluation.geometry, "assert_current", None)
+            if check_basis is not None and (preview.additions or preview.updates):
+                check_basis(project)
             project.plan = cached.plan.model_copy(deep=True)
             project.status = ProjectStatus.EDITING
             saved = self.history_application.commit(

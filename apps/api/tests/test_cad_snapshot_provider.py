@@ -4,18 +4,38 @@ from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
+from shapely.geometry import LineString, Polygon
 
 from app.cad_bridge import CadSnapshot
 from app.cad_bridge.compiler import _canonical_sha256
 from app.cad_bridge.provider import (
     CadSnapshotProviderError,
+    _boundary_candidate,
     apply_cad_snapshot,
     build_dxf_import_from_snapshot,
     build_dxf_import_from_snapshot_path,
 )
 from app.dxf_import.application import ImportApplication
 from app.dxf_import.contracts import DxfImportResult
-from app.dxf_import.layer_contracts import Layer, LayerKind
+from app.dxf_import.layer_contracts import BoundaryCandidateStatus, Layer, LayerKind
+
+
+def test_native_site_candidate_does_not_hide_dominant_open_boundary() -> None:
+    small_surface = Polygon([(0, 0), (12, 0), (12, 10), (0, 10)])
+    long_open_outline = LineString(
+        [(30, 0), (300, 0), (300, 200), (30, 200), (30, 0.2)]
+    )
+    candidate = _boundary_candidate([small_surface, long_open_outline])
+    assert candidate.status == BoundaryCandidateStatus.INVALID
+    assert candidate.area_m2 == small_surface.area
+    assert "незамкнутый" in candidate.issue
+
+
+def test_native_site_candidate_keeps_small_local_open_annotation() -> None:
+    surface = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+    local_line = LineString([(1, 1), (5, 1), (5, 5)])
+    candidate = _boundary_candidate([surface, local_line])
+    assert candidate.status == BoundaryCandidateStatus.USABLE
 from app.geometry.adapters import _unprojectable_physical_layers
 from app.geometry.contracts import GeometrySnapshot
 from app.projects.adapters import InMemoryProjectRepository
@@ -275,7 +295,11 @@ def test_snapshot_only_builder_creates_layers_without_portable_reader() -> None:
 
     assert result.entity_count == 3
     assert result.units == "м"
-    assert result.dxf_version == "AutoCAD 2027.0.1"
+    # Application version is not a DXF ACxxxx header. A snapshot without an
+    # actual DXF must not invent that header from the AutoCAD product version.
+    assert result.dxf_version == "unknown"
+    assert result.cad_snapshot_provenance is not None
+    assert result.cad_snapshot_provenance.autocad_version == "2027.0.1"
     assert len(result.geometry.feature_collection["features"]) == 3
     assert {layer.source_name for layer in result.layers} == {
         "BUILDINGS",
@@ -346,6 +370,61 @@ def test_self_intersecting_closed_path_stays_reviewable_linework() -> None:
     assert feature["geometry"]["type"] == "LineString"
     assert feature["properties"]["source_closed_path"] is True
     assert feature["properties"]["source_polygon_projection"] is False
+
+
+def test_invalid_native_surface_does_not_hide_other_admitted_objects(tmp_path) -> None:
+    payload = snapshot(with_primitives=True).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    region = next(item for item in payload["geometry"] if item["kind"] == "region")
+    region["loops"][0]["coordinates"] = [
+        [0, 0, 0],
+        [10, 10, 0],
+        [10, 0, 0],
+        [0, 10, 0],
+        [0, 0, 0],
+    ]
+    payload = CadSnapshot.model_validate(payload).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    region = next(item for item in payload["geometry"] if item["kind"] == "region")
+    region["content_sha256"] = _canonical_sha256(
+        {key: value for key, value in region.items() if key != "content_sha256"}
+    )
+    payload["summary"]["payload_sha256"] = _canonical_sha256(
+        {key: value for key, value in payload.items() if key != "summary"}
+    )
+    native = CadSnapshot.model_validate(payload)
+    path = tmp_path / "source.dwg.green-atlas.snapshot.json"
+    path.write_text(
+        native.model_dump_json(by_alias=True, exclude_none=True), encoding="utf-8"
+    )
+
+    in_memory = build_dxf_import_from_snapshot(
+        native, source_sha256=native.source.sha256
+    )
+    streamed = build_dxf_import_from_snapshot_path(
+        path,
+        source=native.source,
+        extraction=native.extraction,
+        dependencies=(),
+        summary=native.summary,
+        source_sha256=native.source.sha256,
+        scratch_root=tmp_path / "scratch",
+    )
+
+    assert streamed.layers == in_memory.layers
+    assert streamed.geometry == in_memory.geometry
+    assert streamed.cad_snapshot_provenance == in_memory.cad_snapshot_provenance
+    assert streamed == in_memory
+    assert len(streamed.geometry.feature_collection["features"]) == 2
+    buildings = next(layer for layer in streamed.layers if layer.source_name == "BUILDINGS")
+    assert buildings.geometry_complete is False
+    assert buildings.unsupported_geometry_types == {"REGION": 1}
+    assert buildings.projected_geometry_types == {"LWPOLYLINE": 1}
+    assert streamed.cad_snapshot_provenance.native_geometry == 2
+    assert len(streamed.warnings) == 1
+    assert "handle A12" in streamed.warnings[0]
 
 
 def test_unresolved_autocad_instance_never_keeps_fallback_geometry() -> None:

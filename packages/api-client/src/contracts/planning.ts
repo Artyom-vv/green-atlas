@@ -48,6 +48,8 @@ export type PatternPreview = Omit<
 };
 
 export type SpeciesRevision = Schemas['SpeciesRevision'];
+export type AssortmentInventory = Schemas['AssortmentInventory'];
+export type AssortmentEntry = Schemas['AssortmentEntry'];
 
 export type GrowthEnvelopeForecast = Schemas['GrowthEnvelopeForecast'];
 
@@ -101,9 +103,9 @@ type PlanObjectDefaults = 'size_class' | 'spacing_policy' | 'locked';
 
 export type PlacementCheckRequest = Omit<
   Schemas['PlacementCheckRequest'],
-  PlanObjectDefaults
+  PlanObjectDefaults | 'explain_geometry'
 > &
-  Partial<Pick<Schemas['PlacementCheckRequest'], PlanObjectDefaults>>;
+  Partial<Pick<Schemas['PlacementCheckRequest'], PlanObjectDefaults | 'explain_geometry'>>;
 
 export type PlanObjectCreate = Omit<
   Schemas['PlanObjectCreate'],

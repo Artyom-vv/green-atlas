@@ -15,6 +15,7 @@ import sys
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -27,6 +28,9 @@ from app.cad_bridge.contracts import (
     CadSnapshotDependency,
     CoverageRecord,
     ExtractionEvidence,
+    NativeAreaProposal,
+    PathGeometry,
+    RegionGeometry,
     SnapshotSource,
     SnapshotSummary,
 )
@@ -166,6 +170,12 @@ def _open_ledger(path: Path) -> sqlite3.Connection:
         "CREATE TABLE geometry_ref (id TEXT PRIMARY KEY, identity TEXT NOT NULL) "
         "WITHOUT ROWID"
     )
+    connection.execute(
+        "CREATE TABLE area_proposal ("
+        "identity TEXT PRIMARY KEY, layer TEXT NOT NULL, path_sha TEXT NOT NULL, "
+        "coverage_seen INTEGER NOT NULL DEFAULT 0, "
+        "path_seen INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID"
+    )
     return connection
 
 
@@ -184,6 +194,40 @@ def _read_snapshot(path: Path, scratch_root: Path) -> SnapshotInventory:
     with TemporaryDirectory(prefix="snapshot-ledger-", dir=scratch_root) as temporary:
         ledger = _open_ledger(Path(temporary) / "coverage.sqlite3")
         try:
+            proposal_items = _items(path, "area_proposals.item")
+            first_proposal = next(proposal_items, _MISSING)
+            if first_proposal is not _MISSING:
+                payload.begin_array("area_proposals")
+                for index, raw in enumerate(chain((first_proposal,), proposal_items)):
+                    proposal = NativeAreaProposal.model_validate(raw)
+                    preview = proposal.preview.model_dump(
+                        mode="json", exclude={"content_sha256"}, exclude_none=True
+                    )
+                    normalized = proposal.model_dump(mode="json", exclude_none=True)
+                    proposal_content = {
+                        key: value for key, value in normalized.items()
+                        if key != "content_sha256"
+                    }
+                    if (
+                        _canonical_sha256(preview) != proposal.preview.content_sha256
+                        or _canonical_sha256(proposal_content) != proposal.content_sha256
+                    ):
+                        raise ValueError("AutoCAD area proposal нарушает hash")
+                    identity = _canonical_bytes(
+                        proposal.source.model_dump(mode="json")
+                    ).decode("utf-8")
+                    try:
+                        ledger.execute(
+                            "INSERT INTO area_proposal(identity, layer, path_sha) "
+                            "VALUES (?, ?, ?)",
+                            (identity, proposal.layer, proposal.source_path_content_sha256),
+                        )
+                    except sqlite3.IntegrityError as error:
+                        raise ValueError(
+                            "AutoCAD area proposal повторяет исходный объект"
+                        ) from error
+                    payload.array_item(normalized, first=index == 0)
+                payload.end_array()
             payload.begin_array("coverage")
             first = True
             coverage_count = 0
@@ -211,6 +255,19 @@ def _read_snapshot(path: Path, scratch_root: Path) -> SnapshotInventory:
                         "AutoCAD snapshot повторяет исходный объект или геометрию"
                     ) from error
                 status_counts[record.status] += 1
+                proposal_row = ledger.execute(
+                    "SELECT layer FROM area_proposal WHERE identity = ?",
+                    (identity,),
+                ).fetchone()
+                if proposal_row is not None:
+                    if record.status != "native" or record.layer != proposal_row[0]:
+                        raise ValueError(
+                            "AutoCAD area proposal не совпадает с исходным слоем"
+                        )
+                    ledger.execute(
+                        "UPDATE area_proposal SET coverage_seen = 1 WHERE identity = ?",
+                        (identity,),
+                    )
                 entity_counts[
                     DXF_TYPE_BY_AUTOCAD_CLASS.get(
                         record.entity_type, record.entity_type
@@ -286,11 +343,44 @@ def _read_snapshot(path: Path, scratch_root: Path) -> SnapshotInventory:
                         f"AutoCAD snapshot нарушает provenance: {geometry.id}"
                     )
                 ledger.execute("DELETE FROM geometry_ref WHERE id = ?", (geometry.id,))
+                if isinstance(geometry, PathGeometry):
+                    proposal_row = ledger.execute(
+                        "SELECT path_sha FROM area_proposal WHERE identity = ?",
+                        (row[0],),
+                    ).fetchone()
+                    if proposal_row is not None:
+                        if geometry.closed or geometry.content_sha256 != proposal_row[0]:
+                            raise ValueError(
+                                "AutoCAD area proposal не совпадает с открытым путём"
+                            )
+                        ledger.execute(
+                            "UPDATE area_proposal SET path_seen = 1 WHERE identity = ?",
+                            (row[0],),
+                        )
+                if isinstance(geometry, RegionGeometry) and geometry.derived_from:
+                    for member in geometry.derived_from:
+                        member_identity = _canonical_bytes(
+                            member.model_dump(mode="json")
+                        ).decode("utf-8")
+                        if ledger.execute(
+                            "SELECT 1 FROM area_proposal WHERE identity = ?",
+                            (member_identity,),
+                        ).fetchone():
+                            raise ValueError(
+                                "AutoCAD area proposal дублирует активную область"
+                            )
                 payload.array_item(normalized, first=first)
                 first = False
             payload.end_array()
             if ledger.execute("SELECT 1 FROM geometry_ref LIMIT 1").fetchone():
                 raise ValueError("AutoCAD snapshot не содержит заявленную геометрию")
+            if ledger.execute(
+                "SELECT 1 FROM area_proposal "
+                "WHERE coverage_seen != 1 OR path_seen != 1 LIMIT 1"
+            ).fetchone():
+                raise ValueError(
+                    "AutoCAD area proposal не имеет исходного открытого пути"
+                )
 
             schema = _single_item(path, "schema")
             if schema != "green-atlas.autocad-snapshot/1":

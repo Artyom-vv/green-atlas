@@ -60,12 +60,9 @@ export const ZoneTable: FC<ZoneTableProps> = ({
     {visible.map((zone) => {
       const used = zoneUsage[zone.id!] ?? 0,
         ordinal = zones.indexOf(zone) + 1;
-      const deleteReason =
-        zones.length === 1
-          ? 'Сначала создайте другой рабочий участок'
-          : used
-            ? `Сначала перенесите или удалите ${used} ${used === 1 ? 'посадку' : used < 5 ? 'посадки' : 'посадок'}`
-            : undefined;
+      const deleteReason = used
+        ? `Сначала перенесите или удалите ${used} ${used === 1 ? 'посадку' : used < 5 ? 'посадки' : 'посадок'}`
+        : undefined;
       return (
         <ZoneRow
           key={zone.id}

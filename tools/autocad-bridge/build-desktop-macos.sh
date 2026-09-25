@@ -6,6 +6,11 @@ test -f "$runtime_root/GreenAtlasRuntime"
 output_root="$repo_root/.runtime/autocad-bridge/desktop-app"
 mkdir -p "$output_root"
 stage="$(mktemp -d "$output_root/build-XXXXXXXX")"
+# Exercise the native shell's handoff contract, not just the API route tests.
+# A live import may already be saved when an incompatible shell rejects /setup.
+xcrun clang++ -std=c++17 -fobjc-arc -framework Foundation \
+  "$repo_root/tools/autocad-bridge/desktop/test_project_route.mm" -o "$stage/test-project-route"
+"$stage/test-project-route"
 app="$stage/Green Atlas.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$repo_root/tools/autocad-bridge/desktop/Info.plist" "$app/Contents/Info.plist"

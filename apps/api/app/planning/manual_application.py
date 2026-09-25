@@ -2,6 +2,8 @@ from collections.abc import Callable
 from threading import RLock
 from typing import Literal, NotRequired, TypedDict
 
+from app.geometry.evidence_contracts import GeometryEvidence
+from app.geometry.preparation import prepare_positions
 from app.planning.change_contracts import (
     PlanChangeSetApplyRequest,
     PlanChangeSetDraft,
@@ -21,7 +23,7 @@ from app.planning.domain import PlantSpacingIndex
 from app.planning.evaluation import CandidateRejected, PlanEvaluation
 from app.planning.pattern_contracts import PlacementMaskPreset
 from app.planning.ports import ManualChangeSetPort
-from app.planning.rules import default_layout_radius
+from app.planning.rules import default_layout_radius, growth_radii
 from app.projects.contracts import Project
 from app.projects.ports import ProjectReader
 from app.regulations.trace_contracts import PlantingRuleTrace
@@ -37,6 +39,7 @@ class PlacementBasis(TypedDict):
     geometry_version: int
     state_version: int
     rule_trace: NotRequired[PlantingRuleTrace]
+    geometry_evidence: NotRequired[GeometryEvidence | None]
 
 
 class ManualPlanningApplication:
@@ -93,6 +96,14 @@ class ManualPlanningApplication:
                 code="STALE_PLACEMENT_BASIS",
                 reason="Проект изменился. Обновите данные перед проверкой посадки.",
             )
+        prepare_positions(self.evaluation.geometry, project, [(candidate.x, candidate.y)])
+        if payload.explain_geometry:
+            explain = getattr(self.evaluation.geometry, "explain_position", None)
+            if explain is not None:
+                canopy, roots = growth_radii([candidate.species_revision_id], candidate.size_class) or (0, 0)
+                basis["geometry_evidence"] = explain(
+                    project, candidate.x, candidate.y, radius, candidate.kind, canopy, roots
+                )
         basis["rule_trace"] = self.evaluation.geometry.position_rule_trace(
             project,
             candidate.x,

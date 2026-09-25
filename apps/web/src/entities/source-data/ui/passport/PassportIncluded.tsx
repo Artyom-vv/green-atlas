@@ -14,9 +14,9 @@ export const PassportIncluded: FC<PassportIncludedProps> = ({
   <>
     {' '}
     {entries.length > 0 && (
-      <section aria-label="Данные в расчёте">
+      <section aria-label="Слои подготовленной карты">
         <Text as="h3" variant="label" className="mb-2">
-          Учтено в расчёте
+          Слои подготовленной карты
         </Text>
         <DataTable layout="fixed" className="min-w-112">
           <colgroup>
@@ -28,7 +28,7 @@ export const PassportIncluded: FC<PassportIncludedProps> = ({
             <tr>
               <th scope="col">Данные</th>
               <th scope="col" className="text-right">
-                Объектов
+                В исходнике
               </th>
               <th scope="col">
                 <span className="sr-only">Подробности</span>

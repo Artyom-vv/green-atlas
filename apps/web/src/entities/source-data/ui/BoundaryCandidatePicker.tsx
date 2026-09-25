@@ -83,7 +83,7 @@ export const BoundaryCandidatePicker: FC<BoundaryCandidatePickerProps> = ({
       {selected && metrics?.status === 'usable' && (
         <Text as="p" variant="caption" className="mt-2 text-neutral-600">
           {number.format(metrics.area_m2)} м²
-          {' · '}
+          {', '}
           после внутреннего отступа {number.format(
             metrics.inset_1_5m_area_m2,
           )}{' '}

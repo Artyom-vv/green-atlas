@@ -137,7 +137,8 @@ def _prepare_existing_change(application, project_id: str, request: ExistingChan
     prepared["edit_parameters"] = {"action": request.edit_action, "move_dx_m": request.move_dx_m, "move_dy_m": request.move_dy_m}
     prepared["condition_rule_ids"] = list(request.condition_rule_ids)
     if request.condition_rule_ids:
-        prepared["condition_check"] = bind_placement_conditions(application.get(project_id), ["нормативные отступы"], [])
+        prepared["condition_check"] = bind_placement_conditions(application.get(project_id), ["нормативные отступы"], [],
+            passport=application.projects.get_data_passport(project_id))
     prepared["requires_confirmation"] = bool(prepared.get("change_set", {}).get("can_apply"))
     return prepared
 

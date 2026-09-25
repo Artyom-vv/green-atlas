@@ -67,7 +67,7 @@ export const RunHistory: FC<RunHistoryProps> = ({
                   <>
                     {runStatus(item, capacity(placementData(item)))}
                     {Number.isFinite(Date.parse(item.created_at))
-                      ? ` · ${new Date(item.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                      ? `, ${new Date(item.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
                       : ''}
                   </>
                 }

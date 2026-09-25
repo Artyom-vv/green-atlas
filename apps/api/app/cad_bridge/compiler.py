@@ -38,6 +38,12 @@ SUPPORTED_PLUGIN_VERSIONS = {
     "0.1.28",
     "0.1.30",
     "0.1.33",
+    "0.1.34",
+    "0.1.35",
+    "0.1.36",
+    "0.1.37",
+    "0.1.38",
+    "0.1.40",
 }
 XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.6",
@@ -64,6 +70,12 @@ XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.28",
     "0.1.30",
     "0.1.33",
+    "0.1.34",
+    "0.1.35",
+    "0.1.36",
+    "0.1.37",
+    "0.1.38",
+    "0.1.40",
 }
 TRAVERSAL_DIAGNOSTICS = (
     "cyclic_block_references",
@@ -123,8 +135,12 @@ def _geometry_id(record: dict[str, Any], kind: str = "region") -> str:
 
 
 def _signed_xy_area(coordinates: list[list[float]]) -> float:
-    return 0.5 * sum(
-        left[0] * right[1] - right[0] * left[1]
+    # City-scale WCS offsets can be orders of magnitude larger than a small
+    # planting/building patch. Translate before summing to avoid cancellation.
+    origin_x, origin_y = coordinates[0][:2]
+    return 0.5 * math.fsum(
+        (left[0] - origin_x) * (right[1] - origin_y)
+        - (right[0] - origin_x) * (left[1] - origin_y)
         for left, right in zip(coordinates, coordinates[1:], strict=False)
     )
 
@@ -200,10 +216,14 @@ def _compile_xref_dependencies(
         if live:
             # The source is captured geometry, not another read of an XREF file.
             dependency_ids.add(dependency_id)
-            dependencies.append({
-                "id": dependency_id, "record_handle": record_handle,
-                "block_name": block_name, "stored_path": stored_path,
-            })
+            dependencies.append(
+                {
+                    "id": dependency_id,
+                    "record_handle": record_handle,
+                    "block_name": block_name,
+                    "stored_path": stored_path,
+                }
+            )
             continue
 
         resolved_path = raw.get("resolved_path")
@@ -275,13 +295,17 @@ def compile_region_probe(
     package_root: Path | None = None,
 ) -> CadSnapshot:
     return _compile_probe(
-        probe, autocad_version=autocad_version, target=target,
+        probe,
+        autocad_version=autocad_version,
+        target=target,
         package_root=package_root,
     )
 
 
 def compile_live_document(
-    content: bytes | bytearray, *, autocad_version: str,
+    content: bytes | bytearray,
+    *,
+    autocad_version: str,
     target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
 ) -> CadSnapshot:
     """The immutable native capture is the source, not the older disk DXF."""
@@ -289,15 +313,20 @@ def compile_live_document(
     if not isinstance(probe, dict):
         raise CadSnapshotAdmissionError("native capture must be an object")
     return _compile_probe(
-        probe, autocad_version=autocad_version, target=target,
+        probe,
+        autocad_version=autocad_version,
+        target=target,
         live_source_sha256=hashlib.sha256(content).hexdigest(),
     )
 
 
 def _compile_probe(
-    probe: dict[str, Any], *, autocad_version: str,
+    probe: dict[str, Any],
+    *,
+    autocad_version: str,
     target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"],
-    package_root: Path | None = None, live_source_sha256: str | None = None,
+    package_root: Path | None = None,
+    live_source_sha256: str | None = None,
 ) -> CadSnapshot:
     """Compile admitted native AutoCAD evidence into the stable API contract.
 
@@ -362,11 +391,15 @@ def _compile_probe(
     raw_regions = probe.get("regions")
     raw_paths = probe.get("paths", [])
     raw_points = probe.get("points", [])
+    raw_area_proposals = probe.get("area_proposals", [])
+    raw_area_proposal_rejections = probe.get("area_proposal_rejections", [])
     if (
         not isinstance(raw_coverage, list)
         or not isinstance(raw_regions, list)
         or not isinstance(raw_paths, list)
         or not isinstance(raw_points, list)
+        or not isinstance(raw_area_proposals, list)
+        or not isinstance(raw_area_proposal_rejections, list)
     ):
         raise CadSnapshotAdmissionError(
             "coverage, regions, paths and points must be arrays"
@@ -382,21 +415,67 @@ def _compile_probe(
     raw_regions_by_key = {_identity_key(region): region for region in raw_regions}
     if len(raw_regions_by_key) != len(raw_regions):
         raise CadSnapshotAdmissionError("duplicate REGION instance in native geometry")
+    if probe.get("plugin_version") not in {"0.1.34", "0.1.35", "0.1.36", "0.1.37", "0.1.38", "0.1.40"} and any(
+        region.get("source_handles") for region in raw_regions
+    ):
+        raise CadSnapshotAdmissionError(
+            "derived AutoCAD regions require native producer 0.1.34 or later"
+        )
     # A failed native extraction is a coverage gap, not geometry. Keep its
     # ledger entry and admit healthy siblings; never relabel failed data native.
-    failed_regions = [region for region in raw_regions if region.get("status") == "unresolved"]
+    failed_regions = [
+        region for region in raw_regions if region.get("status") == "unresolved"
+    ]
     coverage_by_key = {_identity_key(record): record for record in raw_coverage}
     for region in failed_regions:
         record = coverage_by_key.get(_identity_key(region))
-        if not record or record.get("status") != "unresolved" or not record.get("reason"):
-            raise CadSnapshotAdmissionError("failed REGION lacks explicit unresolved coverage")
+        if (
+            not record
+            or record.get("status") != "unresolved"
+            or not record.get("reason")
+        ):
+            raise CadSnapshotAdmissionError(
+                "failed REGION lacks explicit unresolved coverage"
+            )
     if summary.get("regions") != len(raw_regions):
         raise CadSnapshotAdmissionError("native REGION count differs from geometry")
-    if (summary.get("resolved") != len(raw_regions) - len(failed_regions)
-            or summary.get("unresolved") != len(failed_regions)):
-        raise CadSnapshotAdmissionError("native REGION outcome counts differ from geometry")
-    raw_regions = [region for region in raw_regions if region.get("status") != "unresolved"]
-    raw_regions_by_key = {_identity_key(region): region for region in raw_regions}
+    if raw_area_proposals:
+        if probe.get("plugin_version") not in {"0.1.36", "0.1.37", "0.1.38", "0.1.40"}:
+            raise CadSnapshotAdmissionError(
+                "native area proposals require producer 0.1.36"
+            )
+    if probe.get("plugin_version") in {"0.1.36", "0.1.37", "0.1.38", "0.1.40"} and summary.get(
+        "area_proposals"
+    ) != len(raw_area_proposals):
+        raise CadSnapshotAdmissionError("native area proposal count differs from geometry")
+    if probe.get("plugin_version") in {"0.1.36", "0.1.37", "0.1.38", "0.1.40"}:
+        if (
+            summary.get("area_proposal_candidates")
+            != len(raw_area_proposals) + len(raw_area_proposal_rejections)
+            or summary.get("area_proposal_rejected")
+            != len(raw_area_proposal_rejections)
+        ):
+            raise CadSnapshotAdmissionError(
+                "native area proposal outcomes differ from candidates"
+            )
+    elif raw_area_proposal_rejections:
+        raise CadSnapshotAdmissionError(
+            "native area proposal diagnostics require producer 0.1.36"
+        )
+    if summary.get("resolved") != len(raw_regions) - len(failed_regions) or summary.get(
+        "unresolved"
+    ) != len(failed_regions):
+        raise CadSnapshotAdmissionError(
+            "native REGION outcome counts differ from geometry"
+        )
+    raw_regions = [
+        region for region in raw_regions if region.get("status") != "unresolved"
+    ]
+    authored_regions = [
+        region for region in raw_regions if not region.get("source_handles")
+    ]
+    derived_regions = [region for region in raw_regions if region.get("source_handles")]
+    raw_regions_by_key = {_identity_key(region): region for region in authored_regions}
     raw_paths_by_key = {_identity_key(path): path for path in raw_paths}
     raw_points_by_key = {_identity_key(point): point for point in raw_points}
     if len(raw_paths_by_key) != len(raw_paths):
@@ -445,6 +524,12 @@ def _compile_probe(
         "0.1.28",
         "0.1.30",
         "0.1.33",
+        "0.1.34",
+        "0.1.35",
+        "0.1.36",
+        "0.1.37",
+        "0.1.38",
+        "0.1.40",
     }:
         if summary.get("paths") != len(raw_paths):
             raise CadSnapshotAdmissionError("native path count differs from geometry")
@@ -452,9 +537,65 @@ def _compile_probe(
             raise CadSnapshotAdmissionError("native point count differs from geometry")
 
     geometry: list[dict[str, Any]] = []
+    proposal_previews: list[tuple[dict[str, Any], dict[str, Any]]] = []
     maximum_achieved_tolerance_m = 0.0
     tolerance_units = requested_tolerance_m / metres_per_unit
-    for region in raw_regions:
+    for region, is_proposal in [
+        *((item, False) for item in raw_regions),
+        *((item, True) for item in raw_area_proposals),
+    ]:
+        source_handles = region.get("source_handles") or []
+        if is_proposal:
+            if source_handles or region.get("proposal_method") != "explicit-chord-closure":
+                raise CadSnapshotAdmissionError("area proposal has invalid native method")
+            key = _identity_key(region)
+            path = raw_paths_by_key.get(key)
+            record = coverage_by_key.get(key)
+            gap = region.get("closure_gap_wcs_xy_units")
+            if (
+                path is None or record is None
+                or record.get("status") != "native"
+                or path.get("closed") is not False
+                or path.get("layer") != region.get("layer")
+                or record.get("layer") != region.get("layer")
+                or not isinstance(gap, (int, float))
+                or not math.isfinite(gap) or gap <= 0
+            ):
+                raise CadSnapshotAdmissionError(
+                    "area proposal lacks an open same-layer native path"
+                )
+            coordinates = path.get("coordinates")
+            if not isinstance(coordinates, list) or len(coordinates) < 2:
+                raise CadSnapshotAdmissionError("area proposal source path is invalid")
+            actual_gap = math.dist(coordinates[0][:2], coordinates[-1][:2])
+            if abs(actual_gap - gap) > max(1e-9, requested_tolerance_m / metres_per_unit):
+                raise CadSnapshotAdmissionError(
+                    "area proposal gap disagrees with native source path"
+                )
+        if source_handles:
+            if (
+                not isinstance(source_handles, list)
+                or len(source_handles) != 2
+                or source_handles != sorted(set(source_handles))
+                or region.get("handle") != source_handles[0]
+            ):
+                raise CadSnapshotAdmissionError(
+                    "derived REGION has invalid source handles"
+                )
+            for handle in source_handles:
+                member_key = (handle, tuple(region.get("instance_chain", [])))
+                member_path = raw_paths_by_key.get(member_key)
+                member_coverage = coverage_by_key.get(member_key)
+                if (
+                    member_path is None
+                    or member_coverage is None
+                    or member_coverage.get("status") != "native"
+                    or member_path.get("layer") != region.get("layer")
+                    or member_coverage.get("layer") != region.get("layer")
+                ):
+                    raise CadSnapshotAdmissionError(
+                        "derived REGION member lacks same-layer native path"
+                    )
         if region.get("status") != "native" or region.get("error_status") is not None:
             raise CadSnapshotAdmissionError(
                 f"REGION {_geometry_id(region)} is unresolved"
@@ -531,9 +672,14 @@ def _compile_probe(
             raise CadSnapshotAdmissionError(
                 f"REGION {_geometry_id(region)} has no loops"
             )
-        if outer_count != 1:
+        if outer_count > 1 and probe.get("plugin_version") not in {"0.1.35", "0.1.36", "0.1.37", "0.1.38", "0.1.40"}:
             raise CadSnapshotAdmissionError(
-                f"REGION {_geometry_id(region)} must have exactly one outer loop"
+                f"REGION {_geometry_id(region)} has multiple outer loops "
+                "without native producer 0.1.35"
+            )
+        if outer_count < 1:
+            raise CadSnapshotAdmissionError(
+                f"REGION {_geometry_id(region)} has no outer loop"
             )
         reconstructed_area = reconstructed_outer_area - reconstructed_hole_area
         area_error = abs(reconstructed_area - area)
@@ -555,8 +701,12 @@ def _compile_probe(
         maximum_achieved_tolerance_m = max(
             maximum_achieved_tolerance_m, achieved_tolerance_m
         )
+        proposal_id = _geometry_id(region, "area-proposal")
         geometry_payload = {
-            "id": _geometry_id(region),
+            "id": (
+                f"{proposal_id}/region" if is_proposal else
+                _geometry_id(region, "derived-region" if source_handles else "region")
+            ),
             "identity": _identity(region),
             "kind": "region",
             "loops": loops,
@@ -564,10 +714,18 @@ def _compile_probe(
             "native_perimeter_units": perimeter,
             "achieved_tolerance_m": achieved_tolerance_m,
         }
+        if source_handles:
+            geometry_payload["derived_from"] = [
+                {
+                    "handle": handle,
+                    "instance_chain": list(region.get("instance_chain", [])),
+                }
+                for handle in source_handles
+            ]
         geometry_payload["content_sha256"] = "0" * 64
         normalized_geometry = RegionGeometry.model_validate(
             geometry_payload
-        ).model_dump(mode="json")
+        ).model_dump(mode="json", exclude_none=True)
         normalized_geometry["content_sha256"] = _canonical_sha256(
             {
                 key: value
@@ -575,7 +733,10 @@ def _compile_probe(
                 if key != "content_sha256"
             }
         )
-        geometry.append(normalized_geometry)
+        if is_proposal:
+            proposal_previews.append((region, normalized_geometry))
+        else:
+            geometry.append(normalized_geometry)
 
     admitted_paths: list[dict[str, Any]] = []
     quarantined_path_reasons: dict[tuple[str, tuple[str, ...]], str] = {}
@@ -665,6 +826,30 @@ def _compile_probe(
         geometry.append(normalized_geometry)
         admitted_paths.append(path)
 
+    path_payloads_by_id = {
+        item["id"]: item for item in geometry if item["kind"] == "path"
+    }
+    path_geometry_by_key = {
+        _identity_key(item): path_payloads_by_id[_geometry_id(item, "path")]
+        for item in admitted_paths
+    }
+    area_proposals: list[dict[str, Any]] = []
+    for raw, preview in proposal_previews:
+        source_path = path_geometry_by_key.get(_identity_key(raw))
+        if source_path is None:
+            raise CadSnapshotAdmissionError("area proposal source path was quarantined")
+        proposal = {
+            "id": _geometry_id(raw, "area-proposal"),
+            "source": _identity(raw),
+            "source_path_content_sha256": source_path["content_sha256"],
+            "layer": raw["layer"],
+            "method": raw["proposal_method"],
+            "closure_gap_wcs_xy_units": raw["closure_gap_wcs_xy_units"],
+            "preview": preview,
+        }
+        proposal["content_sha256"] = _canonical_sha256(proposal)
+        area_proposals.append(proposal)
+
     for point in raw_points:
         geometry_id = _geometry_id(point, "point")
         coordinates = point.get("coordinates")
@@ -701,9 +886,13 @@ def _compile_probe(
         geometry.append(normalized_geometry)
 
     geometry_ids_by_key = {
-        **{_identity_key(region): _geometry_id(region) for region in raw_regions},
+        **{_identity_key(region): _geometry_id(region) for region in authored_regions},
         **{_identity_key(path): _geometry_id(path, "path") for path in admitted_paths},
         **{_identity_key(point): _geometry_id(point, "point") for point in raw_points},
+    }
+    derived_ids_by_key = {
+        _identity_key(region): _geometry_id(region, "derived-region")
+        for region in derived_regions
     }
     coverage: list[dict[str, Any]] = []
     referenced_dependency_ids: set[str] = set()
@@ -743,13 +932,21 @@ def _compile_probe(
             "status": status,
             "method": method,
             "reason": reason,
-            "geometry_ids": [geometry_id] if geometry_id else [],
+            "geometry_ids": (
+                ([geometry_id] if geometry_id else [])
+                + (
+                    [derived_ids_by_key[_identity_key(record)]]
+                    if _identity_key(record) in derived_ids_by_key
+                    else []
+                )
+            ),
         }
         if dependency_refs is not None:
             coverage_record["dependency_ids"] = dependency_refs
         if dependency_id in unresolved_dependency_ids:
             raw_dependency = next(
-                item for item in probe["xref_dependencies"]
+                item
+                for item in probe["xref_dependencies"]
                 if f"xref/{item['record_handle']}" == dependency_id
             )
             coverage_record["unresolved_reference"] = {
@@ -786,14 +983,19 @@ def _compile_probe(
         "coverage": coverage,
         "geometry": geometry,
     }
+    if area_proposals:
+        snapshot_without_hash["area_proposals"] = area_proposals
     if live:
         snapshot_without_hash["source"]["live_capture"] = {
-            "mode": "live_document", "original_path": source["path"],
+            "mode": "live_document",
+            "original_path": source["path"],
             "original_disk_sha256": source["sha256"],
             "database_modified_flags": source["database_modified_flags"],
         }
     if dependencies is not None:
-        snapshot_without_hash["live_references" if live else "dependencies"] = dependencies
+        snapshot_without_hash["live_references" if live else "dependencies"] = (
+            dependencies
+        )
     snapshot = {
         **snapshot_without_hash,
         "summary": {

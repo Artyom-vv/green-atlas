@@ -271,7 +271,7 @@ describe('BrushToolPanel', () => {
     render(<BrushToolPanel {...props} />);
     expect(
       screen.getByText(
-        'Выберите породу перед рисованием. Она нужна для прогноза роста.',
+        'Выберите породу перед рисованием',
       ),
     ).toBeVisible();
     expect(screen.queryByText('Рисуйте по участку')).not.toBeInTheDocument();
@@ -366,10 +366,10 @@ describe('BrushToolPanel', () => {
       <BrushToolPanel {...props} strokes={[add, subtract]} />,
     );
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев для кисти' }),
+      screen.getByRole('button', { name: 'Изменить растение в каталоге: Порода деревьев для кисти' }).parentElement,
     ).toHaveTextContent('Липа');
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников для кисти' }),
+      screen.getByRole('button', { name: 'Изменить растение в каталоге: Порода кустарников для кисти' }).parentElement,
     ).toHaveTextContent('Дёрен');
     fireEvent.change(screen.getByLabelText('Доля деревьев'), {
       target: { value: '40' },
@@ -404,7 +404,7 @@ describe('BrushToolPanel', () => {
     expect(screen.getByLabelText('Шаг кисти')).toHaveValue(3.5);
     expect(screen.getByLabelText('Плотность кисти')).toHaveValue('dense');
     expect(
-      screen.getByRole('button', { name: 'Порода кустарников для кисти' }),
+      screen.getByRole('button', { name: 'Изменить растение в каталоге: Порода кустарников для кисти' }).parentElement,
     ).toHaveTextContent('Дёрен');
   });
 
@@ -429,11 +429,11 @@ describe('BrushToolPanel', () => {
     render(<BrushToolPanel {...props} />);
     expect(
       screen.getByText(
-        'Выберите породу для добавляющих мазков. Она нужна для прогноза роста.',
+        'Выберите породу для добавляющих мазков',
       ),
     ).toBeVisible();
     expect(
-      screen.getByRole('button', { name: 'Порода деревьев для кисти' }),
+      screen.getByRole('button', { name: 'Открыть каталог растений: Порода деревьев для кисти' }),
     ).toBeEnabled();
     act(() => vi.advanceTimersByTime(200));
     expect(props.onPreview).not.toHaveBeenCalled();

@@ -2,6 +2,7 @@ from shapely.geometry import shape
 from shapely.ops import unary_union
 
 from app.projects.ports import ProjectReader
+from app.species.assortment_inventory import AssortmentInventory, assortment_inventory
 from app.species.catalog import list_species
 from app.species.contracts import SpeciesRevision, SpeciesShortlistItem
 
@@ -15,6 +16,10 @@ class SpeciesApplication:
         if kind not in {None, "tree", "shrub"}:
             raise ValueError("Неизвестный тип посадки")
         return list_species(kind)
+
+    @staticmethod
+    def assortment_catalog(kind: str | None = None) -> AssortmentInventory:
+        return assortment_inventory(kind)
 
     def shortlist_species(
         self,

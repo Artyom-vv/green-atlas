@@ -687,7 +687,7 @@ describe('AutonomousAgentPanel', () => {
     expect(within(results).getAllByRole('listitem')).toHaveLength(5);
     expect(within(results).getByText('Ошибка')).toBeVisible();
     expect(
-      within(results).getAllByText('Фактически: 1,5 м · Требуется: 5 м'),
+      within(results).getAllByText('Фактически: 1,5 м, Требуется: 5 м'),
     ).toHaveLength(5);
     expect(
       within(results).getByText('Показано замечаний: 5 из 8.'),

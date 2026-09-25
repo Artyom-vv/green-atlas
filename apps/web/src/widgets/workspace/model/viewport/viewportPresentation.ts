@@ -22,6 +22,9 @@ export interface ViewportPresentationProps extends Pick<
   | 'metadataOnlyIds'
   | 'moveLiveCheck'
   | 'placementPreview'
+  | 'candidateInspection'
+  | 'patternPreview'
+  | 'previewPattern'
   | 'planLocked'
   | 'planObjects'
   | 'previewChanges'
@@ -53,6 +56,9 @@ export const viewportPresentationPropsFor = (
   metadataOnlyIds: props.metadataOnlyIds,
   moveLiveCheck: props.moveLiveCheck,
   placementPreview: props.placementPreview,
+  candidateInspection: props.candidateInspection,
+  patternPreview: props.patternPreview,
+  previewPattern: props.previewPattern,
   planLocked: props.planLocked,
   planObjects: props.planObjects,
   previewChanges: props.previewChanges,
@@ -83,6 +89,9 @@ export const viewportPresentationBindings = ({
   metadataOnlyIds,
   moveLiveCheck,
   placementPreview,
+  candidateInspection,
+  patternPreview,
+  previewPattern,
   planLocked,
   planObjects,
   previewChanges,
@@ -110,6 +119,9 @@ export const viewportPresentationBindings = ({
   | 'highlightedPlantingZoneIds'
   | 'focusGeometry'
   | 'placementPreview'
+  | 'inspectionPreview'
+  | 'searchDomains'
+  | 'onProbeCoordinate'
   | 'changePreview'
   | 'zoneChangePreview'
   | 'liveMoveValidation'
@@ -140,6 +152,11 @@ export const viewportPresentationBindings = ({
   highlightedPlantingZoneIds: selectedPatternZoneIds,
   focusGeometry,
   placementPreview,
+  inspectionPreview: candidateInspection.marker,
+  searchDomains: patternPreview?.search_domains ?? previewPattern.progress?.search_domains,
+  onProbeCoordinate: candidateInspection.picking
+    ? candidateInspection.probe
+    : undefined,
   changePreview: assistantPreview ?? changePreview,
   zoneChangePreview: assistantZonePreview,
   liveMoveValidation: moveLiveCheck,

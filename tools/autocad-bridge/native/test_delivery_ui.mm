@@ -40,6 +40,17 @@ int main(int argc, const char* argv[]) {
             std::puts(result.c_str());
             return 0;
         }
+        if (command == "live-ticket") {
+            const auto result = gaDelivery::writeLiveTicket(argv[2], "0.1.38", "2027");
+            if (result.empty()) return 1;
+            std::puts(result.c_str());
+            return 0;
+        }
+        if (command == "live-issues") {
+            for (const auto& issue : gaDelivery::liveProbeIssues(argv[2]))
+                std::printf("%s\t%s\n", issue.label.c_str(), issue.value.c_str());
+            return 0;
+        }
         if (command == "issues") {
             for (const auto& issue : gaDelivery::probeIssues(argv[2])) std::puts(issue.c_str());
             return 0;

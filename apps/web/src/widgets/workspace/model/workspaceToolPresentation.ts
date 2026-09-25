@@ -38,7 +38,7 @@ export function workspaceToolHint({
     if (rowAcceptedCount !== undefined)
       return rowAcceptedCount
         ? 'Проверенные позиции на карте. Добавьте их или измените условия'
-        : 'Мест не найдено. Измените условия ряда';
+        : 'Позиции не приняты. Посмотрите причины в результате проверки';
     if (rowInputMode === 'draw') return 'Поставьте точки и завершите линию';
     return hasRowAxis
       ? 'Эскиз на карте. Настройте ряд и проверьте места'

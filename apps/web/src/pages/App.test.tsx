@@ -20,7 +20,7 @@ describe('application routing', () => {
       await screen.findByRole('heading', { name: 'Добавьте исходный чертёж' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Выбрать DXF или ZIP' }),
-    ).toBeEnabled();
+      screen.getByText('Комплект CAD'),
+    ).toBeVisible();
   });
 });

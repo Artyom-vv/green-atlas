@@ -37,7 +37,7 @@ export function selectionLabel(
   if (!selection) return undefined;
   const { object_ids: objects, zone_ids: zones } = selection;
   if (objects.length && zones.length)
-    return `${plantingCount(objects.length)} · ${countLabel(zones.length, 'участок', 'участка', 'участков')}`;
+    return `${plantingCount(objects.length)}, ${countLabel(zones.length, 'участок', 'участка', 'участков')}`;
   if (objects.length) return plantingCount(objects.length);
   if (zones.length === 1) {
     const zone = project?.planting_zones?.find((item) => item.id === zones[0]);

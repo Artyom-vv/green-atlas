@@ -49,7 +49,7 @@ export const ReleaseDownloads: FC<ReleaseDownloadsProps> = ({
             Скачать полный пакет
           </Button>
           <span className="text-center text-xs text-neutral-600 tabular-nums">
-            ZIP · {artifactSize(bundle.size)}
+            ZIP, {artifactSize(bundle.size)}
           </span>
         </div>
       )}
@@ -72,7 +72,7 @@ export const ReleaseDownloads: FC<ReleaseDownloadsProps> = ({
                   {label}
                   <span className="text-xs font-normal tabular-nums">
                     {' '}
-                    · {artifactSize(artifact.size)}
+                    {artifactSize(artifact.size)}
                   </span>
                 </Button>
               );

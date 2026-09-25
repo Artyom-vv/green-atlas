@@ -10,6 +10,7 @@ export interface PatternFooterProps {
   guided: boolean;
   catalogOpen: boolean;
   preview?: PatternPreview;
+  preparation?: PatternPreview;
   loading?: boolean;
   calculating?: boolean;
   canPreview: boolean;
@@ -32,6 +33,7 @@ export const PatternFooter: FC<PatternFooterProps> = ({
   guided,
   catalogOpen,
   preview,
+  preparation,
   loading,
   calculating,
   canPreview,
@@ -66,6 +68,13 @@ export const PatternFooter: FC<PatternFooterProps> = ({
       <Button variant="secondary" onClick={onCloseCatalog}>
         Назад к составу
       </Button>
+    );
+  } else if (preparation || (preview && !preview.accepted_count && preview.search_domains?.some((domain) => domain.stop_reason !== 'resolution'))) {
+    actions = (
+      <>
+        <Button variant="secondary" disabled={loading} onClick={onEditPreview}>Изменить условия</Button>
+        <Button variant="primary" disabled={loading || !canPreview || !validSpecies || shortlistLoading} onClick={onSubmit}>Продолжить проверку</Button>
+      </>
     );
   } else if (preview?.change_set) {
     minItemWidth = '10rem';

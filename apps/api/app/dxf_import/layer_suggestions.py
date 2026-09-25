@@ -50,9 +50,9 @@ def assess_layer_suggestion(
 
     if kind == LayerKind.IGNORE:
         return (
-            LayerSuggestionConfidence.HIGH,
+            LayerSuggestionConfidence.LOW,
             ["Расчётная роль не подтверждена"],
-            False,
+            True,
         )
 
     reasons = ["Название слоя соответствует роли"]

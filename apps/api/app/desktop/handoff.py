@@ -7,6 +7,7 @@ Only the desktop-native control channel can submit a path to this service.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import tempfile
@@ -21,9 +22,14 @@ from app.cad_import.policy import ConversionPolicy
 from app.cad_import.process import run_converter
 from app.cad_intake.capacity import inspection_capacity
 from app.cad_intake.contracts import CadDrawingEntry, CadIntakeRequest
-from app.desktop.tickets import copy_verified, direct_path, load_ticket
+from app.desktop.tickets import LiveTicket, LiveQueryTicket, SessionTicket, copy_verified, direct_path, load_ticket, ticket_files
+from app.native_query.live_client import LiveQueryClient
+from app.native_query.live_inventory import load_inventory
+from app.native_query.capture_store import NativeCaptureStore
 from app.operations.contracts import OperationKind, OperationStatus
 from app.shared.python_worker import worker_command
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class LocalHandoff:
@@ -32,6 +38,7 @@ class LocalHandoff:
         direct_path(self.ticket_root, self.ticket_root)
         self.storage = runtime.cad_intake.config.storage
         self.storage.mkdir(parents=True, exist_ok=True)
+        self.native_captures = NativeCaptureStore(self.storage / "native-captures")
         self.database = self.storage / "desktop-handoffs.sqlite3"
         self.lock, self.pool, self.futures = (
             RLock(),
@@ -71,7 +78,11 @@ class LocalHandoff:
             "status": row["status"],
             "stage": row["stage"],
             "message": row["message"],
-            "project_path": f"/projects/{row['project_id']}/import?source=cad"
+            "project_path": (
+                f"/projects/{row['project_id']}/setup"
+                if row["entry"] == "Drawing.autocad.json"
+                else f"/projects/{row['project_id']}/import?source=cad"
+            )
             if row["status"] == "needs_review"
             else None,
         }
@@ -88,7 +99,7 @@ class LocalHandoff:
                     "Состав сохранённой передачи изменился. Создайте новый снимок"
                 )
             if row and row["status"] == "needs_review":
-                for file in ticket.manifest.files:
+                for file in ticket_files(ticket):
                     copy_verified(
                         direct_path(path.parent / file.name, self.ticket_root),
                         None,
@@ -97,7 +108,15 @@ class LocalHandoff:
                         lambda: None,
                     )
                 # A known receipt must not silently recreate a project deleted by the user.
-                self.runtime.application.get(row["project_id"], lightweight=True)
+                project = self.runtime.application.get(row["project_id"], lightweight=True)
+                if isinstance(ticket, LiveTicket):
+                    if (
+                        project.source_file is None
+                        or project.source_file.content_sha256
+                        != ticket.manifest.files[0].sha256
+                    ):
+                        raise ValueError("Снимок проекта не совпадает с передачей AutoCAD")
+                    return self.get(identifier)
                 operation = None
                 if row["operation_id"]:
                     try:
@@ -165,6 +184,57 @@ class LocalHandoff:
             )
         self.check(identifier)
 
+    def run_live(self, identifier, row, path: Path, ticket: LiveTicket):
+        """Use the native capture directly; no DXF write/read or XREF reload."""
+        capture = ticket.manifest.files[0]
+        source = direct_path(path.parent / capture.name, self.ticket_root)
+        self.stage(identifier, "Открываем геометрию текущего чертежа")
+        self.check(identifier)
+        session = None
+        if isinstance(ticket, LiveQueryTicket):
+            client = LiveQueryClient(pid=ticket.live_session.pid)
+            session = client.reconnect(ticket.live_session.session_id)
+            if session != ticket.live_session or session.snapshot_sha256 != capture.sha256:
+                raise ValueError("Сеанс AutoCAD не соответствует переданному снимку")
+            load_inventory(session)
+        if isinstance(ticket, SessionTicket):
+            self.stage(identifier, "Сохраняем native-комплект AutoCAD")
+            self.native_captures.retain(
+                row["project_id"], capture.sha256, ticket.plugin_version,
+                path.parent, self.ticket_root, ticket.native_session,
+                lambda: self.check(identifier),
+            )
+        project = self.runtime.application.ensure_import_project(
+            row["project_id"], Path(ticket.source_name).stem
+        )
+        if project.source_file is None:
+            project = self.runtime.application.import_autocad_live_file(
+                project.id,
+                ticket.source_name,
+                source,
+                capture.sha256,
+                autocad_version=ticket.producer.autocad_version,
+                target=ticket.producer.target,
+                check_cancelled=lambda: self.check(identifier),
+            )
+        elif project.source_file.content_sha256 != capture.sha256:
+            raise ValueError("Исходные данные проекта уже изменены")
+        if session is not None:
+            client.inspect(session)
+            # The supervised importer returns a lightweight projection. Never
+            # persist that projection: it deliberately omits the source map.
+            project = self.runtime.project_repository.get(project.id)
+            if project.source_file.native_session != session:
+                project.source_file = project.source_file.model_copy(update={"native_session": session})
+                project = self.runtime.project_repository.save(project)
+        with self.lock:
+            self.check(identifier)
+            with self.connect() as db:
+                db.execute(
+                    "UPDATE local_handoffs SET status='needs_review',stage='Геометрия открыта',operation_id=NULL WHERE id=?",
+                    (identifier,),
+                )
+
     def run(self, identifier):
         try:
             self.stage(identifier, "Проверяем снимок AutoCAD")
@@ -181,7 +251,7 @@ class LocalHandoff:
             destination = direct_path(uploads / root_id, uploads.absolute())
             marker = {"ticket_sha256": digest, "handoff": identifier}
             # Validate originals even on a repeat; a stale receipt cannot conceal mutation.
-            for file in ticket.manifest.files:
+            for file in ticket_files(ticket):
                 copy_verified(
                     direct_path(path.parent / file.name, self.ticket_root),
                     None,
@@ -189,6 +259,9 @@ class LocalHandoff:
                     file.sha256,
                     lambda: self.check(identifier),
                 )
+            if isinstance(ticket, LiveTicket):
+                self.run_live(identifier, row, path, ticket)
+                return
             if destination.exists():
                 if (
                     json.loads((destination / "desktop-ticket.json").read_text())
@@ -299,6 +372,10 @@ class LocalHandoff:
             # Existing intake owns its progress/stop/retry once the project is visible.
             intake.run(operation.id)
         except Exception as error:
+            # Keep the actual failing stage/trace in the private desktop log.
+            # The UI message alone must not erase evidence needed to diagnose
+            # a failed import. Never log the source/ticket payload or session.
+            _LOGGER.exception("AutoCAD handoff %s failed", identifier)
             with self.connect() as db:
                 db.execute(
                     "UPDATE local_handoffs SET status='failed',stage='Подготовка остановлена',message=? WHERE id=? AND status NOT IN ('cancelled','needs_review')",

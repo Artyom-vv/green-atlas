@@ -89,7 +89,7 @@ def compact_constraint_evidence(fragments: list[str]) -> list[str]:
                        for other in range(len(unique)))]
 
 
-def bind_placement_conditions(project, constraints, exclusions):
+def bind_placement_conditions(project, constraints, exclusions, *, passport=None):
     if exclusions:
         raise ValueError('Необходимо определить на карте исключённые области перед расчётом')
     bindings = []
@@ -110,5 +110,5 @@ def bind_placement_conditions(project, constraints, exclusions):
              for kind, rule in CONSTRAINT_KINDS.items()]
     return {'bindings': bindings, 'rules': rules, 'coverage': 'partial',
             'full_compliance_verified': False,
-            'data_gaps': list(build_data_passport(project).gaps),
+            'data_gaps': list((passport or build_data_passport(project)).gaps),
             'notice': 'Проверяются отступы от распознанных зданий и дорог. Полная нормативная проверка не выполнена.'}

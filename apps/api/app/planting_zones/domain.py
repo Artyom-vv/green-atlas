@@ -10,11 +10,12 @@ from app.projects.contracts import Project
 
 
 def validate_planting_zones(
-    project: Project, zones: list[PlantingZoneAssignment]
+    project: Project, zones: list[PlantingZoneAssignment], *,
+    changed_only: bool = False, check_source_boundary: bool = True,
 ) -> None:
     if project.geometry is None:
         raise ValueError("Сначала подготовьте карту и ограничения")
-    if not zones:
+    if not zones and not (changed_only and project.planting_zones):
         raise ValueError("Выберите хотя бы один участок")
     referenced_zone_ids = {
         object_.planting_zone_id
@@ -24,26 +25,38 @@ def validate_planting_zones(
     supplied_zone_ids = {zone.id for zone in zones}
     if referenced_zone_ids - supplied_zone_ids:
         raise ValueError("Нельзя удалить участок, в котором уже есть посадки")
+    previous = {zone.id: zone for zone in project.planting_zones}
+    changed_ids = {zone.id for zone in zones if not changed_only
+                   or zone.id not in previous or zone.geometry != previous[zone.id].geometry}
+    # Removal/rename must not be blocked by pre-existing geometry elsewhere.
+    # Native point-query projects also deliberately use working zones as search
+    # domains: their actual planting positions are checked against the CAD site.
+    check_boundary = check_source_boundary and bool(changed_ids)
     site_surfaces = [
         shape(feature["geometry"])
-        for feature in project.geometry.feature_collection.get("features", [])
+        for feature in (project.geometry.feature_collection.get("features", []) if check_boundary else [])
         if project.source_review is None and feature.get("properties", {}).get("kind") == "site_surface"
     ]
     borders = site_surfaces or [
         shape(feature["geometry"])
-        for feature in project.geometry.feature_collection.get("features", [])
+        for feature in (project.geometry.feature_collection.get("features", []) if check_boundary else [])
         if project.source_review is None and feature.get("properties", {}).get("kind") == "site_border"
     ]
     site = unary_union(borders).buffer(0) if borders else None
     seen_ids: set[str] = set()
-    parsed_zones: list[tuple[str, BaseGeometry]] = []
+    parsed_zones: list[tuple[PlantingZoneAssignment, BaseGeometry]] = []
     for zone in zones:
         if zone.id in seen_ids:
             raise ValueError("Идентификаторы участков должны быть уникальны")
         seen_ids.add(zone.id)
+        changed = zone.id in changed_ids
+        if not changed_ids:
+            continue
         try:
             parsed = shape(zone.geometry)
         except Exception as error:
+            if not changed:
+                continue
             raise ValueError(
                 f"Участок «{zone.label}» содержит некорректную геометрию"
             ) from error
@@ -53,6 +66,8 @@ def validate_planting_zones(
         # not invent that decision on the backend: reject it and keep the
         # already saved working areas untouched.
         if not parsed.is_valid:
+            if not changed:
+                continue
             raise ValueError(
                 f"Участок «{zone.label}» содержит самопересекающийся или некорректный контур"
             )
@@ -61,10 +76,12 @@ def validate_planting_zones(
             or parsed.geom_type not in {"Polygon", "MultiPolygon"}
             or parsed.area < MIN_ZONE_AREA_M2
         ):
+            if not changed:
+                continue
             raise ValueError(
                 f"Участок «{zone.label}» должен быть полигоном площадью от 24 м²"
             )
-        if site is not None and not site.covers(parsed):
+        if changed and site is not None and not site.covers(parsed):
             # GEOS can report ``covers=False`` for a valid complex
             # MultiPolygon whose exact set difference from the site is empty
             # (observed on the calculated Kustanayskaya allowed area).  The
@@ -75,7 +92,9 @@ def validate_planting_zones(
                 raise ValueError(
                     f"Участок «{zone.label}» выходит за границы территории"
                 )
-        for other_label, other_geometry in parsed_zones:
+        for other_zone, other_geometry in parsed_zones:
+            if not changed and other_zone.id not in changed_ids:
+                continue
             overlap = parsed.intersection(other_geometry)
             # A local task may be carved inside a broad territory such as
             # SITE_BORDER. Nested areas are intentional; partial overlaps
@@ -83,9 +102,14 @@ def validate_planting_zones(
             nested = parsed.covers(other_geometry) or other_geometry.covers(parsed)
             if overlap.area > MAX_PARTIAL_OVERLAP_M2 and not nested:
                 raise ValueError(
-                    f"Участки «{other_label}» и «{zone.label}» пересекаются"
+                    f"Участки «{other_zone.label}» и «{zone.label}» пересекаются"
                 )
-        parsed_zones.append((zone.label, parsed))
+        parsed_zones.append((zone, parsed))
+
+
+def validate_changed_planting_zones(project: Project, zones: list[PlantingZoneAssignment]) -> None:
+    """An edit is not an implicit demand to repair every previously saved zone."""
+    validate_planting_zones(project, zones, changed_only=True)
 
 
 def attach_planting_zone_features(project: Project) -> None:

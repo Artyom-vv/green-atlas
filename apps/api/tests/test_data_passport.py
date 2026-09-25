@@ -1,13 +1,18 @@
 from __future__ import annotations
-from app.composition import get_application
 
 from fastapi.testclient import TestClient
 
-from app import api as api_module
-from app.contracts import CoordinateReference, GeometrySnapshot, Layer, LayerKind, Project, SourceFile
+from app.composition import get_application
+from app.contracts import (
+    CoordinateReference,
+    GeometrySnapshot,
+    Layer,
+    LayerKind,
+    Project,
+    SourceFile,
+)
 from app.data_passport import build_data_passport
 from app.main import app
-
 
 client = TestClient(app)
 
@@ -22,6 +27,19 @@ def _layer(name: str, suggested: LayerKind, mapped: LayerKind | None = None, *, 
         color="#225CFF",
         geometry_complete=complete,
     )
+
+
+def test_confirmed_context_is_not_reported_as_an_unclassified_layer() -> None:
+    annotation = _layer("Оформление границы", LayerKind.IGNORE)
+    annotation.mapping_confirmed = True
+    mixed = _layer("Смешанный слой", LayerKind.IGNORE)
+    mixed.mapping_confirmed = False
+    lawn = _layer("Газон", LayerKind.LAWN)
+    lawn.mapping_confirmed = True
+    passport = build_data_passport(Project(name="Решения по слоям", layers=[annotation, mixed, lawn]))
+    assert passport.unclassified_layers == ["Смешанный слой"]
+    assert "Газон" not in passport.excluded_layers
+    assert next(e for e in passport.entries if e.kind == "lawn").object_count == lawn.object_count
 
 
 def test_data_passport_marks_unprepared_and_unknown_source_as_not_ready() -> None:
@@ -119,3 +137,38 @@ def test_data_passport_is_exposed_as_a_compact_project_contract() -> None:
     payload = response.json()
     assert payload["mass_placement_status"] == "blocked"
     assert {entry["kind"] for entry in payload["entries"]} >= {"site_border", "utility"}
+    assert all(entry["used_object_count"] is None for entry in payload["entries"])
+    assert all(entry["display_feature_count"] is None for entry in payload["entries"])
+
+
+def test_display_parts_are_not_reported_as_calculated_cad_objects() -> None:
+    project = Project(name="One object, three display parts", layers=[
+        _layer("wall", LayerKind.BUILDING),
+    ], geometry=GeometrySnapshot(feature_collection={"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"source_layer": "wall", "kind": "building"}}
+        for _ in range(3)
+    ]}))
+    building = next(e for e in build_data_passport(project).entries if e.kind == "building")
+    assert building.object_count == 1
+    assert building.display_feature_count == 3
+    assert building.used_object_count is None
+
+
+def test_explicit_layer_role_replaces_suggestion_without_duplicate_objects() -> None:
+    project = Project(name="Reassigned", layers=[
+        _layer("shared", LayerKind.SITE_BORDER, LayerKind.ROAD, count=8472),
+    ])
+    entries = {e.kind: e for e in build_data_passport(project).entries}
+    assert entries["site_border"].object_count == 0
+    assert entries["road"].object_count == 8472
+    assert entries["road"].display_feature_count is None
+
+
+def test_empty_map_does_not_prove_layer_participation() -> None:
+    project = Project(name="Empty projection", layers=[_layer("wall", LayerKind.BUILDING)],
+                      geometry=GeometrySnapshot(feature_collection={"type": "FeatureCollection", "features": []}))
+    building = next(e for e in build_data_passport(project).entries if e.kind == "building")
+    assert building.status == "partial"
+    assert not building.used_in_calculation
+    assert building.display_feature_count == 0
+    assert building.used_object_count is None

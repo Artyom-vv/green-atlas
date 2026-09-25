@@ -480,6 +480,102 @@ def test_full_worker_discovers_native_snapshot_and_persists_receipt(fixture):
     )
 
 
+def test_full_worker_keeps_native_derived_building_and_calculates_its_interior(
+    fixture,
+):
+    """Fixture contract through the real worker, not evidence for a real DWG."""
+    from shapely.geometry import Point, box
+
+    from app.dxf_import.layer_contracts import LayerKind
+    from app.geometry.domain import PositionChecker
+
+    path, _, snapshot = write_snapshot(fixture)
+    payload = snapshot.model_dump(by_alias=True, mode="json", exclude_none=True)
+    payload["extraction"]["plugin_version"] = "0.1.34"
+    payload["coverage"][1]["layer"] = "Здания"
+    payload["coverage"][1]["geometry_ids"].append("derived-region/11")
+    payload["coverage"][2]["layer"] = "Здания"
+    payload["geometry"][1]["coordinates"] = [[2, 2, 0], [4, 2, 0], [4, 4, 0]]
+    payload["geometry"][2]["coordinates"] = [[4, 4, 0], [2, 4, 0], [2, 2, 0]]
+    payload["geometry"].append(
+        {
+            "id": "derived-region/11",
+            "identity": {"handle": "11", "instance_chain": []},
+            "kind": "region",
+            "loops": [
+                {
+                    "role": "outer",
+                    "closed": True,
+                    "coordinates": [
+                        [2, 2, 0], [4, 2, 0], [4, 4, 0], [2, 4, 0], [2, 2, 0],
+                    ],
+                    "sampled_max_deviation_units": 0,
+                }
+            ],
+            "native_area_units2": 4,
+            "native_perimeter_units": 8,
+            "achieved_tolerance_m": 0,
+            "derived_from": [
+                {"handle": "11", "instance_chain": []},
+                {"handle": "12", "instance_chain": []},
+            ],
+            "content_sha256": "0" * 64,
+        }
+    )
+    normalized = CadSnapshot.model_validate(payload).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    for item in normalized["geometry"]:
+        item["content_sha256"] = _canonical_sha256(
+            {key: value for key, value in item.items() if key != "content_sha256"}
+        )
+    normalized["summary"]["payload_sha256"] = _canonical_sha256(
+        {key: value for key, value in normalized.items() if key != "summary"}
+    )
+    path.write_bytes(
+        CadSnapshot.model_validate(normalized).model_dump_json(
+            by_alias=True, exclude_none=True
+        ).encode()
+    )
+
+    app, request = preparation(fixture)
+    operation = app.start(fixture.project.id, request)
+    app.run(operation.id)
+    record = fixture.lifecycle.operations.get(operation.id)
+    assert record.status == OperationStatus.COMPLETED, record.error
+    project = fixture.runtime.project_repository.get(fixture.project.id)
+    features = project.geometry.feature_collection["features"]
+    building = next(
+        item for item in features if item["properties"].get("source_derived_from")
+    )
+    assert building["geometry"]["type"] == "Polygon"
+    assert [item["handle"] for item in building["properties"]["source_derived_from"]] == [
+        "11", "12"
+    ]
+    for layer in project.layers:
+        layer.mapped_kind = (
+            LayerKind.BUILDING if layer.source_name == "Здания" else LayerKind.SITE_BORDER
+        )
+        layer.mapping_confirmed = True
+        layer.mapping_review_required = False
+    fixture.runtime.project_repository.save(project)
+    calculation = fixture.runtime.application.operations.start_geometry_operation(
+        project.id
+    )
+    fixture.runtime.application.operations.run_geometry_operation(calculation.id)
+    calculation_record = fixture.lifecycle.operations.get(calculation.id)
+    assert calculation_record.status == OperationStatus.COMPLETED, calculation_record.error
+    project = fixture.runtime.project_repository.get(project.id)
+    assert project.source_review is None
+    assert project.geometry.calculation_scope == "complete_source"
+    checker = PositionChecker(project)
+    assert checker.check(3, 3, 0.1, "shrub") is not None
+    assert checker.check(8, 8, 0.1, "shrub") is None
+    safe = checker.automatic_safe_area(box(0, 0, 10, 10), 0.1, "shrub")
+    assert not safe.covers(Point(3, 3))
+    assert safe.covers(Point(8, 8))
+
+
 def test_full_worker_composes_and_atomically_stores_independent_dxf_files(fixture):
     child, child_digest = add_independent_dxf_to_passport(fixture)
     app, request = preparation(fixture)

@@ -26,12 +26,12 @@ class SamplingWindow:
         )
 
 
-def _polygons(geometry: BaseGeometry) -> Iterator[Polygon]:
+def polygon_components(geometry: BaseGeometry) -> Iterator[Polygon]:
     if isinstance(geometry, Polygon) and not geometry.is_empty:
         yield geometry
     elif isinstance(geometry, BaseMultipartGeometry):
         for part in geometry.geoms:
-            yield from _polygons(part)
+            yield from polygon_components(part)
 
 
 class SparseAreaSampler:
@@ -67,7 +67,7 @@ def sparse_area_sampler(
     if bbox_area <= 0 or geometry.area * attempt_budget >= target * bbox_area:
         return None
     windows = []
-    for polygon in _polygons(geometry):
+    for polygon in polygon_components(geometry):
         rectangle = polygon.minimum_rotated_rectangle
         if not isinstance(rectangle, Polygon) or rectangle.area <= 0:
             continue

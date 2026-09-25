@@ -28,6 +28,8 @@ class CandidateGeneratorPort(Protocol):
         request: PatternPreviewRequest | BrushPreviewRequest,
         zones: list[PlantingZoneAssignment],
         guide_geometries: list[dict] | None = None,
+        *,
+        alternatives: bool = False,
     ) -> list[PatternCandidate]: ...
 
 

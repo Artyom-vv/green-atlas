@@ -52,7 +52,7 @@ const ProjectRow: FC<ProjectRowProps> = ({ project, onDelete }) => {
             {project.name}
           </Text>
           <Text variant="caption" className="truncate">
-            {project.source_name ?? 'DXF не загружен'}
+            {project.source_name ?? 'Исходник не загружен'}
             {project.source_name
               ? `, ${formatFileSize(project.source_size)}`
               : ''}

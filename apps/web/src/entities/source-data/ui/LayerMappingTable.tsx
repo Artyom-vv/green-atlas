@@ -1,18 +1,19 @@
-import type { Layer, LayerMapping } from '@green/api-client';
-import { Button, DataTable, Select, Text } from '@green/ui';
+import type { Layer, LayerMapping, LayerRecognition } from '@green/api-client';
+import { DataTable, Text } from '@green/ui';
 import type { CSSProperties, FC } from 'react';
 import {
   LAYER_KIND_LABELS,
-  LAYER_KIND_OPTIONS,
-  layerKindFromValue,
+  isUnclassifiedMapping,
   toLayerMapping,
 } from '../model/layerKinds';
+import { LayerRoleFields } from './LayerRoleFields';
 
 export interface LayerMappingTableProps {
   layers: Layer[];
   mappings: Record<string, LayerMapping>;
   onChange: (next: Record<string, LayerMapping>) => void;
   readOnly?: boolean;
+  recognition?: LayerRecognition;
 }
 
 export const LayerMappingTable: FC<LayerMappingTableProps> = ({
@@ -20,6 +21,7 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
   mappings,
   onChange,
   readOnly = false,
+  recognition,
 }) => (
   <DataTable layout="fixed" className="min-w-144">
     <colgroup>
@@ -30,7 +32,7 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
     <thead>
       <tr>
         <th scope="col">Слой DXF</th>
-        <th scope="col">Использовать как</th>
+        <th scope="col">Тип объектов</th>
         <th scope="col" className="text-right">
           Объектов
         </th>
@@ -43,11 +45,9 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
           (mapping.kind === 'ignore' && layer.required) ||
           !layer.geometry_complete;
         const needsReview = Boolean(
-          layer.mapping_review_required &&
-          mapping.kind !== 'ignore' &&
-          !mapping.confirmed,
+          mapping.confirmed === false,
         );
-        const reviewReason = layer.suggestion_reasons?.join('. ');
+        const reviewReason = layer.suggestion_reasons?.join('\n');
         return (
           <tr
             key={layer.id}
@@ -70,7 +70,7 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
                 )}
                 {!layer.geometry_complete && (
                   <Text variant="caption" className="col-start-2 text-blue-700">
-                    часть объектов не показана
+                    есть замечания к геометрии
                   </Text>
                 )}
                 {needsReview && (
@@ -86,45 +86,13 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
             </td>
             <td>
               {readOnly ? (
-                LAYER_KIND_LABELS[mapping.kind]
+                <>
+                  <div>{recognition?.categories.find((item) => item.category === mapping.category)?.label ??
+                    (isUnclassifiedMapping(mapping) ? 'Назначение не определено' : LAYER_KIND_LABELS[mapping.kind])}</div>
+                </>
               ) : (
-                <Select
-                  aria-label={`Тип слоя ${layer.source_name}`}
-                  value={mapping.kind}
-                  onChange={(event) => {
-                    const kind = layerKindFromValue(event.target.value);
-                    if (kind) {
-                      const nextMapping = { ...mapping, kind };
-                      if (layer.mapping_review_required)
-                        nextMapping.confirmed = true;
-                      onChange({
-                        ...mappings,
-                        [layer.id]: nextMapping,
-                      });
-                    }
-                  }}
-                >
-                  {LAYER_KIND_OPTIONS.map((option) => (
-                    <option value={option.value} key={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              )}
-              {!readOnly && needsReview && (
-                <Button
-                  controlSize="compact"
-                  variant="ghost"
-                  className="mt-1"
-                  onClick={() =>
-                    onChange({
-                      ...mappings,
-                      [layer.id]: { ...mapping, confirmed: true },
-                    })
-                  }
-                >
-                  Подтвердить
-                </Button>
+                <LayerRoleFields layer={layer} mapping={mapping} recognition={recognition}
+                  onChange={(next) => onChange({ ...mappings, [layer.id]: next })} />
               )}
             </td>
             <td className="text-right font-mono tabular-nums">

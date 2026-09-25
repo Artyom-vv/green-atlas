@@ -31,9 +31,5 @@ export const PlacementChoice: FC<PlacementChoiceProps> = ({
         Подобрать по задаче
       </Button>
     </div>
-    <p className="m-0 max-w-[40ch] text-xs leading-5 text-neutral-600">
-      Сначала настройки, затем проверка на карте. План изменится только после
-      добавления.
-    </p>
   </div>
 );

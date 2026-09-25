@@ -155,7 +155,7 @@ describe('AutonomousAgentPanel map selection', () => {
     const original = selection();
     const view = setup(original);
     expect(screen.getByLabelText('Выделение на карте')).toHaveTextContent(
-      '1 посадка · 1 участок',
+      '1 посадка, 1 участок',
     );
     expect(screen.queryByLabelText('Область задания')).not.toBeInTheDocument();
     submit();
@@ -170,7 +170,7 @@ describe('AutonomousAgentPanel map selection', () => {
     expect(sent).not.toBe(original);
     expect(sent.object_ids).not.toBe(original.object_ids);
     expect(screen.getByLabelText('Выделение при отправке')).toHaveTextContent(
-      '1 посадка · 1 участок',
+      '1 посадка, 1 участок',
     );
     expect(create).toHaveBeenCalledTimes(1);
     await act(async () => {

@@ -1,0 +1,6 @@
+# Local symbol references; generate with scripts/architecture/native_compilation_db.py.
+# Indexing metadata lives in ignored .local, not the user's application runtime.
+CompileFlags:
+  CompilationDatabase: ../../../.local/code-intelligence/native
+Index:
+  Background: Build

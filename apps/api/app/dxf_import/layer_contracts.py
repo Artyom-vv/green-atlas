@@ -5,6 +5,7 @@ from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.dxf_import.layer_categories import NETWORK_TYPES, LayerCategory, category_role
 from app.geometry.axis_contracts import UtilityAxisBinding
 from app.geometry.utility_contracts import UtilityContext
 
@@ -15,6 +16,8 @@ class LayerKind(StrEnum):
     ROAD = "road"
     UTILITY = "utility"
     EXISTING_GREEN = "existing_green"
+    # Ground cover is not an existing tree and never proves planting safety.
+    LAWN = "lawn"
     WATER = "water"
     RESTRICTED = "restricted"
     IGNORE = "ignore"
@@ -52,6 +55,7 @@ class Layer(BaseModel):
     mapping_review_required: bool | None = None
     mapping_confirmed: bool | None = None
     mapped_kind: LayerKind | None = None
+    category: LayerCategory | None = None
     object_count: int
     # Full normalized source extent, independent of the current viewport/LOD.
     bounds: tuple[float, float, float, float] | None = None
@@ -82,6 +86,7 @@ class Layer(BaseModel):
 class LayerMapping(BaseModel):
     layer_id: str
     kind: LayerKind
+    category: LayerCategory | None = None
     # Missing means a legacy client explicitly submitted the old mapping
     # form. The new UI sends False for an untouched uncertain suggestion.
     confirmed: bool | None = None
@@ -91,6 +96,17 @@ class LayerMapping(BaseModel):
 
     @model_validator(mode="after")
     def require_utility_layer(self) -> Self:
+        if self.category is not None:
+            role = category_role(self.category)
+            # Descriptive categories (demolition, slope, mixed content) do not
+            # dictate a calculation role. The operator selects that separately.
+            if role is not None and role != self.kind:
+                raise ValueError("Категория слоя не соответствует расчётной роли")
+            if role is None and self.confirmed is None:
+                raise ValueError("Подтвердите участие категории в расчёте явно")
+        network_type = NETWORK_TYPES.get(self.category)
+        if network_type and self.utility_context is not None and self.utility_context.network_type not in {"unknown", network_type}:
+            raise ValueError("Категория слоя не соответствует типу сети")
         if (
             self.utility_context is not None or self.utility_axis_bindings
         ) and self.kind != LayerKind.UTILITY:

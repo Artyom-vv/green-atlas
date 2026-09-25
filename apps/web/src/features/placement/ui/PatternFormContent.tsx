@@ -5,6 +5,8 @@ import type { usePatternWorkflow } from '../model/usePatternWorkflow';
 import type { PatternToolPanelProps } from './PatternToolPanel';
 import { PatternResult } from './PatternResult';
 import { PatternFormFields } from './PatternFormFields';
+import { SearchDomainProgress } from './SearchDomainProgress';
+import { GeometryInspectionPanel } from './GeometryInspectionPanel';
 interface PatternFormContentProps {
   options: PatternToolPanelProps;
   workflow: ReturnType<typeof usePatternWorkflow>;
@@ -36,7 +38,6 @@ export const PatternFormContent: FC<PatternFormContentProps> = ({
             {catalog === 'shrub' ? 'Порода кустарника' : 'Порода посадок'}
           </h3>
           <SpeciesCatalog
-            variant="placement"
             layout="fill"
             species={catalog === 'shrub' ? shrubs : availableSpecies}
             value={catalog === 'shrub' ? values.shrubSpeciesId : speciesId}
@@ -47,7 +48,14 @@ export const PatternFormContent: FC<PatternFormContentProps> = ({
         </section>
       )}
       <div className="grid gap-3" hidden={Boolean(catalog)}>
-        {preview && (
+        {options.mode !== 'row' &&
+          (options.calculating || options.preparation) && (
+            <SearchDomainProgress
+              preview={options.preparation}
+              running={Boolean(options.calculating)}
+            />
+          )}
+        {preview && !options.calculating && (
           <PatternResult
             preview={preview}
             zones={options.zones}
@@ -57,9 +65,21 @@ export const PatternFormContent: FC<PatternFormContentProps> = ({
             growthHorizon={options.growthHorizon}
             onGrowthHorizon={options.onGrowthHorizon}
             onAlternative={selectAlternative}
+            inspection={options.inspection}
           />
         )}
-        <PatternFormFields options={options} workflow={workflow} />
+        {(options.mode === 'row' ||
+          (!options.calculating && !options.preparation)) && (
+          <PatternFormFields options={options} workflow={workflow} />
+        )}
+        {!preview && !options.calculating && !options.preparation && workflow.step === 2 && selectedSpecies && (
+          <GeometryInspectionPanel inspection={options.inspection} plant={{
+            kind: values.composition === 'shrubs' ? 'shrub' : 'tree',
+            species_revision_id: speciesId,
+            size_class: 'standard',
+            spacing_policy: values.spacingPolicy,
+          }} />
+        )}
         {error && <InlineMessage tone="error">{error}</InlineMessage>}
       </div>
     </>

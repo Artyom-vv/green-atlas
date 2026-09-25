@@ -15,8 +15,8 @@ const SCENARIOS: ReadonlyArray<{
   {
     id: 'natural',
     icon: Waypoints,
-    title: 'Свободно',
-    description: 'Естественно заполняет подходящие места без жёсткого ритма',
+    title: 'Без рядов',
+    description: 'Нерегулярное размещение внутри участка',
   },
   {
     id: 'regular_grid',

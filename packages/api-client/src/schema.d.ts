@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/species/assortment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assortment Catalog */
+        get: operations["get_assortment_catalog_api_species_assortment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -69,6 +86,23 @@ export interface paths {
         post?: never;
         /** Delete Project */
         delete: operations["delete_project_api_projects__project_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-layer-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Layer Review */
+        get: operations["source_layer_review_api_projects__project_id__source_layer_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -187,6 +221,193 @@ export interface paths {
         put?: never;
         /** Accept Partial Geometry */
         post: operations["accept_partial_geometry_api_projects__project_id__source_partial_geometry_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-native-area/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Native Area */
+        post: operations["decide_native_area_api_projects__project_id__source_native_area_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-object-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Object Review */
+        get: operations["source_object_review_api_projects__project_id__source_object_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-object-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Object Context */
+        get: operations["source_object_context_api_projects__project_id__source_object_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-read-issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Read Issues */
+        get: operations["source_read_issues_api_projects__project_id__source_read_issues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-native-faces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Native Faces */
+        get: operations["source_native_faces_api_projects__project_id__source_native_faces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-native-faces/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Source Native Face */
+        post: operations["decide_source_native_face_api_projects__project_id__source_native_faces_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-area-groups/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Source Area Group */
+        post: operations["review_source_area_group_api_projects__project_id__source_area_groups_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-area-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Source Area Group */
+        post: operations["accept_source_area_group_api_projects__project_id__source_area_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-area-groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Source Area Group */
+        delete: operations["remove_source_area_group_api_projects__project_id__source_area_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-object-review/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Source Object */
+        post: operations["decide_source_object_api_projects__project_id__source_object_review_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/source-native-area/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native Area Preview */
+        get: operations["native_area_preview_api_projects__project_id__source_native_area_preview_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1602,6 +1823,61 @@ export interface components {
              */
             local: true;
         };
+        /** AssortmentEntry */
+        AssortmentEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Source Name */
+            source_name: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "main" | "additional";
+            /** Section */
+            section: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tree" | "shrub" | "vine";
+            /** Page */
+            page: number;
+            /** Row */
+            row: number;
+            /** Cells */
+            cells: string;
+            /** Matrix Reviewed */
+            matrix_reviewed: boolean;
+            /** Conditions Reviewed */
+            conditions_reviewed: boolean;
+            /** Calculation Species Id */
+            calculation_species_id?: string | null;
+            /** Notes */
+            notes?: string[];
+            /**
+             * Requires Spread Control
+             * @default false
+             */
+            requires_spread_control: boolean;
+        };
+        /** AssortmentInventory */
+        AssortmentInventory: {
+            /** Revision */
+            revision: string;
+            /** Source Url */
+            source_url: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Categories */
+            categories: string[];
+            /** Special Territories Note */
+            special_territories_note: string;
+            /** Entries */
+            entries: components["schemas"]["AssortmentEntry"][];
+        };
         /** AxisDistanceEvidence */
         AxisDistanceEvidence: {
             binding: components["schemas"]["UtilityAxisBinding"];
@@ -2689,7 +2965,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "site_border" | "building" | "road" | "utility" | "existing_green" | "water" | "restricted" | "unclassified";
+            kind: "site_border" | "building" | "road" | "utility" | "existing_green" | "lawn" | "water" | "restricted" | "unclassified";
             /** Label */
             label: string;
             /**
@@ -2706,9 +2982,11 @@ export interface components {
             object_count: number;
             /**
              * Used Object Count
-             * @default 0
+             * @deprecated
              */
-            used_object_count: number;
+            used_object_count?: number | null;
+            /** Display Feature Count */
+            display_feature_count?: number | null;
             /**
              * Used In Calculation
              * @default false
@@ -2734,6 +3012,7 @@ export interface components {
             source_owner?: string | null;
             /** Note */
             note: string;
+            geometry_coverage?: components["schemas"]["LayerGeometryCoverage"] | null;
         };
         /** Delegation */
         Delegation: {
@@ -3061,6 +3340,73 @@ export interface components {
              */
             spacing_policy: "open" | "balanced" | "canopy";
         };
+        /** GeometryCoverageIssue */
+        GeometryCoverageIssue: {
+            /** Routes */
+            routes?: string[];
+            /** Reason */
+            reason: string;
+            /** Detail */
+            detail: string;
+        };
+        /** GeometryEvidence */
+        GeometryEvidence: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "available" | "excluded" | "unknown" | "boundary";
+            /** Radius M */
+            radius_m: number;
+            /** Canopy Radius M */
+            canopy_radius_m: number;
+            /** Root Radius M */
+            root_radius_m: number;
+            /** Considered Objects */
+            considered_objects: number;
+            /** Unlocated Objects */
+            unlocated_objects: number;
+            /** Causes */
+            causes?: components["schemas"]["GeometryEvidenceItem"][];
+        };
+        /** GeometryEvidenceItem */
+        GeometryEvidenceItem: {
+            /** Code */
+            code: string;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "mapping" | "inventory" | "query" | "area" | "rule" | "clearance" | "site";
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "excluded" | "unknown" | "boundary";
+            /** Message */
+            message: string;
+            /** Action */
+            action: string;
+            /** Source Layer */
+            source_layer?: string | null;
+            /** Source Feature Ids */
+            source_feature_ids?: string[];
+            /** Measured Distance M */
+            measured_distance_m?: number | null;
+            /** Required Distance M */
+            required_distance_m?: number | null;
+            /** Requirement Basis */
+            requirement_basis?: ("rule" | "canopy" | "roots") | null;
+            /** Native Status */
+            native_status?: number | null;
+            /** Native Error */
+            native_error?: string | null;
+            /**
+             * Query Sent
+             * @default false
+             */
+            query_sent: boolean;
+        };
         /** GeometrySnapshot */
         GeometrySnapshot: {
             /** Feature Collection */
@@ -3192,6 +3538,7 @@ export interface components {
             /** Mapping Confirmed */
             mapping_confirmed?: boolean | null;
             mapped_kind?: components["schemas"]["LayerKind"] | null;
+            category?: components["schemas"]["LayerCategory"] | null;
             /** Object Count */
             object_count: number;
             /** Bounds */
@@ -3245,15 +3592,53 @@ export interface components {
             utility_axis_bindings?: components["schemas"]["UtilityAxisBinding"][];
         };
         /**
+         * LayerCategory
+         * @enum {string}
+         */
+        LayerCategory: "building" | "pavilion" | "porch" | "stairs" | "ventilation" | "equipment" | "canopy" | "fence" | "retaining_wall" | "curb" | "manhole" | "pole" | "monument" | "fountain" | "geodetic_marker" | "open_drain" | "carriageway" | "parking" | "footway" | "hard_surface" | "lawn" | "flowerbed" | "tree" | "shrub" | "mixed_vegetation" | "water" | "water_network" | "sewer_network" | "heat_network" | "gas_network" | "power_network" | "communication_network" | "drainage_network" | "unspecified_network" | "project_boundary" | "annotation" | "boundary_decoration" | "road_marking" | "survey_reference" | "relief_reference" | "terrain_slope" | "surface_boundary" | "demolition_object" | "interior_detail" | "unspecified_topography" | "mixed_source";
+        /** LayerCategoryOption */
+        LayerCategoryOption: {
+            category: components["schemas"]["LayerCategory"];
+            kind: components["schemas"]["LayerKind"] | null;
+            /** Label */
+            label: string;
+        };
+        /** LayerGeometryCoverage */
+        LayerGeometryCoverage: {
+            /**
+             * Area Count
+             * @default 0
+             */
+            area_count: number;
+            /**
+             * Linear Count
+             * @default 0
+             */
+            linear_count: number;
+            /**
+             * Point Count
+             * @default 0
+             */
+            point_count: number;
+            /**
+             * Context Count
+             * @default 0
+             */
+            context_count: number;
+            /** Unresolved */
+            unresolved?: components["schemas"]["GeometryCoverageIssue"][];
+        };
+        /**
          * LayerKind
          * @enum {string}
          */
-        LayerKind: "site_border" | "building" | "road" | "utility" | "existing_green" | "water" | "restricted" | "ignore";
+        LayerKind: "site_border" | "building" | "road" | "utility" | "existing_green" | "lawn" | "water" | "restricted" | "ignore";
         /** LayerMapping */
         LayerMapping: {
             /** Layer Id */
             layer_id: string;
             kind: components["schemas"]["LayerKind"];
+            category?: components["schemas"]["LayerCategory"] | null;
             /** Confirmed */
             confirmed?: boolean | null;
             /**
@@ -3269,6 +3654,32 @@ export interface components {
         LayerMappingRequest: {
             /** Mappings */
             mappings: components["schemas"]["LayerMapping"][];
+        };
+        /** LayerRecognition */
+        LayerRecognition: {
+            /** Source Sha256 */
+            source_sha256: string | null;
+            /** Provider */
+            provider: string;
+            /** Categories */
+            categories: components["schemas"]["LayerCategoryOption"][];
+            /** Proposals */
+            proposals: components["schemas"]["LayerRoleProposal"][];
+        };
+        /** LayerRoleProposal */
+        LayerRoleProposal: {
+            /** Layer Id */
+            layer_id: string;
+            category: components["schemas"]["LayerCategory"] | null;
+            /**
+             * Confidence
+             * @enum {string}
+             */
+            confidence: "high" | "medium" | "low";
+            /** Evidence */
+            evidence: string[];
+            /** Unresolved */
+            unresolved: string[];
         };
         /**
          * LayerSuggestionConfidence
@@ -3328,6 +3739,33 @@ export interface components {
             /** Database Modified Flags */
             database_modified_flags: number;
         };
+        /** LiveSession */
+        LiveSession: {
+            /** Session Id */
+            session_id: string;
+            /** Pid */
+            pid: number;
+            /** Plugin Version */
+            plugin_version: string;
+            /** Source Path */
+            source_path: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Snapshot Path */
+            snapshot_path: string;
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
+            /** Inventory Path */
+            inventory_path?: string | null;
+            /** Inventory Sha256 */
+            inventory_sha256?: string | null;
+            /** Units Code */
+            units_code: number;
+            /** Watched Databases */
+            watched_databases: number;
+            /** Unavailable Xrefs */
+            unavailable_xrefs: number;
+        };
         /** MapContext */
         MapContext: {
             /** State Version */
@@ -3343,6 +3781,64 @@ export interface components {
                 number,
                 number
             ] | null;
+        };
+        /** NativeAreaPreview */
+        NativeAreaPreview: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Proposal Sha256 */
+            proposal_sha256: string;
+            /** Source Path */
+            source_path: [
+                number,
+                number
+            ][];
+            /** Proposed Rings */
+            proposed_rings: [
+                number,
+                number
+            ][][];
+        };
+        /** NativeAreaProposalDecisionRequest */
+        NativeAreaProposalDecisionRequest: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Proposal Id */
+            proposal_id: string;
+            /** Proposal Sha256 */
+            proposal_sha256: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "accepted" | "rejected";
+        };
+        /**
+         * NativeAreaProposalReview
+         * @description Small durable review record; the signed native preview stays in the source capture.
+         */
+        NativeAreaProposalReview: {
+            /** Id */
+            id: string;
+            source: components["schemas"]["SourceIdentity"];
+            /** Layer */
+            layer: string;
+            /** Source Path Content Sha256 */
+            source_path_content_sha256: string;
+            /** Proposal Sha256 */
+            proposal_sha256: string;
+            /** Closure Gap M */
+            closure_gap_m: number;
+            /** Area M2 */
+            area_m2: number;
+            /** Area Gap Entity Type */
+            area_gap_entity_type?: string | null;
+            /**
+             * Decision
+             * @default pending
+             * @enum {string}
+             */
+            decision: "pending" | "accepted" | "rejected";
         };
         /** NativeDxfSourceAsset */
         NativeDxfSourceAsset: {
@@ -3386,6 +3882,52 @@ export interface components {
              */
             scope: "uploaded_drawing";
         };
+        /** NativeFaceDecision */
+        NativeFaceDecision: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Key */
+            key: string;
+            /** Rejected */
+            rejected: boolean;
+        };
+        /** NativeFaceReview */
+        NativeFaceReview: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Items */
+            items: components["schemas"]["NativeFaceReviewItem"][];
+        };
+        /** NativeFaceReviewItem */
+        NativeFaceReviewItem: {
+            /** Key */
+            key: string;
+            /** Anchor */
+            anchor: string;
+            /** Layer */
+            layer: string;
+            /** Area M2 */
+            area_m2: number;
+            /** Member Count */
+            member_count: number;
+            /** Repair Count */
+            repair_count: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "rejected" | "overridden";
+            /** Path */
+            path: [
+                number,
+                number
+            ][];
+            /** Repairs */
+            repairs: [
+                number,
+                number
+            ][][];
+        };
         /** OperationError */
         OperationError: {
             /** Code */
@@ -3421,6 +3963,14 @@ export interface components {
              * @default 0
              */
             generated_count: number;
+            /** Search Stop Reason */
+            search_stop_reason?: ("target_reached" | "candidate_limit" | "time_limit" | "domain_exhausted") | null;
+            /** Search Candidate Limit */
+            search_candidate_limit?: number | null;
+            /** Search Elapsed S */
+            search_elapsed_s?: number | null;
+            /** Search Domains */
+            search_domains?: components["schemas"]["SearchDomain"][];
             /** Accepted Count */
             accepted_count: number;
             /**
@@ -3492,6 +4042,7 @@ export interface components {
             suggested_action?: string | null;
             /** Zone Id */
             zone_id?: string | null;
+            candidate?: components["schemas"]["PlanObjectCreate"] | null;
         };
         /** PatternZoneAllocation */
         PatternZoneAllocation: {
@@ -3561,6 +4112,7 @@ export interface components {
             /** State Version */
             state_version?: number | null;
             rule_trace?: components["schemas"]["PlantingRuleTrace"] | null;
+            geometry_evidence?: components["schemas"]["GeometryEvidence"] | null;
         };
         /**
          * PlacementCheckRequest
@@ -3609,6 +4161,11 @@ export interface components {
             geometry_version?: number | null;
             /** State Version */
             state_version?: number | null;
+            /**
+             * Explain Geometry
+             * @default false
+             */
+            explain_geometry: boolean;
         };
         /** PlacementMaskPreset */
         PlacementMaskPreset: {
@@ -4726,6 +5283,12 @@ export interface components {
             /** Evidence Refs */
             evidence_refs?: string[];
         };
+        /** ReviewedAreaMember */
+        ReviewedAreaMember: {
+            source: components["schemas"]["SourceIdentity"];
+            /** Geometry Sha256 */
+            geometry_sha256: string;
+        };
         /** RowPatternRequest */
         RowPatternRequest: {
             /**
@@ -5150,6 +5713,86 @@ export interface components {
             /** Vertical Datum Offset M */
             vertical_datum_offset_m?: number | null;
         };
+        /** SearchDomain */
+        SearchDomain: {
+            /** Zone Id */
+            zone_id: string;
+            /** Revision */
+            revision: string;
+            /** Geometry */
+            geometry: {
+                [key: string]: unknown;
+            };
+            /** Unresolved Geometry */
+            unresolved_geometry: {
+                [key: string]: unknown;
+            };
+            /** Pending Geometry */
+            pending_geometry?: {
+                [key: string]: unknown;
+            } | null;
+            /** Available Area M2 */
+            available_area_m2: number;
+            /** Excluded Area M2 */
+            excluded_area_m2: number;
+            /** Unresolved Area M2 */
+            unresolved_area_m2: number;
+            /**
+             * Pending Area M2
+             * @default 0
+             */
+            pending_area_m2: number;
+            /**
+             * Method
+             * @default native_cells
+             * @enum {string}
+             */
+            method: "native_cells" | "hybrid";
+            /**
+             * Final Check
+             * @default autocad
+             * @constant
+             */
+            final_check: "autocad";
+            /** Minimum Cell M */
+            minimum_cell_m?: number | null;
+            /** Measured Cells */
+            measured_cells: number;
+            /**
+             * Processed Objects
+             * @default 0
+             */
+            processed_objects: number;
+            /**
+             * Total Objects
+             * @default 0
+             */
+            total_objects: number;
+            /**
+             * Cache Hits
+             * @default 0
+             */
+            cache_hits: number;
+            /** Source Issues */
+            source_issues?: {
+                [key: string]: unknown;
+            }[];
+            /** Elapsed S */
+            elapsed_s: number;
+            /**
+             * Stop Reason
+             * @enum {string}
+             */
+            stop_reason: "resolution" | "time_limit" | "probe_limit";
+            /** Unresolved Reasons */
+            unresolved_reasons?: {
+                [key: string]: number;
+            };
+            /** Unresolved Reason Areas M2 */
+            unresolved_reason_areas_m2?: {
+                [key: string]: number;
+            };
+        };
         /**
          * SelectionBinding
          * @description Source-selected subset and last explicitly accepted project revision.
@@ -5199,6 +5842,69 @@ export interface components {
             /** Unsupported Reason */
             unsupported_reason?: string | null;
         };
+        /** SourceAreaGroup */
+        SourceAreaGroup: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Members */
+            members: components["schemas"]["ReviewedAreaMember"][];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "building" | "road" | "restricted";
+            /** Id */
+            id: string;
+        };
+        /** SourceAreaGroupCheck */
+        SourceAreaGroupCheck: {
+            /** Valid */
+            valid: boolean;
+            /** Reason */
+            reason: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
+        /** SourceAreaGroupRequest */
+        SourceAreaGroupRequest: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Members */
+            members: components["schemas"]["ReviewedAreaMember"][];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "building" | "road" | "restricted";
+        };
+        /** SourceContextObject */
+        SourceContextObject: {
+            /** Route */
+            route: string;
+            source: components["schemas"]["SourceIdentity"];
+            /** Geometry Sha256 */
+            geometry_sha256: string | null;
+            /** Layer */
+            layer: string;
+            /** Kind */
+            kind: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Paths */
+            paths: [
+                number,
+                number
+            ][][];
+            /** Native Area */
+            native_area: boolean;
+            /** Can Join */
+            can_join: boolean;
+            /** Reviewable */
+            reviewable: boolean;
+        };
         /** SourceFile */
         SourceFile: {
             /** Name */
@@ -5229,11 +5935,126 @@ export interface components {
             preview_provenance?: components["schemas"]["CadPreviewProvenance"] | null;
             prepared_provenance?: components["schemas"]["PreparedSourceProvenance"] | null;
             cad_snapshot_provenance?: components["schemas"]["CadSnapshotProvenance"] | null;
+            /** Native Area Proposals */
+            native_area_proposals?: components["schemas"]["NativeAreaProposalReview"][];
+            /** Object Decisions */
+            object_decisions?: components["schemas"]["SourceObjectDecision"][];
+            /** Area Groups */
+            area_groups?: components["schemas"]["SourceAreaGroup"][];
+            native_session?: components["schemas"]["LiveSession"] | null;
+            /** Rejected Native Face Keys */
+            rejected_native_face_keys?: string[];
             /**
              * Accept Partial Geometry
              * @default false
              */
             accept_partial_geometry: boolean;
+        };
+        /** SourceIdentity */
+        SourceIdentity: {
+            /** Handle */
+            handle: string;
+            /** Instance Chain */
+            instance_chain?: string[];
+        };
+        /** SourceObjectContext */
+        SourceObjectContext: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Focus Route */
+            focus_route: string;
+            /** Extent */
+            extent: [
+                number,
+                number,
+                number,
+                number
+            ];
+            /** Objects */
+            objects: components["schemas"]["SourceContextObject"][];
+            /** Total */
+            total: number;
+            /** Limited */
+            limited: boolean;
+        };
+        /** SourceObjectDecision */
+        SourceObjectDecision: {
+            source: components["schemas"]["SourceIdentity"];
+            /** Geometry Sha256 */
+            geometry_sha256: string;
+            /**
+             * Interpretation
+             * @enum {string}
+             */
+            interpretation: "area" | "linear" | "reference";
+        };
+        /** SourceObjectDecisionRequest */
+        SourceObjectDecisionRequest: {
+            source: components["schemas"]["SourceIdentity"];
+            /** Geometry Sha256 */
+            geometry_sha256: string;
+            /**
+             * Interpretation
+             * @enum {string}
+             */
+            interpretation: "area" | "linear" | "reference";
+            /** Source Sha256 */
+            source_sha256: string;
+        };
+        /** SourceObjectReviewItem */
+        SourceObjectReviewItem: {
+            source: components["schemas"]["SourceIdentity"];
+            /** Geometry Sha256 */
+            geometry_sha256: string;
+            /**
+             * Interpretation
+             * @enum {string}
+             */
+            interpretation: "area" | "linear" | "reference";
+            /** Route */
+            route: string;
+            /** Layer */
+            layer: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Path */
+            path: [
+                number,
+                number
+            ][];
+            /** Endpoint Distance M */
+            endpoint_distance_m: number;
+        };
+        /** SourceObjectReviewPage */
+        SourceObjectReviewPage: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Items */
+            items: components["schemas"]["SourceObjectReviewItem"][];
+        };
+        /** SourceReadIssue */
+        SourceReadIssue: {
+            /** Route */
+            route: string;
+            /** Layer */
+            layer: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Reason */
+            reason: string;
+            /** Detail */
+            detail: string;
+        };
+        /** SourceReadIssues */
+        SourceReadIssues: {
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Items */
+            items: components["schemas"]["SourceReadIssue"][];
         };
         /** SourceReview */
         SourceReview: {
@@ -5936,6 +6757,39 @@ export interface operations {
             };
         };
     };
+    get_assortment_catalog_api_species_assortment_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentInventory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -6089,6 +6943,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_layer_review_api_projects__project_id__source_layer_review_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerRecognition"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -6343,6 +7230,399 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_native_area_api_projects__project_id__source_native_area_decision_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeAreaProposalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_object_review_api_projects__project_id__source_object_review_get: {
+        parameters: {
+            query?: {
+                layer?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceObjectReviewPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_object_context_api_projects__project_id__source_object_context_get: {
+        parameters: {
+            query: {
+                route: string;
+                scale?: number;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceObjectContext"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_read_issues_api_projects__project_id__source_read_issues_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceReadIssues"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_native_faces_api_projects__project_id__source_native_faces_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeFaceReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_source_native_face_api_projects__project_id__source_native_faces_decision_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeFaceDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_source_area_group_api_projects__project_id__source_area_groups_check_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceAreaGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAreaGroupCheck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_source_area_group_api_projects__project_id__source_area_groups_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceAreaGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_source_area_group_api_projects__project_id__source_area_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_source_object_api_projects__project_id__source_object_review_decision_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceObjectDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    native_area_preview_api_projects__project_id__source_native_area_preview_get: {
+        parameters: {
+            query: {
+                proposal_id: string;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeAreaPreview"];
                 };
             };
             /** @description Validation Error */

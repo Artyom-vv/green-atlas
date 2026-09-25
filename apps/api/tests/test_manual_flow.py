@@ -905,6 +905,110 @@ def test_unknown_candidate_does_not_occupy_preview_spacing_or_enter_automatic_pl
     assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
 
 
+def test_confirmed_partial_source_allows_bulk_planting_without_claiming_full_safety() -> None:
+    project_id = prepare_project("Посадки по подтверждённой доступной геометрии")
+    select_areas(project_id, [
+        area("work", "Участок", [[12, 12], [36, 12], [36, 36], [12, 36]])
+    ])
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    project = get_application().get(project_id)
+    assert project.source_file is not None and project.geometry is not None
+    project.source_file.accept_partial_geometry = True
+    project.geometry.calculation_scope = "available_data"
+    get_application().repository.save(project)
+
+    response = client.post(f"/api/projects/{project_id}/plan/patterns/preview", json={
+        "type": "fill", "base_plan_version": base_version,
+        "plant_kind": "shrub", "zone_ids": ["work"],
+        "placement_mode": "count", "target_count": 3,
+        "spacing_m": 4, "layout": "regular", "edge_offset_m": 1,
+    })
+    assert response.status_code == 200, response.json()
+    preview = response.json()
+    assert preview["accepted_count"] == 3
+    change_set = preview["change_set"]
+    assert change_set is not None and change_set["can_apply"] is True
+    assert all(
+        item["status"] == "unknown" and item["code"] == "SOURCE_GEOMETRY_PARTIAL"
+        for item in change_set["candidate_results"]
+    )
+    assert len({(item["x"], item["y"]) for item in change_set["additions"]}) == 3
+    applied = client.post(f"/api/projects/{project_id}/plan/change-sets/apply", json={
+        "preview_id": change_set["id"], "digest": change_set["digest"],
+        "base_plan_version": base_version,
+    })
+    assert applied.status_code == 200, applied.json()
+    assert len(applied.json()["plan"]["objects"]) == 3
+    assert all(item["status"] == "warning" for item in applied.json()["plan"]["objects"])
+
+
+def test_partial_source_notice_does_not_hide_local_growth_conflict() -> None:
+    project_id = prepare_project("Рост у границы неполного источника")
+    select_areas(project_id, [
+        area("work", "Участок", [[12, 12], [36, 12], [36, 36], [12, 36]])
+    ])
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    project = get_application().get(project_id)
+    assert project.source_file is not None and project.geometry is not None
+    project.source_file.accept_partial_geometry = True
+    project.geometry.calculation_scope = "available_data"
+    get_application().repository.save(project)
+
+    preview = client.post(f"/api/projects/{project_id}/plan/change-sets/preview", json={
+        "base_plan_version": base_version, "source": "pattern",
+        "label": "Проверка края участка", "operations": [{
+            "type": "add", "object": {
+                "kind": "shrub", "x": 12.8, "y": 20,
+                "layout_radius_m": 0.65, "size_class": "standard",
+                "species_revision_id": "spiraea-japonica@2026-08-28.1",
+            },
+        }],
+    })
+    assert preview.status_code == 200, preview.json()
+    result = preview.json()
+    assert result["candidate_results"][0]["code"] == "GROWTH_PLANTING_ZONE"
+    assert result["candidate_results"][0]["status"] == "soft_conflict"
+    assert result["can_apply"] is False
+
+
+def test_confirmed_partial_source_reaches_brush_and_recommendations() -> None:
+    project_id = prepare_project("Несколько инструментов по доступной геометрии")
+    select_areas(project_id, [
+        area("work", "Участок", [[12, 12], [72, 12], [72, 52], [12, 52]])
+    ])
+    base_version = client.post(f"/api/projects/{project_id}/plan/manual").json()["plan"]["version"]
+    project = get_application().get(project_id)
+    assert project.source_file is not None and project.geometry is not None
+    project.source_file.accept_partial_geometry = True
+    project.geometry.calculation_scope = "available_data"
+    get_application().repository.save(project)
+
+    recommendation = client.post(
+        f"/api/projects/{project_id}/plan/recommendations/preview",
+        json={"base_plan_version": base_version, "zone_ids": ["work"],
+              "profile": "balanced", "max_sites": 3},
+    )
+    assert recommendation.status_code == 200, recommendation.json()
+    brush = client.post(f"/api/projects/{project_id}/plan/brush/preview", json={
+        "base_plan_version": base_version, "zone_ids": ["work"],
+        "strokes": [{"mode": "add", "geometry": {
+            "type": "LineString", "coordinates": [[16, 44], [66, 44]],
+        }}],
+        "width_m": 6, "spacing_m": 5, "density": "dense",
+        "composition": "shrubs", "max_sites": 8,
+    })
+    assert brush.status_code == 200, brush.json()
+    for proposal in (recommendation.json(), brush.json()):
+        change_set = proposal["change_set"]
+        assert change_set is not None and change_set["can_apply"] is True
+        assert change_set["additions"]
+        assert all(
+            item["status"] == "unknown" and item["code"] == "SOURCE_GEOMETRY_PARTIAL"
+            for item in change_set["candidate_results"]
+        )
+    assert client.get(f"/api/projects/{project_id}").json()["plan"]["objects"] == []
+
+
 def test_manual_edit_rejects_outside_and_verified_building_conflicts() -> None:
     project_id = prepare_project("Проверка расположения")
     select_areas(project_id, [area("work", "Участок посадки", [[12, 12], [60, 12], [60, 35], [12, 35]])])

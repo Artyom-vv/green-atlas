@@ -32,82 +32,91 @@ const source: Project = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('source preparation form recovery', () => {
-  it('accepts partial live geometry without confirming mappings or losing the draft', async () => {
-    const project: Project = {
-      ...source,
-      import_status: {
-        mode: 'autocad_live',
-        editability: 'editable',
-        message: '',
-      },
-      source_file: { ...nativeProject.source_file!, prepared_provenance: null },
-      layers: [
-        {
-          ...source.layers![0],
-          geometry_complete: false,
-          mapping_review_required: true,
-          mapping_confirmed: false,
+  it.each([false, true])(
+    'preserves unconfirmed mappings independently of review_required=%s',
+    async (reviewRequired) => {
+      const project: Project = {
+        ...source,
+        import_status: {
+          mode: 'autocad_live',
+          editability: 'editable',
+          message: '',
         },
-      ],
-    };
-    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
-    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
-      () => new Promise(() => {}),
-    );
-    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
-    const accept = vi
-      .spyOn(preparationApi, 'acceptPartialGeometry')
-      .mockResolvedValue({
-        ...project,
-        state_version: 2,
-        source_file: { ...project.source_file!, accept_partial_geometry: true },
+        source_file: {
+          ...nativeProject.source_file!,
+          prepared_provenance: null,
+        },
+        layers: [
+          {
+            ...source.layers![0],
+            geometry_complete: false,
+            mapping_review_required: reviewRequired,
+            mapping_confirmed: false,
+          },
+        ],
+      };
+      vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
+      vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+        () => new Promise(() => {}),
+      );
+      vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+      const accept = vi
+        .spyOn(preparationApi, 'acceptPartialGeometry')
+        .mockResolvedValue({
+          ...project,
+          state_version: 2,
+          source_file: {
+            ...project.source_file!,
+            accept_partial_geometry: true,
+          },
+        });
+      const save = vi.spyOn(preparationApi, 'saveMappings');
+      const start = vi.spyOn(preparationApi, 'startGeometryOperation');
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
       });
-    const save = vi.spyOn(preparationApi, 'saveMappings');
-    const start = vi.spyOn(preparationApi, 'startGeometryOperation');
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
-    const { result, unmount } = renderHook(
-      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
-      { wrapper },
-    );
-    await waitFor(() => expect(result.current.layers).toHaveLength(1));
-    act(() =>
-      result.current.setMappings({
-        road: {
-          layer_id: 'road',
-          kind: 'building',
-          visible: true,
-          confirmed: false,
-        },
-      }),
-    );
-    await act(async () => {
-      await result.current.acceptPartialGeometry.mutateAsync();
-    });
-    expect(accept).toHaveBeenCalledWith('project', 'a'.repeat(64), {
-      expectedStateVersion: 1,
-    });
-    await waitFor(() => expect(result.current.partialAccepted).toBe(true));
-    expect(result.current.mappings.road.kind).toBe('building');
-    expect(result.current.unconfirmedMappings).toHaveLength(1);
-    expect(result.current.readinessBlockedReason).toBe(
-      'Проверьте предложенные роли слоёв.',
-    );
-    expect(save).not.toHaveBeenCalled();
-    expect(start).not.toHaveBeenCalled();
-    act(() =>
-      result.current.setMappings({
-        road: { ...result.current.mappings.road, confirmed: true },
-      }),
-    );
-    expect(result.current.readinessBlockedReason).toBeUndefined();
-    unmount();
-    client.clear();
-  });
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      );
+      const { result, unmount } = renderHook(
+        () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.layers).toHaveLength(1));
+      act(() =>
+        result.current.setMappings({
+          road: {
+            layer_id: 'road',
+            kind: 'building',
+            visible: true,
+            confirmed: false,
+          },
+        }),
+      );
+      await act(async () => {
+        await result.current.acceptPartialGeometry.mutateAsync();
+      });
+      expect(accept).toHaveBeenCalledWith('project', 'a'.repeat(64), {
+        expectedStateVersion: 1,
+      });
+      await waitFor(() => expect(result.current.partialAccepted).toBe(true));
+      expect(result.current.mappings.road.kind).toBe('building');
+      expect(result.current.unconfirmedMappings).toHaveLength(1);
+      expect(result.current.readinessBlockedReason).toBe(
+        'Проверьте предложенные роли слоёв.',
+      );
+      expect(save).not.toHaveBeenCalled();
+      expect(start).not.toHaveBeenCalled();
+      act(() =>
+        result.current.setMappings({
+          road: { ...result.current.mappings.road, confirmed: true },
+        }),
+      );
+      expect(result.current.readinessBlockedReason).toBeUndefined();
+      unmount();
+      client.clear();
+    },
+  );
   it.each([false, true])(
     'respects the saved partial-geometry consent: %s',
     async (accepted) => {

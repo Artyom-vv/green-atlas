@@ -9,11 +9,14 @@ class SourceCapacityExceeded(ValueError):
 
 @dataclass(frozen=True)
 class SourceGeometryCapacity:
-    # Two million coordinate positions allow ~4x the measured official source.
+    # Keep a bounded admission guard, but leave headroom for the official
+    # AutoCAD/XREF capture. The measured Kustanayskaya capture is just over
+    # two million coordinates; rejecting it for a 47-coordinate difference
+    # makes a complete native import impossible.
     # They are not a RAM guarantee: Python graphs, parsing and SQLite copies
     # require a separate bounded worker and measured memory admission.
     max_features: int | None = 100_000
-    max_coordinates: int | None = 2_000_000
+    max_coordinates: int | None = 3_000_000
     max_feature_coordinates: int | None = 250_000
 
     def __post_init__(self) -> None:

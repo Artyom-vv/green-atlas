@@ -202,7 +202,7 @@ describe('existing planting change review', () => {
           within(card)
             .getByText(/Сдвиг:/)
             .closest('p'),
-        ).toHaveTextContent('X +1,5 м · Y -2 м');
+        ).toHaveTextContent('X +1,5 м, Y -2 м');
     },
   );
 

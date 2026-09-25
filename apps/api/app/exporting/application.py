@@ -2,8 +2,8 @@
 
 from collections.abc import Callable
 from hashlib import sha256
-from app.dxf_import.contracts import ImportMode
 
+from app.dxf_import.contracts import ImportMode
 from app.exporting.contracts import (
     ExportArtifact,
     ReleaseArtifact,
@@ -11,6 +11,7 @@ from app.exporting.contracts import (
     ReleasePackage,
 )
 from app.exporting.ports import DxfWriterPort, ExportProjectRepository
+from app.geometry.ports import GeometryEnginePort
 from app.projects.contracts import Project
 from app.releases.service import build_release, release_identity
 from app.scene.contracts import SceneSnapshot
@@ -24,10 +25,12 @@ class ExportApplication:
         repository: ExportProjectRepository,
         writer: DxfWriterPort,
         scene: Callable[[str, int], SceneSnapshot],
+        geometry: GeometryEnginePort | None = None,
     ) -> None:
         self.repository = repository
         self.writer = writer
         self.scene = scene
+        self.geometry = geometry
 
     def _source_components(
         self, project: Project, source_content: bytes
@@ -103,7 +106,7 @@ class ExportApplication:
             )
             basis = request.regulatory_basis
             regulatory_reasons: list[str] = []
-            network_issues = release_network_issues(project)
+            network_issues = release_network_issues(project, geometry=self.geometry)
             if network_issues:
                 regulatory_reasons.append(
                     f"завершите проверки инженерных сетей: {len(network_issues)}"
@@ -151,6 +154,7 @@ class ExportApplication:
             scene,
             source_content,
             source_components,
+            geometry=self.geometry,
         )
         self.repository.publish_release(
             project, release_id, package.model_dump_json(), artifacts

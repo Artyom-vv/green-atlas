@@ -1,5 +1,21 @@
 # Green Atlas AutoCAD bridge
 
+## Current direction — 23 September
+
+Read [the authoritative development contract](../../docs/architecture/autocad-contract.md)
+and [pipeline mismatch register](../../docs/audits/2026-09-22-cad-pipeline.md) first.
+The installed-button path and diagnostic live import are not yet unified.
+Live export is not connected. The GAOPEN producer-version mismatch (C03) is
+fixed in the **uninstalled** 0.1.34 test package; it is not evidence that the
+currently installed button is ready. The same build adds a narrow native
+two-polyline REGION path with strict source provenance. Real-street capture and
+calculation acceptance remain pending; see
+[the 23 September native report](../../docs/implementation/2026-09-23-native-multicurve-buildings.md).
+Historical acceptance below does not qualify the present complete product.
+Do not develop a parallel portable-parser import. Geometry-engine choice is pending.
+Local dependency graphs, the legacy ratchet and native clangd setup:
+[development tooling](../../scripts/architecture/README.md).
+
 ## Product bridge work in progress — 20 September
 
 The current priority is a user-installable AutoCAD → local Green Atlas integration, not
@@ -96,7 +112,7 @@ provider for Green Atlas imports. The web service consumes a verified native
 snapshot; it must not reinterpret calculation geometry with a second DXF
 parser.
 
-## Current state: 0.1.28
+## Historical 0.1.28 native bridge state
 
 The macOS arm64 bundle is implemented and exercised in AutoCAD 2027.0.1. The
 admitted path is:

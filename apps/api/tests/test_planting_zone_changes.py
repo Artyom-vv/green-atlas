@@ -168,16 +168,24 @@ def test_occupied_deletion_and_geometric_impact_are_uncommittable(changes):
     assert app.get(project.id).model_dump(mode="json") == project.model_dump(mode="json")
 
 
-def test_deleting_the_last_empty_zone_remains_blocked():
+def test_deleting_the_last_empty_zone_succeeds_without_changing_plan():
     app, project = seeded(plants=False)
     project.planting_zones = project.planting_zones[:1]
     app.repository.save(project)
     project = app.get(project.id)
     service = ZoneChangeService(app.zones)
     preview = service.preview(project.id, draft(project, "delete", zone_id="west"))
-    assert not preview.can_apply and "хотя бы один" in preview.blockers[0]
-    with pytest.raises(ValueError):
-        service.commit(project.id, approval(preview))
+    assert preview.can_apply and not preview.blockers
+    assert preview.after_zones == () and not preview.affected_planting_ids
+    assert app.get(project.id).model_dump(mode="json") == project.model_dump(mode="json")
+    result = service.commit(project.id, approval(preview))
+    saved = app.get(project.id)
+    assert result.after_zones == () and result.plantings_unchanged
+    assert saved.planting_zones == []
+    assert saved.plan.id == project.plan.id
+    assert saved.plan.objects == project.plan.objects == []
+    assert saved.plan.version == project.plan.version == result.plan_version
+    assert saved.state_version == project.state_version + 1 == result.state_version
 
 
 @pytest.mark.parametrize("geometry", [

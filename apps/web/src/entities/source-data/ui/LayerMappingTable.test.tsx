@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Layer, LayerMapping } from '@green/api-client';
 import { LayerMappingTable } from './LayerMappingTable';
 
@@ -21,6 +21,7 @@ const layer: Layer = {
 };
 
 describe('LayerMappingTable', () => {
+  afterEach(cleanup);
   it('keeps an uncertain automatic role pending until the operator confirms it', () => {
     const mapping: LayerMapping = {
       layer_id: layer.id,
@@ -42,9 +43,42 @@ describe('LayerMappingTable', () => {
       'title',
       'Название слоя соответствует роли',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить роль' }));
     expect(onChange).toHaveBeenCalledWith({
       [layer.id]: { ...mapping, confirmed: true },
+    });
+  });
+  it('exposes an unconfirmed ignore even without an automatic review flag', () => {
+    const ignored = { ...layer, mapped_kind: 'ignore' as const, mapping_review_required: false };
+    const onChange = vi.fn();
+    render(<LayerMappingTable layers={[ignored]} mappings={{}} onChange={onChange} />);
+    expect(screen.getByRole('combobox')).toHaveValue('unassigned');
+    fireEvent.click(screen.getByRole('button', { name: 'Исключить из расчёта' }));
+    expect(onChange.mock.calls[0][0][ignored.id]).toMatchObject({ kind: 'ignore', confirmed: true });
+  });
+  it('uses descriptive geometry rather than silently excluding the category', () => {
+    const ignored = { ...layer, mapped_kind: 'ignore' as const };
+    const onChange = vi.fn();
+    render(<LayerMappingTable layers={[ignored]} mappings={{}} onChange={onChange}
+      recognition={{ source_sha256: null, provider: 'name-rules-v1', proposals: [],
+        categories: [{ category: 'terrain_slope', kind: null, label: 'Откос рельефа' }] }} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'category:terrain_slope' } });
+    expect(onChange.mock.calls[0][0][ignored.id]).toMatchObject({
+      kind: 'restricted', confirmed: true, category: 'terrain_slope',
+    });
+  });
+  it('confirms the selected type without a second role selector', () => {
+    const slope = { ...layer, mapped_kind: 'ignore' as const, category: 'terrain_slope' as const };
+    const onChange = vi.fn();
+    render(<LayerMappingTable layers={[slope]} mappings={{}} onChange={onChange}
+      recognition={{ source_sha256: null, provider: 'name-rules-v1', proposals: [],
+        categories: [{ category: 'terrain_slope', kind: null, label: 'Откос рельефа' }] }} />);
+    expect(screen.getAllByRole('combobox')).toHaveLength(1);
+    expect(screen.queryByText('Учитывать как')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Исключить из расчёта' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить роль' }));
+    expect(onChange.mock.calls[0][0][slope.id]).toMatchObject({
+      kind: 'restricted', confirmed: true, category: 'terrain_slope',
     });
   });
 });

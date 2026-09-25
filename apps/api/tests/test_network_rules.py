@@ -318,7 +318,7 @@ def test_bulk_uncertainty_is_one_limited_reason_not_a_false_verified_result(
     project = app.repository.save(project)
     monkeypatch.setattr(
         "app.planning.pattern_application.build_data_passport",
-        lambda _: SimpleNamespace(gaps=[], mass_placement_status="verified"),
+        lambda _, **kwargs: SimpleNamespace(gaps=[], mass_placement_status="verified"),
     )
     preview = app.preview_pattern(
         project.id,

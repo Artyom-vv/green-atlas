@@ -1,6 +1,6 @@
-from urllib.parse import quote
 from functools import partial
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -18,6 +18,7 @@ from fastapi.responses import Response
 
 from app import building_screen
 from app.application import ProjectApplication
+from app.native_query.face_review import NativeFaceDecision, NativeFaceReview
 from app.composition import get_application
 from app.contracts import (
     ApiError,
@@ -61,16 +62,30 @@ from app.contracts import (
     SpeciesShortlistRequest,
 )
 from app.dxf_import import limits
-from app.dxf_import.contracts import AcceptPartialGeometryRequest
+from app.dxf_import.contracts import (
+    AcceptPartialGeometryRequest,
+    NativeAreaPreview,
+    NativeAreaProposalDecisionRequest,
+)
 from app.dxf_import.http_execution import execute_import
+from app.dxf_import.layer_recognition import LayerRecognition, recognize_layers
 from app.dxf_import.native_contracts import NativeDxfSourceAsset
 from app.dxf_import.native_response import source_download_response
+from app.dxf_import.object_review_contracts import (
+    SourceAreaGroupCheck,
+    SourceAreaGroupRequest,
+    SourceObjectContext,
+    SourceObjectDecisionRequest,
+    SourceObjectReviewPage,
+    SourceReadIssues,
+)
 from app.http_errors import handle
 from app.projects.concurrency import (
     reset_expected_project_version,
     set_expected_project_version,
 )
 from app.releases.service import MAX_RELEASE_BUNDLE_BYTES
+from app.species.assortment_inventory import AssortmentInventory
 
 
 async def project_version_scope(request: Request, if_match: str | None = Header(default=None, alias="If-Match")):
@@ -103,6 +118,17 @@ def get_species_catalog(
 ) -> list[SpeciesRevision]:
     try:
         return application.species_catalog(kind)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/species/assortment", response_model=AssortmentInventory)
+def get_assortment_catalog(
+    kind: str | None = Query(default=None),
+    application: ProjectApplication = Depends(get_application),
+) -> AssortmentInventory:
+    try:
+        return application.assortment_catalog(kind)
     except Exception as error:
         raise handle(error) from error
 
@@ -198,6 +224,21 @@ def delete_project(
     try:
         application.delete_project(project_id)
         return Response(status_code=204)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/source-layer-review", response_model=LayerRecognition)
+def source_layer_review(
+    project_id: str,
+    application: ProjectApplication = Depends(get_application),
+) -> LayerRecognition:
+    try:
+        project = application.get(project_id, lightweight=True)
+        return recognize_layers(
+            project.layers,
+            project.source_file.content_sha256 if project.source_file else None,
+        )
     except Exception as error:
         raise handle(error) from error
 
@@ -314,6 +355,117 @@ def accept_partial_geometry(
 ) -> Project:
     try:
         return lightweight(application.accept_partial_geometry(project_id, payload.source_sha256))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/source-native-area/decision", response_model=Project)
+def decide_native_area(
+    project_id: str,
+    payload: NativeAreaProposalDecisionRequest,
+    application: ProjectApplication = Depends(get_application),
+) -> Project:
+    try:
+        return lightweight(application.decide_native_area(
+            project_id,
+            source_sha256=payload.source_sha256,
+            proposal_id=payload.proposal_id,
+            proposal_sha256=payload.proposal_sha256,
+            decision=payload.decision,
+        ))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get('/projects/{project_id}/source-object-review', response_model=SourceObjectReviewPage)
+def source_object_review(project_id: str, layer: str | None = None,
+                         offset: int = Query(default=0, ge=0), limit: int = Query(default=30, ge=1, le=100),
+                         application: ProjectApplication = Depends(get_application)):
+    try:
+        return application.source_object_review(project_id, layer=layer, offset=offset, limit=limit)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get('/projects/{project_id}/source-object-context', response_model=SourceObjectContext)
+def source_object_context(project_id: str, route: str = Query(min_length=1),
+                          scale: float = Query(default=1, ge=.25, le=8),
+                          application: ProjectApplication = Depends(get_application)):
+    try:
+        return application.source_object_context(project_id, route, scale)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get('/projects/{project_id}/source-read-issues', response_model=SourceReadIssues)
+def source_read_issues(project_id: str, application: ProjectApplication = Depends(get_application)):
+    try:
+        return application.source_read_issues(project_id)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get('/projects/{project_id}/source-native-faces', response_model=NativeFaceReview)
+def source_native_faces(project_id: str, application: ProjectApplication = Depends(get_application)):
+    try:
+        return application.native_face_review(project_id)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post('/projects/{project_id}/source-native-faces/decision', response_model=Project)
+def decide_source_native_face(project_id: str, payload: NativeFaceDecision,
+                              application: ProjectApplication = Depends(get_application)):
+    try:
+        return lightweight(application.decide_native_face(project_id, payload))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post('/projects/{project_id}/source-area-groups/check', response_model=SourceAreaGroupCheck)
+def review_source_area_group(project_id: str, payload: SourceAreaGroupRequest,
+                            application: ProjectApplication = Depends(get_application)):
+    try:
+        return application.review_source_area_group(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post('/projects/{project_id}/source-area-groups', response_model=Project)
+def accept_source_area_group(project_id: str, payload: SourceAreaGroupRequest,
+                            application: ProjectApplication = Depends(get_application)):
+    try:
+        return lightweight(application.accept_source_area_group(project_id, payload))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.delete('/projects/{project_id}/source-area-groups/{group_id}', response_model=Project)
+def remove_source_area_group(project_id: str, group_id: str,
+                            application: ProjectApplication = Depends(get_application)):
+    try:
+        return lightweight(application.remove_source_area_group(project_id, group_id))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post('/projects/{project_id}/source-object-review/decision', response_model=Project)
+def decide_source_object(project_id: str, payload: SourceObjectDecisionRequest,
+                         application: ProjectApplication = Depends(get_application)):
+    try:
+        return lightweight(application.decide_source_object(project_id, payload))
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.get("/projects/{project_id}/source-native-area/preview", response_model=NativeAreaPreview)
+def native_area_preview(
+    project_id: str,
+    proposal_id: str = Query(min_length=1),
+    application: ProjectApplication = Depends(get_application),
+) -> NativeAreaPreview:
+    try:
+        return application.native_area_preview(project_id, proposal_id)
     except Exception as error:
         raise handle(error) from error
 

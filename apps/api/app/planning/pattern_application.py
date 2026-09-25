@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
+from itertools import zip_longest
 
 from app.data_passport import build_data_passport
 from app.planning.allocation import equal_zone_targets, spread_indices
+from app.planning.candidate_search import search_budget, search_candidates
 from app.planning.change_contracts import PlanChangeSetDraft, PlanObjectAddOperation
 from app.planning.domain import PlanVersionConflict
-from app.planning.evaluation import PlanEvaluation
+from app.planning.evaluation import PlanEvaluation, accepted_partial_source_warning
 from app.planning.pattern_contracts import (
     CandidateReasonSummary,
     FillPatternRequest,
@@ -26,7 +28,9 @@ from app.planning.rules import (
     mask_guide_geometries,
     pattern_growth_radii,
     planting_zone_at,
+    road_growth_request,
 )
+from app.planning.search_domain_contracts import search_domain_details
 from app.projects.ports import ProjectReader
 from app.regulations.network_summary import network_review_reason
 
@@ -49,13 +53,15 @@ class PatternApplication:
     ) -> PatternPreview:
         project = self.repository.get(project_id)
         if project.source_review is not None:
-            raise ValueError("Автоматическая расстановка требует расчёта ограничений. Ручное редактирование проекта доступно.")
+            raise ValueError(
+                "Автоматическая расстановка требует расчёта ограничений. Ручное редактирование проекта доступно."
+            )
         if project.plan is None:
             raise ValueError("План ещё не создан")
         if project.plan.version != request.base_plan_version:
             raise PlanVersionConflict(request.base_plan_version, project.plan.version)
 
-        passport = build_data_passport(project)
+        passport = build_data_passport(project, geometry=self.evaluation.geometry)
         unverified_data = list(passport.gaps)
         requested_zone_ids = set(request.zone_ids)
         known_zone_ids = {zone.id for zone in project.planting_zones}
@@ -76,32 +82,15 @@ class PatternApplication:
             )
             else {}
         )
-        # Road-edge placement must be generated outside the mature canopy
-        # envelope as well as the statutory carriageway setback. The UI preset
-        # starts at a small visual offset, but a species with a wider forecast
-        # crown would otherwise produce zero candidates before the final
-        # validator ever gets a chance to assess them.
-        planning_request = request
-        if (
-            isinstance(request, PlacementMaskRequest)
-            and request.mask_id == "road_edges"
-        ):
-            growth_radii = pattern_growth_radii(request)
-            if growth_radii:
-                planning_request = request.model_copy(
-                    update={
-                        "road_offset_m": min(
-                            30,
-                            max(
-                                request.road_offset_m,
-                                growth_radii[0] + request.edge_offset_m + 0.1,
-                            ),
-                        ),
-                    }
-                )
+        planning_request = road_growth_request(request)
         effective_spacing = effective_pattern_spacing(planning_request)
         generation_request = planning_request.model_copy(
             update={"spacing_m": effective_spacing}
+        )
+        free_search = (
+            isinstance(request, FillPatternRequest)
+            and request.layout == "natural"
+            and requested_target is not None
         )
         if requested_target is not None and request.type in {"fill", "mask"}:
             # Generate alternatives as well as the requested positions. Hard
@@ -109,9 +98,9 @@ class PatternApplication:
             # requested count must not mean merely "number of attempts".
             generation_request = generation_request.model_copy(
                 update={
-                    "target_count": min(
-                        5000, max(requested_target, requested_target * 8)
-                    ),
+                    "target_count": search_budget(requested_target)
+                    if free_search
+                    else min(5000, max(requested_target, requested_target * 8)),
                 }
             )
         # A row is sampled along its axis; its generator never consumes safe
@@ -129,11 +118,38 @@ class PatternApplication:
                 growth_radii=pattern_growth_radii(request),
             )
         )
+        domains = search_domain_details(generation_zones)
+        pattern_digest = sha256(
+            json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()
+        pattern_id = f"pattern-{pattern_digest[:16]}"
+        if any(domain.stop_reason != "resolution" for domain in domains):
+            # This is progress, not a failed placement. Do not repeatedly spend
+            # the candidate budget on an incomplete mask, or publish operations
+            # before ALL selected domains have finished their native checks.
+            return PatternPreview(
+                pattern_id=pattern_id, type=request.type,
+                mask_id=request.mask_id if isinstance(request, PlacementMaskRequest) else None,
+                requested_count=requested_target or 0, accepted_count=0,
+                search_domains=domains, effective_spacing_m=effective_spacing,
+                unverified_data=unverified_data,
+                data_confidence=passport.mass_placement_status,
+            )
         guide_geometries = (
             mask_guide_geometries(project, request)
             if isinstance(request, PlacementMaskRequest)
             else None
         )
+        if free_search:
+            generation_request = generation_request.model_copy(
+                update={
+                    "edge_offset_m": max(
+                        request.edge_offset_m,
+                        request.layout_radius_m
+                        or default_layout_radius(request.plant_kind),
+                    ),
+                }
+            )
         if (
             isinstance(request, PlacementMaskRequest)
             and request.mask_id == "road_edges"
@@ -150,6 +166,7 @@ class PatternApplication:
                 remaining_extra,
             )
             generated_candidates = []
+            zone_candidates = []
             for zone in generation_zones:
                 target = zone_targets[zone.id]
                 if not target:
@@ -163,9 +180,21 @@ class PatternApplication:
                 points = (
                     self.candidate_generator.generate(local, [zone], guide_geometries)
                     if isinstance(request, PlacementMaskRequest)
-                    else self.candidate_generator.generate(local, [zone])
+                    else self.candidate_generator.generate(
+                        local, [zone], alternatives=free_search
+                    )
                 )
-                generated_candidates.extend(points)
+                zone_candidates.append(points)
+            generated_candidates = (
+                [
+                    point
+                    for row in zip_longest(*zone_candidates)
+                    for point in row
+                    if point is not None
+                ]
+                if free_search
+                else [point for points in zone_candidates for point in points]
+            )
         else:
             generated_candidates = (
                 self.candidate_generator.generate(
@@ -173,7 +202,7 @@ class PatternApplication:
                 )
                 if isinstance(request, PlacementMaskRequest)
                 else self.candidate_generator.generate(
-                    generation_request, generation_zones
+                    generation_request, generation_zones, alternatives=free_search
                 )
             )
         layout_radius = request.layout_radius_m or default_layout_radius(
@@ -202,12 +231,6 @@ class PatternApplication:
                     zone_id=candidate_zone.id if candidate_zone else None,
                 )
             )
-        pattern_digest = sha256(
-            json.dumps(
-                request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
-            ).encode()
-        ).hexdigest()
-        pattern_id = f"pattern-{pattern_digest[:16]}"
         if isinstance(request, PlacementMaskRequest):
             label = {
                 "road_edges": "Аллеи вдоль проездов",
@@ -270,6 +293,17 @@ class PatternApplication:
                 )
             )
         if not operations:
+            empty_reasons = summarize_skips(skipped)
+            if not generated_candidates:
+                unresolved = any(domain.unresolved_area_m2 > 0 for domain in domains)
+                empty_reasons.append(CandidateReasonSummary(
+                    status="unknown" if unresolved else "blocked",
+                    code="SEARCH_DOMAIN_UNCONFIRMED" if unresolved else "SAFE_CAPACITY_REACHED",
+                    category="data" if unresolved else "constraint",
+                    count=requested_target or 1,
+                    message="Предрасчёт не подтвердил область для выбранного растения"
+                    if unresolved else "В подготовленной области не сформированы позиции для выбранных параметров",
+                ))
             return PatternPreview(
                 pattern_id=pattern_id,
                 type=request.type,
@@ -278,6 +312,8 @@ class PatternApplication:
                 else None,
                 requested_count=requested_target or 0,
                 generated_count=len(generated_candidates),
+                search_domains=search_domain_details(generation_zones),
+                search_stop_reason="domain_exhausted" if free_search else None,
                 accepted_count=0,
                 rejected_count=min(len(skipped), requested_target or len(skipped)),
                 capacity_shortfall=max(0, (requested_target or 0) - len(skipped)),
@@ -293,22 +329,36 @@ class PatternApplication:
                     for zone_id in selected_zone_ids
                 ],
                 skipped=skipped,
-                reason_summary=summarize_skips(skipped),
+                reason_summary=empty_reasons,
                 unverified_data=unverified_data,
                 data_confidence=passport.mass_placement_status,
                 data_confidence_reasons=list(passport.gaps),
             )
 
-        initial = self.previews.preview_on_snapshot(
-            project,
-            PlanChangeSetDraft(
-                base_plan_version=request.base_plan_version,
-                source="pattern",
-                label=label,
-                operations=[*operations],
-            ),
-            cache_preview=False,
+        initial = (
+            search_candidates(
+                project,
+                operations,
+                self.evaluation,
+                requested_target,
+                zone_targets,
+                effective_spacing,
+            )
+            if free_search
+            else self.previews.preview_on_snapshot(
+                project,
+                PlanChangeSetDraft(
+                    base_plan_version=request.base_plan_version,
+                    source="pattern",
+                    label=label,
+                    operations=[*operations],
+                ),
+                cache_preview=False,
+            )
         )
+        # Incomplete evidence is not the same as a physical conflict. Keep
+        # such candidates in the proposal so the operator can review them,
+        # matching the behaviour of the manual placement tool.
         allowed_indices: list[int] = []
         network_limitation = network_review_reason(
             item.rule_trace for item in initial.candidate_results
@@ -319,11 +369,9 @@ class PatternApplication:
             zone_id: [] for zone_id in selected_zone_ids
         }
         for item in initial.candidate_results:
-            # Automatic placement is conservative: unresolved evidence is a
-            # reason to skip a candidate, not permission to silently include
-            # it in a bulk operation. Manual correction can still accept an
-            # explicitly reviewed warning later.
-            if item.status == "allowed":
+            if item.status == "allowed" or accepted_partial_source_warning(
+                project, status=item.status, code=item.code
+            ):
                 allowed_indices.append(item.operation_index)
                 if item.zone_id in allowed_by_zone:
                     allowed_by_zone[item.zone_id].append(item.operation_index)
@@ -340,6 +388,7 @@ class PatternApplication:
                     rule_id=item.rule_id,
                     source_layer=item.source_layer,
                     source_feature_ids=item.source_feature_ids,
+                    candidate=operations[item.operation_index].object,
                     actual_distance_m=item.actual_distance_m,
                     required_distance_m=item.required_distance_m,
                     suggested_action=item.suggested_action,
@@ -395,7 +444,7 @@ class PatternApplication:
                         "code": "SAFE_CAPACITY_REACHED",
                         "category": "constraint",
                         "count": requested_target - len(candidates),
-                        "message": "В проверенной части участка больше безопасных позиций не найдено",
+                        "message": "Выбранный способ не сформировал запрошенное число позиций. Это не оценка полной вместимости участка.",
                     }
                 )
             )
@@ -416,7 +465,18 @@ class PatternApplication:
             if isinstance(request, PlacementMaskRequest)
             else None,
             requested_count=requested_total,
-            generated_count=len(generated_candidates),
+            generated_count=(
+                len(initial.candidate_results)
+                + sum(item.code == "OUTSIDE_SELECTED_ZONE" for item in skipped)
+            )
+            if free_search
+            else len(generated_candidates),
+            search_stop_reason=initial.stop_reason if free_search else None,
+            search_candidate_limit=generation_request.target_count
+            if free_search
+            else None,
+            search_elapsed_s=initial.elapsed_s if free_search else None,
+            search_domains=search_domain_details(generation_zones),
             accepted_count=len(accepted_operations),
             rejected_count=rejected_count,
             capacity_shortfall=capacity_shortfall,

@@ -4,14 +4,15 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.geometry.utility_contracts import UtilityType
+from app.regulations.placement_config import PLACEMENT_CONFIG
 
 NETWORK_RULE_PACK = "lct-sp42-2016-table9.1@2026-09-15.2"
 SP42_TABLE_SOURCE = (
     "https://mchs.gov.ru/uploads/document/2025-04-18/"
     "eadacffc977fa556831d67be57ed83cb.pdf"
 )
-BASE_TREE_CROWN_DIAMETER_M = 5.0
-DISTANCE_TOLERANCE_M = 1e-6
+BASE_TREE_CROWN_DIAMETER_M = PLACEMENT_CONFIG.working_geometry.base_tree_crown_diameter_m
+DISTANCE_TOLERANCE_M = PLACEMENT_CONFIG.technical.distance_tolerance_m
 
 
 @dataclass(frozen=True)
@@ -32,13 +33,9 @@ class NetworkRule:
 # A dash in the source is deliberately None, never a zero-clearance permit.
 # LKS TMK added by amendment 3 is not an alias for an ordinary communication
 # cable. Its qualification and municipal applicability require a separate rule.
-NETWORK_RULES = (
-    NetworkRule(UtilityType.GAS, "Газопровод", 1.5, None),
-    NetworkRule(UtilityType.SEWER, "Канализация", 1.5, None),
-    NetworkRule(UtilityType.HEAT, "Тепловая сеть", 2.0, 1.0),
-    NetworkRule(UtilityType.WATER, "Водопровод", 2.0, None),
-    NetworkRule(UtilityType.DRAINAGE, "Дренаж", 2.0, None),
-    NetworkRule(UtilityType.POWER_CABLE, "Силовой кабель", 2.0, 0.7),
-    NetworkRule(UtilityType.COMMUNICATION_CABLE, "Кабель связи", 2.0, 0.7),
+NETWORK_RULES = tuple(
+    NetworkRule(kind, row.label, row.tree_m, row.shrub_m)
+    for kind in UtilityType if kind != UtilityType.UNKNOWN
+    for row in (PLACEMENT_CONFIG.setbacks[kind.value],)
 )
 NETWORK_RULE_BY_TYPE = {rule.network_type: rule for rule in NETWORK_RULES}

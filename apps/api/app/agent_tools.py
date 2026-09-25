@@ -358,7 +358,8 @@ def _prepare_placement(app, project_id, query):
     if query.condition_rule_ids:
         # Use the complete geometry for coverage evidence; lightweight project
         # metadata intentionally omits source features.
-        prepared["condition_check"] = bind_placement_conditions(app.get(project_id), ["нормативные отступы"], [])
+        prepared["condition_check"] = bind_placement_conditions(app.get(project_id), ["нормативные отступы"], [],
+            passport=app.projects.get_data_passport(project_id))
     outcome = placement_outcome(prepared, requested=query.target_count)
     requires_confirmation = outcome.status == "exact" and bool(prepared.get("requires_confirmation"))
     prepared["requires_confirmation"] = requires_confirmation

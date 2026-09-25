@@ -35,7 +35,9 @@ export const SpeciesAssignmentCatalog: FC<SpeciesAssignmentCatalogProps> = ({
     itemStatuses={Object.fromEntries(
       (shortlist ?? []).map((item) => [
         item.species.id,
-        shortlistStatus[item.status],
+        // These existing statuses are information for a replacement preview,
+        // not an assignment permit. The server validates the actual change.
+        { ...shortlistStatus[item.status], canSelect: true },
       ]),
     )}
   />

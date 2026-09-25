@@ -21,8 +21,10 @@ class ProjectCatalogApplication:
         invalidate_spatial: Callable[[str], None],
         now: Callable[[], datetime],
         new_id: Callable[[], str],
+        geometry=None,
     ) -> None:
         self.repository = repository
+        self.geometry = geometry
         self.history = history
         self._operation_commit_lock = commit_lock
         self._cancel_active = cancel_active
@@ -83,7 +85,7 @@ class ProjectCatalogApplication:
     def get_data_passport(self, project_id: str) -> DataPassport:
         """Return the source-data evidence for the current project revision."""
 
-        return build_data_passport(self.get(project_id))
+        return build_data_passport(self.get(project_id), geometry=self.geometry)
 
     def delete_project(self, project_id: str) -> None:
         # A geometry worker can be between two progress callbacks while a

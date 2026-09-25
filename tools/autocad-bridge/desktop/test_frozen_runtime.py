@@ -98,7 +98,7 @@ def test_relocated_runtime_without_python_path(frozen):
                         return json.load(response)
 
                 handoff = api("/_desktop/handoffs", {"ticket": str(ticket)})
-                deadline = time.monotonic() + 45
+                deadline = time.monotonic() + 180
                 while (
                     handoff["status"] in {"queued", "processing"}
                     and time.monotonic() < deadline
@@ -109,15 +109,30 @@ def test_relocated_runtime_without_python_path(frozen):
                 projects = api("/api/projects")
                 assert len(projects) == 1
                 project_id = projects[0]["id"]
-                operation_path = f"/api/projects/{project_id}/operations/latest?kind=inspect_cad_package"
-                operation = api(operation_path)
-                while (
-                    operation["status"] in {"queued", "running"}
-                    and time.monotonic() < deadline
-                ):
-                    time.sleep(0.1)
+                transfer = json.loads(ticket.read_bytes())
+                if transfer["schema"] == "green-atlas.transfer/2":
+                    project = api(f"/api/projects/{project_id}")
+                    assert project["import_status"]["mode"] == "autocad_live"
+                    assert project["source_file"]["content_sha256"] == transfer["manifest"]["files"][0]["sha256"]
+                    assert project["layers"]
+                    (root / "live-handoff-acceptance.json").write_text(json.dumps({
+                        "project_id": project_id,
+                        "scope": "isolated frozen runtime storage, not GUI acceptance",
+                        "plugin_version": transfer["plugin_version"],
+                        "status": handoff["status"],
+                        "layer_count": len(project["layers"]),
+                        "source_sha256": project["source_file"]["content_sha256"],
+                    }, indent=2))
+                else:
+                    operation_path = f"/api/projects/{project_id}/operations/latest?kind=inspect_cad_package"
                     operation = api(operation_path)
-                assert operation["status"] == "completed", operation
+                    while (
+                        operation["status"] in {"queued", "running"}
+                        and time.monotonic() < deadline
+                    ):
+                        time.sleep(0.1)
+                        operation = api(operation_path)
+                    assert operation["status"] == "completed", operation
                 assert api("/_desktop/handoffs", {"ticket": str(ticket)}) == handoff
                 assert len(api("/api/projects")) == 1
             log.flush()
@@ -141,6 +156,8 @@ def test_frozen_native_compiler_uses_real_prepared_ticket(frozen):
         )
     ticket_path = Path(configured)
     ticket = json.loads(ticket_path.read_bytes())
+    if ticket["schema"] == "green-atlas.transfer/2":
+        pytest.skip("Live tickets use the import worker exercised by the frozen handoff test")
     binary, root, env = frozen
     package = root / "package"
     package.mkdir()
@@ -177,6 +194,7 @@ def test_frozen_native_compiler_uses_real_prepared_ticket(frozen):
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert json.loads((package / "bridge-report.json").read_bytes()) == {"failures": []}
@@ -222,6 +240,7 @@ def test_frozen_native_compiler_uses_real_prepared_ticket(frozen):
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     passport = json.loads(inspection.read_bytes())
@@ -242,6 +261,7 @@ def test_frozen_unknown_worker_never_launches_runtime(frozen):
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
     assert result.returncode != 0
     assert "Unknown Green Atlas worker" in result.stderr

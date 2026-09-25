@@ -9,6 +9,7 @@ import type {
 import { preparationApi } from '../api/preparationApi';
 import { mappingKey } from './preparationRecovery';
 import { usePreparationCommit } from './usePreparationCommit';
+import { saveNativeAreaDecision } from './saveNativeAreaDecision';
 import { partialGeometryAccepted } from '@/entities/source-data/model/partialGeometryAccepted';
 import { sourceWarningText } from '@/entities/source-data/model/sourceWarningText';
 import {
@@ -35,6 +36,7 @@ export function useSourcePreparation({
 }: SourcePreparationOptions) {
   const queryClient = useQueryClient();
   const [reloadError, setReloadError] = useState<unknown>();
+  const [editingSource, setEditingSource] = useState(false);
   const projectQuery = useQuery({
     queryKey: ['setup-project', projectId],
     queryFn: () => preparationApi.getProject(projectId, false),
@@ -64,6 +66,18 @@ export function useSourcePreparation({
   }>();
   const layers = projectQuery.data?.layers ?? EMPTY_LAYERS;
   const currentSource = sourceIdentity(projectQuery.data);
+  const layerRecognitionQuery = useQuery({
+    queryKey: ['layer-recognition', projectId, currentSource],
+    queryFn: () => preparationApi.getLayerRecognition(projectId),
+    enabled: Boolean(projectQuery.data?.layers?.length),
+    staleTime: Infinity,
+    retry: false,
+  });
+  const layerRecognition =
+    layerRecognitionQuery.data?.source_sha256 ===
+    projectQuery.data?.source_file?.content_sha256
+      ? layerRecognitionQuery.data
+      : undefined;
   const cadPreview = projectQuery.data?.import_status?.mode === 'cad_preview';
   const operationId =
     !cadPreview && trackedOperation?.source === currentSource
@@ -84,11 +98,14 @@ export function useSourcePreparation({
   const sourceWarnings = (projectQuery.data?.source_file?.warnings ?? []).map(
     sourceWarningText,
   );
+  const nativeAreaProposals =
+    projectQuery.data?.source_file?.native_area_proposals ?? [];
   const partialAccepted = partialGeometryAccepted(projectQuery.data);
   const sourceReadOnly = Boolean(
     projectQuery.data?.map_ready &&
     projectQuery.data.plan &&
-    !projectQuery.data.source_review,
+    !projectQuery.data.source_review &&
+    !editingSource,
   );
   const reviewOnly =
     projectQuery.data?.import_status?.editability === 'read_only';
@@ -128,12 +145,7 @@ export function useSourcePreparation({
     () =>
       layers.filter((layer) => {
         const mapping = mappings[layer.id];
-        return Boolean(
-          layer.mapping_review_required &&
-          mapping?.kind &&
-          mapping.kind !== 'ignore' &&
-          !mapping.confirmed,
-        );
+        return Boolean(mapping && mapping.confirmed === false);
       }),
     [layers, mappings],
   );
@@ -142,7 +154,9 @@ export function useSourcePreparation({
       ? 'Выберите один контур территории для расчёта.'
       : !requiredReady
         ? 'Назначьте роль обязательным слоям границы перед подготовкой карты.'
-        : unconfirmedMappings.length
+        : unconfirmedMappings.some(
+              (layer) => mappings[layer.id]?.kind !== 'ignore',
+            )
           ? 'Проверьте предложенные роли слоёв.'
           : incompleteConstraintLayers.length && !partialAccepted
             ? 'Разрешите расчёт по доступным объектам или исправьте неполные слои.'
@@ -290,6 +304,36 @@ export function useSourcePreparation({
       });
     },
   });
+  const decideNativeArea = useMutation({
+    mutationFn: async (input: {
+      proposalId: string;
+      proposalSha256: string;
+      decision: 'accepted' | 'rejected';
+    }) => {
+      const project = projectQuery.data;
+      const sourceSha = project?.source_file?.content_sha256;
+      if (!project || !sourceSha) throw new Error('Снимок AutoCAD недоступен');
+      return saveNativeAreaDecision(
+        projectId,
+        {
+          source_sha256: sourceSha,
+          proposal_id: input.proposalId,
+          proposal_sha256: input.proposalSha256,
+          decision: input.decision,
+        },
+        project.state_version ?? 0,
+      );
+    },
+    onSuccess: (project) => {
+      queryClient.setQueryData(['setup-project', projectId], project);
+      void queryClient.invalidateQueries({
+        queryKey: ['workspace-project', projectId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['data-passport', projectId],
+      });
+    },
+  });
   const lastKnownOperation =
     operationQuery.data ??
     (!operationId || latestUnfinishedOperation?.id === operationId
@@ -317,6 +361,7 @@ export function useSourcePreparation({
   const preparationBlocked =
     openEditor.isPending ||
     acceptPartialGeometry.isPending ||
+    decideNativeArea.isPending ||
     calculating ||
     statusUnknown ||
     checkingStatus ||
@@ -327,7 +372,8 @@ export function useSourcePreparation({
     saveMutation.error ??
     cancelOperation.error ??
     openEditor.error ??
-    acceptPartialGeometry.error;
+    acceptPartialGeometry.error ??
+    decideNativeArea.error;
 
   const reloadAfterConflict = async () => {
     try {
@@ -341,6 +387,7 @@ export function useSourcePreparation({
       cancelOperation.reset();
       openEditor.reset();
       acceptPartialGeometry.reset();
+      decideNativeArea.reset();
       setReloadError(undefined);
     } catch (error) {
       // Cached data in a failed refetch is not a fresh basis for the form.
@@ -372,6 +419,9 @@ export function useSourcePreparation({
 
   return {
     form,
+    startSourceEditing: () => setEditingSource(true),
+    layerRecognition,
+    layerRecognitionQuery,
     projectQuery,
     dataPassportQuery,
     layers,
@@ -380,6 +430,8 @@ export function useSourcePreparation({
     calculationPending: Boolean(projectQuery.data?.source_review),
     setMappings,
     sourceWarnings,
+    nativeAreaProposals,
+    decideNativeArea,
     sourceReadOnly,
     reviewOnly,
     cadPreview,

@@ -1,6 +1,9 @@
 """Derived explanations for the existing rule subset, never a permit or full compliance."""
 
-from typing import Literal
+from __future__ import annotations
+
+from functools import partial
+from typing import TYPE_CHECKING, Literal
 
 from shapely.geometry import Point
 
@@ -18,6 +21,9 @@ from app.regulations.trace_contracts import (
     RuleTraceEntry,
 )
 from app.species.rule_context import mature_crown_diameter
+
+if TYPE_CHECKING:
+    from app.geometry.ports import GeometryEnginePort
 
 MAX_NEAREST_REFERENCES = 20
 
@@ -132,12 +138,18 @@ def position_rule_trace(
     )
 
 
-def project_rule_traces(project: Project) -> dict[str, PlantingRuleTrace]:
-    checker = PositionChecker(project)
+def project_rule_traces(
+    project: Project, *, geometry: GeometryEnginePort | None = None
+) -> dict[str, PlantingRuleTrace]:
+    """Use the supplied provider; the default is historical compatibility only."""
+    trace_position = (
+        partial(position_rule_trace, PositionChecker(project))
+        if geometry is None
+        else geometry.position_rule_trace
+    )
     return (
         {
-            item.id: position_rule_trace(
-                checker,
+            item.id: trace_position(
                 project,
                 item.x,
                 item.y,

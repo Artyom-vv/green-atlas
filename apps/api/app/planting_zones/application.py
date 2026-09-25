@@ -14,9 +14,9 @@ from app.planting_zones.config import MAX_PARTIAL_OVERLAP_M2
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.planting_zones.domain import (
     attach_planting_zone_features,
-    validate_planting_zones,
+    validate_changed_planting_zones,
 )
-from app.planting_zones.ports import ZoneProjectRepository
+from app.planting_zones.ports import ZoneProjectRepository, ZoneValidator
 from app.projects.contracts import Project, ProjectStatus
 from app.validation.application import PlanValidation
 from app.validation.ports import PlanValidatorPort
@@ -32,6 +32,7 @@ class PlantingZoneApplication:
         validation: PlanValidation,
         edit_lock: RLock,
         invalidate_spatial: Callable[[str], None],
+        zone_validator: ZoneValidator | None = None,
     ) -> None:
         self.repository = repository
         self.history = history
@@ -39,15 +40,15 @@ class PlantingZoneApplication:
         self.validation = validation
         self.edit_lock = edit_lock
         self.invalidate_spatial = invalidate_spatial
+        self.zone_validator = zone_validator or validate_changed_planting_zones
 
     def get(self, project_id: str, *, lightweight: bool = False) -> Project:
         return self.repository.get(project_id, lightweight=lightweight)
 
-    @staticmethod
     def validate_planting_zones(
-        project: Project, zones: list[PlantingZoneAssignment]
+        self, project: Project, zones: list[PlantingZoneAssignment]
     ) -> None:
-        validate_planting_zones(project, zones)
+        self.zone_validator(project, zones)
 
     def preview_planting_zone(
         self, project_id: str, zone: PlantingZoneAssignment
@@ -57,7 +58,7 @@ class PlantingZoneApplication:
         zones = [item for item in project.planting_zones if item.id != zone.id] + [zone]
         error = None
         try:
-            validate_planting_zones(project, zones)
+            self.validate_planting_zones(project, zones)
         except ValueError as problem:
             error = str(problem)
         try:
@@ -104,7 +105,7 @@ class PlantingZoneApplication:
             if preserve_plan and project.plan is not None
             else None
         )
-        validate_planting_zones(project, zones)
+        self.validate_planting_zones(project, zones)
         project.planting_zones = [zone.model_copy(deep=True) for zone in zones]
         if project.geometry is not None:
             attach_planting_zone_features(project)

@@ -29,7 +29,7 @@ def prepared(tmp_path):
     drawing.write_bytes(b"immutable native DXF copy")
     probe = directory / "Drawing.dxf.green-atlas.geometry.json"
     probe.write_text(json.dumps({
-        "plugin_version": "0.1.21",
+        "plugin_version": "0.1.28",
         "source": {"sha256": hashlib.sha256(drawing.read_bytes()).hexdigest()},
         "summary": {"unresolved_instances": 3},
     }))
@@ -38,6 +38,67 @@ def prepared(tmp_path):
 
 def run(writer, command, directory):
     return subprocess.run([str(writer), command, str(directory)], capture_output=True, text=True)
+
+
+@pytest.fixture
+def live_prepared(tmp_path):
+    directory = tmp_path.resolve()
+    original = directory / "Street.dwg"
+    original.write_bytes(b"saved source context")
+    capture = directory / "Drawing.autocad.json"
+    capture.write_text(json.dumps({
+        "plugin_version": "0.1.38", "capture_mode": "live_document",
+        "source": {"path": str(original),
+                   "sha256": hashlib.sha256(original.read_bytes()).hexdigest(),
+                   "database_modified_flags": 32},
+        "summary": {"unresolved_instances": 1},
+    }))
+    return directory
+
+
+def test_live_ticket_uses_native_capture_not_dxf(writer, live_prepared):
+    capture = live_prepared / "Drawing.autocad.json"
+    before = capture.read_bytes()
+    assert run(writer, "live-ticket", live_prepared).returncode == 0
+    ticket = json.loads((live_prepared / "transfer.gatransfer").read_text())
+    assert ticket["schema"] == "green-atlas.transfer/2"
+    assert ticket["source_name"] == "Street.dwg"
+    assert ticket["manifest"]["entry"] == capture.name
+    assert ticket["manifest"]["files"] == [{
+        "name": capture.name, "kind": "live_capture",
+        "bytes": len(before), "sha256": hashlib.sha256(before).hexdigest(),
+    }]
+    assert capture.read_bytes() == before
+    assert not list(live_prepared.glob("*.dxf"))
+    issues = run(writer, "live-issues", live_prepared).stdout
+    assert issues.splitlines() == ["Без геометрии отображения\t1"]
+    assert "расчёт" not in issues
+
+
+def test_live_notices_count_missing_references_not_all_dependencies(writer, live_prepared):
+    path = live_prepared / "Drawing.autocad.json"
+    value = json.loads(path.read_text())
+    value["xref_dependencies"] = [{"status": "resolved"}, {"status": "unresolved"}, {"status": "unresolved"}]
+    path.write_text(json.dumps(value))
+    assert run(writer, "live-issues", live_prepared).stdout.splitlines() == [
+        "Без геометрии отображения\t1", "Недоступные подосновы\t2",
+    ]
+
+
+def test_unsaved_state_alone_is_not_a_second_partial_confirmation(writer, live_prepared):
+    path = live_prepared / "Drawing.autocad.json"
+    value = json.loads(path.read_text())
+    value["summary"]["unresolved_instances"] = 0
+    path.write_text(json.dumps(value))
+    assert run(writer, "live-issues", live_prepared).stdout == ""
+    assert run(writer, "live-ticket", live_prepared).returncode == 0
+    assert json.loads(path.read_text())["source"]["database_modified_flags"] == 32
+
+
+def test_live_ticket_rejects_changed_original_context(writer, live_prepared):
+    (live_prepared / "Street.dwg").write_bytes(b"changed on disk")
+    assert run(writer, "live-ticket", live_prepared).returncode == 1
+    assert not (live_prepared / "transfer.gatransfer").exists()
 
 
 def test_menu_restored_after_host_replaces_or_clears_menu(writer, prepared):

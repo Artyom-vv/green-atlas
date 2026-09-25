@@ -34,3 +34,12 @@ artifacts/**/*.ts
 artifacts/**/*.m3u8
 artifacts/**/*.zip
 artifacts/artifacts/
+
+# Local CAD datasets, generated runs and SDK intermediates are not source code.
+# Selected small verification receipts can be explicitly versioned with git add -f.
+/artifacts/
+/fixtures/cad/lct-dataset/
+/ga-inventory-*/
+/ga-metric-inventory-*/
+/docs/obsidian.zip
+docs/**/obj/

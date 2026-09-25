@@ -1,27 +1,38 @@
 import json
 from collections import OrderedDict
+from functools import partial
 from math import hypot
 from threading import RLock
 from uuid import NAMESPACE_URL, uuid5
 
 from app.geometry.domain import PositionChecker
+from app.geometry.ports import GeometryEnginePort
+from app.geometry.preparation import prepare_positions
 from app.planning.contracts import Plan
 from app.planning.domain import PlantSpacingIndex, required_spacing
 from app.projects.contracts import Project
+from app.species.rule_context import mature_crown_diameter
 from app.validation.contracts import ValidationIssue
 from app.validation.networks import (
     compact_missing_network_issues,
     object_network_issues,
+    object_network_trace_issues,
 )
 
 
 class RuleBasedPlanValidator:
-    revision = "rule-based-plan-v4-network-source-summary"
+    revision = "rule-based-plan-v5-shared-geometry-provider"
 
-    def __init__(self, max_cached_projects: int = 32) -> None:
+    def __init__(
+        self,
+        max_cached_projects: int = 32,
+        *,
+        geometry: GeometryEnginePort | None = None,
+    ) -> None:
         if max_cached_projects < 1:
             raise ValueError("Размер кэша проверок должен быть положительным")
         self.max_cached_projects = max_cached_projects
+        self._geometry = geometry
         self._position_checkers: OrderedDict[str, tuple[int, PositionChecker]] = OrderedDict()
         self._lock = RLock()
 
@@ -53,10 +64,28 @@ class RuleBasedPlanValidator:
         # and planting objects. It never carries a separate project-wide
         # target or capacity score into a local editing decision.
         issues: list[ValidationIssue] = []
-        position_checker = self._position_checker(project)
+        geometry = self._geometry
+        if geometry is None:
+            position_checker = self._position_checker(project)
+            check = position_checker.check
+            # Compatibility checker has no plant-kind advisory argument.
+            def advisory_detail(x, y, radius, plant_kind):
+                return position_checker.advisory(x, y, radius)
+
+            def growth_advisory_detail(x, y, canopy_radius, root_radius, plant_kind):
+                return position_checker.growth_advisory(x, y, canopy_radius, root_radius)
+        else:
+            # Bind every query to the same provider and project. Provider
+            # errors must propagate; the legacy cache is not a fallback.
+            prepare_positions(geometry, project, [(item.x, item.y) for item in plan.objects])
+            check = partial(geometry.position_violation, project)
+            advisory_detail = partial(geometry.placement_advisory_detail, project)
+            growth_advisory_detail = partial(
+                geometry.future_growth_advisory_detail, project
+            )
         for object_ in plan.objects:
-            violation = position_checker.check(object_.x, object_.y, object_.radius, object_.kind)
-            advisory = position_checker.advisory(object_.x, object_.y, object_.radius) if violation is None else None
+            violation = check(object_.x, object_.y, object_.radius, object_.kind)
+            advisory = advisory_detail(object_.x, object_.y, object_.radius, object_.kind) if violation is None else None
             object_.status = "error" if violation else "warning" if advisory else "valid"
             if violation:
                 issues.append(ValidationIssue(
@@ -85,7 +114,17 @@ class RuleBasedPlanValidator:
                     y=object_.y,
                     suggested_action=advisory.suggested_action,
                 ))
-            network_issues = object_network_issues(position_checker, object_)
+            if geometry is None:
+                network_issues = object_network_issues(position_checker, object_)
+            else:
+                trace = geometry.position_rule_trace(
+                    project,
+                    object_.x,
+                    object_.y,
+                    object_.kind,
+                    mature_crown_diameter(object_.species_revision_id),
+                )
+                network_issues = object_network_trace_issues(trace.entries, object_)
             for issue in network_issues:
                 if violation and issue.code == violation.code and issue.rule_id == violation.rule_id:
                     continue
@@ -96,11 +135,12 @@ class RuleBasedPlanValidator:
                     object_.status = "warning"
             canopy_20 = next((item for item in object_.canopy_forecast if item.horizon_year == 20), None)
             roots_20 = next((item for item in object_.root_forecast if item.horizon_year == 20), None)
-            growth_advisory = position_checker.growth_advisory(
+            growth_advisory = growth_advisory_detail(
                 object_.x,
                 object_.y,
                 canopy_20.radius_max_m,
                 roots_20.radius_max_m,
+                object_.kind,
             ) if canopy_20 and roots_20 else None
             if growth_advisory:
                 if object_.status == "valid":

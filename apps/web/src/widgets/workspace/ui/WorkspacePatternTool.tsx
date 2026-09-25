@@ -14,6 +14,7 @@ export interface WorkspacePatternToolProps
     Pick<
       WorkspaceReadyModel,
       | 'growthHorizon'
+      | 'candidateInspection'
       | 'patternForm'
       | 'placementAreaDrawing'
       | 'placementMasksQuery'
@@ -33,6 +34,7 @@ export const WorkspacePatternToolPropsFor = (
 ): WorkspacePatternToolProps => ({
   ...patternBindingPropsFor(model),
   growthHorizon: model.growthHorizon,
+  candidateInspection: model.candidateInspection,
   patternForm: model.patternForm,
   placementAreaDrawing: model.placementAreaDrawing,
   placementMasksQuery: model.placementMasksQuery,
@@ -88,6 +90,8 @@ export const WorkspacePatternTool: FC<WorkspacePatternToolProps> = (props) => {
       selectedZoneIds={selectedPatternZoneIds}
       drawingZone={placementAreaDrawing}
       preview={patternPreview}
+      preparation={previewPattern.progress}
+      inspection={props.candidateInspection}
       growthHorizon={growthHorizon}
       onGrowthHorizon={setGrowthHorizon}
       loading={
@@ -96,7 +100,9 @@ export const WorkspacePatternTool: FC<WorkspacePatternToolProps> = (props) => {
         savePlacementZone.isPending
       }
       error={
-        zoneSpeciesShortlistQuery.error
+        previewPattern.error
+          ? message(previewPattern.error)
+          : zoneSpeciesShortlistQuery.error
           ? message(zoneSpeciesShortlistQuery.error)
           : placementMasksQuery.error
             ? message(placementMasksQuery.error)
