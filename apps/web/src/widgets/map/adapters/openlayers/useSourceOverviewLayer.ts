@@ -7,6 +7,7 @@ import {
 } from './cadGeometryDisplay';
 import { readSourceOverview, visibleOverviewSvg } from './sourceOverview';
 import { createOverviewSvg } from './sourceOverviewSvg';
+import type { CadAppearanceMode } from '../../model/cadSource';
 
 /** Complete captured visual behind bounded hit-test geometry. No fake features. */
 export function useSourceOverviewLayer({
@@ -16,6 +17,7 @@ export function useSourceOverviewLayer({
   geometry,
   hiddenNames,
   disabled,
+  renderMode = 'design',
 }: {
   mapRef: RefObject<Map | null>;
   targetRef: RefObject<HTMLDivElement | null>;
@@ -23,6 +25,7 @@ export function useSourceOverviewLayer({
   geometry?: Record<string, unknown>;
   hiddenNames?: string[];
   disabled: boolean;
+  renderMode?: CadAppearanceMode;
 }) {
   const overview = readSourceOverview(geometry);
   useEffect(() => {
@@ -32,6 +35,7 @@ export function useSourceOverviewLayer({
     const display = cadGeometryDisplay(layersRef.current);
     const drawing = createOverviewSvg(
       visibleOverviewSvg(overview.svg, hiddenNames ?? []),
+      renderMode,
     );
     const container = document.createElement('div');
     container.style.position = 'absolute';
@@ -42,15 +46,20 @@ export function useSourceOverviewLayer({
     const layer = new Layer({
       zIndex: 0.5,
       render: (frame) => {
-        drawing.render(frame.size, frame.coordinateToPixelTransform,
-          Boolean(frame.viewHints[0] || frame.viewHints[1]));
+        drawing.render(
+          frame.size,
+          frame.coordinateToPixelTransform,
+          Boolean(frame.viewHints[0] || frame.viewHints[1]),
+        );
         return container;
       },
     });
     map.addLayer(layer);
     display.ready('source');
     if (target)
-      target.dataset.sourceOverviewFeatures = String(overview.rendered_features);
+      target.dataset.sourceOverviewFeatures = String(
+        overview.rendered_features,
+      );
     return () => {
       map.removeLayer(layer);
       display.restore();
@@ -60,5 +69,13 @@ export function useSourceOverviewLayer({
         delete target.dataset.sourceOverviewError;
       }
     };
-  }, [mapRef, targetRef, layersRef, overview, hiddenNames, disabled]);
+  }, [
+    mapRef,
+    targetRef,
+    layersRef,
+    overview,
+    hiddenNames,
+    disabled,
+    renderMode,
+  ]);
 }

@@ -32,6 +32,9 @@ describe('LayerMappingTable', () => {
         recognition={{
           source_sha256: null,
           provider: 'name-rules-v1',
+          status: 'completed',
+          processed_count: 1,
+          total_count: 1,
           categories: [
             {
               category: 'hard_surface',
@@ -55,7 +58,7 @@ describe('LayerMappingTable', () => {
       screen.getByText('Предложение: Площадка с твёрдым покрытием'),
     ).toBeVisible();
     fireEvent.click(
-      screen.getByRole('button', { name: 'Принять предложение', exact: true }),
+      screen.getByRole('button', { name: 'Принять предложение' }),
     );
     expect(onChange.mock.calls[0][0][layer.id]).toMatchObject({
       kind: 'restricted',
@@ -133,6 +136,9 @@ describe('LayerMappingTable', () => {
         recognition={{
           source_sha256: null,
           provider: 'name-rules-v1',
+          status: 'completed',
+          processed_count: 1,
+          total_count: 1,
           proposals: [],
           categories: [
             { category: 'terrain_slope', kind: null, label: 'Откос рельефа' },
@@ -164,6 +170,9 @@ describe('LayerMappingTable', () => {
         recognition={{
           source_sha256: null,
           provider: 'name-rules-v1',
+          status: 'completed',
+          processed_count: 1,
+          total_count: 1,
           proposals: [],
           categories: [
             { category: 'terrain_slope', kind: null, label: 'Откос рельефа' },

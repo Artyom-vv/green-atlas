@@ -138,7 +138,7 @@ def _source_drawing(candidates: Iterable[tuple[dict, BaseGeometry]], resolution:
     for (layer, kind, shape_type), paths in sorted(groups.items()):
         color = COLORS.get(kind, '#7a8795')
         fill = color if shape_type == 'area' and kind in {'building', 'road', 'existing_green', 'water', 'restricted'} else 'none'
-        markup.append(f'<g data-source-layer={quoteattr(layer)} fill="{fill}" '
+        markup.append(f'<g data-source-layer={quoteattr(layer)} data-kind={quoteattr(kind)} data-shape={quoteattr(shape_type)} fill="{fill}" '
                       f'fill-opacity="0.14" fill-rule="evenodd" stroke="{color}" '
                       f'stroke-width="{stroke}" stroke-linejoin="round">')
         # Separate areas keep the holes of each entity, without turning the

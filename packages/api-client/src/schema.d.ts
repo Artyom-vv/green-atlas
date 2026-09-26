@@ -101,7 +101,8 @@ export interface paths {
         /** Source Layer Review */
         get: operations["source_layer_review_api_projects__project_id__source_layer_review_get"];
         put?: never;
-        post?: never;
+        /** Retry Source Layer Review */
+        post: operations["retry_source_layer_review_api_projects__project_id__source_layer_review_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3243,9 +3244,9 @@ export interface components {
             /**
              * Kind
              * @default dxf
-             * @constant
+             * @enum {string}
              */
-            kind: "dxf";
+            kind: "dxf" | "cad";
             /**
              * Media Type
              * @default application/dxf
@@ -3671,6 +3672,24 @@ export interface components {
             categories: components["schemas"]["LayerCategoryOption"][];
             /** Proposals */
             proposals: components["schemas"]["LayerRoleProposal"][];
+            /**
+             * Status
+             * @default completed
+             * @enum {string}
+             */
+            status: "completed" | "running" | "failed" | "unconfigured";
+            /**
+             * Processed Count
+             * @default 0
+             */
+            processed_count: number;
+            /**
+             * Total Count
+             * @default 0
+             */
+            total_count: number;
+            /** Message */
+            message?: string | null;
         };
         /** LayerRoleProposal */
         LayerRoleProposal: {
@@ -5208,7 +5227,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "bundle" | "dxf" | "schedule" | "manifest" | "scene" | "dendroplan";
+            kind: "bundle" | "dxf" | "cad" | "schedule" | "manifest" | "scene" | "dendroplan";
             /** Media Type */
             media_type: string;
             /** Size */
@@ -6962,6 +6981,39 @@ export interface operations {
         };
     };
     source_layer_review_api_projects__project_id__source_layer_review_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerRecognition"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_source_layer_review_api_projects__project_id__source_layer_review_post: {
         parameters: {
             query?: never;
             header?: {

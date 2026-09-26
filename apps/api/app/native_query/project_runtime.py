@@ -74,6 +74,27 @@ class ProjectLiveGeometry:
             self._prepared[project.id] = engine
             return engine
 
+    def prepared_engine(self, project):
+        """Read a matching saved basis without opening or querying AutoCAD."""
+        source = project.source_file
+        session = source.native_session if source else None
+        if session is None:
+            return self.compatibility
+        if self.prepared_store is None:
+            return None
+        key = preparation_key(project, session)
+        with self._lock:
+            cached = self._prepared.get(project.id)
+            if cached is not None and cached._basis_key == key:
+                return cached
+            snapshot = self.prepared_store.load(key)
+            if snapshot is None:
+                return None
+            engine = PreparedGeometryEngine(snapshot, project,
+                checkpoints=DomainCheckpointStore(self.prepared_store.directory / "domains"))
+            self._prepared[project.id] = engine
+            return engine
+
     def calculate(self, project, progress=None):
         return self.engine(project, progress=progress).calculate(project, progress)
 

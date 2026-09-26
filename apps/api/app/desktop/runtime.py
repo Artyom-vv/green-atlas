@@ -47,8 +47,14 @@ def main() -> int:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--web-dir", type=Path, required=True)
     parser.add_argument("--ticket-root", type=Path)
+    parser.add_argument("--cad-worker", type=Path)
     args = parser.parse_args()
     data_root = configure_local_storage(args.data_dir)
+    # Desktop chooses a configured OpenAI key or the signed-in local Codex CLI.
+    # Without either, the UI explicitly reports name-only recognition.
+    os.environ.setdefault("GREEN_ATLAS_LAYER_MODEL_PROVIDER", "auto")
+    if args.cad_worker:
+        os.environ["GREEN_ATLAS_CAD_RELEASE_WORKER"] = str(args.cad_worker.absolute())
     if not (args.web_dir / "index.html").is_file():
         parser.error("Built desktop UI is missing from the application package")
     lease = WorkspaceLease(data_root)

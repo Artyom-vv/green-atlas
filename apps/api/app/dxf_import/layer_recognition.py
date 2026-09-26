@@ -35,6 +35,10 @@ class LayerRecognition(BaseModel):
     provider: str
     categories: list[LayerCategoryOption]
     proposals: list[LayerRoleProposal]
+    status: Literal["completed", "running", "failed", "unconfigured"] = "completed"
+    processed_count: int = Field(default=0, ge=0)
+    total_count: int = Field(default=0, ge=0)
+    message: str | None = None
 
 
 class LayerRecognitionProvider(Protocol):

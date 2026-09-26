@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ApplicationPackage SchemaVersion="1.0"
-                    AppVersion="0.1.41"
+                    AppVersion="0.1.42"
                     ProductCode="{5A77DEBF-6BBC-4A18-8B4D-0DCB277F3F76}"
                     Name="Green Atlas Native Snapshot"
                     Author="Green Atlas">

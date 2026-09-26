@@ -1,8 +1,16 @@
 import type { FC, ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiClientError, type Project } from '@green/api-client';
+import {
+  ApiClientError,
+  type LayerRecognition,
+  type Project,
+} from '@green/api-client';
 import { preparationApi } from '../api/preparationApi';
 import { useSourcePreparation } from './useSourcePreparation';
 import { nativeProject } from '@/entities/source-data/model/nativeDxfFixtures';
@@ -32,6 +40,58 @@ const source: Project = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('source preparation form recovery', () => {
+  it('finishes model polling even when the desktop document is inactive', async () => {
+    const project = { ...source, source_file: nativeProject.source_file };
+    const running: LayerRecognition = {
+      source_sha256: project.source_file!.content_sha256 ?? null,
+      provider: 'codex/gpt-6-luna',
+      categories: [],
+      proposals: [],
+      status: 'running',
+      processed_count: 0,
+      total_count: 1,
+    };
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    const recognize = vi
+      .spyOn(preparationApi, 'getLayerRecognition')
+      .mockResolvedValueOnce(running)
+      .mockResolvedValue({
+        ...running,
+        status: 'completed',
+        processed_count: 1,
+      });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    focusManager.setFocused(false);
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper },
+    );
+    try {
+      await waitFor(() =>
+        expect(result.current.layerRecognition?.status).toBe('running'),
+      );
+      await waitFor(
+        () => expect(result.current.layerRecognition?.status).toBe('completed'),
+        { timeout: 3000 },
+      );
+      expect(result.current.layerRecognition?.processed_count).toBe(1);
+      expect(recognize).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      client.clear();
+      focusManager.setFocused(undefined);
+    }
+  });
+
   it.each([false, true])(
     'preserves unconfirmed mappings independently of review_required=%s',
     async (reviewRequired) => {

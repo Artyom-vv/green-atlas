@@ -40,6 +40,20 @@ export const SelectionIssues: FC<SelectionIssuesProps> = ({ problems }) => {
                   {problem.meta}
                 </small>
               )}
+              {problem.details && (
+                <Disclosure variant="plain" title="Подробности проверок">
+                  <ul className="m-0 grid list-none gap-2 p-0 text-xs text-neutral-600">
+                    {problem.details.map((detail, index) => (
+                      <li key={index}>
+                        {detail.description}
+                        {detail.meta && (
+                          <div className="mt-1 font-mono">{detail.meta}</div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </Disclosure>
+              )}
             </li>
           ))}
         </ul>

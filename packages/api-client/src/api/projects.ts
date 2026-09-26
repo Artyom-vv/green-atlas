@@ -59,6 +59,8 @@ export const projectsApi = {
     request<DataPassport>(`/api/projects/${projectId}/data-passport`),
   getLayerRecognition: (projectId: string) =>
     request<LayerRecognition>(`/api/projects/${projectId}/source-layer-review`),
+  retryLayerRecognition: (projectId: string) =>
+    request<LayerRecognition>(`/api/projects/${projectId}/source-layer-review`, json()),
   getSourceObjectReview: (projectId: string, layer: string, offset = 0) => {
     const params = new URLSearchParams({ layer, offset: String(offset), limit: '30' });
     return request<SourceObjectReviewPage>(`/api/projects/${projectId}/source-object-review?${params}`);

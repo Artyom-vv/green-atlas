@@ -11,6 +11,7 @@ import { SourceObjectReview } from './SourceObjectReview';
 import { SourceSection } from './SourceSection';
 import { SourceReadIssues } from './SourceReadIssues';
 import { SourcePreparationError } from './SourcePreparationError';
+import { LayerRecognitionStatus } from '@/entities/source-data/ui/LayerRecognitionStatus';
 import { NativeFaceReview } from './NativeFaceReview';
 import type { SourceLayerFormProps } from './SourceLayerForm.props';
 export const SourceLayerForm: FC<SourceLayerFormProps> = ({
@@ -32,6 +33,7 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
   decideNativeArea,
   layerRecognition,
   layerRecognitionQuery,
+  retryLayerRecognition,
 }) => {
   const hasBoundaryCandidates = layers.some(
     (layer) => layer.boundary_candidate?.status === 'usable',
@@ -127,17 +129,6 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
             />
           )}
         </div>
-        {layerRecognitionQuery.isError && (
-          <InlineMessage tone="warning">
-            Предложения типов недоступны
-            <Button
-              variant="ghost"
-              onClick={() => void layerRecognitionQuery.refetch()}
-            >
-              Повторить
-            </Button>
-          </InlineMessage>
-        )}
         {!reviewOnly && !!incompleteConstraintLayers.length && (
           <InlineMessage tone="warning" title="Часть геометрии недоступна">
             <div className="space-y-2">
@@ -200,6 +191,15 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
         title="Слои"
         description="Выберите тип объектов и подтвердите предложения"
       >
+        <LayerRecognitionStatus
+          recognition={layerRecognition}
+          loading={layerRecognitionQuery.isLoading}
+          error={
+            layerRecognitionQuery.isError || retryLayerRecognition?.isError
+          }
+          retrying={retryLayerRecognition?.isPending}
+          onRetry={() => retryLayerRecognition.mutate()}
+        />
         <LayerMappingWorkspace
           key={projectQuery.data?.id}
           recognition={layerRecognition}

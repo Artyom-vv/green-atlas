@@ -1,4 +1,5 @@
 import { MapViewSwitch } from '@/widgets/map/ui/MapViewSwitch';
+import { MapLegend } from '@/widgets/map/ui/MapLegend';
 import { Select } from '@green/ui';
 import type { FC } from 'react';
 import type { WorkspaceReadyModel } from '../../model/useWorkspaceModel';
@@ -54,6 +55,9 @@ export const CanvasViewControls: FC<CanvasViewControlsProps> = ({
               : 'Исходный DXF'}
           </option>
         </Select>
+      )}
+      {!sceneOpen && mapRenderMode === 'design' && (
+        <MapLegend layers={project.layers ?? []} />
       )}
       {project.map_ready && (
         <MapViewSwitch

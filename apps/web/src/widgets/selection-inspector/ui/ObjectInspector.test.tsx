@@ -1,10 +1,54 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ObjectInspector } from '@/widgets/selection-inspector/ui/ObjectInspector';
+import type { ValidationIssue } from '@green/api-client';
 
 afterEach(cleanup);
 
 describe('ObjectInspector', () => {
+  it('shows one cause for repeated checks of the selected planting', () => {
+    const issue = {
+      id: 'warning-1',
+      object_id: 'plant-1',
+      code: 'SOURCE_GEOMETRY_PARTIAL',
+      severity: 'warning',
+      title: 'Неполная геометрия',
+      description: 'Часть исходных объектов недоступна',
+    } as ValidationIssue;
+    render(
+      <ObjectInspector
+        object={{
+          id: 'plant-1',
+          kind: 'shrub',
+          x: 1,
+          y: 2,
+          radius: 1,
+          size_class: 'unspecified',
+          spacing_policy: 'balanced',
+          locked: false,
+          status: 'warning',
+        }}
+        issues={[
+          issue,
+          { ...issue, id: 'warning-2' },
+          { ...issue, id: 'other', object_id: 'plant-2', code: 'OTHER' },
+        ]}
+        onSpecies={vi.fn()}
+        onGrowthHorizon={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('status', { name: 'Ошибки: 0. Замечания: 1.' }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Что требует внимания (1)' }),
+    );
+    expect(
+      screen.getAllByText('Часть исходных объектов недоступна'),
+    ).toHaveLength(1);
+  });
+
   it('keeps a selected planting focused on validation and direct actions', () => {
     render(
       <ObjectInspector

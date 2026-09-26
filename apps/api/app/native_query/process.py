@@ -185,9 +185,9 @@ def _stop_group(child: subprocess.Popen, grace: float, signals: list[str]) -> No
     child.wait(timeout=grace)
 
 
-def _output_size(job: Path) -> int:
+def _output_size(job: Path, names: tuple[str, ...] = ("native.json", "native.json.tmp")) -> int:
     total = 0
-    for name in ("native.json", "native.json.tmp"):
+    for name in names:
         path = job / name
         try:
             info = path.lstat()
@@ -200,7 +200,8 @@ def _output_size(job: Path) -> int:
 
 
 def _supervise(child: subprocess.Popen, job: Path, started: float,
-               config: NativeQueryProcessConfig, cancelled: Callable[[], bool] | None):
+               config: NativeQueryProcessConfig, cancelled: Callable[[], bool] | None,
+               output_names: tuple[str, ...] = ("native.json", "native.json.tmp")):
     log, signals = bytearray(), []
     failure = None
     assert child.stdout is not None
@@ -223,7 +224,7 @@ def _supervise(child: subprocess.Popen, job: Path, started: float,
             while True:
                 drain()
                 _checkpoint(started, config, cancelled)
-                if _output_size(job) > config.max_reply_bytes:
+                if _output_size(job, output_names) > config.max_reply_bytes:
                     raise _Stop("output_limit", "Native output exceeded its byte budget")
                 if child.poll() is not None:
                     if _group_alive(child.pid):

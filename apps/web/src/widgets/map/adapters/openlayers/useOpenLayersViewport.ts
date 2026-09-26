@@ -864,7 +864,10 @@ export function useOpenLayersViewport(
     map.on('singleclick', (event) => {
       const activeTool = toolRef.current;
       if (callbackRef.current.onProbeCoordinate) {
-        callbackRef.current.onProbeCoordinate([event.coordinate[0], event.coordinate[1]]);
+        callbackRef.current.onProbeCoordinate([
+          event.coordinate[0],
+          event.coordinate[1],
+        ]);
         return;
       }
       callbackRef.current.onMapInspect?.(undefined);
@@ -1276,7 +1279,9 @@ export function useOpenLayersViewport(
       const size = map?.getSize();
       if (map && size?.[0] && size[1]) {
         map.getView().fit([...initialExtent], {
-          size, padding: [28, 28, 28, 28], maxZoom: 24,
+          size,
+          padding: [28, 28, 28, 28],
+          maxZoom: 24,
         });
       }
       if (planSourceRef.current.getFeatures().length) fitPlan();
@@ -1434,8 +1439,13 @@ export function useOpenLayersViewport(
   }, [renderMode]);
 
   useSourceOverviewLayer({
-    mapRef, targetRef, layersRef: geometryLayersRef,
-    geometry, hiddenNames: hiddenLayerNames, disabled: Boolean(cadSource),
+    mapRef,
+    targetRef,
+    layersRef: geometryLayersRef,
+    geometry,
+    hiddenNames: hiddenLayerNames,
+    disabled: Boolean(cadSource),
+    renderMode,
   });
   useSearchDomainLayer(mapRef, searchDomains);
 
@@ -1632,14 +1642,15 @@ export function useOpenLayersViewport(
   useEffect(() => {
     const source = placementPreviewSourceRef.current;
     source.clear();
-    const preview = inspectionPreview ?? ((tool === 'add_tree' || tool === 'add_shrub') ? placementPreview : undefined);
+    const preview =
+      inspectionPreview ??
+      (tool === 'add_tree' || tool === 'add_shrub'
+        ? placementPreview
+        : undefined);
     if (!preview) return;
     source.addFeature(
       new Feature({
-        geometry: new Circle(
-          preview.coordinate,
-          preview.radius,
-        ),
+        geometry: new Circle(preview.coordinate, preview.radius),
         markerGeometry: new Point(preview.coordinate),
         placementStatus: preview.status,
       }),

@@ -10,10 +10,11 @@ from app.exporting.contracts import (
     ReleaseCreateRequest,
     ReleasePackage,
 )
-from app.exporting.ports import DxfWriterPort, ExportProjectRepository
+from app.exporting.evidence import UNAVAILABLE_CHECKS, UnavailableReleaseEvidence
+from app.exporting.ports import CadWriterPort, DxfWriterPort, ExportProjectRepository
 from app.geometry.ports import GeometryEnginePort
 from app.projects.contracts import Project
-from app.releases.service import build_release, release_identity
+from app.releases.service import _zip, build_release, release_identity
 from app.scene.contracts import SceneSnapshot
 from app.validation.networks import release_network_issues
 
@@ -26,11 +27,18 @@ class ExportApplication:
         writer: DxfWriterPort,
         scene: Callable[[str, int], SceneSnapshot],
         geometry: GeometryEnginePort | None = None,
+        cad_writer: CadWriterPort | None = None,
     ) -> None:
         self.repository = repository
         self.writer = writer
         self.scene = scene
         self.geometry = geometry
+        self.cad_writer = cad_writer
+
+    def _cad(self, project: Project):
+        if self.cad_writer is None:
+            raise ValueError("Модуль выпуска AutoCAD не установлен")
+        return self.cad_writer.create(project)
 
     def _source_components(
         self, project: Project, source_content: bytes
@@ -67,6 +75,14 @@ class ExportApplication:
 
     def export(self, project_id: str) -> ExportArtifact:
         project = self.repository.get(project_id)
+        if project.import_status.mode == ImportMode.AUTOCAD_LIVE:
+            cad = self._cad(project)
+            content = _zip(cad.files)
+            artifact = ExportArtifact(filename="green-atlas-cad.zip", status="ready",
+                size=len(content), download_url="", kind="cad", media_type="application/zip")
+            artifact.download_url = f"/api/projects/{project.id}/exports/{artifact.id}/download"
+            self.repository.publish_export(project, artifact.id, content)
+            return artifact
         source_content = self.repository.get_source(project.id)
         if source_content is None:
             raise ValueError("Исходный DXF недоступен для экспорта")
@@ -95,6 +111,15 @@ class ExportApplication:
             raise ValueError("Добавьте хотя бы одну посадку")
         if project.source_file is None:
             raise ValueError("Исходный DXF недоступен для выпуска")
+        evidence = self.geometry
+        if project.import_status.mode == ImportMode.AUTOCAD_LIVE:
+            load = getattr(type(evidence), "prepared_engine", None)
+            if load is not None:
+                evidence = load(evidence, project) or UnavailableReleaseEvidence()
+            elif evidence is None:
+                evidence = UnavailableReleaseEvidence()
+            if isinstance(evidence, UnavailableReleaseEvidence) and request.mode == "final":
+                raise ValueError(UNAVAILABLE_CHECKS)
         if request.mode == "final":
             if project.source_review is not None:
                 raise ValueError("Финальный выпуск недоступен: расчёт ограничений исходного комплекта ещё не выполнен. Сохранение проекта и черновой выпуск доступны.")
@@ -106,7 +131,7 @@ class ExportApplication:
             )
             basis = request.regulatory_basis
             regulatory_reasons: list[str] = []
-            network_issues = release_network_issues(project, geometry=self.geometry)
+            network_issues = release_network_issues(project, geometry=evidence)
             if network_issues:
                 regulatory_reasons.append(
                     f"завершите проверки инженерных сетей: {len(network_issues)}"
@@ -141,10 +166,15 @@ class ExportApplication:
         source_content = self.repository.get_source(project.id)
         if source_content is None:
             raise ValueError("Исходный DXF недоступен для выпуска")
-        source_components = self._source_components(project, source_content)
-        _legacy_artifact, dxf_content = self.writer.create(
-            project, source_content, source_components
-        )
+        cad = None
+        if project.import_status.mode == ImportMode.AUTOCAD_LIVE:
+            cad = self._cad(project)
+            source_components, dxf_content = {}, b""
+        else:
+            source_components = self._source_components(project, source_content)
+            _legacy_artifact, dxf_content = self.writer.create(
+                project, source_content, source_components
+            )
         scene = self.scene(project.id, request.scene_horizon)
         package, artifacts = build_release(
             project,
@@ -154,7 +184,8 @@ class ExportApplication:
             scene,
             source_content,
             source_components,
-            geometry=self.geometry,
+            geometry=evidence,
+            cad=cad,
         )
         self.repository.publish_release(
             project, release_id, package.model_dump_json(), artifacts

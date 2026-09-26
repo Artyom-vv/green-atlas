@@ -452,6 +452,59 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Retry Source Layer Review",
+        "operationId": "retry_source_layer_review_api_projects__project_id__source_layer_review_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerRecognition"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/{project_id}/source-dxf": {
@@ -10808,7 +10861,10 @@
           },
           "kind": {
             "type": "string",
-            "const": "dxf",
+            "enum": [
+              "dxf",
+              "cad"
+            ],
             "title": "Kind",
             "default": "dxf"
           },
@@ -11978,6 +12034,40 @@
             },
             "type": "array",
             "title": "Proposals"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "running",
+              "failed",
+              "unconfigured"
+            ],
+            "title": "Status",
+            "default": "completed"
+          },
+          "processed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Processed Count",
+            "default": 0
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Count",
+            "default": 0
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
           }
         },
         "type": "object",
@@ -16366,6 +16456,7 @@
             "enum": [
               "bundle",
               "dxf",
+              "cad",
               "schedule",
               "manifest",
               "scene",

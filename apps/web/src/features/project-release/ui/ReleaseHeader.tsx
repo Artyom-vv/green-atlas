@@ -24,7 +24,7 @@ export const ReleaseHeader: FC<ReleaseHeaderProps> = ({
         {showRelease ? 'Файлы проекта' : `План версии ${planVersion}`}
       </strong>
       <span className="text-neutral-600">
-        Чертёж DXF, ведомость, дендроплан и 3D-сцена.
+        Чертёж, ведомость, дендроплан и 3D-сцена.
       </span>
     </div>
     {!showRelease && hasFiles && (

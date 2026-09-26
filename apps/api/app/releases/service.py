@@ -12,6 +12,8 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from posixpath import normpath
 from typing import TYPE_CHECKING, Any
+from app.exporting.cad_contracts import CadRelease
+from app.exporting.evidence import UnavailableReleaseEvidence, UNAVAILABLE_CHECKS
 
 from app.contracts import (
     GeometrySnapshot,
@@ -421,7 +423,7 @@ def dendroplan_svg(project: Project, horizon: int) -> bytes:
         '<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" '
         f'viewBox="{left - pad:.3f} {top - pad:.3f} {width:.3f} {height:.3f}">',
         f'<title id="title">Дендроплан {escape(project.name)}</title>',
-        '<desc id="desc">Эскизный векторный слой посадок. Подложка и полный контекст сохранены в DXF.</desc>',
+        '<desc id="desc">Эскизный слой посадок. Подложка сохранена в CAD-чертёже выпуска.</desc>',
         '<g fill="none" stroke="#667085" stroke-width="0.12" vector-effect="non-scaling-stroke">',
     ]
     for object_ in objects:
@@ -472,6 +474,7 @@ def build_release(
     source_components: dict[str, bytes] | None = None,
     *,
     geometry: GeometryEnginePort | None = None,
+    cad: CadRelease | None = None,
 ) -> tuple[ReleasePackage, dict[str, bytes]]:
     assert project.plan is not None and project.source_file is not None
     stem = Path(project.source_file.name).stem or "green-atlas"
@@ -479,14 +482,21 @@ def build_release(
     scene_content = _json_bytes(scene.model_dump(mode="json"))
     dendroplan = dendroplan_svg(project, request.scene_horizon)
     entries = {
-        f"{stem}-planting-plan.dxf": dxf_content,
         f"{stem}-planting-schedule.csv": schedule,
         f"{stem}-scene-{request.scene_horizon}y.json": scene_content,
         f"{stem}-dendroplan.svg": dendroplan,
     }
+    if cad is None:
+        entries[f"{stem}-planting-plan.dxf"] = dxf_content
+    else:
+        for path, content in cad.files.items():
+            if not _safe_archive_name(path):
+                raise ValueError("Недопустимый путь CAD-результата")
+            entries[f"cad/{path}"] = content
     source_components = source_components or {}
     provenance = project.source_file.prepared_provenance
-    primary_path = provenance.entry if provenance is not None else project.source_file.name
+    primary_path = ("autocad-snapshot.json" if cad is not None else
+                    provenance.entry if provenance is not None else project.source_file.name)
     if primary_path in source_components:
         raise ValueError("Дополнительный DXF дублирует основной исходник")
     if source_components and (provenance is None or not provenance.drawings):
@@ -515,10 +525,12 @@ def build_release(
         ("Сведения об основаниях ПП-616 и ПП-1160 внесены в выпуск; сервис не проверяет полный состав административных документов."
          if request.regulatory_basis is not None else
          "Основания ПП-616 и ПП-1160 в этом черновике не указаны."),
-        "Почва, влажность, инсоляция, рельеф и высоты зданий не подтверждены исходным DXF.",
+        "Почва, влажность, инсоляция, рельеф и высоты зданий не подтверждены исходным чертежом.",
     ]
     if missing_species:
         warnings.append(f"Вид не назначен для {len(missing_species)} посадок.")
+    if isinstance(geometry, UnavailableReleaseEvidence):
+        warnings.append(UNAVAILABLE_CHECKS)
     if project.source_review is not None:
         warnings.append("Посадки не проверены по ограничениям исходного комплекта: требуется расчёт после уточнения данных.")
     if hard_errors:
@@ -541,8 +553,9 @@ def build_release(
         if entry.status in {"passed", "failed"} and entry.rule_id is not None
     ]
     manifest = {
-        "schema": "green-atlas-release:2",
-        "editable": True,
+        # Version 3 must never be sent to the legacy DXF bundle importer.
+        "schema": "green-atlas-release:3" if cad is not None else "green-atlas-release:2",
+        "editable": cad is None,
         "release_id": release_id,
         "mode": request.mode,
         "status": "draft" if request.mode == "draft" else "ready",
@@ -628,17 +641,27 @@ def build_release(
         "limitations": warnings,
         "files": entry_hashes,
     }
+    if cad is not None:
+        manifest["cad"] = {
+            "entry": f"cad/{cad.entry}",
+            "snapshot_sha256": sha256(source_content).hexdigest(),
+            "reopen_receipt": cad.receipt.model_dump(mode="json", by_alias=True),
+        }
+        manifest["source"]["format"] = "autocad_snapshot"
     manifest_content = _json_bytes(manifest)
     entries[f"{stem}-manifest.json"] = manifest_content
     bundle = _zip(entries)
     files = {
-        "dxf": (f"{stem}-planting-plan.dxf", "application/dxf", dxf_content),
         "schedule": (f"{stem}-planting-schedule.csv", "text/csv; charset=utf-8", schedule),
         "manifest": (f"{stem}-manifest.json", "application/json", manifest_content),
         "scene": (f"{stem}-scene-{request.scene_horizon}y.json", "application/json", scene_content),
         "dendroplan": (f"{stem}-dendroplan.svg", "image/svg+xml", dendroplan),
         "bundle": (f"{stem}-release.zip", "application/zip", bundle),
     }
+    if cad is None:
+        files["dxf"] = (f"{stem}-planting-plan.dxf", "application/dxf", dxf_content)
+    else:
+        files["cad"] = (f"{stem}-cad.zip", "application/zip", _zip(cad.files))
     artifacts = [_artifact(project.id, release_id, kind, filename, media_type, content) for kind, (filename, media_type, content) in files.items()]
     package = ReleasePackage(
         id=release_id,

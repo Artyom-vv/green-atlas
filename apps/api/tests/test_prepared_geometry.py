@@ -117,6 +117,21 @@ def test_saved_artifact_loads_without_inventory_files_or_live_engine(
     constructor.assert_not_called()
 
 
+def test_release_basis_loader_never_starts_cad_and_rejects_stale_basis(setup, tmp_path):
+    engine, _, project = local(setup)
+    store = PreparedStore(tmp_path / "prepared")
+    router = ProjectLiveGeometry(Mock(), prepared_store=store)
+    router.live_engine = Mock(side_effect=AssertionError("Release must not prepare CAD"))
+    assert router.prepared_engine(project) is None
+    store.save(engine.snapshot)
+    loaded = router.prepared_engine(project)
+    assert isinstance(loaded, PreparedGeometryEngine)
+    assert router.prepared_engine(project) is loaded
+    project.layers[1].mapping_confirmed = False
+    assert router.prepared_engine(project) is None
+    router.live_engine.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "change", ["layer", "source", "inventory", "units", "decision"]
 )

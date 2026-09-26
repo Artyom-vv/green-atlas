@@ -3,7 +3,7 @@
 
 namespace ga::bridge {
 
-inline constexpr const char* kPluginVersion = "0.1.41";
+inline constexpr const char* kPluginVersion = "0.1.42";
 inline constexpr const char* kMcpQueueVersion = "v033";
 inline constexpr double kRequestedToleranceMetres = 0.0001;
 // Discovery bound for *review proposals*, not an automatic repair tolerance.

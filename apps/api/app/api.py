@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from app import building_screen
 from app.application import ProjectApplication
 from app.native_query.face_review import NativeFaceDecision, NativeFaceReview
-from app.composition import get_application
+from app.composition import get_application, get_layer_recognition
 from app.contracts import (
     ApiError,
     BrushPreview,
@@ -68,7 +68,8 @@ from app.dxf_import.contracts import (
     NativeAreaProposalDecisionRequest,
 )
 from app.dxf_import.http_execution import execute_import
-from app.dxf_import.layer_recognition import LayerRecognition, recognize_layers
+from app.dxf_import.layer_recognition import LayerRecognition
+from app.layer_recognition.service import LayerRecognitionService
 from app.dxf_import.native_contracts import NativeDxfSourceAsset
 from app.dxf_import.native_response import source_download_response
 from app.dxf_import.object_review_contracts import (
@@ -232,13 +233,28 @@ def delete_project(
 def source_layer_review(
     project_id: str,
     application: ProjectApplication = Depends(get_application),
+    recognition: LayerRecognitionService = Depends(get_layer_recognition),
 ) -> LayerRecognition:
     try:
         project = application.get(project_id, lightweight=True)
-        return recognize_layers(
+        return recognition.review(
             project.layers,
             project.source_file.content_sha256 if project.source_file else None,
         )
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/source-layer-review", response_model=LayerRecognition)
+def retry_source_layer_review(
+    project_id: str,
+    application: ProjectApplication = Depends(get_application),
+    recognition: LayerRecognitionService = Depends(get_layer_recognition),
+) -> LayerRecognition:
+    try:
+        project = application.get(project_id, lightweight=True)
+        return recognition.review(project.layers,
+            project.source_file.content_sha256 if project.source_file else None, retry=True)
     except Exception as error:
         raise handle(error) from error
 
@@ -810,9 +826,11 @@ def download_export(project_id: str, artifact_id: str, application: ProjectAppli
         content = application.download_export(project_id, artifact_id)
     except Exception as error:
         raise handle(error) from error
-    filename = f"{project.name.lower().replace(' ', '_')}_plan.dxf"
-    disposition = f"attachment; filename=green_plan.dxf; filename*=UTF-8''{quote(filename)}"
-    return Response(content=content, media_type="application/dxf", headers={"Content-Disposition": disposition})
+    is_cad_package = content.startswith(b"PK\x03\x04")
+    extension = "zip" if is_cad_package else "dxf"
+    filename = f"{project.name.lower().replace(' ', '_')}_plan.{extension}"
+    disposition = f"attachment; filename=green_plan.{extension}; filename*=UTF-8''{quote(filename)}"
+    return Response(content=content, media_type="application/zip" if is_cad_package else "application/dxf", headers={"Content-Disposition": disposition})
 
 
 @router.post("/projects/{project_id}/releases", response_model=ReleasePackage)

@@ -20,6 +20,7 @@ export interface SourceLayerFormProps extends Pick<
   | 'decideNativeArea'
   | 'layerRecognition'
   | 'layerRecognitionQuery'
+  | 'retryLayerRecognition'
 > {}
 export const SourceLayerFormPropsFor = (
   state: Pick<
@@ -43,6 +44,7 @@ export const SourceLayerFormPropsFor = (
     | 'decideNativeArea'
     | 'layerRecognition'
     | 'layerRecognitionQuery'
+    | 'retryLayerRecognition'
   >,
 ) => ({
   sourceWarnings: state.sourceWarnings,
@@ -64,4 +66,5 @@ export const SourceLayerFormPropsFor = (
   decideNativeArea: state.decideNativeArea,
   layerRecognition: state.layerRecognition,
   layerRecognitionQuery: state.layerRecognitionQuery,
+  retryLayerRecognition: state.retryLayerRecognition,
 });

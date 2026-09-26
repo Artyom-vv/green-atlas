@@ -341,7 +341,9 @@ def test_direct_project_opens_and_edits_without_any_dxf_read(monkeypatch):
     assert client.get(url + '/source-dxf/download').status_code != 200
     exported = client.post(url + '/exports')
     assert exported.status_code == 400
-    assert 'живого снимка' in exported.text
+    # Live export now has its own AutoCAD writer. An empty plan still cannot
+    # be released; importantly it never reaches the legacy DXF reader/writer.
+    assert 'Добавьте посадки' in exported.text
     zone = {'id': 'work', 'label': 'Участок', 'geometry': {
         'type': 'Polygon', 'coordinates': [[[1, 1], [9, 1], [9, 9], [1, 9], [1, 1]]]}}
     saved = client.put(url + '/planting-zones', json={'zones': [zone]})

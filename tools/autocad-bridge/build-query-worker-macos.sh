@@ -24,6 +24,8 @@ xcrun clang++ -std=c++17 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -bun
   "$acad_root/Contents/Plugins/AcBr.dbx/AcBr" \
   "$repo_root/tools/autocad-bridge/query-worker/entry.cpp" \
   "$repo_root/tools/autocad-bridge/query-worker/package_query.cpp" \
+  "$repo_root/tools/autocad-bridge/query-worker/cad_release.cpp" \
+  "$source_root/session_capture_instances.cpp" \
   "$source_root/direct_query_kernel.cpp" \
   "$source_root/native_affine_query.cpp" \
   "$source_root/native_area_group.cpp" \

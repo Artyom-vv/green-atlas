@@ -52,6 +52,7 @@ export const WorkspaceSelectionInspector: FC<
           onLock={!planLocked && !editorBusy ? previewSelectionLock : undefined}
 
           object={selectedObject}
+          issues={issues}
           speciesName={
             selectedObject.species_revision_id
               ? speciesNames.get(selectedObject.species_revision_id)

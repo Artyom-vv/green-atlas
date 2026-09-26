@@ -25,10 +25,13 @@ from app.cad_intake.preview_adapter import ProcessCadPreviewPreparation
 from app.cad_intake.preview_application import CadPreviewApplication
 from app.dxf_import.adapters import EzdxfReader
 from app.exporting.adapters import DxfRoundTripWriter
+from app.exporting.cad_writer import AutoCadReleaseWriter
 from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.ports import GeometryEnginePort
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import SqliteProjectHistory
+from app.layer_recognition.providers import configured_provider
+from app.layer_recognition.service import LayerRecognitionService
 from app.native_query.live_runtime import configured_live_engine
 from app.native_query.prepared_snapshot import PreparedStore
 from app.native_query.project_runtime import ProjectLiveGeometry
@@ -62,6 +65,23 @@ class Runtime:
     _conversations: ConversationStore | None = field(default=None, init=False)
     _agent_runs: AgentRunStore | None = field(default=None, init=False)
     _resource_lock: RLock = field(default_factory=RLock, init=False)
+    _layer_recognition: LayerRecognitionService | None = field(default=None, init=False)
+
+    @property
+    def layer_recognition(self) -> LayerRecognitionService:
+        with self._resource_lock:
+            if self._closed:
+                raise RuntimeError("Runtime is closed")
+            if self._layer_recognition is None:
+                provider, error = None, None
+                try:
+                    provider = configured_provider()
+                except ValueError as problem:
+                    error = str(problem)
+                self._layer_recognition = LayerRecognitionService(
+                    Path(self.database_path + ".layer-recognition"), provider, error,
+                )
+            return self._layer_recognition
 
     @property
     def conversations(self) -> ConversationStore:
@@ -95,6 +115,8 @@ class Runtime:
             self._closed = True
             if self._agent_runs is not None:
                 self._agent_runs.close()
+            if self._layer_recognition is not None:
+                self._layer_recognition.close()
             if self._conversations is not None:
                 self._conversations.close()
             self.operation_repository.close()
@@ -126,6 +148,7 @@ def create_runtime(database_path: str | os.PathLike[str], *, geometry_engine: Ge
         geometry_query=IndexedGeometryQuery(),
         validator=RuleBasedPlanValidator(geometry=geometry),
         writer=DxfRoundTripWriter(),
+        cad_writer=AutoCadReleaseWriter(path),
         candidate_generator=ShapelyCandidateGenerator(),
         zone_validator=zone_validator,
         now=utc_now,
@@ -173,6 +196,10 @@ def get_runtime() -> Runtime:
 
 def get_application() -> ProjectApplication:
     return get_runtime().application
+
+
+def get_layer_recognition() -> LayerRecognitionService:
+    return get_runtime().layer_recognition
 
 
 def get_cad_intake() -> CadIntakeApplication:

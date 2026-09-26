@@ -1,14 +1,17 @@
 import type { FC } from 'react';
-import type { PlanObject } from '@green/api-client';
+import type { PlanObject, ValidationIssue } from '@green/api-client';
 import { Crosshair, Lock } from 'lucide-react';
 import { IconButton, InlineMessage } from '@green/ui';
 import type { GrowthHorizon } from '@/entities/planting-forecast';
 import { EditorPanel } from '@/shared/ui/inspector';
 import { EditorGrowth } from '@/entities/planting-forecast/ui/PlantingGrowth';
 import { SelectionActions } from './SelectionActions';
+import { selectionProblems } from '../model/selectionProblems';
+import { SelectionIssues } from './SelectionIssues';
 
 export interface ObjectInspectorProps {
   object?: PlanObject;
+  issues?: ValidationIssue[];
   speciesName?: string;
   growthHorizon?: GrowthHorizon;
   onGrowthHorizon: (value: GrowthHorizon) => void;
@@ -22,6 +25,7 @@ export interface ObjectInspectorProps {
 }
 export const ObjectInspector: FC<ObjectInspectorProps> = ({
   object,
+  issues,
   speciesName,
   growthHorizon,
   onGrowthHorizon,
@@ -103,6 +107,7 @@ export const ObjectInspector: FC<ObjectInspectorProps> = ({
           onLock={onLock ? () => onLock(!object.locked) : undefined}
         />
       )}
+      <SelectionIssues problems={selectionProblems([object], issues)} />
       <EditorGrowth
         objects={[object]}
         value={growthHorizon}

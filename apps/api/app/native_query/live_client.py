@@ -190,6 +190,18 @@ class LiveQueryClient:
         if current != session:
             raise ValueError("Live session basis changed")
 
+    def archive(self, session: LiveSession) -> Path:
+        """Copy the checked open document and loaded XREFs through AutoCAD.
+
+        A source edit/expired session is an error, never an instruction to load
+        similarly named saved files. The caller must retain/verify the receipt.
+        """
+        request_id = uuid4().hex
+        current = self._exchange("archive", request_id, session.session_id)
+        if current != session:
+            raise ValueError("CAD archive belongs to another capture")
+        return self.queue / f"archive-{request_id}"
+
     def measure(
         self, session: LiveSession, query: NativeObjectQuery
     ) -> NativeObjectReply:

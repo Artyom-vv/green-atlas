@@ -1,5 +1,6 @@
 #include "live_query_session.h"
 #include "live_inventory.h"
+#include "session_capture.h"
 #include "native_face_catalog.h"
 #include "native_query_command.h"
 #include "capture_commands.h"
@@ -131,6 +132,15 @@ std::string openSession(const std::string& token, const std::string& snapshotPat
     return session->metadata();
 }
 std::string inspectSession(const std::string& token) { return checked(token).metadata(); }
+std::string archiveSession(const std::string& token, const std::string& destination) {
+    auto& current = checked(token);
+    const auto identity = current.metadata();
+    ga::capture::capturePackage(*current.host, destination, current.snapshotHash);
+    // The archive was made in this modal command after checking the session.
+    // restore/forward XREF symbol notifications may invalidate later editor
+    // queries. Retain those notifications; cached local geometry remains valid.
+    return identity;
+}
 void querySession(const std::string& token, const std::string& requestPath) {
     checked(token);
     ga::nativeQuery::queryObjectsFile(requestPath,[&]{ checked(token); });

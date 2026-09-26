@@ -85,6 +85,8 @@ xcrun clang++ \
   "$source_root/native_query_batch.cpp" \
   "$source_root/native_query_command.cpp" \
   "$source_root/live_query_session.cpp" \
+  "$source_root/session_capture.cpp" \
+  "$source_root/session_capture_instances.cpp" \
   "$source_root/live_inventory.cpp" \
   "$source_root/live_query_transport.cpp" \
   "$source_root/xref_instance_access.cpp" \

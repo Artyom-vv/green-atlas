@@ -17,6 +17,7 @@
 #include <mach-o/dyld.h>
 #include <thread>
 #include <signal.h>
+#include <filesystem>
 
 namespace ga::liveQuery {
 namespace {
@@ -68,6 +69,14 @@ void process(const std::string& id) {
             if(access(snapshot.c_str(),F_OK)==0) throw std::runtime_error("live_output_exists");
             payload=openSession(token,snapshot);
         } else if(op=="inspect") payload=inspectSession(token);
+        else if(op=="archive") {
+            const auto root=base+"archive-"+id;
+            if(!std::filesystem::create_directory(root))
+                throw std::runtime_error("live_output_exists");
+            std::filesystem::permissions(root,std::filesystem::perms::owner_all,
+                std::filesystem::perm_options::replace);
+            payload=archiveSession(token,root+"/Native");
+        }
         else if(op=="prepare_faces") {
             prepareSessionFaces(token,base+"layers-"+id+".txt",base+"faces-"+id+".json");
             payload=inspectSession(token);

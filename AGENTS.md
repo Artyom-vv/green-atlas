@@ -36,8 +36,8 @@ Baseline legacy-связей нельзя расширять ради зелён
 
 Рабочая папка текущего Mac: `/Users/artem/Documents/ЛЦТ`;
 историческая папка ПК: `D:\current-projects\green-atlas`.
-Ветка: `codex/prepared-geometry-placement`, создана от контрольного коммита
-`d685f8b` в опубликованной `codex/kustanayskaya-native-demo`. Перед работой
+Ветка: `codex/cad-release-layer-ai-map`, создана от контрольного коммита
+`6dbfe74d` в опубликованной `codex/kustanayskaya-checkpoint-2026-09-26`. Перед работой
 проверяйте status и сохраняйте незакоммиченные изменения пользователя.
 
 В Windows перед командами разработки обязательно выполняйте

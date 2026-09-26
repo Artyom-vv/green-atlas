@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { FlowDocument } from '@/widgets/project-flow';
 import { DataPassportPanel } from '@/entities/source-data/ui/DataPassportPanel';
 import { LayerMappingWorkspace } from '@/entities/source-data/ui/LayerMappingWorkspace';
+import { LayerRecognitionStatus } from '@/entities/source-data/ui/LayerRecognitionStatus';
 import type { SourceReadOnlyDocumentProps } from './SourceReadOnlyDocument.props';
 import { SourceSection } from './SourceSection';
 import { SourceReadIssues } from './SourceReadIssues';
@@ -20,6 +21,8 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
   startSourceEditing,
   reviewOnly,
   layerRecognition,
+  layerRecognitionQuery,
+  retryLayerRecognition,
   projectQuery,
 }) => (
   <FlowDocument
@@ -77,6 +80,15 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
         description={`Слои чертежа (${layers.length})`}
         defaultOpen={false}
       >
+        <LayerRecognitionStatus
+          recognition={layerRecognition}
+          loading={layerRecognitionQuery.isLoading}
+          error={
+            layerRecognitionQuery.isError || retryLayerRecognition?.isError
+          }
+          retrying={retryLayerRecognition?.isPending}
+          onRetry={() => retryLayerRecognition?.mutate()}
+        />
         <LayerMappingWorkspace
           recognition={layerRecognition}
           readOnly

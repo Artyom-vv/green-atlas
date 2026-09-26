@@ -97,6 +97,7 @@ class ProjectApplication:
         zone_validator: ZoneValidator | None = None,
         now: Callable[[], datetime] = utc_now,
         new_id: Callable[[], str] = random_id,
+        cad_writer=None,
     ) -> None:
         self.repository = repository
         self.native_sources = NativeDxfSourceApplication(repository)
@@ -193,6 +194,7 @@ class ProjectApplication:
         self._exports = ExportApplication(
             repository=repository, writer=writer, scene=self._scene.get_scene,
             geometry=geometry,
+            cad_writer=cad_writer,
         )
 
     def get_operation(self, project_id: str, operation_id: str) -> ProjectOperation:

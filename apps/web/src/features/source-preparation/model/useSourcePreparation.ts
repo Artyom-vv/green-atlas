@@ -72,6 +72,19 @@ export function useSourcePreparation({
     enabled: Boolean(projectQuery.data?.layers?.length),
     staleTime: Infinity,
     retry: false,
+    // The desktop WebView may report an inactive document while its window is
+    // visible. A running server job must still reach a terminal UI state.
+    refetchIntervalInBackground: true,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? 1500 : false,
+  });
+  const retryLayerRecognition = useMutation({
+    mutationFn: () => preparationApi.retryLayerRecognition(projectId),
+    onSuccess: (result) =>
+      queryClient.setQueryData(
+        ['layer-recognition', projectId, currentSource],
+        result,
+      ),
   });
   const layerRecognition =
     layerRecognitionQuery.data?.source_sha256 ===
@@ -422,6 +435,7 @@ export function useSourcePreparation({
     startSourceEditing: () => setEditingSource(true),
     layerRecognition,
     layerRecognitionQuery,
+    retryLayerRecognition,
     projectQuery,
     dataPassportQuery,
     layers,

@@ -12,7 +12,7 @@ class ExportArtifact(BaseModel):
     status: Literal["ready", "failed"]
     size: int
     download_url: str
-    kind: Literal["dxf"] = "dxf"
+    kind: Literal["dxf", "cad"] = "dxf"
     media_type: str = "application/dxf"
 
 
@@ -40,7 +40,7 @@ class ReleaseCreateRequest(BaseModel):
 class ReleaseArtifact(BaseModel):
     id: str
     filename: str
-    kind: Literal["bundle", "dxf", "schedule", "manifest", "scene", "dendroplan"]
+    kind: Literal["bundle", "dxf", "cad", "schedule", "manifest", "scene", "dendroplan"]
     media_type: str
     size: int = Field(ge=0)
     sha256: str

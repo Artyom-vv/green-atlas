@@ -45,7 +45,8 @@ describe('CAD project appearance', () => {
     const [fill, line, text, repeated] = f.objects.map(
       (object) => object.material,
     );
-    expect(fill.uniforms.opacity.value).toBe(0.12);
+    expect(fill.uniforms.opacity.value).toBe(1);
+    expect(fill.uniforms.color.value.getHexString()).toBe('f0e8da');
     expect(line.uniforms.opacity.value).toBe(1);
     expect(text.uniforms.opacity.value).toBe(1);
     expect(line).toBe(repeated);
@@ -53,7 +54,7 @@ describe('CAD project appearance', () => {
     expect(f.objects.map((object) => object.renderOrder)).toEqual([
       -2, -1, 0, -1,
     ]);
-    expect(line.uniforms.color.value.getHexString()).toBe('c7ced6');
+    expect(line.uniforms.color.value.getHexString()).toBe('aa9475');
     expect(text.uniforms.color.value.getHexString()).toBe('596675');
     expect(f.material.uniforms.color.value.getHexString()).toBe('ab1234');
     const disposal = [fill, line, text].map((material) =>

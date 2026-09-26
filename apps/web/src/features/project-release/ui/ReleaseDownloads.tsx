@@ -12,6 +12,7 @@ import { Button, Disclosure } from '@green/ui';
 const artifactPresentation = {
   bundle: { label: 'Полный пакет', icon: FileArchive },
   dxf: { label: 'План в DXF', icon: Map },
+  cad: { label: 'Чертёж DWG с подосновами', icon: Map },
   schedule: { label: 'Посадочная ведомость', icon: FileSpreadsheet },
   manifest: { label: 'Основания и пробелы данных', icon: FileCode2 },
   scene: { label: 'Снимок 3D-сцены', icon: FileCode2 },
@@ -54,6 +55,12 @@ export const ReleaseDownloads: FC<ReleaseDownloadsProps> = ({
         </div>
       )}
       <Disclosure variant="plain" title="Отдельные файлы">
+        {artifacts.some((artifact) => artifact.kind === 'cad') && (
+          <p className="m-0 text-xs text-neutral-600">
+            Распакуйте CAD-пакет и откройте planting-plan.dwg. Подосновы должны
+            оставаться рядом с чертежом.
+          </p>
+        )}
         <section className="grid gap-1" aria-label="Файлы выпуска">
           {artifacts
             .filter((artifact) => artifact.kind !== 'bundle')

@@ -82,6 +82,7 @@ describe('assisted planning product surface', () => {
       'removeSourceAreaGroup',
       'reportAgentControlResult',
       'resumeAgentRun',
+      'retryLayerRecognition',
       'runAgentRun',
       'saveMappings',
       'savePlantingZones',

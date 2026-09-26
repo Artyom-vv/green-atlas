@@ -10,6 +10,8 @@ export interface SourceReadOnlyDocumentProps extends Pick<
   | 'startSourceEditing'
   | 'reviewOnly'
   | 'layerRecognition'
+  | 'layerRecognitionQuery'
+  | 'retryLayerRecognition'
   | 'projectQuery'
 > {
   onPlan: () => void;
@@ -26,6 +28,8 @@ export const SourceReadOnlyDocumentPropsFor = (
     | 'startSourceEditing'
     | 'reviewOnly'
     | 'layerRecognition'
+    | 'layerRecognitionQuery'
+    | 'retryLayerRecognition'
     | 'projectQuery'
   >,
 ) => ({
@@ -38,5 +42,7 @@ export const SourceReadOnlyDocumentPropsFor = (
   startSourceEditing: state.startSourceEditing,
   reviewOnly: state.reviewOnly,
   layerRecognition: state.layerRecognition,
+  layerRecognitionQuery: state.layerRecognitionQuery,
+  retryLayerRecognition: state.retryLayerRecognition,
   projectQuery: state.projectQuery,
 });

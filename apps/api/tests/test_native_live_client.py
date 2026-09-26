@@ -123,6 +123,27 @@ def test_native_edit_error_is_not_a_geometry_fallback(tmp_path):
     assert not errors and caught.value.code == "live_source_changed_or_inactive"
 
 
+@pytest.mark.parametrize("replaced", [False, True])
+def test_archive_requires_exact_live_identity(tmp_path, replaced):
+    initial = session(tmp_path)
+    request_ids = []
+    def archived(identity, operation, token):
+        assert operation == "archive" and token == initial.session_id
+        request_ids.append(identity)
+        current = session(tmp_path, source_sha256="d" * 64) if replaced else initial
+        return envelope(identity, current)
+    thread, errors = serve_once(tmp_path, archived)
+    client = LiveQueryClient(tmp_path, timeout_seconds=2)
+    if replaced:
+        with pytest.raises(ValueError, match="another capture"):
+            client.archive(initial)
+    else:
+        result = client.archive(initial)
+        assert result == tmp_path / f"archive-{request_ids[0]}"
+    thread.join()
+    assert not errors
+
+
 def test_timeout_leaves_cancel_marker_not_an_empty_success(tmp_path):
     with pytest.raises(LiveQueryError) as caught:
         LiveQueryClient(tmp_path, timeout_seconds=0.03).inspect(session(tmp_path))

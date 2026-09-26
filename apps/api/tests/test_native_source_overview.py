@@ -7,6 +7,22 @@ from app.geometry.query_adapters import IndexedGeometryQuery
 from app.projects.contracts import Project
 
 
+def test_overview_declares_semantics_without_closing_open_lines():
+    from shapely.geometry import LineString, Polygon
+    from app.geometry.source_overview import source_overview
+
+    result = source_overview([
+        ({'properties': {'source_layer': 'Газон', 'kind': 'lawn'}},
+         Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])),
+        ({'properties': {'source_layer': 'Здание', 'kind': 'building'}},
+         LineString([(12, 0), (12, 10)])),
+    ], (-1, -1, 13, 11), 1)
+    groups = {g.attrib['data-kind']: g for g in ET.fromstring(result['svg'])}
+    assert groups['lawn'].attrib['data-shape'] == 'area'
+    assert groups['building'].attrib['data-shape'] == 'line'
+    assert groups['building'].attrib['fill'] == 'none'
+
+
 def test_picking_budget_does_not_erase_unmapped_native_context():
     features = [{'type': 'Feature', 'id': str(i),
         'properties': {'kind': 'building' if i == 0 else 'ignore',

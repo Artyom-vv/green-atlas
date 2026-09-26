@@ -143,7 +143,13 @@
     self.log = [NSFileHandle fileHandleForWritingToURL:log error:&error];
     self.engine = [[NSTask alloc] init];
     self.engine.executableURL = executable;
-    self.engine.arguments = @[@"--data-dir", data.path, @"--web-dir", web.path, @"--ticket-root", transfers.path];
+    NSMutableArray *arguments = [NSMutableArray arrayWithArray:@[@"--data-dir", data.path, @"--web-dir", web.path, @"--ticket-root", transfers.path]];
+    NSURL *packageContents = [NSBundle.mainBundle.bundleURL.URLByDeletingLastPathComponent URLByDeletingLastPathComponent];
+    NSURL *cadWorker = [packageContents URLByAppendingPathComponent:@"Workers/GreenAtlasQuery.bundle"];
+    if ([NSFileManager.defaultManager fileExistsAtPath:cadWorker.path]) {
+        [arguments addObjectsFromArray:@[@"--cad-worker", cadWorker.path]];
+    }
+    self.engine.arguments = arguments;
     self.pipe = [NSPipe pipe]; self.engine.standardOutput = self.pipe; self.engine.standardError = self.log;
     __weak Desktop *weakSelf = self;
     NSTask *launched = self.engine;

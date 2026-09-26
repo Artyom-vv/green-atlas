@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from app.exporting.cad_contracts import CadRelease
 from app.exporting.contracts import ExportArtifact
 from app.projects.contracts import Project
 from app.projects.ports import ProjectReader
@@ -12,6 +13,10 @@ class DxfWriterPort(Protocol):
         source_content: bytes,
         source_components: dict[str, bytes] | None = None,
     ) -> tuple[ExportArtifact, bytes]: ...
+
+
+class CadWriterPort(Protocol):
+    def create(self, project: Project) -> CadRelease: ...
 
 
 class ExportProjectRepository(ProjectReader, Protocol):
