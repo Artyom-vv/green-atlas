@@ -10,6 +10,34 @@ import type { PlanObject } from '@green/api-client';
 import { WorkspaceChecks } from './WorkspaceChecks';
 afterEach(cleanup);
 
+it('shows distinct reasons instead of counting repeated warnings as separate problems', () => {
+  const onLocate = vi.fn();
+  const assumptions = Array.from({ length: 25 }, (_, index) => ({
+    code: 'GEOMETRY_RULE_ASSUMPTION',
+    title: 'Рабочие допущения',
+    description: `Допущение ${index + 1}`,
+    severity: 'warning' as const,
+    object_id: `plant-${index % 15}`,
+  }));
+  const partial = Array.from({ length: 15 }, (_, index) => ({
+    code: 'SOURCE_GEOMETRY_PARTIAL',
+    title: 'Неполная подоснова',
+    description: `Источник: HATCH 6DE6/2DCAD9, посадка ${index + 1}`,
+    severity: 'warning' as const,
+    object_id: `plant-${index}`,
+  }));
+  render(<WorkspaceChecks issues={[...assumptions, ...partial]}
+    onAssign={vi.fn()} onLocate={onLocate} />);
+  expect(screen.getByText('Причин: 2')).toBeVisible();
+  expect(screen.getByText('Замечаний: 25')).toBeVisible();
+  expect(screen.getByText('Замечаний: 15')).toBeVisible();
+  const group = within(screen.getByRole('group', { name: 'Неполная подоснова' }));
+  fireEvent.click(group.getByRole('button', { name: 'Показать на карте: Неполная подоснова, посадок: 15' }));
+  expect(onLocate).toHaveBeenCalledWith(partial.map((item) => item.object_id));
+  fireEvent.click(group.getByRole('button', { name: 'Подробности проверки' }));
+  expect(screen.getByText(partial[0].description)).toBeVisible();
+});
+
 it('groups metadata tasks while keeping real spatial evidence available', () => {
   const onAssign = vi.fn(),
     onLocate = vi.fn();

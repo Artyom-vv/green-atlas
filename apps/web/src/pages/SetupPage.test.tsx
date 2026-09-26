@@ -737,7 +737,7 @@ describe('geometry operation status recovery', () => {
       );
       expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
         { layer_id: 'boundary-a', kind: 'site_border', visible: true,
-          ...(!scenario.incomplete ? { confirmed: true } : {}) },
+          ...(!scenario.incomplete ? { confirmed: true, category: 'project_boundary' } : {}) },
         {
           layer_id: 'building-a',
           kind: scenario.incomplete ? 'ignore' : 'building',

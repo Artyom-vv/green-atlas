@@ -1,6 +1,7 @@
 import type { Layer, LayerMapping } from '@green/api-client';
 import { Select, Text } from '@green/ui';
 import type { FC } from 'react';
+import { selectPlanningBoundary } from '../model/layerKinds';
 
 interface BoundaryCandidatePickerProps {
   layers: Layer[];
@@ -36,7 +37,7 @@ export const BoundaryCandidatePicker: FC<BoundaryCandidatePickerProps> = ({
   const metrics = selected?.boundary_candidate;
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
+    <section className="min-w-0">
       <label className="block">
         <Text
           as="span"
@@ -51,24 +52,7 @@ export const BoundaryCandidatePicker: FC<BoundaryCandidatePickerProps> = ({
           value={selected?.id ?? ''}
           onChange={(event) => {
             const selectedId = event.target.value;
-            const next = Object.fromEntries(
-              Object.entries(mappings).map(([id, mapping]) => [
-                id,
-                mapping.kind === 'site_border'
-                  ? { ...mapping, kind: 'ignore' as const, confirmed: true }
-                  : mapping,
-              ]),
-            );
-            if (selectedId) {
-              const mapping = mappings[selectedId];
-              if (mapping)
-                next[selectedId] = {
-                  ...mapping,
-                  kind: 'site_border',
-                  confirmed: true,
-                };
-            }
-            onChange(next);
+            onChange(selectPlanningBoundary(mappings, selectedId));
           }}
         >
           <option value="">Выберите контур</option>

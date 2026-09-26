@@ -1,10 +1,11 @@
 import type { Layer, LayerMapping, LayerRecognition } from '@green/api-client';
-import { DataTable, Text } from '@green/ui';
+import { Text } from '@green/ui';
 import type { CSSProperties, FC } from 'react';
 import {
   LAYER_KIND_LABELS,
   isUnclassifiedMapping,
   toLayerMapping,
+  selectPlanningBoundary,
 } from '../model/layerKinds';
 import { LayerRoleFields } from './LayerRoleFields';
 
@@ -16,6 +17,7 @@ export interface LayerMappingTableProps {
   recognition?: LayerRecognition;
 }
 
+/** A container-responsive list keeps long CAD names and review actions inside each row. */
 export const LayerMappingTable: FC<LayerMappingTableProps> = ({
   layers,
   mappings,
@@ -23,84 +25,104 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
   readOnly = false,
   recognition,
 }) => (
-  <DataTable layout="fixed" className="min-w-144">
-    <colgroup>
-      <col />
-      <col className="w-60" />
-      <col className="w-24" />
-    </colgroup>
-    <thead>
-      <tr>
-        <th scope="col">Слой DXF</th>
-        <th scope="col">Тип объектов</th>
-        <th scope="col" className="text-right">
-          Объектов
-        </th>
-      </tr>
-    </thead>
-    <tbody>
+  <div className="@container">
+    <div
+      aria-hidden="true"
+      className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 border-0 border-b border-solid border-neutral-200 bg-neutral-50 px-4 py-3 text-xs font-medium text-neutral-600 @2xl:grid"
+    >
+      <span>Слой чертежа и объекты</span>
+      <span>Тип объектов</span>
+    </div>
+    <ul aria-label="Слои чертежа" className="m-0 list-none p-0">
       {layers.map((layer) => {
         const mapping = mappings[layer.id] ?? toLayerMapping(layer);
-        const warning =
-          (mapping.kind === 'ignore' && layer.required) ||
-          !layer.geometry_complete;
-        const needsReview = Boolean(
-          mapping.confirmed === false,
-        );
-        const reviewReason = layer.suggestion_reasons?.join('\n');
+        const needsReview = mapping.confirmed === false;
         return (
-          <tr
+          <li
             key={layer.id}
-            className={warning || needsReview ? 'bg-yellow-100/50' : undefined}
+            className={`grid min-w-0 gap-4 border-0 border-b border-solid border-neutral-200 p-4 last:border-b-0 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @2xl:gap-6 ${needsReview ? 'bg-amber-50/60' : 'bg-white'}`}
           >
-            <td>
-              <div className="grid grid-cols-[12px_minmax(100px,1fr)] items-center gap-x-2 gap-y-1">
+            <div className="min-w-0">
+              <div className="grid grid-cols-[12px_minmax(0,1fr)] items-start gap-2">
                 <span
                   aria-hidden="true"
-                  className="size-3 border-2 border-(--layer-color)"
+                  className="mt-1 size-3 rounded-xs border-2 border-(--layer-color)"
                   style={{ '--layer-color': layer.color } as CSSProperties}
                 />
-                <code className="font-mono text-xs wrap-anywhere text-neutral-700">
+                <code className="font-mono text-xs leading-5 wrap-anywhere text-neutral-800">
                   {layer.source_name}
                 </code>
-                {!!layer.required && (
-                  <Text variant="caption" className="col-start-2 text-blue-700">
-                    нужен для границы
-                  </Text>
-                )}
-                {!layer.geometry_complete && (
-                  <Text variant="caption" className="col-start-2 text-blue-700">
-                    есть замечания к геометрии
-                  </Text>
-                )}
-                {needsReview && (
-                  <Text
-                    variant="caption"
-                    className="col-start-2 text-amber-700"
-                    title={reviewReason}
+              </div>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 pl-5 text-xs">
+                <span className="text-neutral-600">
+                  Объектов:{' '}
+                  <span className="tabular-nums">
+                    {layer.object_count.toLocaleString('ru-RU')}
+                  </span>
+                </span>
+                {needsReview ? (
+                  <span
+                    className="text-amber-700"
+                    title={layer.suggestion_reasons?.join('\n')}
                   >
                     проверьте роль
-                  </Text>
+                  </span>
+                ) : (
+                  mapping.confirmed === true && (
+                    <span className="text-green-700">
+                      {mapping.kind === 'ignore'
+                        ? 'Исключение подтверждено'
+                        : 'Роль подтверждена'}
+                    </span>
+                  )
                 )}
               </div>
-            </td>
-            <td>
-              {readOnly ? (
-                <>
-                  <div>{recognition?.categories.find((item) => item.category === mapping.category)?.label ??
-                    (isUnclassifiedMapping(mapping) ? 'Назначение не определено' : LAYER_KIND_LABELS[mapping.kind])}</div>
-                </>
-              ) : (
-                <LayerRoleFields layer={layer} mapping={mapping} recognition={recognition}
-                  onChange={(next) => onChange({ ...mappings, [layer.id]: next })} />
+              {layer.required && (
+                <Text
+                  variant="caption"
+                  className="mt-2 block pl-5 text-blue-700"
+                >
+                  нужен для границы
+                </Text>
               )}
-            </td>
-            <td className="text-right font-mono tabular-nums">
-              {layer.object_count}
-            </td>
-          </tr>
+              {!layer.geometry_complete && (
+                <Text
+                  variant="caption"
+                  className="mt-2 block pl-5 text-blue-700"
+                >
+                  есть замечания к геометрии
+                </Text>
+              )}
+            </div>
+            <div className="min-w-0">
+              {readOnly ? (
+                <div className="text-sm text-neutral-800">
+                  {recognition?.categories.find(
+                    (item) => item.category === mapping.category,
+                  )?.label ??
+                    (isUnclassifiedMapping(mapping)
+                      ? 'Назначение не определено'
+                      : LAYER_KIND_LABELS[mapping.kind])}
+                </div>
+              ) : (
+                <LayerRoleFields
+                  layer={layer}
+                  mapping={mapping}
+                  recognition={recognition}
+                  onChange={(next) => {
+                    const updated = { ...mappings, [layer.id]: next };
+                    onChange(
+                      next.kind === 'site_border'
+                        ? selectPlanningBoundary(updated, layer.id)
+                        : updated,
+                    );
+                  }}
+                />
+              )}
+            </div>
+          </li>
         );
       })}
-    </tbody>
-  </DataTable>
+    </ul>
+  </div>
 );

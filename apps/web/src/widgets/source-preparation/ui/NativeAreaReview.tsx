@@ -44,14 +44,18 @@ export function NativeAreaReview({
   return (
     <>
       <Disclosure
-        variant="plain"
-        title={automatic ? 'Ручная корректировка замыканий' : `Замыкание контуров (${pending} на проверке)`}
+        variant="panel"
+        title={
+          automatic
+            ? 'Ручная корректировка замыканий'
+            : `Замыкание контуров (${pending} на проверке)`
+        }
       >
         <ul className="m-0 space-y-2 p-0">
           {proposals.map((proposal) => (
             <li
               key={proposal.id}
-              className="flex items-center gap-3 rounded border border-neutral-200 p-3"
+              className="flex flex-wrap items-center gap-3 rounded border border-neutral-200 p-3"
             >
               <div className="min-w-0 flex-1 text-sm">
                 <div className="font-medium wrap-anywhere">

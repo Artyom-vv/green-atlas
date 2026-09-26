@@ -13,6 +13,16 @@ def layer(name):
     ("03_123_Проект|ДВ_ПП_Тип0_Газон за ПЧ", "lawn"),
     ("03_123_Проект|ДВ_ПП_Тип7_Тротуар АБ менее 2м за Газон", "footway"),
     ("ДВ_ПП_Тип4_ПЧ местные за Газон", "carriageway"),
+    ("03_10004141_Проектные решения|ДВ_ПП_Тип4_ПЧ местные за Тротуар", "carriageway"),
+    ("Проект$0$ДВ_ПП_Тип4_ПЧ_местные_за_Тротуар", "carriageway"),
+    ("Проект|Тип7_Тротуар_за_Газон", "footway"),
+    ("Проект|Газон_за_Тротуар", "lawn"),
+    ("Проект|Отмостка_без_борта", "hard_surface"),
+    ("Отмостка без бортового камня", "hard_surface"),
+    ("Покрытие_без_борта", "hard_surface"),
+    ("Без борта", None),
+    ("Бортовой камень", "curb"),
+    ("Тротуар с бортом", "footway"),
     ("_ГП_Граница проектирования (штриховка)", "boundary_decoration"),
     ("Подоснова|Граница проектирования", "project_boundary"),
     ("Проект$0$Крыльца", "porch"),
@@ -69,6 +79,13 @@ def test_model_provider_cannot_join_foreign_or_missing_layer():
 def test_category_cannot_masquerade_as_an_unrelated_role():
     with pytest.raises(ValueError, match="расчётной роли"):
         LayerMapping(layer_id="road", kind="lawn", category="parking")
+
+
+def test_switched_boundary_categories_pass_server_validation():
+    LayerMapping(layer_id="previous", kind="ignore", category="boundary_decoration", confirmed=True)
+    LayerMapping(layer_id="selected", kind="site_border", category="project_boundary", confirmed=True)
+    with pytest.raises(ValueError, match="расчётной роли"):
+        LayerMapping(layer_id="previous", kind="ignore", category="project_boundary", confirmed=True)
 
 
 def test_category_and_explicit_network_type_must_agree():

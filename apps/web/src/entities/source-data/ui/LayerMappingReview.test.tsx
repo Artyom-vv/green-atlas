@@ -60,13 +60,29 @@ describe('LayerMappingReview', () => {
     });
   });
   it('never offers a bulk confirmation of unidentified layers', () => {
-    const unknown = { ...layer('0', 'building'), mapped_kind: 'ignore' as const };
+    const unknown = {
+      ...layer('0', 'building'),
+      mapped_kind: 'ignore' as const,
+    };
     const onChange = vi.fn();
-    render(<LayerMappingReview layers={[unknown]}
-      mappings={{ '0': { layer_id: '0', kind: 'ignore', confirmed: false, visible: true } }}
-      onChange={onChange} />);
-    expect(screen.getByRole('cell', { name: 'Тип не определён' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Подтвердить$/ })).not.toBeInTheDocument();
+    render(
+      <LayerMappingReview
+        layers={[unknown]}
+        mappings={{
+          '0': {
+            layer_id: '0',
+            kind: 'ignore',
+            confirmed: false,
+            visible: true,
+          },
+        }}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText('Тип не определён')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Подтвердить$/ }),
+    ).not.toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
   });
 });

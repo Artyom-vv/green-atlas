@@ -143,18 +143,14 @@ class LiveNativeGeometryEngine(PlacementPolicy):
                     )
             self._objects = query_objects(
                 self.inventory,
-                {
+                # Use the same area admission policy as AutoCAD preparation.
+                # Symbols/linear subjects keep their individual source geometry;
+                # endpoint cycles alone do not prove a filled symbol footprint.
+                set(requested_layers) | {
                     name
                     for name, layer in self._layers.items()
-                    if layer.mapped_kind
-                    in {
-                        "building",
-                        "road",
-                        "site_border",
-                        "water",
-                        "restricted",
-                        "existing_green",
-                    }
+                    if layer.mapped_kind == "site_border"
+                    and layer.mapping_confirmed
                     and name not in self.linear_layers
                 },
                 reviewed_closures=reviewed_closures,

@@ -6,16 +6,32 @@ interface EntryDetailsProps {
   entry: DataPassportEntry;
   passport: DataPassport;
 }
+const STATUS_LABELS: Record<DataPassportEntry['status'], string> = {
+  verified: 'Распознано',
+  partial: 'Неполные данные',
+  missing: 'Нет данных',
+  excluded: 'Исключено',
+};
 export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
   <Disclosure
-    variant="plain"
+    variant="panel"
     title={
-      <>
-        Подробности<span className="sr-only">: {entry.label}</span>
-      </>
+      <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="flex-1 font-medium">{entry.label}</span>
+        <span
+          className={
+            entry.status === 'partial' || entry.status === 'missing'
+              ? 'text-xs font-normal text-amber-700'
+              : 'text-xs font-normal text-neutral-600'
+          }
+        >
+          {STATUS_LABELS[entry.status]}
+        </span>
+      </span>
     }
+    description={`Объектов: ${entry.object_count.toLocaleString('ru-RU')}, слоёв: ${entry.layer_names?.length ?? 0}`}
   >
-    <div className="grid min-w-0 gap-2 text-xs wrap-anywhere text-neutral-700">
+    <div className="grid min-w-0 gap-4 text-xs wrap-anywhere text-neutral-700">
       <SourceFacts
         items={[
           {
@@ -65,7 +81,10 @@ export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
         ]}
       />
       {entry.layer_names?.length ? (
-        <ul className="m-0 pl-5" aria-label={`Слои: ${entry.label}`}>
+        <ul
+          className="m-0 grid list-none gap-2 rounded-lg bg-neutral-50 p-3"
+          aria-label={`Слои: ${entry.label}`}
+        >
           {entry.layer_names.map((name) => (
             <li key={name}>
               <code>{name}</code>

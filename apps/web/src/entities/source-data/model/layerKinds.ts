@@ -85,6 +85,22 @@ export function isUnclassifiedMapping(mapping: LayerMapping): boolean {
   return mapping.kind === 'ignore' && mapping.confirmed === false;
 }
 
+/** Change the territory as one mapping operation, preserving other layer decisions. */
+export function selectPlanningBoundary(
+  mappings: Record<string, LayerMapping>,
+  selectedId: string,
+): Record<string, LayerMapping> {
+  if (selectedId && !mappings[selectedId]) return mappings;
+  return Object.fromEntries(Object.entries(mappings).map(([id, mapping]) => [
+    id,
+    id === selectedId
+      ? changeLayerRole(mapping, 'site_border', 'project_boundary')
+      : mapping.kind === 'site_border'
+        ? changeLayerRole(mapping, 'ignore', 'boundary_decoration')
+        : mapping,
+  ]));
+}
+
 export function layerKindFromValue(value: string): LayerKind | undefined {
   return LAYER_KIND_OPTIONS.find((option) => option.value === value)?.value;
 }

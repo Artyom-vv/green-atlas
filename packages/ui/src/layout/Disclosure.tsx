@@ -7,6 +7,7 @@ import { controlSizes, cx, type ControlSize } from '../foundations/utils';
 
 export interface DisclosureProps {
   title: ReactNode;
+  description?: ReactNode;
   actions?: ReactNode;
   label?: string;
   children: ReactNode;
@@ -22,6 +23,7 @@ export interface DisclosureProps {
 
 export const Disclosure: FC<DisclosureProps> = ({
   title,
+  description,
   actions,
   label,
   children,
@@ -62,9 +64,16 @@ export const Disclosure: FC<DisclosureProps> = ({
             onOpenChange?.(!expanded);
           }}
         >
-          <span className="inline-flex min-w-0 items-center gap-2">
+          <span className="inline-flex min-w-0 flex-1 items-center gap-3">
             <Icon icon={startIcon} />
-            <span className="min-w-0 wrap-anywhere">{title}</span>
+            <span className="min-w-0 flex-1 wrap-anywhere">
+              <span className="block">{title}</span>
+              {description != null && (
+                <span className="mt-1 block text-xs leading-5 font-normal text-neutral-600">
+                  {description}
+                </span>
+              )}
+            </span>
           </span>
           <Icon
             icon={<ChevronDown />}

@@ -112,6 +112,12 @@ def local_layer_name(name: str) -> str:
     return _XREF_NAMESPACE.split(name)[-1]
 
 
+def layer_subject(name: str) -> str:
+    """The authored object, excluding XREF namespaces and replaced pavement."""
+    value = local_layer_name(name).lower().replace("ё", "е")
+    return re.split(r"[\s_]+за[\s_]+", value, maxsplit=1)[0]
+
+
 def is_boundary_candidate_name(name: str) -> bool:
     value = local_layer_name(name).lower().replace("ё", "е")
     return any(
@@ -121,7 +127,7 @@ def is_boundary_candidate_name(name: str) -> bool:
 
 
 def suggest_layer_kind(name: str) -> LayerKind:
-    value = local_layer_name(name).lower().replace("ё", "е")
+    value = layer_subject(name)
     if value == "green_atlas_terrain_cop90":
         # The mesh is scene evidence, not an existing-green planning polygon.
         return LayerKind.IGNORE
@@ -135,7 +141,8 @@ def suggest_layer_kind(name: str) -> LayerKind:
         return LayerKind.IGNORE
     if any(word in value for word in ("build", "house", "structure", "здан", "сооруж")):
         return LayerKind.BUILDING
-    if any(word in value for word in ("road", "street", "drive", "path", "trail", "foot", "walk", "alley", "lane", "sidewalk", "дорог", "проезд", "троп", "дорожк", "аллея")):
+    if (any(word in value for word in ("road", "street", "drive", "path", "trail", "foot", "walk", "alley", "lane", "sidewalk", "дорог", "проезд", "троп", "дорожк", "аллея", "тротуар", "отмостк"))
+            or re.search(r"(?:^|[\W_])(?:пч|трот)(?:$|[\W_])", value)):
         return LayerKind.ROAD
     if any(word in value for word in ("hydro", "river", "lake", "pond", "stream", "waterbody", "водоем", "пруд", "река", "ручей")):
         return LayerKind.WATER

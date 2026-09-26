@@ -30,6 +30,22 @@ def frozen(tmp_path_factory):
     return bundle / source.name, root, env
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "species/data/source-profiles.json",
+        "species/data/moscow-assortment.json",
+        "regulations/placement_rules.json",
+    ],
+)
+def test_frozen_runtime_includes_catalog_resources(frozen, relative_path):
+    binary, _, _ = frozen
+    source = Path(__file__).resolve().parents[3] / "apps/api/app" / relative_path
+    packaged = binary.parent / "_internal/app" / relative_path
+    assert packaged.is_file(), f"Missing runtime resource: {relative_path}"
+    assert packaged.read_bytes() == source.read_bytes()
+
+
 def test_relocated_runtime_without_python_path(frozen):
     binary, root, env = frozen
     web = root / "web"

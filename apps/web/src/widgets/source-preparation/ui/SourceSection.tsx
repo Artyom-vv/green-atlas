@@ -1,26 +1,40 @@
 import type { ReactNode } from 'react';
+import { Disclosure } from '@green/ui';
 
 export function SourceSection({
   number,
   title,
   children,
+  description,
+  defaultOpen = true,
 }: {
   number: string;
   title: string;
   children: ReactNode;
+  description?: ReactNode;
+  defaultOpen?: boolean;
 }) {
   return (
-    <section
-      aria-label={title}
-      className="grid gap-3 border-t border-neutral-200 pt-5 first:border-t-0 first:pt-0 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-6"
-    >
-      <header className="flex items-baseline gap-2 md:block">
-        <span className="text-xs text-neutral-400 tabular-nums">{number}</span>
-        <h2 className="m-0 text-sm font-semibold text-neutral-800 md:mt-1">
+    <Disclosure
+      variant="panel"
+      label={title}
+      defaultOpen={defaultOpen}
+      title={
+        <span
+          role="heading"
+          aria-level={2}
+          className="text-sm font-semibold text-neutral-800"
+        >
           {title}
-        </h2>
-      </header>
-      <div className="min-w-0 space-y-3">{children}</div>
-    </section>
+        </span>
+      }
+      description={description}
+      startIcon={
+        <span className="text-xs text-neutral-500 tabular-nums">{number}</span>
+      }
+      contentClassName="space-y-4"
+    >
+      {children}
+    </Disclosure>
   );
 }

@@ -1,5 +1,6 @@
 import type { Layer, LayerMapping, LayerRecognition } from '@green/api-client';
 import { Button, Disclosure, Select } from '@green/ui';
+import { useRef } from 'react';
 import {
   changeLayerRole,
   isUnclassifiedMapping,
@@ -21,6 +22,7 @@ export function LayerRoleFields({
   recognition,
   onChange,
 }: Props) {
+  const selectRef = useRef<HTMLSelectElement>(null);
   const categories = recognition?.categories ?? [];
   const proposal = recognition?.proposals.find(
     (item) => item.layer_id === layer.id,
@@ -29,30 +31,47 @@ export function LayerRoleFields({
     (item) => item.category === proposal?.category,
   );
   const unclassified = isUnclassifiedMapping(mapping);
-  const selected = categories.find((item) => item.category === mapping.category);
-  const selectRole = (kind: typeof mapping.kind | null, category: typeof mapping.category) =>
-    changeLayerRole(mapping, kind ?? 'restricted', category ?? null);
+  const selected = categories.find(
+    (item) => item.category === mapping.category,
+  );
+  const selectRole = (
+    kind: typeof mapping.kind | null,
+    category: typeof mapping.category,
+  ) => changeLayerRole(mapping, kind ?? 'restricted', category ?? null);
+  const confirm = (next: LayerMapping) => {
+    onChange(next);
+    selectRef.current?.focus();
+  };
   return (
-    <div className="space-y-2">
+    <div className="grid min-w-0 gap-2">
       <Select
+        ref={selectRef}
         aria-label={`Тип слоя ${layer.source_name}`}
+        title={
+          selected?.label ??
+          LAYER_KIND_OPTIONS.find((item) => item.value === mapping.kind)?.label
+        }
         value={
           categories.some((item) => item.category === mapping.category)
             ? `category:${mapping.category}`
-            : unclassified ? 'unassigned' : mapping.kind
+            : unclassified
+              ? 'unassigned'
+              : mapping.kind
         }
         onChange={(event) => {
           const category = categories.find(
             (item) => `category:${item.category}` === event.target.value,
           );
-          const kind = category ? category.kind : layerKindFromValue(event.target.value);
+          const kind = category
+            ? category.kind
+            : layerKindFromValue(event.target.value);
           if (kind !== undefined)
-            onChange(
-              selectRole(kind, category?.category),
-            );
+            onChange(selectRole(kind, category?.category));
         }}
       >
-        <option value="unassigned" disabled>Назначение не определено</option>
+        <option value="unassigned" disabled>
+          Назначение не определено
+        </option>
         <optgroup label="Категории">
           {categories.map((item) => (
             <option key={item.category} value={`category:${item.category}`}>
@@ -61,9 +80,12 @@ export function LayerRoleFields({
           ))}
         </optgroup>
         <optgroup label="Прочее">
-          {LAYER_KIND_OPTIONS.filter((item) => item.value === 'ignore' ||
-            (!selected && item.value === mapping.kind) ||
-            !categories.some((category) => category.kind === item.value)).map((item) => (
+          {LAYER_KIND_OPTIONS.filter(
+            (item) =>
+              item.value === 'ignore' ||
+              (!selected && item.value === mapping.kind) ||
+              !categories.some((category) => category.kind === item.value),
+          ).map((item) => (
             <option key={item.value} value={item.value}>
               {item.label}
             </option>
@@ -73,35 +95,50 @@ export function LayerRoleFields({
       {mapping.confirmed === false && (!unclassified || selected) && (
         <Button
           controlSize="compact"
-          variant="ghost"
-          onClick={() => onChange(selected
-            ? selectRole(selected.kind, selected.category)
-            : { ...mapping, confirmed: true })}
+          variant="secondary"
+          className="justify-self-start"
+          onClick={() =>
+            confirm(
+              selected
+                ? selectRole(selected.kind, selected.category)
+                : { ...mapping, confirmed: true },
+            )
+          }
         >
           Подтвердить роль
         </Button>
       )}
       {unclassified && !selected && (
         <>
-          <div className="text-xs text-amber-700">Нужно определить участие в расчёте</div>
-          <Button controlSize="compact" variant="ghost"
-            onClick={() => onChange(changeLayerRole(mapping, 'ignore', null))}>
+          <div className="text-xs text-amber-700">
+            Нужно определить участие в расчёте
+          </div>
+          <Button
+            controlSize="compact"
+            variant="ghost"
+            className="justify-self-start"
+            onClick={() => confirm(changeLayerRole(mapping, 'ignore', null))}
+          >
             Исключить из расчёта
           </Button>
         </>
       )}
       {suggested && suggested.category !== mapping.category && (
-        <Button
-          variant="secondary"
-          controlSize="compact"
-          onClick={() =>
-            onChange(
-              selectRole(suggested.kind, suggested.category),
-            )
-          }
-        >
-          {`Принять тип: ${suggested.label}`}
-        </Button>
+        <div className="grid gap-2 rounded-lg bg-blue-50 p-3">
+          <span className="text-xs leading-5 wrap-anywhere text-neutral-700">
+            Предложение: {suggested.label}
+          </span>
+          <Button
+            variant="secondary"
+            controlSize="compact"
+            className="justify-self-start"
+            onClick={() =>
+              confirm(selectRole(suggested.kind, suggested.category))
+            }
+          >
+            Принять предложение
+          </Button>
+        </div>
       )}
       {proposal && (
         <Disclosure variant="plain" title="Основания предложения">

@@ -7,6 +7,7 @@ from app.native_query.live_client import LiveQueryClient, LiveQueryError
 from app.native_query.live_provider import LiveNativeGeometryEngine
 from app.native_query.prepared_provider import PreparedGeometryEngine
 from app.native_query.prepared_snapshot import preparation_key, prepare_snapshot
+from app.operations.progress import WorkProgress
 from app.planting_zones.domain import (
     validate_changed_planting_zones,
     validate_planting_zones,
@@ -42,7 +43,7 @@ class ProjectLiveGeometry:
                 self._engines[project.id] = (key, engine)
             return self._engines[project.id][1]
 
-    def engine(self, project):
+    def engine(self, project, progress=None):
         source = getattr(project, "source_file", None)
         session = getattr(source, "native_session", None)
         if session is None or self.prepared_store is None:
@@ -52,9 +53,15 @@ class ProjectLiveGeometry:
             cached = self._prepared.get(project.id)
             if cached is not None and cached._basis_key == key:
                 return cached
+            if progress:
+                progress(WorkProgress("Загружаем сохранённую геометрию"))
             snapshot = self.prepared_store.load(key)
             if snapshot is None:
-                snapshot = prepare_snapshot(self.live_engine(project), project)
+                if progress:
+                    progress(WorkProgress("Получаем объекты и восстановленные области из AutoCAD"))
+                snapshot = prepare_snapshot(self.live_engine(project), project, progress)
+                if progress:
+                    progress(WorkProgress("Сохраняем подготовленную геометрию"))
                 self.prepared_store.save(snapshot)
             engine = PreparedGeometryEngine(
                 snapshot,
@@ -62,9 +69,13 @@ class ProjectLiveGeometry:
                 checkpoints=DomainCheckpointStore(
                     self.prepared_store.directory / "domains",
                 ),
+                progress=progress,
             )
             self._prepared[project.id] = engine
             return engine
+
+    def calculate(self, project, progress=None):
+        return self.engine(project, progress=progress).calculate(project, progress)
 
     def __getattr__(self, name):
         def invoke(project, *args, **kwargs):

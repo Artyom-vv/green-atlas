@@ -18,6 +18,12 @@ export const disclosure = tv({
         trigger: 'px-0 hover:text-neutral-800',
         content: 'grid gap-3 py-3',
       },
+      panel: {
+        root: 'overflow-hidden rounded-xl border border-solid border-neutral-200 bg-white',
+        trigger:
+          'min-h-16 px-4 py-4 hover:bg-neutral-50 focus-visible:-outline-offset-2',
+        content: 'border-0 border-t border-solid border-neutral-200 p-4',
+      },
     },
   },
   defaultVariants: { variant: 'framed' },

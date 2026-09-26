@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Layer, LayerMapping } from '@green/api-client';
 import { BoundaryCandidatePicker } from './BoundaryCandidatePicker';
 
@@ -51,6 +51,17 @@ const mappings: Record<string, LayerMapping> = {
 };
 
 describe('BoundaryCandidatePicker', () => {
+  afterEach(cleanup);
+  it('does not suggest a territory when no usable contour exists', () => {
+    render(<BoundaryCandidatePicker layers={[layers[0]]} mappings={mappings} onChange={vi.fn()} />);
+    expect(screen.queryByLabelText('Контур территории')).toBeNull();
+  });
+
+  it('disables boundary changes while preparation is running', () => {
+    render(<BoundaryCandidatePicker layers={layers} mappings={mappings} readOnly onChange={vi.fn()} />);
+    expect(screen.getByLabelText('Контур территории')).toBeDisabled();
+  });
+
   it('offers only usable contours and replaces the previous site mapping', () => {
     const onChange = vi.fn();
     render(
@@ -70,8 +81,31 @@ describe('BoundaryCandidatePicker', () => {
       order: {
         ...mappings.order,
         kind: 'site_border',
+        category: 'project_boundary',
         confirmed: true,
       },
     });
+  });
+
+  it('keeps category and role consistent when switching, clearing and restoring a boundary', () => {
+    const onChange = vi.fn();
+    const initial: Record<string, LayerMapping> = {
+      ...mappings,
+      thin: { ...mappings.thin, kind: 'site_border', category: 'project_boundary', confirmed: true },
+    };
+    const { rerender } = render(<BoundaryCandidatePicker layers={layers} mappings={initial} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Контур территории'), { target: { value: 'order' } });
+    const switched = onChange.mock.lastCall![0];
+    expect(switched.thin).toEqual({ ...initial.thin, kind: 'ignore', category: 'boundary_decoration' });
+    expect(switched.order).toMatchObject({ kind: 'site_border', category: 'project_boundary', confirmed: true });
+    expect(initial.thin.kind).toBe('site_border');
+    rerender(<BoundaryCandidatePicker layers={layers} mappings={switched} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Контур территории'), { target: { value: '' } });
+    const cleared = onChange.mock.lastCall![0];
+    expect(Object.values(cleared).some((m) => (m as LayerMapping).kind === 'site_border')).toBe(false);
+    expect(cleared.order.category).toBe('boundary_decoration');
+    rerender(<BoundaryCandidatePicker layers={layers} mappings={cleared} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Контур территории'), { target: { value: 'order' } });
+    expect(onChange.mock.lastCall![0]).toEqual(switched);
   });
 });

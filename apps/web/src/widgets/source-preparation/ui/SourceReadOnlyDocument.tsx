@@ -4,7 +4,7 @@ import { Map as MapIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { FlowDocument } from '@/widgets/project-flow';
 import { DataPassportPanel } from '@/entities/source-data/ui/DataPassportPanel';
-import { LayerMappingTable } from '@/entities/source-data/ui/LayerMappingTable';
+import { LayerMappingWorkspace } from '@/entities/source-data/ui/LayerMappingWorkspace';
 import type { SourceReadOnlyDocumentProps } from './SourceReadOnlyDocument.props';
 import { SourceSection } from './SourceSection';
 import { SourceReadIssues } from './SourceReadIssues';
@@ -45,10 +45,18 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
       </>
     }
   >
-    <div className="space-y-6">
-      <SourceSection number="01" title="Полнота данных">
+    <div className="space-y-3">
+      <SourceSection
+        number="01"
+        title="Полнота данных"
+        description={
+          dataPassportQuery.data?.summary ??
+          'Что участвует в расчёте и где есть пропуски'
+        }
+        defaultOpen={false}
+      >
         {dataPassportQuery.data ? (
-          <DataPassportPanel passport={dataPassportQuery.data} />
+          <DataPassportPanel passport={dataPassportQuery.data} header={null} />
         ) : dataPassportQuery.isError ? (
           <InlineMessage tone="error">
             Не удалось загрузить сведения об исходных данных{' '}
@@ -63,29 +71,41 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
           <Progress label="Загружаем сведения об исходных данных" />
         )}
       </SourceSection>
-      <SourceSection number="02" title="Слои">
-        <Disclosure variant="plain" title={`Слои чертежа (${layers.length})`}>
-          <LayerMappingTable
-            recognition={layerRecognition}
-            readOnly
-            layers={layers}
-            mappings={mappings}
-            onChange={setMappings}
-          />
-        </Disclosure>
+      <SourceSection
+        number="02"
+        title="Слои"
+        description={`Слои чертежа (${layers.length})`}
+        defaultOpen={false}
+      >
+        <LayerMappingWorkspace
+          recognition={layerRecognition}
+          readOnly
+          layers={layers}
+          mappings={mappings}
+          onChange={setMappings}
+        />
       </SourceSection>
-      <SourceSection number="03" title="Чтение файла">
-        {projectQuery.data && <NativeFaceReview project={projectQuery.data} />}
-        {projectQuery.data?.source_file?.cad_snapshot_provenance
-          ?.live_capture && (
-          <SourceReadIssues
-            projectId={projectQuery.data.id ?? ''}
-            sourceSha={projectQuery.data.source_file.content_sha256 ?? ''}
-          />
-        )}
+      <SourceSection
+        number="03"
+        title="Чтение файла"
+        description="Собранные области и замечания AutoCAD"
+        defaultOpen={false}
+      >
+        <div className="flex flex-wrap gap-2">
+          {projectQuery.data && (
+            <NativeFaceReview project={projectQuery.data} />
+          )}
+          {projectQuery.data?.source_file?.cad_snapshot_provenance
+            ?.live_capture && (
+            <SourceReadIssues
+              projectId={projectQuery.data.id ?? ''}
+              sourceSha={projectQuery.data.source_file.content_sha256 ?? ''}
+            />
+          )}
+        </div>
         {!!sourceWarnings.length && (
           <Disclosure
-            variant="plain"
+            variant="panel"
             title={`Замечания к исходному файлу (${sourceWarnings.length})`}
           >
             <ul className="m-0 list-disc space-y-1 pl-5 text-xs">

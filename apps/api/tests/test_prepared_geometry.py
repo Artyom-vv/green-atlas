@@ -11,6 +11,7 @@ from test_native_live_provider import setup as setup
 from app.native_query.prepared_provider import PreparedGeometryEngine
 from app.native_query.prepared_snapshot import PreparedStore, prepare_snapshot
 from app.native_query.project_runtime import ProjectLiveGeometry
+from app.operations.progress import OperationCancelled
 
 
 def local(setup):
@@ -22,6 +23,39 @@ def local(setup):
         client,
         project,
     )
+
+
+def test_preparation_reports_real_object_counts_and_accepts_cancellation(setup):
+    live, _, project = setup
+    populate(project)
+    updates = []
+    snapshot = prepare_snapshot(live, project, updates.append)
+    assert updates[0].processed == 0
+    assert updates[-1].processed == updates[-1].total == len(snapshot.records)
+    assert all(update.fraction is None for update in updates)
+    validation = []
+    PreparedGeometryEngine(snapshot, project, progress=validation.append)
+    counted = [update for update in validation if update.total is not None]
+    assert counted[-1].processed == len(snapshot.records)
+
+    def cancel(_):
+        raise OperationCancelled("stop")
+    with pytest.raises(OperationCancelled):
+        prepare_snapshot(live, project, cancel)
+
+
+def test_saved_calculation_reports_loading_and_map_stages_without_autocad(setup, tmp_path):
+    engine, client, project = local(setup)
+    store = PreparedStore(tmp_path)
+    store.save(engine.snapshot)
+    router = ProjectLiveGeometry(Mock(), prepared_store=store)
+    router.live_engine = Mock(side_effect=AssertionError("AutoCAD must not be used"))
+    updates = []
+    router.calculate(project, updates.append)
+    assert updates[0].stage == "Загружаем сохранённую геометрию"
+    assert updates[-1].stage == "Готовим объекты для карты"
+    assert any(update.processed == len(engine.snapshot.records) for update in updates)
+    router.live_engine.assert_not_called()
 
 
 def test_manual_bulk_growth_trace_domain_and_passport_work_after_cad_stops(setup):

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.dxf_import.layer_categories import CATEGORIES, LayerCategory
 from app.dxf_import.layer_contracts import Layer, LayerKind
-from app.dxf_import.layer_suggestions import local_layer_name
+from app.dxf_import.layer_suggestions import layer_subject, local_layer_name
 
 
 class LayerCategoryOption(BaseModel):
@@ -65,7 +65,7 @@ _RULES: tuple[tuple[str, LayerCategory], ...] = (
     (r"(?:здани|зданий|сооруж|building|house)", LayerCategory.BUILDING),
     (r"подпорн.*стен", LayerCategory.RETAINING_WALL),
     (r"оград|парапет|огражд", LayerCategory.FENCE),
-    (r"борт", LayerCategory.CURB),
+    (r"отмостк", LayerCategory.HARD_SURFACE),
     (r"люк|колод", LayerCategory.MANHOLE),
     (r"столб|опор|фонар|светофор|светильник", LayerCategory.POLE),
     (r"памятник|постамент", LayerCategory.MONUMENT),
@@ -73,8 +73,9 @@ _RULES: tuple[tuple[str, LayerCategory], ...] = (
     (r"водоотвод.*лот", LayerCategory.OPEN_DRAIN),
     (r"(?:маф|оборудован|equipment)", LayerCategory.EQUIPMENT),
     (r"(?:парков|стоянк|parking)", LayerCategory.PARKING),
-    (r"(?:тротуар|(?:^|_)трот(?:_|$)|отмостк|дорожк|пешеход|footway|sidewalk)", LayerCategory.FOOTWAY),
+    (r"(?:тротуар|(?:^|_)трот(?:_|$)|дорожк|пешеход|footway|sidewalk)", LayerCategory.FOOTWAY),
     (r"(?:^|[\W_])пч(?:$|[\W_])|(?:проезд|дорог|carriageway)", LayerCategory.CARRIAGEWAY),
+    (r"борт", LayerCategory.CURB),
     (r"покрыти", LayerCategory.HARD_SURFACE),
     (r"леса.*газон", LayerCategory.MIXED_VEGETATION),
     (r"газон|lawn", LayerCategory.LAWN),
@@ -97,7 +98,9 @@ _RULES: tuple[tuple[str, LayerCategory], ...] = (
 @lru_cache(maxsize=4096)
 def category_from_name(source_name: str) -> LayerCategory | None:
     name = local_layer_name(source_name).lower().replace("ё", "е")
-    subject = re.split(r"\s+за\s+", name, maxsplit=1)[0]
+    subject = layer_subject(source_name)
+    # An absent curb is not an object. Preserve the subject (e.g. pavement).
+    subject = re.sub(r"(?:^|[\s_])без[\s_]+борт[а-я]*(?:[\s_]+камн[а-я]*)?", " ", subject)
     if re.search(r"вопрос", name):
         return None
     return next((value for pattern, value in _RULES if re.search(pattern, subject)), None)
@@ -110,11 +113,13 @@ class NameLayerRecognition:
     @staticmethod
     def _proposal(layer: Layer) -> LayerRoleProposal:
         name = local_layer_name(layer.source_name).lower().replace("ё", "е")
-        subject = re.split(r"\s+за\s+", name, maxsplit=1)[0]
+        subject = layer_subject(layer.source_name)
         unresolved: list[str] = []
         evidence: list[str] = []
         if subject != name:
             evidence.append("Тип покрытия выбран по части названия до «за»")
+        if re.search(r"(?:^|[\s_])без[\s_]+борт", subject):
+            evidence.append("«Без борта» описывает отсутствие борта, а не отдельный объект")
         if re.search(r"тип\s*\d+", name):
             unresolved.append("Номер типа — код проекта, расшифровка не подтверждена")
         stage = re.search(r"демонтаж|ремонт|восстановление", name)

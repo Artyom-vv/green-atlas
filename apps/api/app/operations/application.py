@@ -112,8 +112,9 @@ class GeometryOperationApplication:
             self.lifecycle.update(
                 operation_id,
                 status=OperationStatus.RUNNING,
-                progress=1,
-                stage="Подготавливаем геометрию слоёв",
+                progress=0,
+                progress_mode="indeterminate",
+                stage="Загружаем исходные данные проекта",
             )
             # ``calculate`` makes its own isolated copy of the source
             # features before annotating their mapped role. A second deep
@@ -145,6 +146,10 @@ class GeometryOperationApplication:
                     operation_id,
                     status=OperationStatus.RUNNING,
                     progress=99,
+                    progress_mode="indeterminate",
+                    processed_items=None,
+                    total_items=None,
+                    progress_unit=None,
                     stage="Фиксируем проверенную геометрию",
                 )
                 self._assign_geometry(project, geometry)

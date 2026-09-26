@@ -21,9 +21,11 @@ from app.native_query.hybrid_geometry import (
     uses_linear_geometry,
 )
 from app.native_query.live_inventory import QueryObject
+from app.operations.progress import progress_items
 from app.regulations.placement_config import PLACEMENT_RULES_REVISION
 
 PREPARED_REVISION = "autocad-prepared-geometry/1"
+PREPARATION_POLICY_REVISION = "category-aware-groups/2"
 
 
 def preparation_key(project, session, linear_layers=frozenset()):
@@ -37,6 +39,7 @@ def preparation_key(project, session, linear_layers=frozenset()):
     # source geometry identity; preview/apply separately guard project versions.
     value = [
         PREPARED_REVISION,
+        PREPARATION_POLICY_REVISION,
         project.id,
         PLACEMENT_RULES_REVISION,
         source.content_sha256,
@@ -96,9 +99,9 @@ class PreparedSnapshot(NativeDto):
 class PreparedProjection:
     """Shared source for point measurements, masks, and the completeness report."""
 
-    def __init__(self, snapshot):
+    def __init__(self, snapshot, progress=None):
         self.records = {}
-        for record in snapshot.records:
+        for record in progress_items(snapshot.records, progress, "Проверяем подготовленные объекты", len(snapshot.records)):
             geometries = tuple(shape(value) for value in record.geometries)
             if (not record.reason and not geometries) or any(
                 g.is_empty
@@ -146,14 +149,14 @@ class PreparedStore:
         self.files.save(snapshot.key, snapshot.model_dump(mode="json", by_alias=True))
 
 
-def prepare_snapshot(engine, project):
+def prepare_snapshot(engine, project, progress=None):
     """Only preparation touches AutoCAD, before and after capturing the ledger."""
     with engine._lock:
         engine.assert_current(project)
         key = preparation_key(project, engine.session, engine.linear_layers)
         projection = HybridGeometry(engine, project, require_accuracy=True)
         records = []
-        for item in engine._objects:
+        for item in progress_items(engine._objects, progress, "Подготавливаем расчётные объекты", len(engine._objects)):
             layer = engine._layers.get(item.layer)
             value = projection.get(
                 item, linear=uses_linear_geometry(item, layer, engine.linear_layers)

@@ -155,6 +155,27 @@ def test_completed_disk_cache_still_checks_session(setup, tmp_path):
         domain(restarted, project)
 
 
+def test_new_search_revision_does_not_reuse_old_completed_masks(setup, tmp_path):
+    from app.native_query.domain_checkpoint import DomainCheckpointStore
+    from app.native_query.live_provider import LiveNativeGeometryEngine
+
+    engine, client, project = setup
+    populate(project)
+    engine._domain_checkpoints = DomainCheckpointStore(tmp_path)
+    with patch("app.native_query.hybrid_domain.REVISION", "previous-mask-rules"):
+        domain(engine, project)
+    restarted = LiveNativeGeometryEngine(engine.session, client, inventory=engine.inventory)
+    restarted._domain_checkpoints = engine._domain_checkpoints
+    # A saved result would bypass mask construction. Reusing CAD geometry is OK;
+    # reusing masks built with a different interpretation of layers is not.
+    from app.native_query.hybrid_domain import HybridSearch
+    with patch.object(HybridSearch, "mask", autospec=True, side_effect=HybridSearch.mask) as mask:
+        result = domain(restarted, project)
+    assert mask.call_count == 3
+    assert result["ga_search_domain"]["cache_hits"] == 0
+    assert not client.calls
+
+
 def test_open_site_detail_does_not_overrule_known_site_but_outside_stays_unknown(setup):
     engine, _, project = setup
     populate(project)

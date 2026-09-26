@@ -25,7 +25,7 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
   );
   return (
     <section
-      className="grid gap-5 text-neutral-800"
+      className="grid min-w-0 gap-4 text-neutral-800"
       aria-labelledby={header === undefined ? titleId : undefined}
       aria-label={header !== undefined ? 'Паспорт исходных данных' : undefined}
     >
@@ -50,9 +50,7 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
         ]}
       />
       {limited ? (
-        <InlineMessage
-          tone={blocked ? 'warning' : 'info'}
-        >
+        <InlineMessage tone={blocked ? 'warning' : 'info'}>
           {blocked
             ? 'Карта не готова к расчёту'
             : 'Проверка ограничена исходными данными'}
@@ -65,7 +63,7 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
       <PassportAttention entries={attention} passport={passport} />
       {!!passport.gaps?.length && (
         <Disclosure
-          variant="plain"
+          variant="panel"
           title={`Основания ограничений (${passport.gaps.length})`}
         >
           <ul className="m-0 space-y-1 pl-5 text-xs">
@@ -76,7 +74,7 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
         </Disclosure>
       )}
       <PassportIncluded entries={included} passport={passport} />
-      <Disclosure variant="plain" title="Координаты и происхождение">
+      <Disclosure variant="panel" title="Координаты и происхождение">
         <SourceFacts
           items={[
             {

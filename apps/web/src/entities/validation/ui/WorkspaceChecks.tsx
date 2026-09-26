@@ -25,7 +25,7 @@ export const WorkspaceChecks: FC<WorkspaceChecksProps> = ({
     <ResultPanel
       title="Проверка посадок"
       label="Проверка проекта"
-      count={`Замечаний: ${issues.length}`}
+      count={`Причин: ${groups.length}`}
     >
       {!groups.length ? (
         <div

@@ -1,5 +1,6 @@
 """One geometry ledger for search masks and the source passport."""
 
+import pytest
 from test_hybrid_search import feature, populate
 from test_native_live_provider import setup as setup
 
@@ -97,3 +98,36 @@ def test_stale_capture_invalidates_cached_coverage(setup):
     with pytest.raises(ValueError, match='изменён'):
         engine.source_coverage(project)
     assert engine._coverage is None
+
+
+@pytest.mark.parametrize('category', ['geodetic_marker', 'pole'])
+def test_symbol_endpoint_cycles_keep_source_curves_and_existing_areas(setup, category):
+    from app.dxf_import.layer_categories import LayerCategory
+    from app.native_query.live_inventory import InventoryGroup
+
+    engine, client, project = setup
+    populate(project)
+    layer = project.layers[1]
+    layer.category = LayerCategory(category)
+    layer.mapped_kind = LayerKind.RESTRICTED
+    # Two coincident arcs are a cycle in an endpoint graph, not an area.
+    duplicate = engine.inventory.objects[1].model_copy(update={'route': 'DD'})
+    polygon = engine.inventory.objects[1].model_copy(update={'route': 'EE'})
+    engine.inventory = engine.inventory.model_copy(update={
+        'objects': (*engine.inventory.objects, duplicate, polygon),
+        'groups': (InventoryGroup(routes=('BB', 'DD'), error=''),),
+    })
+    line = {'type': 'LineString', 'coordinates': [[0, 0], [1, 1], [2, 0]]}
+    features = project.geometry.feature_collection['features']
+    existing_area = features[1]['geometry']
+    features[1] = feature('BB', layer.source_name, line)
+    features.extend([feature('DD', layer.source_name, line),
+                     feature('EE', layer.source_name, existing_area)])
+    coverage = engine.source_coverage(project).layers[layer.source_name]
+    assert not coverage.unresolved
+    assert coverage.linear_count == 2
+    assert coverage.area_count == 1  # Do not downgrade an existing source polygon.
+    assert {item.routes for item in engine._objects if item.layer == layer.source_name} == {
+        ('BB',), ('DD',), ('EE',),
+    }
+    assert not client.calls

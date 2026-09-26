@@ -93,9 +93,7 @@ describe('DataPassportPanel', () => {
         }}
       />,
     );
-    fireEvent.click(
-      screen.getByRole('button', { name: /Подробности\s*:\s*Граница участка/ }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /^Граница участка/ }));
     expect(screen.getByText('Исходных объектов')).toBeVisible();
     expect(screen.getByText('Элементов карты')).toBeVisible();
     expect(screen.getByText('3')).toBeVisible();
@@ -110,9 +108,7 @@ describe('DataPassportPanel', () => {
         passport={{ ...passport, entries: [passport.entries![0]] }}
       />,
     );
-    fireEvent.click(
-      screen.getByRole('button', { name: /Подробности\s*:\s*Граница участка/ }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /^Граница участка/ }));
     expect(screen.queryByText(/Элементов карты/)).not.toBeInTheDocument();
     expect(screen.getByText('Расчётное представление')).toBeVisible();
     expect(screen.getByText('Нет актуальных данных')).toBeVisible();
@@ -144,9 +140,7 @@ describe('DataPassportPanel', () => {
         }}
       />,
     );
-    fireEvent.click(
-      screen.getByRole('button', { name: /Подробности\s*:\s*Граница участка/ }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /^Граница участка/ }));
     expect(screen.getByText('Расчётных площадей')).toBeVisible();
     expect(screen.getByText('59')).toBeVisible();
     expect(screen.getByText('Линейных препятствий')).toBeVisible();
@@ -156,7 +150,8 @@ describe('DataPassportPanel', () => {
   });
 
   it('shows evidence classes and makes limited bulk placement explicit', () => {
-    render(<DataPassportPanel passport={passport} />);
+    const { container } = render(<DataPassportPanel passport={passport} />);
+    expect(container).not.toHaveTextContent(/[\u00b7\u2022\u2219\u22c5\u2027]/);
 
     expect(
       screen.getByRole('heading', { name: 'Паспорт исходных данных' }),
@@ -175,7 +170,13 @@ describe('DataPassportPanel', () => {
     expect(screen.getByText('EPSG:32637')).toBeInTheDocument();
     expect(screen.getByText('Контрольные точки')).toBeInTheDocument();
     expect(screen.getByText('Что требует уточнения')).toBeInTheDocument();
-    expect(screen.getAllByRole('columnheader')).toHaveLength(3);
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^Граница участка/ }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      screen.getByRole('button', { name: /^Инженерные сети/ }),
+    ).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('does not render a warning when every reported class is verified', () => {

@@ -27,7 +27,9 @@ from app.native_query.query_policy import query_reach_m, review_reach_m
 from app.regulations.placement_config import PLACEMENT_CONFIG, PLACEMENT_RULES_REVISION
 
 CONFIG = PLACEMENT_CONFIG.hybrid_search
-REVISION = f"autocad-shapely-search/1:{PLACEMENT_RULES_REVISION}"
+# Revision 2 changes inferred surface roles (subject before «за», «без борта»).
+# Invalidate restriction masks, not the expensive prepared CAD geometry.
+REVISION = f"autocad-shapely-search/2:{PLACEMENT_RULES_REVISION}"
 
 
 @dataclass

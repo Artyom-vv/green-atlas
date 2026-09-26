@@ -46,6 +46,11 @@ from app.projects.contracts import Project
         ("Парковка", LayerKind.IGNORE),
         ("Парк", LayerKind.EXISTING_GREEN),
         ("PARK", LayerKind.EXISTING_GREEN),
+        ("Проект|Тип7_Тротуар АБ менее 2м за Газон", LayerKind.ROAD),
+        ("Проект|Тип7_Тротуар_за_Газон", LayerKind.ROAD),
+        ("Проект|Тип4_ПЧ_за_Тротуар", LayerKind.ROAD),
+        ("Проект|Газон_за_Тротуар", LayerKind.EXISTING_GREEN),
+        ("Проект|Отмостка_без_борта", LayerKind.ROAD),
     ],
 )
 def test_suggestions_do_not_inherit_drawing_names(name, expected):

@@ -11,6 +11,7 @@ from app.native_query.placement_policy import PlacementPolicy
 from app.native_query.prepared_measurement import measure
 from app.native_query.prepared_snapshot import PreparedProjection, preparation_key
 from app.native_query.query_policy import BASE_QUERY_REACH_M, query_reach_m
+from app.operations.progress import WorkProgress
 
 MAX_CACHED_POINTS = 20_000  # Memory bound, not a planting distance or search budget.
 
@@ -19,7 +20,7 @@ class PreparedGeometryEngine(PlacementPolicy):
     final_check = "prepared_geometry"
     sends_cad_queries = False
 
-    def __init__(self, snapshot, project, *, checkpoints=None):
+    def __init__(self, snapshot, project, *, checkpoints=None, progress=None):
         self.snapshot = snapshot
         self.session = (
             snapshot.capture
@@ -34,7 +35,9 @@ class PreparedGeometryEngine(PlacementPolicy):
         self._objects = tuple(record.item for record in snapshot.records)
         self._faces = snapshot.faces
         self.context_counts = snapshot.context_counts
-        self.projection = PreparedProjection(snapshot)
+        self.projection = PreparedProjection(snapshot, progress)
+        if progress:
+            progress(WorkProgress("Строим пространственный индекс"))
         self._bounds_index = NativeBoundsIndex(self._objects, self._layers)
         self._cache = OrderedDict()
         self._hybrid = None
@@ -108,6 +111,8 @@ class PreparedGeometryEngine(PlacementPolicy):
 
     def calculate(self, project, progress=None):
         self.assert_current(project)
+        if progress:
+            progress(WorkProgress("Готовим объекты для карты"))
         return display_snapshot(
             project, self._layers, face_features(self._faces, self.factor)
         )

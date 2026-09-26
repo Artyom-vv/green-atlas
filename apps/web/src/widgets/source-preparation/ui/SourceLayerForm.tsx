@@ -1,7 +1,6 @@
 import type { FC } from 'react';
 import { Button, Disclosure, InlineMessage } from '@green/ui';
-import { LayerMappingTable } from '@/entities/source-data/ui/LayerMappingTable';
-import { LayerMappingReview } from '@/entities/source-data/ui/LayerMappingReview';
+import { LayerMappingWorkspace } from '@/entities/source-data/ui/LayerMappingWorkspace';
 import { BoundaryCandidatePicker } from '@/entities/source-data/ui/BoundaryCandidatePicker';
 import { DataPassportPanel } from '@/entities/source-data/ui/DataPassportPanel';
 import { ProjectConflictNotice } from '@/entities/project/ui/ProjectConflictNotice';
@@ -11,11 +10,11 @@ import { NativeAreaReview } from './NativeAreaReview';
 import { SourceObjectReview } from './SourceObjectReview';
 import { SourceSection } from './SourceSection';
 import { SourceReadIssues } from './SourceReadIssues';
+import { SourcePreparationError } from './SourcePreparationError';
 import { NativeFaceReview } from './NativeFaceReview';
 import type { SourceLayerFormProps } from './SourceLayerForm.props';
 export const SourceLayerForm: FC<SourceLayerFormProps> = ({
   sourceWarnings,
-  unconfirmedMappings,
   incompleteConstraintLayers,
   partialAccepted,
   acceptPartialGeometry,
@@ -42,11 +41,13 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
       layer.boundary_candidate?.status === 'invalid' &&
       layer.boundary_candidate.issue,
   );
-  const unconfirmedIds = new Set(unconfirmedMappings.map((layer) => layer.id));
-  const otherLayers = layers.filter((layer) => !unconfirmedIds.has(layer.id));
   return (
-    <div className="space-y-6">
-      <SourceSection number="01" title="Территория">
+    <div className="space-y-3">
+      <SourceSection
+        number="01"
+        title="Территория"
+        description="Граница расчёта"
+      >
         {!reviewOnly && (
           <BoundaryCandidatePicker
             readOnly={preparationBlocked}
@@ -56,10 +57,15 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
           />
         )}
       </SourceSection>
-      <SourceSection number="02" title="Геометрия">
+      <SourceSection
+        number="02"
+        title="Геометрия"
+        description="Контуры, замыкания и пропущенные объекты"
+        defaultOpen={!partialAccepted}
+      >
         {!!sourceWarnings.length && (
           <Disclosure
-            variant="plain"
+            variant="panel"
             title={`Замечания к файлу (${sourceWarnings.length})`}
           >
             <ul className="m-0 list-disc space-y-1 pl-5 text-xs">
@@ -189,59 +195,28 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
             </InlineMessage>
           )}
       </SourceSection>
-      <SourceSection number="03" title="Слои">
-        {!reviewOnly && !!unconfirmedMappings.length && (
-          <LayerMappingReview
-            recognition={layerRecognition}
-            readOnly={preparationBlocked}
-            layers={unconfirmedMappings}
-            mappings={mappings}
-            onChange={setMappings}
-          />
-        )}
-        {!reviewOnly && !!unconfirmedMappings.length && !!otherLayers.length ? (
-          <Disclosure
-            variant="plain"
-            title={`Остальные слои (${otherLayers.length})`}
-          >
-            <LayerMappingTable
-              recognition={layerRecognition}
-              readOnly={preparationBlocked}
-              layers={otherLayers}
-              mappings={mappings}
-              onChange={setMappings}
-            />
-          </Disclosure>
-        ) : !unconfirmedMappings.length &&
-          hasBoundaryCandidates &&
-          !reviewOnly ? (
-          <Disclosure variant="plain" title={`Другие слои (${layers.length})`}>
-            <LayerMappingTable
-              recognition={layerRecognition}
-              readOnly={preparationBlocked}
-              layers={layers}
-              mappings={mappings}
-              onChange={setMappings}
-            />
-          </Disclosure>
-        ) : !unconfirmedMappings.length || reviewOnly ? (
-          <LayerMappingTable
-            recognition={layerRecognition}
-            readOnly={reviewOnly || preparationBlocked}
-            layers={layers}
-            mappings={mappings}
-            onChange={setMappings}
-          />
-        ) : null}
+      <SourceSection
+        number="03"
+        title="Слои"
+        description="Выберите тип объектов и подтвердите предложения"
+      >
+        <LayerMappingWorkspace
+          key={projectQuery.data?.id}
+          recognition={layerRecognition}
+          readOnly={reviewOnly || preparationBlocked}
+          layers={layers}
+          mappings={mappings}
+          onChange={setMappings}
+        />
       </SourceSection>
       {dataPassportQuery.data && (
-        <SourceSection number="04" title="Сведения">
-          <Disclosure variant="plain" title="Полнота исходных данных">
-            <DataPassportPanel
-              passport={dataPassportQuery.data}
-              header={null}
-            />
-          </Disclosure>
+        <SourceSection
+          number="04"
+          title="Сведения"
+          description="Полнота исходных данных"
+          defaultOpen={false}
+        >
+          <DataPassportPanel passport={dataPassportQuery.data} header={null} />
         </SourceSection>
       )}
       {!!mutationError &&
@@ -252,9 +227,11 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
             reloading={projectQuery.isFetching}
           />
         ) : (
-          <InlineMessage tone="error">
-            Не удалось подготовить карту. Проверьте слои и повторите попытку.
-          </InlineMessage>
+          <SourcePreparationError
+            error={mutationError}
+            layers={layers}
+            mappings={mappings}
+          />
         ))}
     </div>
   );

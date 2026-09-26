@@ -7,7 +7,11 @@ a = Analysis(
     [str(Path(SPECPATH) / "entry.py")],
     pathex=[str(repo / "apps/api")],
     hiddenimports=collect_submodules("app"),
-    datas=collect_data_files("ezdxf") + collect_data_files("app.regulations", includes=["*.json"]),
+    datas=(
+        collect_data_files("ezdxf")
+        + collect_data_files("app.regulations", includes=["*.json"])
+        + collect_data_files("app.species", includes=["data/*.json"])
+    ),
     excludes=["tkinter", "pytest", "IPython", "matplotlib"],
     noarchive=False,
 )
