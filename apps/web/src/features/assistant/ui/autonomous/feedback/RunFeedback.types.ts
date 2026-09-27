@@ -1,0 +1,27 @@
+import type { AutonomousRunController } from '@/features/assistant/model/autonomous/useAutonomousRunController';
+export interface RunFeedbackProps extends Pick<
+  AutonomousRunController,
+  | 'stale'
+  | 'retryBlocked'
+  | 'busy'
+  | 'decisionDisabled'
+  | 'retry'
+  | 'existingUnverified'
+  | 'zoneBlocked'
+  | 'run'
+  | 'status'
+  | 'committed'
+  | 'shownZone'
+  | 'zoneCommitted'
+  | 'mapControl'
+  | 'error'
+  | 'failureRemedy'
+  | 'recoveryPending'
+  | 'outcomeUnknown'
+  | 'refreshOutcome'
+  | 'canCancel'
+  | 'active'
+  | 'approval'
+  | 'stopping'
+  | 'cancel'
+> {}

@@ -146,7 +146,12 @@ def test_sqlite_plan_history_survives_restart_with_undo_and_redo(tmp_path: Path)
 
     reopened_repository = SqliteProjectRepository(database)
     reopened_history = SqliteProjectHistory(reopened_repository)
-    assert reopened_history.state(project.id).can_undo is True
+    history_state = reopened_history.state(project.id)
+    assert history_state.can_undo is True
+    assert [(entry.id, entry.label, entry.author, entry.applied) for entry in history_state.entries] == [
+        ("change-set-1", "Добавление группы", "Локальная сессия", True),
+    ]
+    assert history_state.entries[0].created_at
     undone = reopened_history.undo(reopened_repository.get(project.id))
     assert undone.plan is not None
     assert undone.plan.objects == []
@@ -156,6 +161,9 @@ def test_sqlite_plan_history_survives_restart_with_undo_and_redo(tmp_path: Path)
     state = restarted_history.state(project.id)
     assert state.can_undo is False
     assert state.can_redo is True
+    assert [(entry.id, entry.label, entry.applied) for entry in state.entries] == [
+        ("change-set-1", "Добавление группы", False),
+    ]
     redone = restarted_history.redo(restarted_repository.get(project.id))
     assert redone.plan is not None
     assert [item.id for item in redone.plan.objects] == [saved.plan.objects[0].id]

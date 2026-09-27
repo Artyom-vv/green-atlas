@@ -3,14 +3,27 @@ from __future__ import annotations
 from collections import OrderedDict
 from copy import deepcopy
 from threading import RLock
+from typing import Literal
+
 from shapely.geometry import GeometryCollection, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 
-from app.contracts import GeometrySnapshot, LayerKind, Project
+from app.dxf_import.admission import (
+    partial_geometry_accepted,
+    require_confirmed_layer_mapping,
+)
+from app.dxf_import.layer_contracts import LayerKind
+from app.dxf_import.utility_mapping import (
+    assign_utility_context,
+    utility_contexts_by_layer,
+)
+from app.geometry.contracts import GeometrySnapshot
 from app.geometry.domain import CONSTRAINT_KINDS, PositionChecker, envelope_distance
+from app.geometry.rule_trace import position_rule_trace
 from app.operations.progress import ProgressReporter, WorkProgress
-
+from app.projects.contracts import Project
+from app.regulations.trace_contracts import PlantingRuleTrace
 
 RULES = {
     LayerKind.BUILDING: "building",
@@ -22,30 +35,36 @@ RULES = {
 # Treating an absent footprint as empty ground would be more dangerous than
 # stopping the calculation. The operator can still explicitly map the layer to
 # ``ignore`` when it is known to be drafting-only context.
-UNPROJECTABLE_PHYSICAL_ENTITY_TYPES = frozenset({
-    "3DSOLID",
-    "BODY",
-    "REGION",
-    "SURFACE",
-    "EXTRUDEDSURFACE",
-    "LOFTEDSURFACE",
-    "PLANESURFACE",
-    "REVOLVEDSURFACE",
-    "SWEPTSURFACE",
-    "NURBSSURFACE",
-})
-PHYSICAL_LAYER_KINDS = frozenset({
-    LayerKind.SITE_BORDER,
-    LayerKind.BUILDING,
-    LayerKind.ROAD,
-    LayerKind.UTILITY,
-    LayerKind.EXISTING_GREEN,
-    LayerKind.WATER,
-    LayerKind.RESTRICTED,
-})
+UNPROJECTABLE_PHYSICAL_ENTITY_TYPES = frozenset(
+    {
+        "3DSOLID",
+        "BODY",
+        "REGION",
+        "SURFACE",
+        "EXTRUDEDSURFACE",
+        "LOFTEDSURFACE",
+        "PLANESURFACE",
+        "REVOLVEDSURFACE",
+        "SWEPTSURFACE",
+        "NURBSSURFACE",
+    }
+)
+PHYSICAL_LAYER_KINDS = frozenset(
+    {
+        LayerKind.SITE_BORDER,
+        LayerKind.BUILDING,
+        LayerKind.ROAD,
+        LayerKind.UTILITY,
+        LayerKind.EXISTING_GREEN,
+        LayerKind.WATER,
+        LayerKind.RESTRICTED,
+    }
+)
 
 
-def _unprojectable_physical_layers(project: Project, source_features: list[dict]) -> dict[str, set[str]]:
+def _unprojectable_physical_layers(
+    project: Project, source_features: list[dict]
+) -> dict[str, set[str]]:
     """Return mapped physical layers whose real geometry is not available.
 
     ``Layer.entity_types`` covers entities that have no map feature at all.
@@ -59,18 +78,75 @@ def _unprojectable_physical_layers(project: Project, source_features: list[dict]
         if layer.mapped_kind in PHYSICAL_LAYER_KINDS
     }
     for source_name, layer in mapped_layers.items():
-        unsupported = set(layer.entity_types).intersection(UNPROJECTABLE_PHYSICAL_ENTITY_TYPES)
+        unsupported = set(layer.entity_types).intersection(
+            UNPROJECTABLE_PHYSICAL_ENTITY_TYPES
+        )
+        unsupported = {
+            entity_type
+            for entity_type in unsupported
+            if layer.projected_geometry_types.get(entity_type, 0)
+            < layer.entity_types.get(entity_type, 0)
+        }
         if unsupported:
             issues[source_name] = unsupported
     for feature in source_features:
         properties = feature.get("properties", {})
         source_name = str(properties.get("source_layer", ""))
-        if source_name not in mapped_layers or not properties.get("source_context_only"):
+        if source_name not in mapped_layers or not properties.get(
+            "source_context_only"
+        ):
             continue
         entity_type = str(properties.get("entity_type", ""))
         if entity_type == "ACAD_PROXY_ENTITY" or properties.get("source_mesh_context"):
             issues.setdefault(source_name, set()).add(entity_type or "MESH")
     return issues
+
+
+def _native_building_paths_without_surface(
+    mapping_by_layer: dict[str, LayerKind], source_features: list[dict]
+) -> set[str]:
+    """A visible CAD line is not evidence that the building interior is blocked.
+
+    The operator's confirmed layer mapping is authoritative here. An original
+    path contributes a footprint only when the native snapshot also contains
+    a surface derived from that exact handle and block instance, or when the
+    path itself projects as a polygon. Other open building paths stay visible
+    but make the calculation explicitly partial.
+    """
+
+    derived_members: set[tuple[str, tuple[str, ...]]] = set()
+    for feature in source_features:
+        properties = feature.get("properties", {})
+        if feature.get("geometry", {}).get("type") not in {"Polygon", "MultiPolygon"}:
+            continue
+        for member in properties.get("source_derived_from", []):
+            if isinstance(member, dict):
+                derived_members.add(
+                    (
+                        str(member.get("handle", "")),
+                        tuple(member.get("instance_chain", [])),
+                    )
+                )
+
+    incomplete: set[str] = set()
+    for feature in source_features:
+        properties = feature.get("properties", {})
+        source_layer = str(properties.get("source_layer", ""))
+        if (
+            mapping_by_layer.get(source_layer) != LayerKind.BUILDING
+            or properties.get("source_geometry_provider") != "autocad_snapshot_v1"
+            or "source_closed_path" not in properties
+            or feature.get("geometry", {}).get("type") in {"Polygon", "MultiPolygon"}
+        ):
+            continue
+        identity = (
+            str(properties.get("source_handle", "")),
+            tuple(properties.get("source_instance_chain", [])),
+        )
+        if identity not in derived_members:
+            incomplete.add(source_layer)
+    return incomplete
+
 
 def _polygons(geometry: BaseGeometry) -> list[BaseGeometry]:
     if geometry.is_empty:
@@ -82,6 +158,47 @@ def _polygons(geometry: BaseGeometry) -> list[BaseGeometry]:
     if geometry.geom_type == "GeometryCollection":
         return [polygon for part in geometry.geoms for polygon in _polygons(part)]
     return []
+
+
+def _stable_polygon_parts(geometry: BaseGeometry) -> list[BaseGeometry]:
+    """Return disconnected map targets instead of one aggregate MultiPolygon.
+
+    Constraint math still uses the complete geometry. Only the published map
+    representation is split, so hovering one local setback cannot highlight
+    every disconnected object covered by the same regulation.
+    """
+    return sorted(
+        (polygon for polygon in _polygons(geometry) if not polygon.is_empty),
+        key=lambda polygon: (
+            *(round(value, 6) for value in polygon.bounds),
+            round(polygon.area, 6),
+        ),
+    )
+
+
+def _fragment_features(
+    geometry: BaseGeometry,
+    *,
+    feature_id: str,
+    properties: dict,
+) -> list[dict]:
+    parts = _stable_polygon_parts(geometry)
+    count = len(parts)
+    return [
+        {
+            "type": "Feature",
+            "id": feature_id if count == 1 else f"{feature_id}-part-{index}",
+            "properties": {
+                **properties,
+                "calculation_fragment": True,
+                "fragment_index": index,
+                "fragment_count": count,
+                "area_m2": round(part.area, 2),
+            },
+            "geometry": mapping(part),
+        }
+        for index, part in enumerate(parts, start=1)
+    ]
 
 
 def _union_in_batches(
@@ -104,42 +221,49 @@ def _union_in_batches(
         return GeometryCollection()
     if len(geometries) <= batch_size:
         if progress:
-            progress(WorkProgress(
-                stage=stage,
-                # GEOS does not expose progress inside a single union. Mark
-                # the stage as indeterminate rather than advancing a bar to
-                # an invented percentage and leaving it frozen there.
-                fraction=None,
-                processed=None,
-                total=None,
-                unit=None,
-            ))
+            progress(
+                WorkProgress(
+                    stage=stage,
+                    # GEOS does not expose progress inside a single union. Mark
+                    # the stage as indeterminate rather than advancing a bar to
+                    # an invented percentage and leaving it frozen there.
+                    fraction=None,
+                    processed=None,
+                    total=None,
+                    unit=None,
+                )
+            )
         return unary_union(geometries)
 
     partials: list[BaseGeometry] = []
     total = len(geometries)
     for offset in range(0, total, batch_size):
-        partials.append(unary_union(geometries[offset:offset + batch_size]))
+        partials.append(unary_union(geometries[offset : offset + batch_size]))
         processed = min(total, offset + batch_size)
         if progress:
-            progress(WorkProgress(
-                stage=stage,
-                fraction=fraction_start + (fraction_end - fraction_start) * processed / total,
-                processed=processed,
-                total=total,
-                unit="геометрий",
-            ))
+            progress(
+                WorkProgress(
+                    stage=stage,
+                    fraction=fraction_start
+                    + (fraction_end - fraction_start) * processed / total,
+                    processed=processed,
+                    total=total,
+                    unit="геометрий",
+                )
+            )
     if progress:
-        progress(WorkProgress(
-            stage=f"Сводим контуры: {stage.removeprefix('Объединяем объекты: ')}",
-            # The final union has no truthful sub-counter. Its inputs are the
-            # completed batches above, so keep the bar indeterminate until
-            # GEOS returns instead of implying that all geometry is ready.
-            fraction=None,
-            processed=None,
-            total=None,
-            unit=None,
-        ))
+        progress(
+            WorkProgress(
+                stage=f"Сводим контуры: {stage.removeprefix('Объединяем объекты: ')}",
+                # The final union has no truthful sub-counter. Its inputs are the
+                # completed batches above, so keep the bar indeterminate until
+                # GEOS returns instead of implying that all geometry is ready.
+                fraction=None,
+                processed=None,
+                total=None,
+                unit=None,
+            )
+        )
     return unary_union(partials)
 
 
@@ -148,11 +272,18 @@ class ShapelyGeometryEngine:
 
     def __init__(self, max_cached_projects: int = 32) -> None:
         self.max_cached_projects = max_cached_projects
-        self._position_checkers: OrderedDict[str, tuple[int, PositionChecker]] = OrderedDict()
+        self._position_checkers: OrderedDict[str, tuple[tuple, PositionChecker]] = (
+            OrderedDict()
+        )
         self._checker_lock = RLock()
 
     def _position_checker(self, project: Project) -> PositionChecker:
-        version = project.geometry_version if project.geometry else 0
+        # Zone edits affect selected-area and growth checks even when the DXF
+        # geometry revision is unchanged. Never reuse an older zone boundary.
+        version = (
+            project.geometry_version if project.geometry else 0,
+            tuple(zone.model_dump_json() for zone in project.planting_zones),
+        )
         with self._checker_lock:
             cached = self._position_checkers.get(project.id)
             if cached is not None and cached[0] == version:
@@ -165,13 +296,26 @@ class ShapelyGeometryEngine:
                 self._position_checkers.popitem(last=False)
             return checker
 
-    def calculate(self, project: Project, progress: ProgressReporter | None = None) -> GeometrySnapshot:
+    def calculate(
+        self, project: Project, progress: ProgressReporter | None = None
+    ) -> GeometrySnapshot:
+        require_confirmed_layer_mapping(project)
+        allow_partial = partial_geometry_accepted(project.source_file)
+        provenance = (
+            project.source_file.prepared_provenance if project.source_file else None
+        )
+        review = provenance.opening_review if provenance else None
         if project.source_geometry is None:
             raise ValueError("Сначала импортируйте DXF")
-        mapping_by_layer = {layer.source_name: layer.mapped_kind for layer in project.layers}
-        source_features = deepcopy(project.source_geometry.feature_collection.get("features", []))
+        mapping_by_layer = {
+            layer.source_name: layer.mapped_kind for layer in project.layers
+        }
+        utility_by_layer = utility_contexts_by_layer(project.layers)
+        source_features = deepcopy(
+            project.source_geometry.feature_collection.get("features", [])
+        )
         unprojectable_layers = _unprojectable_physical_layers(project, source_features)
-        if unprojectable_layers:
+        if unprojectable_layers and not allow_partial:
             labels = ", ".join(
                 f"{source_name} ({', '.join(sorted(entity_types))})"
                 for source_name, entity_types in sorted(unprojectable_layers.items())
@@ -182,16 +326,21 @@ class ShapelyGeometryEngine:
                 "Подготовьте 2D-контур или явно сопоставьте слой как неиспользуемый; исходный DXF сохранён без изменений."
             )
         incomplete_physical_layers = sorted(
-            layer.source_name
-            for layer in project.layers
-            if layer.mapped_kind in PHYSICAL_LAYER_KINDS and not layer.geometry_complete
+            {
+                layer.source_name
+                for layer in project.layers
+                if layer.mapped_kind in PHYSICAL_LAYER_KINDS
+                and not layer.geometry_complete
+            }
+            | set(unprojectable_layers)
+            | _native_building_paths_without_surface(mapping_by_layer, source_features)
         )
-        if incomplete_physical_layers:
+        if incomplete_physical_layers and not allow_partial:
             raise ValueError(
                 "Карта содержит только часть объектов в слоях: "
                 f"{', '.join(incomplete_physical_layers)}. Нельзя строить ограничения, иначе занятая "
-                "территория могла бы выглядеть свободной. Загрузите рабочий фрагмент или явно "
-                "сопоставьте неполный слой как неиспользуемый; исходный DXF сохранён без изменений."
+                "территория могла бы выглядеть свободной. В настройке исходных данных можно "
+                "явно разрешить расчёт по доступным объектам; пропуски останутся замечаниями."
             )
         blocking_arrays = [
             feature.get("properties", {})
@@ -199,7 +348,15 @@ class ShapelyGeometryEngine:
             if feature.get("properties", {}).get("source_analysis_blocking")
         ]
         if blocking_arrays:
-            total = sum(int(item.get("source_block_components", item.get("source_block_instances", 0)) or 0) for item in blocking_arrays)
+            total = sum(
+                int(
+                    item.get(
+                        "source_block_components", item.get("source_block_instances", 0)
+                    )
+                    or 0
+                )
+                for item in blocking_arrays
+            )
             raise ValueError(
                 "DXF содержит блоковый массив минимум из "
                 f"{total} компонентов, который нельзя безопасно развернуть для расчёта. "
@@ -212,7 +369,15 @@ class ShapelyGeometryEngine:
         total_features = len(source_features)
         report_step = max(1, total_features // 100)
         if progress:
-            progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.0, processed=0, total=total_features, unit="объектов"))
+            progress(
+                WorkProgress(
+                    stage="Читаем геометрию слоёв",
+                    fraction=0.0,
+                    processed=0,
+                    total=total_features,
+                    unit="объектов",
+                )
+            )
         for index, feature in enumerate(source_features, start=1):
             properties = feature.setdefault("properties", {})
             source_layer = properties.get("source_layer", "")
@@ -222,52 +387,126 @@ class ShapelyGeometryEngine:
                 # boundary. Preserve it for map context but never turn it
                 # into a planting rule because its source pixels are absent.
                 properties["kind"] = LayerKind.IGNORE.value
+                assign_utility_context(properties, utility_by_layer)
                 visible_features.append(feature)
                 if progress and (index % report_step == 0 or index == total_features):
-                    progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.35 * index / max(1, total_features), processed=index, total=total_features, unit="объектов"))
+                    progress(
+                        WorkProgress(
+                            stage="Читаем геометрию слоёв",
+                            fraction=0.35 * index / max(1, total_features),
+                            processed=index,
+                            total=total_features,
+                            unit="объектов",
+                        )
+                    )
                 continue
             kind = mapping_by_layer.get(source_layer) or LayerKind.IGNORE
             properties["kind"] = kind.value
+            # Explicit mapping owns network interpretation. Imported names or
+            # old derived feature properties cannot confirm a network type.
+            assign_utility_context(properties, utility_by_layer)
             if kind == LayerKind.IGNORE:
                 visible_features.append(feature)
                 if progress and (index % report_step == 0 or index == total_features):
-                    progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.35 * index / max(1, total_features), processed=index, total=total_features, unit="объектов"))
+                    progress(
+                        WorkProgress(
+                            stage="Читаем геометрию слоёв",
+                            fraction=0.35 * index / max(1, total_features),
+                            processed=index,
+                            total=total_features,
+                            unit="объектов",
+                        )
+                    )
                 continue
             try:
                 geometry = shape(feature["geometry"])
             except Exception:
+                # A malformed physical object is not evidence of empty ground.
+                # Keep the source untouched and refuse an authoritative result;
+                # the existing source-editor remains available for correction.
+                invalid_constraint_layers.add(str(source_layer))
+                properties["source_invalid_geometry"] = True
+                visible_features.append(feature)
                 continue
-            if not geometry.is_valid:
+            if geometry.is_empty or not geometry.is_valid:
                 # Repairing a self-intersecting boundary would invent a
-                # footprint. For mapped site/building/road geometry that is
+                # footprint. For any mapped physical geometry that is
                 # less safe than stopping the calculation: an operator must
                 # decide which intended contour is authoritative.
-                if kind in {LayerKind.SITE_BORDER, LayerKind.BUILDING, LayerKind.ROAD}:
+                if kind in PHYSICAL_LAYER_KINDS:
                     invalid_constraint_layers.add(str(source_layer))
                     properties["source_invalid_geometry"] = True
                 visible_features.append(feature)
                 if progress and (index % report_step == 0 or index == total_features):
-                    progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.35 * index / max(1, total_features), processed=index, total=total_features, unit="объектов"))
+                    progress(
+                        WorkProgress(
+                            stage="Читаем геометрию слоёв",
+                            fraction=0.35 * index / max(1, total_features),
+                            processed=index,
+                            total=total_features,
+                            unit="объектов",
+                        )
+                    )
                 continue
             if not geometry.is_empty:
-                grouped[kind].append(geometry)
+                calculation_geometry = geometry
+                if kind == LayerKind.SITE_BORDER:
+                    center_geometry = properties.get("source_polyline_center_geometry")
+                    if isinstance(center_geometry, dict):
+                        try:
+                            authored_boundary = shape(center_geometry)
+                        except (KeyError, TypeError, ValueError):
+                            authored_boundary = GeometryCollection()
+                        if authored_boundary.is_empty or not authored_boundary.is_valid:
+                            invalid_constraint_layers.add(str(source_layer))
+                            properties["source_invalid_boundary_geometry"] = True
+                            visible_features.append(feature)
+                            continue
+                        calculation_geometry = authored_boundary
+                grouped[kind].append(calculation_geometry)
                 visible_features.append(feature)
             if progress and (index % report_step == 0 or index == total_features):
-                progress(WorkProgress(stage="Читаем геометрию слоёв", fraction=0.35 * index / max(1, total_features), processed=index, total=total_features, unit="объектов"))
+                progress(
+                    WorkProgress(
+                        stage="Читаем геометрию слоёв",
+                        fraction=0.35 * index / max(1, total_features),
+                        processed=index,
+                        total=total_features,
+                        unit="объектов",
+                    )
+                )
 
         if invalid_constraint_layers:
             layers = ", ".join(sorted(invalid_constraint_layers))
             raise ValueError(
-                "DXF содержит самопересекающуюся или некорректную замкнутую геометрию "
+                "DXF содержит отсутствующую, пустую или некорректную геометрию "
                 f"в слоях: {layers}. Исправьте контур или сопоставьте его как справочный слой."
             )
 
         site_candidates = grouped[LayerKind.SITE_BORDER]
         if progress:
-            progress(WorkProgress(stage="Собираем границу проектирования", fraction=None, processed=len(site_candidates), total=len(site_candidates), unit="контуров"))
-        site_polygons = [polygon for geometry in site_candidates for polygon in _polygons(geometry)]
+            progress(
+                WorkProgress(
+                    stage="Собираем границу проектирования",
+                    fraction=None,
+                    processed=len(site_candidates),
+                    total=len(site_candidates),
+                    unit="контуров",
+                )
+            )
+        site_polygons = [
+            polygon for geometry in site_candidates for polygon in _polygons(geometry)
+        ]
         if not site_polygons:
-            site_polygons = list(polygonize([geometry for geometry in site_candidates if geometry.geom_type in {"LineString", "MultiLineString"}]))
+            site_polygons = list(
+                polygonize(
+                    [
+                        geometry
+                        for geometry in site_candidates
+                        if geometry.geom_type in {"LineString", "MultiLineString"}
+                    ]
+                )
+            )
         # A survey fragment often carries buildings, paths and utilities but
         # not the outer project boundary. That is not a reason to make the
         # whole drawing unusable: the operator can draw the working area on
@@ -276,14 +515,33 @@ class ShapelyGeometryEngine:
         # inside the explicitly selected manual areas.
         full_site = unary_union(site_polygons).buffer(0) if site_polygons else None
         site = full_site
+        site_surface_feature = (
+            None
+            if site is None or site.is_empty
+            else {
+                "type": "Feature",
+                "id": "calculated-site-surface",
+                "properties": {
+                    "kind": "site_surface",
+                    "label": "Расчётная граница территории",
+                    "area_m2": round(site.area, 2),
+                    "calculation_only": True,
+                },
+                "geometry": mapping(site),
+            }
+        )
         if progress:
-            progress(WorkProgress(
-                stage="Граница проектирования готова" if site is not None else "Граница не найдена: доступна ручная область",
-                fraction=0.42,
-                processed=len(site_candidates),
-                total=len(site_candidates),
-                unit="контуров",
-            ))
+            progress(
+                WorkProgress(
+                    stage="Граница проектирования готова"
+                    if site is not None
+                    else "Граница не найдена: доступна ручная область",
+                    fraction=0.42,
+                    processed=len(site_candidates),
+                    total=len(site_candidates),
+                    unit="контуров",
+                )
+            )
 
         forbidden_parts = []
         constraint_features: list[dict] = []
@@ -310,29 +568,55 @@ class ShapelyGeometryEngine:
             rule_fraction_start = 0.42 + 0.40 * rule_index / rule_count
             rule_fraction_end = 0.42 + 0.40 * (rule_index + 1) / rule_count
             if progress:
-                progress(WorkProgress(stage=f"Строим зону: {label.lower()}", fraction=None, processed=processed_constraints, total=total_constraints, unit="объектов ограничений"))
+                progress(
+                    WorkProgress(
+                        stage=f"Строим зону: {label.lower()}",
+                        fraction=None,
+                        processed=processed_constraints,
+                        total=total_constraints,
+                        unit="объектов ограничений",
+                    )
+                )
             unioned = _union_in_batches(
                 geometries,
                 progress=progress,
                 stage=f"Объединяем объекты: {label.lower()}",
                 fraction_start=rule_fraction_start,
-                fraction_end=rule_fraction_start + (rule_fraction_end - rule_fraction_start) * 0.72,
+                fraction_end=rule_fraction_start
+                + (rule_fraction_end - rule_fraction_start) * 0.72,
             )
             buffered = unioned.buffer(distance)
             clipped = buffered.intersection(site) if site is not None else buffered
             processed_constraints += len(geometries)
             if progress:
-                fraction = max(rule_fraction_end, 0.42 + 0.40 * processed_constraints / max(1, total_constraints))
-                progress(WorkProgress(stage=f"Зона готова: {label.lower()}", fraction=fraction, processed=processed_constraints, total=total_constraints, unit="объектов ограничений"))
+                fraction = max(
+                    rule_fraction_end,
+                    0.42 + 0.40 * processed_constraints / max(1, total_constraints),
+                )
+                progress(
+                    WorkProgress(
+                        stage=f"Зона готова: {label.lower()}",
+                        fraction=fraction,
+                        processed=processed_constraints,
+                        total=total_constraints,
+                        unit="объектов ограничений",
+                    )
+                )
             if clipped.is_empty:
                 continue
             forbidden_parts.append(clipped)
-            constraint_features.append({
-                "type": "Feature",
-                "id": f"forbidden-{rule_id}",
-                "properties": {"kind": "forbidden", "rule_id": rule_id, "label": label, "distance_m": distance},
-                "geometry": mapping(clipped),
-            })
+            constraint_features.extend(
+                _fragment_features(
+                    clipped,
+                    feature_id=f"forbidden-{rule_id}",
+                    properties={
+                        "kind": "forbidden",
+                        "rule_id": rule_id,
+                        "label": label,
+                        "distance_m": distance,
+                    },
+                )
+            )
 
         occupied_labels = {
             LayerKind.EXISTING_GREEN: "Существующее озеленение",
@@ -354,60 +638,219 @@ class ShapelyGeometryEngine:
             if clipped.is_empty:
                 continue
             forbidden_parts.append(clipped)
-            constraint_features.append({
-                "type": "Feature",
-                "id": f"occupied-{kind.value}",
-                "properties": {"kind": "forbidden", "rule_id": f"occupied-{kind.value}", "label": f"Занято: {label.lower()}", "distance_m": 0},
-                "geometry": mapping(clipped),
-            })
+            constraint_features.extend(
+                _fragment_features(
+                    clipped,
+                    feature_id=f"occupied-{kind.value}",
+                    properties={
+                        "kind": "forbidden",
+                        "rule_id": f"occupied-{kind.value}",
+                        "label": f"Занято: {label.lower()}",
+                        "distance_m": 0,
+                    },
+                )
+            )
 
         if progress:
-            progress(WorkProgress(stage="Вычисляем итоговую допустимую область", fraction=None, processed=processed_constraints, total=total_constraints, unit="объектов ограничений"))
-        forbidden = unary_union(forbidden_parts) if forbidden_parts else GeometryCollection()
+            progress(
+                WorkProgress(
+                    stage="Вычисляем итоговую допустимую область",
+                    fraction=None,
+                    processed=processed_constraints,
+                    total=total_constraints,
+                    unit="объектов ограничений",
+                )
+            )
+        forbidden = (
+            unary_union(forbidden_parts) if forbidden_parts else GeometryCollection()
+        )
         allowed = site.difference(forbidden).buffer(0) if site is not None else None
-        allowed_feature = None if allowed is None or allowed.is_empty else {
-            "type": "Feature",
-            "id": "allowed-area",
-            # This is the intersection left after the strictest currently
-            # known buffer for every plant class. It is a useful common map
-            # cue, not a second universal validation rule: a shrub may be
-            # valid outside it when its own regulatory distance is smaller.
-            "properties": {"kind": "allowed", "label": "Базово допустимая зона", "area_m2": round(allowed.area, 2), "scope": "conservative_all_plant_kinds"},
-            "geometry": mapping(allowed),
-        }
+        # This is the intersection left after the strictest currently known
+        # buffer for every plant class. It is a useful common map cue, not a
+        # second universal validation rule: a shrub may be valid outside it
+        # when its own regulatory distance is smaller. Publish disconnected
+        # components independently so the map exposes local areas, while the
+        # snapshot totals below continue to describe the complete result.
+        allowed_features = (
+            []
+            if allowed is None or allowed.is_empty
+            else _fragment_features(
+                allowed,
+                feature_id="allowed-area",
+                properties={
+                    "kind": "allowed",
+                    "label": "Базово допустимая зона",
+                    "scope": "conservative_all_plant_kinds",
+                },
+            )
+        )
         if progress:
-            progress(WorkProgress(stage="Фиксируем выбранные рабочие области", fraction=0.92, processed=0, total=None, unit="областей"))
-        planting_zone_features = [{
-            "type": "Feature",
-            "id": f"planting-area-{zone.id}",
-            "properties": {
-                "kind": "planting_area",
-                "planting_zone_id": zone.id,
-                "label": zone.label,
-            },
-            "geometry": deepcopy(zone.geometry),
-        } for zone in project.planting_zones]
+            progress(
+                WorkProgress(
+                    stage="Фиксируем выбранные рабочие области",
+                    fraction=0.92,
+                    processed=0,
+                    total=None,
+                    unit="областей",
+                )
+            )
+        planting_zone_features = [
+            {
+                "type": "Feature",
+                "id": f"planting-area-{zone.id}",
+                "properties": {
+                    "kind": "planting_area",
+                    "planting_zone_id": zone.id,
+                    "label": zone.label,
+                },
+                "geometry": deepcopy(zone.geometry),
+            }
+            for zone in project.planting_zones
+        ]
         if progress:
-            progress(WorkProgress(stage=f"Выбрано рабочих областей: {len(planting_zone_features)}", fraction=1.0, processed=len(planting_zone_features), total=len(planting_zone_features), unit="областей"))
-        derived_features = [*constraint_features, *([allowed_feature] if allowed_feature is not None else []), *planting_zone_features]
+            progress(
+                WorkProgress(
+                    stage=f"Выбрано рабочих областей: {len(planting_zone_features)}",
+                    fraction=1.0,
+                    processed=len(planting_zone_features),
+                    total=len(planting_zone_features),
+                    unit="областей",
+                )
+            )
+        derived_features = [
+            *([site_surface_feature] if site_surface_feature is not None else []),
+            *constraint_features,
+            *allowed_features,
+            *planting_zone_features,
+        ]
         return GeometrySnapshot(
-            feature_collection={"type": "FeatureCollection", "features": [*visible_features, *derived_features]},
+            calculation_scope="available_data"
+            if (
+                incomplete_physical_layers
+                or (
+                    project.source_file
+                    and project.source_file.cad_snapshot_provenance
+                    and project.source_file.cad_snapshot_provenance.unresolved_instances
+                )
+                or (review and (review.skipped_drawings or review.skipped_references))
+            )
+            else "complete_source",
+            feature_collection={
+                "type": "FeatureCollection",
+                "features": [*visible_features, *derived_features],
+            },
+            # Regulatory calculation remains strictly 2D. Carry the source
+            # XYZ evidence through unchanged for the scene instead of
+            # flattening or attempting to derive terrain from it.
+            vertical_primitives=deepcopy(project.source_geometry.vertical_primitives),
             site_area_m2=round(full_site.area, 2) if full_site is not None else None,
             planning_area_m2=round(site.area, 2) if site is not None else None,
             allowed_area_m2=round(allowed.area, 2) if allowed is not None else None,
         )
 
-    def validate_position(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree") -> None:
+    def validate_position(
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        radius: float,
+        plant_kind: str = "tree",
+    ) -> None:
         if project.geometry is None:
             raise ValueError("Сначала рассчитайте допустимые зоны")
         violation = self._position_checker(project).check(x, y, radius, plant_kind)  # type: ignore[arg-type]
         if violation:
             raise ValueError(violation.description)
 
-    def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None:
+    def position_violation(
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        radius: float,
+        plant_kind: str = "tree",
+    ):
+        return self._position_checker(project).check(x, y, radius, plant_kind)  # type: ignore[arg-type]
+
+    def automatic_safe_geometry(
+        self,
+        project: Project,
+        geometry: dict,
+        radius: float,
+        plant_kind: str = "tree",
+        growth_canopy_radius: float | None = None,
+        growth_root_radius: float | None = None,
+    ) -> dict:
+        safe = self._position_checker(project).automatic_safe_area(  # type: ignore[arg-type]
+            shape(geometry),
+            radius,
+            plant_kind,
+            growth_canopy_radius,
+            growth_root_radius,
+        )
+        return mapping(safe)
+
+    def placement_advisory(
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        radius: float,
+        plant_kind: Literal["tree", "shrub"] = "tree",
+    ) -> str | None:
         advisory = self._position_checker(project).advisory(x, y, radius)
         return advisory.description if advisory else None
 
-    def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> str | None:
-        advisory = self._position_checker(project).growth_advisory(x, y, canopy_radius, root_radius)
+    def placement_advisory_detail(
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        radius: float,
+        plant_kind: Literal["tree", "shrub"] = "tree",
+    ):
+        return self._position_checker(project).advisory(x, y, radius)
+
+    def position_rule_trace(
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        plant_kind: Literal["tree", "shrub"] = "tree",
+        mature_crown_diameter_m: float | None = None,
+    ) -> PlantingRuleTrace:
+        return position_rule_trace(
+            self._position_checker(project),
+            project,
+            x,
+            y,
+            plant_kind,
+            mature_crown_diameter_m,
+        )
+
+    def future_growth_advisory(
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        canopy_radius: float,
+        root_radius: float,
+        plant_kind: Literal["tree", "shrub"] = "tree",
+    ) -> str | None:
+        advisory = self._position_checker(project).growth_advisory(
+            x, y, canopy_radius, root_radius
+        )
         return advisory.description if advisory else None
+
+    def future_growth_advisory_detail(
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        canopy_radius: float,
+        root_radius: float,
+        plant_kind: Literal["tree", "shrub"] = "tree",
+    ):
+        return self._position_checker(project).growth_advisory(
+            x, y, canopy_radius, root_radius
+        )

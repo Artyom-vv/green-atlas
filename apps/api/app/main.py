@@ -3,10 +3,18 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import application, router
+from app.agent_conversations import router as agent_conversations_router
+from app.agent_runtime.preview_routes import router as agent_preview_router
+from app.agent_runtime.routes import router as agent_runtime_router
+from app.api import router
+from app.cad_delivery.routes import router as cad_delivery_router
+from app.cad_intake.asset_routes import router as cad_asset_router
+from app.cad_intake.routes import router as cad_intake_router
+from app.composition import get_application
 from app.contracts import ApiError
+from app.planning_assistant import router as planning_assistant_router
+from app.project_assistant import router as project_assistant_router
 from app.projects.concurrency import ProjectVersionConflict
-
 
 app = FastAPI(
     title="Green Atlas API",
@@ -29,12 +37,17 @@ async def project_version_headers(request: Request, call_next):
     response = await call_next(request)
     if response.status_code >= 400:
         return response
+    # Immutable CAD assets use their own byte hash ETag and operation scope.
+    # Reading a Project here would load unrelated state for every file request.
+    route = request.scope.get("route")
+    if getattr(route, "name", None) in {"cad_asset_metadata", "cad_asset_file", "native_dxf_asset", "source_dxf_download"}:
+        return response
     parts = request.url.path.split("/")
     if len(parts) < 4 or parts[1:3] != ["api", "projects"]:
         return response
     project_id = parts[3]
     try:
-        version = application.get(project_id, lightweight=True).state_version
+        version = get_application().get(project_id, lightweight=True).state_version
     except (KeyError, ProjectVersionConflict):
         return response
     response.headers["ETag"] = f'"{version}"'
@@ -59,3 +72,11 @@ async def validation_error(_: Request, error: RequestValidationError) -> JSONRes
 
 
 app.include_router(router)
+app.include_router(cad_delivery_router)
+app.include_router(cad_intake_router)
+app.include_router(cad_asset_router)
+app.include_router(planning_assistant_router)
+app.include_router(project_assistant_router)
+app.include_router(agent_conversations_router)
+app.include_router(agent_runtime_router)
+app.include_router(agent_preview_router)

@@ -1,9 +1,32 @@
 from __future__ import annotations
 
-from app.contracts import GrowthEnvelopeForecast, SpeciesRevision
+from app.species.contracts import GrowthEnvelopeForecast, SpeciesRevision
+from app.species.forecast import forecast_at
+from app.species.source_profiles import SOURCE_GROWTH_LABELS, source_profiles
 
 
 MOSCOW_RULES = "https://www.mos.ru/upload/content/files/49f68586dd69e7d9cc0a0d9a6e933190/Postanovlenieot10_09_2002N743-PPObytverjdeniiPravilsozdaniyasoderjaniyaiohranizelenih_Tekst%281%29.pdf"
+
+
+def _forecast_anchors(crown: tuple[float, float], growth_rate: str, root_architecture: str, size_class: str = "standard") -> tuple[list[GrowthEnvelopeForecast], list[GrowthEnvelopeForecast]]:
+    """Return bounded, nonlinear scenario anchors rather than a false exact size."""
+    rates = {"slow": 0.070, "moderate": 0.095, "fast": 0.125}
+    size_shift = {"unspecified": 0.0, "sapling": -0.04, "standard": 0.04, "large": 0.10}[size_class]
+    root_factor = {"shallow": (0.9, 1.35), "mixed": (0.75, 1.2), "deep": (0.65, 1.05), "uncertain": (0.6, 1.5)}[root_architecture]
+    mature_min, mature_max = crown[0] / 2, crown[1] / 2
+    canopy: list[GrowthEnvelopeForecast] = []
+    roots: list[GrowthEnvelopeForecast] = []
+    for year in (0, 5, 10, 15, 20, 30, 40):
+        # Bounded saturating curve. The wide range is intentional until a
+        # Moscow-calibrated species dataset replaces these catalogue priors.
+        ratio = 0.14 if year == 0 else 0.14 + 0.86 * (1 - 2.718281828 ** (-rates[growth_rate] * year))
+        scale = min(1.0, max(0.10, ratio + size_shift))
+        canopy_min = round(mature_min * max(0.10, scale - 0.08), 2)
+        canopy_max = round(mature_max * min(1.0, scale + 0.12), 2)
+        confidence = "medium" if year <= 10 and root_architecture != "uncertain" else "low"
+        canopy.append(GrowthEnvelopeForecast(horizon_year=year, radius_min_m=canopy_min, radius_max_m=canopy_max, confidence=confidence, basis="Нелинейный диапазон каталога; не нормативный отступ"))
+        roots.append(GrowthEnvelopeForecast(horizon_year=year, radius_min_m=round(canopy_min * root_factor[0], 2), radius_max_m=round(canopy_max * root_factor[1], 2), confidence="low", basis="Сценарная корневая зона; требует проверки дендрологом"))
+    return canopy, roots
 
 
 def _species(
@@ -21,9 +44,12 @@ def _species(
     *,
     specialist_review: bool = False,
     risk_flags: list[str] | None = None,
+    revision_tag: str = "2026-08-28.1",
+    evidence_note: str | None = None,
 ) -> SpeciesRevision:
+    canopy, roots = _forecast_anchors(crown, growth_rate, root_architecture)
     return SpeciesRevision(
-        id=f"{species_id}@2026-08-28.1",
+        id=f"{species_id}@{revision_tag}",
         species_id=species_id,
         revision=1,
         common_name=common_name,
@@ -39,8 +65,10 @@ def _species(
         provenance=provenance,
         territory_policy="specialist_review" if specialist_review else "general_draft",
         risk_flags=risk_flags or [],
-        evidence_note="Габариты являются диапазоном для эскизной проверки. Фактический сорт, возраст, условия участка и проектное решение уточняет дендролог.",
+        evidence_note=evidence_note or "Габариты являются диапазоном для эскизной проверки. Фактический сорт, возраст, условия участка и проектное решение уточняет дендролог.",
         source_urls=[source_url, MOSCOW_RULES],
+        canopy_forecast=canopy,
+        root_forecast=roots,
     )
 
 
@@ -58,6 +86,21 @@ CATALOG: tuple[SpeciesRevision, ...] = (
 )
 
 
+# New source-backed dimensions reuse the existing sketch scenario, explicitly
+# leaving root architecture unknown. Earlier revision IDs and values stay frozen.
+CATALOG += tuple(
+    _species(
+        profile.species_id, profile.common_name, profile.scientific_name,
+        profile.kind, profile.crown_shape, profile.height_m, profile.width_m,
+        SOURCE_GROWTH_LABELS[profile.growth_label], "uncertain", "not_assessed",
+        profile.source_url, specialist_review=True,
+        risk_flags=["uncalibrated_growth", "root_data_missing"],
+        revision_tag=profile.revision_tag, evidence_note=profile.evidence_note,
+    )
+    for profile in source_profiles()
+)
+
+
 def list_species(kind: str | None = None) -> list[SpeciesRevision]:
     return [item.model_copy(deep=True) for item in CATALOG if kind is None or item.kind == kind]
 
@@ -70,29 +113,12 @@ def get_species(revision_id: str) -> SpeciesRevision:
 
 
 def growth_forecasts(revision: SpeciesRevision, size_class: str) -> tuple[list[GrowthEnvelopeForecast], list[GrowthEnvelopeForecast]]:
-    growth = {"slow": (0.25, 0.45, 0.72), "moderate": (0.32, 0.58, 0.84), "fast": (0.42, 0.7, 0.92)}[revision.growth_rate]
-    size_bonus = {"unspecified": 0, "sapling": -0.05, "standard": 0.04, "large": 0.1}[size_class]
-    mature_min = revision.mature_crown_diameter_min_m / 2
-    mature_max = revision.mature_crown_diameter_max_m / 2
-    canopy: list[GrowthEnvelopeForecast] = []
-    roots: list[GrowthEnvelopeForecast] = []
-    root_factor = {"shallow": (0.9, 1.35), "mixed": (0.75, 1.2), "deep": (0.65, 1.05), "uncertain": (0.6, 1.5)}[revision.root_architecture]
-    for horizon, ratio in zip((5, 10, 20), growth, strict=True):
-        scale = min(1, max(0.15, ratio + size_bonus))
-        canopy_min = round(mature_min * scale, 2)
-        canopy_max = round(mature_max * min(1, scale + 0.14), 2)
-        canopy.append(GrowthEnvelopeForecast(
-            horizon_year=horizon,
-            radius_min_m=canopy_min,
-            radius_max_m=canopy_max,
-            confidence="medium" if horizon <= 10 else "low",
-            basis=f"Диапазон каталога {revision.id}; не нормативный отступ",
-        ))
-        roots.append(GrowthEnvelopeForecast(
-            horizon_year=horizon,
-            radius_min_m=round(canopy_min * root_factor[0], 2),
-            radius_max_m=round(canopy_max * root_factor[1], 2),
-            confidence="low",
-            basis=f"Сценарная корневая зона {revision.id}; требует проверки дендрологом",
-        ))
-    return canopy, roots
+    return _forecast_anchors(
+        (revision.mature_crown_diameter_min_m, revision.mature_crown_diameter_max_m),
+        revision.growth_rate,
+        revision.root_architecture,
+        size_class,
+    )
+
+
+__all__ = ["forecast_at", "get_species", "growth_forecasts", "list_species"]

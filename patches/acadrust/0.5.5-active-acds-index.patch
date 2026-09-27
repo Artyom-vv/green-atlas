@@ -1,0 +1,239 @@
+--- /dev/null
++++ b/src/io/dwg/acds_index.rs
+@@ -0,0 +1,199 @@
++//! Active ACDS modeler records, using the datastore index rather than blob order.
++//! ODA Open Design Specification for DWG, section 24.2.2.1-3.
++//! This initial downstream patch supports inline SAB; paged data is an error.
++use crate::{DxfError, Result};
++use std::{collections::HashSet, ops::Range};
++
++const SEGMENT_HEADER: usize = 48;
++const INDEX_ENTRY: usize = 12;
++const RECORD_HEADER: usize = 20;
++const ALIGNMENT: usize = 16;
++const BLOB_REFERENCE: u32 = 0xbb106bb1;
++
++fn invalid(message: &str) -> DxfError {
++    DxfError::Parse(format!("AcDs active index: {message}"))
++}
++
++fn bytes(buf: &[u8], at: usize, length: usize) -> Result<&[u8]> {
++    let end = at.checked_add(length).ok_or_else(|| invalid("offset overflow"))?;
++    buf.get(at..end).ok_or_else(|| invalid("truncated record"))
++}
++
++fn u32_at(buf: &[u8], at: usize) -> Result<u32> {
++    Ok(u32::from_le_bytes(bytes(buf, at, 4)?.try_into().unwrap()))
++}
++
++fn u64_at(buf: &[u8], at: usize) -> Result<u64> {
++    Ok(u64::from_le_bytes(bytes(buf, at, 8)?.try_into().unwrap()))
++}
++
++fn position(value: u64) -> Result<usize> {
++    usize::try_from(value).map_err(|_| invalid("offset exceeds address space"))
++}
++
++fn segment(buf: &[u8], table: usize, count: usize, id: usize, name: &[u8]) -> Result<Range<usize>> {
++    if id >= count { return Err(invalid("segment index out of bounds")); }
++    let index = table + id * INDEX_ENTRY;
++    let start = position(u64_at(buf, index)?)?;
++    let size = u32_at(buf, index + 8)? as usize;
++    let data = bytes(buf, start, size)?;
++    if size < SEGMENT_HEADER || !data.starts_with(b"\xac\xd5")
++        || data.get(2..8) != Some(name) || u32_at(data, 8)? as usize != id
++        || u64_at(data, 16)? != size as u64 {
++        return Err(invalid("invalid indexed segment header"));
++    }
++    Ok(start..start + size)
++}
++
++/// `None` means there is no indexed v2 datastore. A recognized but invalid or
++/// incomplete index is an error and must never trigger positional fallback.
++pub(super) fn active_sab(buf: &[u8], wanted: &HashSet<u64>) -> Result<Option<Vec<(u64, Vec<u8>)>>> {
++    if wanted.is_empty() { return Ok(Some(Vec::new())); }
++    if !buf.starts_with(b"jard") { return Ok(None); }
++    if u32_at(buf, 12)? != 2 { return Err(invalid("unsupported datastore version")); }
++    let table_header = u32_at(buf, 24)? as usize;
++    let count = u32_at(buf, 32)? as usize;
++    let table = table_header.checked_add(SEGMENT_HEADER).ok_or_else(|| invalid("index overflow"))?;
++    bytes(buf, table, count.checked_mul(INDEX_ENTRY).ok_or_else(|| invalid("index overflow"))?)?;
++    let index = segment(buf, table, count, u32_at(buf, 40)? as usize, b"datidx")?;
++    let data_index = &buf[index];
++    let entries = u32_at(data_index, SEGMENT_HEADER)? as usize;
++    bytes(data_index, SEGMENT_HEADER + 8, entries.checked_mul(INDEX_ENTRY).ok_or_else(|| invalid("index overflow"))?)?;
++    let mut result = Vec::new();
++    let mut seen = HashSet::new();
++    for i in 0..entries {
++        let entry = SEGMENT_HEADER + 8 + i * INDEX_ENTRY;
++        let segment_id = u32_at(data_index, entry)? as usize;
++        if segment_id == 0 { continue; }
++        let data_range = segment(buf, table, count, segment_id, b"_data_")?;
++        let data = &buf[data_range];
++        let row = SEGMENT_HEADER.checked_add(u32_at(data_index, entry + 4)? as usize)
++            .ok_or_else(|| invalid("record offset overflow"))?;
++        bytes(data, row, RECORD_HEADER)?;
++        let handle = u64_at(data, row + 8)?;
++        if !wanted.contains(&handle) { continue; }
++        if !seen.insert(handle) { return Err(invalid("duplicate active modeler handle")); }
++        if u32_at(data, row)? as usize != RECORD_HEADER { return Err(invalid("unsupported record header")); }
++        let base = (u32_at(data, 36)? as usize).checked_mul(ALIGNMENT).ok_or_else(|| invalid("alignment overflow"))?;
++        if base < row + RECORD_HEADER || base > data.len() { return Err(invalid("invalid object alignment")); }
++        let offset = u32_at(data, row + 16)? as usize;
++        let start = base.checked_add(offset).ok_or_else(|| invalid("payload offset overflow"))?;
++        let size = u32_at(data, start)?;
++        if size == BLOB_REFERENCE { return Err(invalid("paged SAB is not supported by this patch")); }
++        let payload = bytes(data, start + 4, size as usize)?;
++        if row + RECORD_HEADER * 2 <= base && u32_at(data, row + RECORD_HEADER)? as usize == RECORD_HEADER {
++            let next = u32_at(data, row + RECORD_HEADER + 16)? as usize;
++            if next <= offset || next > data.len() - base || size as usize + 4 > next - offset {
++                return Err(invalid("payload crosses the next record"));
++            }
++        }
++        if !payload.starts_with(b"ASM BinaryFile") && !payload.starts_with(b"ACIS BinaryFile") {
++            return Err(invalid("modeler payload is not SAB"));
++        }
++        result.push((handle, payload.to_vec()));
++    }
++    if seen != *wanted { return Err(invalid("missing active modeler records")); }
++    Ok(Some(result))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    const FIRST: u64 = 0x1_0000_0091;
++    const SECOND: u64 = 0x92;
++    const DATIDX: usize = 192;
++    const DATA: usize = 320;
++
++    fn put32(buf: &mut [u8], at: usize, n: u32) { buf[at..at+4].copy_from_slice(&n.to_le_bytes()); }
++    fn put64(buf: &mut [u8], at: usize, n: u64) { buf[at..at+8].copy_from_slice(&n.to_le_bytes()); }
++    fn payload(label: u8) -> Vec<u8> {
++        let mut data = b"ASM BinaryFile".to_vec();
++        data.push(label);
++        data.extend_from_slice(b"End-of-ACIS-data");
++        data
++    }
++
++    fn fixture() -> Vec<u8> {
++        let mut buf = vec![0; 704];
++        buf[..4].copy_from_slice(b"jard");
++        put32(&mut buf, 12, 2);
++        put32(&mut buf, 24, 64);
++        put32(&mut buf, 32, 3);
++        put32(&mut buf, 40, 1);
++        for (id, start, size, name) in [(1, DATIDX, 80, b"datidx"), (2, DATA, 384, b"_data_")] {
++            put64(&mut buf, 112+id*12, start as u64);
++            put32(&mut buf, 112+id*12+8, size as u32);
++            buf[start..start+2].copy_from_slice(b"\xac\xd5");
++            buf[start+2..start+8].copy_from_slice(name);
++            put32(&mut buf, start+8, id as u32);
++            put64(&mut buf, start+16, size as u64);
++        }
++        put32(&mut buf, DATIDX+48, 2);
++        // Active order is deliberately different from physical body order.
++        for (i, offset) in [40, 20].into_iter().enumerate() {
++            put32(&mut buf, DATIDX+56+i*12, 2);
++            put32(&mut buf, DATIDX+60+i*12, offset);
++        }
++        put32(&mut buf, DATA+36, 7); // aligned payload base 112
++        let mut offset = 0;
++        // First row is stale data with the same owner as the live second row.
++        for (i, (handle, label)) in [(FIRST, 0), (FIRST, 1), (SECOND, 2)].into_iter().enumerate() {
++            let row = DATA+48+i*20;
++            put32(&mut buf, row, 20);
++            put32(&mut buf, row+4, 1);
++            put64(&mut buf, row+8, handle);
++            put32(&mut buf, row+16, offset);
++            let body = payload(label);
++            let start = DATA+112+offset as usize;
++            put32(&mut buf, start, body.len() as u32);
++            buf[start+4..start+4+body.len()].copy_from_slice(&body);
++            offset += body.len() as u32 + 4;
++        }
++        buf
++    }
++    fn wanted() -> HashSet<u64> { HashSet::from([FIRST, SECOND]) }
++
++    #[test]
++    fn active_index_ignores_stale_body_and_physical_order_and_keeps_64_bit_handles() {
++        let records = active_sab(&fixture(), &wanted()).unwrap().unwrap();
++        assert_eq!(records, vec![(SECOND, payload(2)), (FIRST, payload(1))]);
++    }
++
++    #[test]
++    fn duplicate_active_owner_is_an_error() {
++        let mut buf = fixture();
++        put32(&mut buf, DATIDX+60, 20);
++        assert!(active_sab(&buf, &wanted()).unwrap_err().to_string().contains("duplicate"));
++    }
++
++    #[test]
++    fn truncated_datastore_never_falls_back() {
++        let buf = fixture();
++        for n in [4, 16, 64, 120, DATIDX+60, DATA+100, buf.len()-1] {
++            assert!(active_sab(&buf[..n], &wanted()).is_err(), "length {n}");
++        }
++    }
++
++    #[test]
++    fn missing_owner_never_falls_back() {
++        let mut handles = wanted();
++        handles.insert(0xdead);
++        assert!(active_sab(&fixture(), &handles).unwrap_err().to_string().contains("missing"));
++    }
++
++    #[test]
++    fn payload_cannot_consume_the_next_body() {
++        let mut buf = fixture();
++        let offset = u32_at(&buf, DATA+48+20+16).unwrap() as usize;
++        put32(&mut buf, DATA+112+offset, 100);
++        assert!(active_sab(&buf, &wanted()).unwrap_err().to_string().contains("crosses"));
++    }
++
++    #[test]
++    fn paged_payload_requires_real_page_support() {
++        let mut buf = fixture();
++        let offset = u32_at(&buf, DATA+48+40+16).unwrap() as usize;
++        put32(&mut buf, DATA+112+offset, BLOB_REFERENCE);
++        assert!(active_sab(&buf, &wanted()).unwrap_err().to_string().contains("paged"));
++    }
++}
+--- a/src/io/dwg/dwg_reader.rs
++++ b/src/io/dwg/dwg_reader.rs
+@@ -1161,10 +1161,13 @@
+                 })
+                 .map(|entity| entity.common().handle.value())
+                 .collect();
+-            let record_blobs = extract_acds_record_blobs(&acds_buf, &modeler_handles);
+-            let attached = if !record_blobs.is_empty() {
+-                attach_acds_record_blobs(&mut document, record_blobs)
++            let attached = if let Some(records) = super::acds_index::active_sab(&acds_buf, &modeler_handles)? {
++                attach_acds_record_blobs(&mut document, records)
+             } else {
++                let record_blobs = extract_acds_record_blobs(&acds_buf, &modeler_handles);
++                if !record_blobs.is_empty() {
++                    attach_acds_record_blobs(&mut document, record_blobs)
++                } else {
+                 // No parseable record table: magic-scan the blobs and pair by
+                 // the object-stream handle list, else positionally.
+                 let blobs = extract_acds_sab_blobs(&acds_buf);
+@@ -1172,6 +1175,7 @@
+                     0
+                 } else {
+                     attach_acds_sab_blobs(&mut document, blobs)
++                }
+                 }
+             };
+             let fingerprint = super::sab_fingerprint(document.entities().filter_map(|entity| {
+--- a/src/io/dwg/mod.rs
++++ b/src/io/dwg/mod.rs
+@@ -33,6 +33,7 @@
+ //! | AC1027      | R2013   | Paged + LZ77 |
+ //! | AC1032      | R2018   | Paged + LZ77 |
+ 
++mod acds_index;
+ pub mod annotative_eed;
+ pub mod checksum;
+ pub mod compression;

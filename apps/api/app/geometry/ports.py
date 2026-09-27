@@ -1,7 +1,17 @@
-from typing import Protocol
+from typing import Literal, Protocol
 
-from app.contracts import GeometrySnapshot, Project
+from app.geometry.contracts import GeometrySnapshot
+from app.geometry.coverage_contracts import GeometryCoverage
+from app.geometry.domain import PositionAdvisory, PositionViolation
 from app.operations.progress import ProgressReporter
+from app.projects.contracts import Project
+from app.regulations.trace_contracts import PlantingRuleTrace
+
+
+class GeometryCoveragePort(Protocol):
+    """Optional current calculation evidence, never inferred from map counts."""
+
+    def source_coverage(self, project: Project) -> GeometryCoverage | None: ...
 
 
 class GeometryEnginePort(Protocol):
@@ -9,9 +19,35 @@ class GeometryEnginePort(Protocol):
 
     def validate_position(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree") -> None: ...
 
-    def placement_advisory(self, project: Project, x: float, y: float, radius: float) -> str | None: ...
+    def position_violation(self, project: Project, x: float, y: float, radius: float, plant_kind: str = "tree") -> PositionViolation | None: ...
 
-    def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float) -> str | None: ...
+    def automatic_safe_geometry(
+        self,
+        project: Project,
+        geometry: dict,
+        radius: float,
+        plant_kind: str = "tree",
+        growth_canopy_radius: float | None = None,
+        growth_root_radius: float | None = None,
+    ) -> dict: ...
+
+    def placement_advisory(self, project: Project, x: float, y: float, radius: float, plant_kind: Literal["tree", "shrub"] = "tree") -> str | None: ...
+
+    def placement_advisory_detail(self, project: Project, x: float, y: float, radius: float, plant_kind: Literal["tree", "shrub"] = "tree") -> PositionAdvisory | None: ...
+
+    def position_rule_trace(self, project: Project, x: float, y: float, plant_kind: Literal["tree", "shrub"] = "tree", mature_crown_diameter_m: float | None = None) -> PlantingRuleTrace: ...
+
+    def future_growth_advisory(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float, plant_kind: Literal["tree", "shrub"] = "tree") -> str | None: ...
+
+    def future_growth_advisory_detail(self, project: Project, x: float, y: float, canopy_radius: float, root_radius: float, plant_kind: Literal["tree", "shrub"] = "tree") -> PositionAdvisory | None: ...
+
+
+class GeometryPreparationPort(Protocol):
+    """Optional batch preparation; it does not replace per-position rules."""
+
+    def prepare_positions(
+        self, project: Project, points: list[tuple[float, float]]
+    ) -> None: ...
 
 
 class GeometryQueryPort(Protocol):

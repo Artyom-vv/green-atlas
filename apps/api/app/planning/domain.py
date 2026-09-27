@@ -1,7 +1,8 @@
 from collections import defaultdict
 from math import ceil, floor, hypot
 
-from app.contracts import PlanObject
+from app.planning.contracts import PlanObject
+from app.regulations.placement_config import PLACEMENT_CONFIG
 
 
 class PlanVersionConflict(Exception):
@@ -14,24 +15,31 @@ class PlanVersionConflict(Exception):
 
 
 def planning_radius(object_: PlanObject) -> float:
-    """Largest known 20-year crown radius used for layout decisions."""
+    """Largest known crown radius at the configured planning horizon."""
 
     forecast = next(
-        (item for item in object_.canopy_forecast if item.horizon_year == 20),
+        (item for item in object_.canopy_forecast if item.horizon_year == PLACEMENT_CONFIG.layout.growth_horizon_year),
         None,
     )
     return max(object_.radius, forecast.radius_max_m if forecast else 0.0)
 
 
 def required_spacing(first: PlanObject, second: PlanObject) -> float:
-    """Minimum crown-to-crown distance used while an operator places objects."""
+    """Minimum centre-to-centre distance based on the plants' growth envelopes."""
     first_radius = planning_radius(first)
     second_radius = planning_radius(second)
+    same_group = bool(set(first.group_ids) & set(second.group_ids))
+    policy = first.spacing_policy if same_group and first.spacing_policy == second.spacing_policy else "open"
+    layout = PLACEMENT_CONFIG.layout
     if first.kind == "tree" and second.kind == "tree":
-        return max(4.8, first_radius + second_radius + 1.7)
+        if policy == "canopy":
+            return layout.tree_canopy.distance(first_radius + second_radius)
+        if policy == "balanced":
+            return layout.tree_balanced.distance(first_radius + second_radius)
+        return layout.tree_open.distance(first_radius + second_radius)
     if first.kind == "shrub" and second.kind == "shrub":
-        return max(1.55, first_radius + second_radius + 0.35)
-    return first_radius + second_radius + 1.0
+        return layout.shrub.distance(first_radius + second_radius)
+    return layout.mixed.distance(first_radius + second_radius)
 
 
 def respects_plant_spacing(candidate: PlanObject, objects: list[PlanObject], ignore_id: str | None = None) -> bool:
@@ -60,7 +68,7 @@ class PlantSpacingIndex:
         # Custom planting radii can be much larger than a default crown. A
         # fixed 3×3 window silently misses collisions across several 8 m
         # cells, so derive the search span from the widest possible rule.
-        max_distance = planning_radius(candidate) + self.max_radius + 1.7
+        max_distance = PLACEMENT_CONFIG.layout.maximum_spacing(planning_radius(candidate) + self.max_radius)
         cell_radius = max(1, ceil(max_distance / self.cell_size))
         return [
             object_

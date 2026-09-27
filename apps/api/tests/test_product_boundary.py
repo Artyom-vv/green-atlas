@@ -3,20 +3,55 @@ from pathlib import Path
 from app.main import app
 
 
-def test_public_api_contains_only_the_manual_dxf_editor() -> None:
+def test_public_api_contains_only_the_editor_and_bounded_local_assistant() -> None:
     paths = set(app.openapi()["paths"])
 
     assert paths == {
         "/api/health",
+        "/api/cad/roots",
+        "/api/cad/roots/{root_id}/entries",
+        "/api/cad/roots/{root_id}/fingerprint",
+        "/api/planning-assistant/status",
+        "/api/planning-assistant/interpret",
+        "/api/project-assistant/chat",
+        "/api/projects/{project_id}/agent-runs",
+        "/api/projects/{project_id}/agent-runs/{run_id}",
+        "/api/projects/{project_id}/agent-runs/{run_id}/run",
+        "/api/projects/{project_id}/agent-runs/{run_id}/preview",
+        "/api/projects/{project_id}/agent-runs/{run_id}/zone-preview",
+        "/api/projects/{project_id}/agent-runs/{run_id}/control-command",
+        "/api/projects/{project_id}/agent-runs/{run_id}/control-result",
+        "/api/projects/{project_id}/agent-runs/{run_id}/cancel",
+        "/api/projects/{project_id}/agent-runs/{run_id}/resume",
+        "/api/projects/{project_id}/agent-runs/{run_id}/approve",
+        "/api/projects/{project_id}/agent-runs/{run_id}/answer",
+        "/api/projects/{project_id}/conversations",
+        "/api/projects/{project_id}/conversations/import",
+        "/api/projects/{project_id}/conversations/{conversation_id}",
+        "/api/projects/{project_id}/conversations/{conversation_id}/messages",
+        "/api/projects/{project_id}/conversations/{conversation_id}/interpret",
+        "/api/projects/{project_id}/conversations/{conversation_id}/prepare",
+        "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{record_id}/status",
+        "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{proposal_record_id}/decline",
+        "/api/projects/{project_id}/conversations/{conversation_id}/proposals/{proposal_record_id}/confirm",
+        "/api/projects/{project_id}/building-screen/targets",
+        "/api/projects/{project_id}/building-screen/preview",
         "/api/species",
         "/api/projects",
         "/api/projects/{project_id}",
         "/api/projects/{project_id}/source-dxf",
+        "/api/projects/{project_id}/release-bundle",
         "/api/projects/{project_id}/source-dxf/download",
         "/api/projects/{project_id}/layer-mappings",
         "/api/projects/{project_id}/planting-zones",
+        "/api/projects/{project_id}/planting-zones/preview",
         "/api/projects/{project_id}/map-features",
+        "/api/projects/{project_id}/data-passport",
         "/api/projects/{project_id}/operations/geometry",
+        "/api/projects/{project_id}/operations/cad-intake",
+        "/api/projects/{project_id}/operations/cad-preview",
+        "/api/projects/{project_id}/operations/{operation_id}/cad-asset",
+        "/api/projects/{project_id}/operations/{operation_id}/cad-asset/file",
         "/api/projects/{project_id}/operations/latest",
         "/api/projects/{project_id}/operations/{operation_id}",
         "/api/projects/{project_id}/operations/{operation_id}/cancel",
@@ -24,6 +59,7 @@ def test_public_api_contains_only_the_manual_dxf_editor() -> None:
         "/api/projects/{project_id}/plan/placement-check",
         "/api/projects/{project_id}/plan/change-sets/preview",
         "/api/projects/{project_id}/plan/change-sets/apply",
+        "/api/projects/{project_id}/plan/placement-masks",
         "/api/projects/{project_id}/plan/patterns/preview",
         "/api/projects/{project_id}/plan/recommendations/preview",
         "/api/projects/{project_id}/plan/brush/preview",
@@ -69,6 +105,9 @@ def test_web_runtime_does_not_reintroduce_retired_workflows() -> None:
         for path in source_root.rglob("*.tsx")
         if ".test." not in path.name and ".stories." not in path.name
     )
+    # This exact API evidence-source literal identifies the current scoped
+    # species shortlist; it is not the retired suitability workflow.
+    runtime_source = runtime_source.replace('"species_suitability"', '""').replace("'species_suitability'", "''")
 
     for retired in (
         "сравнить 3 варианта",

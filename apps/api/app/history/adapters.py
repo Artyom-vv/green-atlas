@@ -4,7 +4,10 @@ import json
 from threading import RLock
 from uuid import uuid4
 
-from app.contracts import Plan, PlanHistoryState, PlantingZoneAssignment, Project, ProjectStatus
+from app.planning.contracts import Plan
+from app.history.contracts import PlanHistoryEntry, PlanHistoryState
+from app.planting_zones.contracts import PlantingZoneAssignment
+from app.projects.contracts import Project, ProjectStatus
 from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import ProjectVersionConflict, advance_expected_project_version, expected_project_version
 
@@ -15,6 +18,8 @@ class _Snapshot:
     planting_zones: list[PlantingZoneAssignment]
     plan: Plan | None
     status: ProjectStatus
+    id: str = ""
+    created_at: str = ""
 
 
 class InMemoryProjectHistory:
@@ -37,9 +42,13 @@ class InMemoryProjectHistory:
             planting_zones=[zone.model_copy(deep=True) for zone in project.planting_zones],
             plan=project.plan.model_copy(deep=True) if project.plan else None,
             status=project.status,
+            id=str(uuid4()),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     def _restore(self, project: Project, snapshot: _Snapshot) -> Project:
+        if project.planting_zones != snapshot.planting_zones:
+            raise ValueError("История плана относится к прежним участкам. Обновите историю перед отменой или повтором.")
         project.planting_zones = [zone.model_copy(deep=True) for zone in snapshot.planting_zones]
         project.plan = snapshot.plan.model_copy(deep=True) if snapshot.plan else None
         project.status = snapshot.status
@@ -49,6 +58,12 @@ class InMemoryProjectHistory:
         with self._lock:
             self._undo.pop(project_id, None)
             self._redo.pop(project_id, None)
+
+    def rebase_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> None:
+        """Keep plan undo/redo valid after an independently managed area rename."""
+        with self._lock:
+            for snapshot in [*self._undo.get(project_id, []), *self._redo.get(project_id, [])]:
+                snapshot.planting_zones = [zone.model_copy(deep=True) for zone in zones]
 
     def record(self, project: Project, label: str) -> PlanHistoryState:
         with self._lock:
@@ -63,11 +78,19 @@ class InMemoryProjectHistory:
         with self._lock:
             undo = self._undo.get(project_id, [])
             redo = self._redo.get(project_id, [])
+            entries = [
+                PlanHistoryEntry(id=item.id, ordinal=index + 1, label=item.label, created_at=item.created_at, applied=True)
+                for index, item in enumerate(undo)
+            ] + [
+                PlanHistoryEntry(id=item.id, ordinal=len(undo) + index + 1, label=item.label, created_at=item.created_at, applied=False)
+                for index, item in enumerate(reversed(redo))
+            ]
             return PlanHistoryState(
                 can_undo=bool(undo),
                 can_redo=bool(redo),
                 undo_label=undo[-1].label if undo else None,
                 redo_label=redo[-1].label if redo else None,
+                entries=list(reversed(entries)),
             )
 
     def undo(self, project: Project) -> Project:
@@ -75,20 +98,30 @@ class InMemoryProjectHistory:
             undo = self._undo.get(project.id, [])
             if not undo:
                 raise ValueError("Нет изменений для отмены")
-            snapshot = undo.pop()
+            snapshot = undo[-1]
             redo = self._redo.setdefault(project.id, [])
-            redo.append(self._snapshot(project, snapshot.label))
-            return self._restore(project, snapshot)
+            current = self._snapshot(project, snapshot.label)
+            current.id = snapshot.id
+            current.created_at = snapshot.created_at
+            restored = self._restore(project, snapshot)
+            undo.pop()
+            redo.append(current)
+            return restored
 
     def redo(self, project: Project) -> Project:
         with self._lock:
             redo = self._redo.get(project.id, [])
             if not redo:
                 raise ValueError("Нет изменений для повтора")
-            snapshot = redo.pop()
+            snapshot = redo[-1]
             undo = self._undo.setdefault(project.id, [])
-            undo.append(self._snapshot(project, snapshot.label))
-            return self._restore(project, snapshot)
+            current = self._snapshot(project, snapshot.label)
+            current.id = snapshot.id
+            current.created_at = snapshot.created_at
+            restored = self._restore(project, snapshot)
+            redo.pop()
+            undo.append(current)
+            return restored
 
 
 class SqliteProjectHistory:
@@ -128,6 +161,20 @@ class SqliteProjectHistory:
             self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_plan_changes_project ON plan_changes (project_id, ordinal)"
             )
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS plan_change_receipts (
+                    project_id TEXT NOT NULL, change_set_id TEXT NOT NULL,
+                    payload TEXT NOT NULL, status TEXT NOT NULL,
+                    PRIMARY KEY(project_id, change_set_id)
+                )
+            """)
+
+    def receipt(self, project_id: str, change_set_id: str) -> dict | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload, status FROM plan_change_receipts WHERE project_id=? AND change_set_id=?",
+                (project_id, change_set_id)).fetchone()
+            return {**json.loads(row["payload"]), "status": row["status"]} if row else None
 
     @staticmethod
     def _snapshot_payload(project: Project) -> str:
@@ -144,7 +191,10 @@ class SqliteProjectHistory:
     @staticmethod
     def _restore(project: Project, payload: str) -> Project:
         value = json.loads(payload)
-        project.planting_zones = [PlantingZoneAssignment.model_validate(item) for item in value["planting_zones"]]
+        zones = [PlantingZoneAssignment.model_validate(item) for item in value["planting_zones"]]
+        if project.planting_zones != zones:
+            raise ValueError("История плана относится к прежним участкам. Обновите историю перед отменой или повтором.")
+        project.planting_zones = zones
         project.plan = Plan.model_validate(value["plan"]) if value["plan"] is not None else None
         project.status = ProjectStatus(value["status"])
         return project
@@ -188,6 +238,7 @@ class SqliteProjectHistory:
         before: Project,
         label: str,
         change_set_id: str | None = None,
+        receipt: dict | None = None,
     ) -> Project:
         original_version = project.state_version
         original_updated_at = project.updated_at
@@ -199,6 +250,15 @@ class SqliteProjectHistory:
                     (project.id, cursor),
                 )
                 saved = self._save_project(project)
+                if receipt is not None:
+                    if not change_set_id:
+                        raise ValueError("A receipt requires a change set id")
+                    payload = {**receipt, "state_version": saved.state_version,
+                               "plan_version": saved.plan.version if saved.plan else None,
+                               "committed_at": datetime.now(UTC).isoformat()}
+                    self._connection.execute(
+                        "INSERT INTO plan_change_receipts VALUES (?, ?, ?, 'applied')",
+                        (project.id, change_set_id, json.dumps(payload, ensure_ascii=False, allow_nan=False)))
                 ordinal = cursor + 1
                 self._connection.execute(
                     """
@@ -242,6 +302,28 @@ class SqliteProjectHistory:
             self._connection.execute("DELETE FROM plan_changes WHERE project_id = ?", (project_id,))
             self._connection.execute("DELETE FROM plan_history_cursors WHERE project_id = ?", (project_id,))
 
+    def rebase_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> None:
+        serialized = [zone.model_dump(mode="json") for zone in zones]
+        with self._lock, self._connection:
+            rows = self._connection.execute(
+                "SELECT ordinal, before_payload, after_payload FROM plan_changes WHERE project_id = ?",
+                (project_id,),
+            ).fetchall()
+            for row in rows:
+                before = json.loads(str(row["before_payload"]))
+                after = json.loads(str(row["after_payload"]))
+                before["planting_zones"] = serialized
+                after["planting_zones"] = serialized
+                self._connection.execute(
+                    "UPDATE plan_changes SET before_payload = ?, after_payload = ? WHERE project_id = ? AND ordinal = ?",
+                    (
+                        json.dumps(before, ensure_ascii=False, separators=(",", ":")),
+                        json.dumps(after, ensure_ascii=False, separators=(",", ":")),
+                        project_id,
+                        int(row["ordinal"]),
+                    ),
+                )
+
     def record(self, project: Project, label: str) -> PlanHistoryState:
         del project, label
         raise RuntimeError("SqliteProjectHistory.record must be committed through commit()")
@@ -257,11 +339,31 @@ class SqliteProjectHistory:
                 "SELECT label FROM plan_changes WHERE project_id = ? AND ordinal = ?",
                 (project_id, cursor + 1),
             ).fetchone()
+            rows = self._connection.execute(
+                """
+                SELECT ordinal, change_set_id, label, created_at
+                FROM plan_changes
+                WHERE project_id = ?
+                ORDER BY ordinal DESC
+                LIMIT 20
+                """,
+                (project_id,),
+            ).fetchall()
         return PlanHistoryState(
             can_undo=undo is not None,
             can_redo=redo is not None,
             undo_label=str(undo["label"]) if undo is not None else None,
             redo_label=str(redo["label"]) if redo is not None else None,
+            entries=[
+                PlanHistoryEntry(
+                    id=str(row["change_set_id"]),
+                    ordinal=int(row["ordinal"]),
+                    label=str(row["label"]),
+                    created_at=str(row["created_at"]),
+                    applied=int(row["ordinal"]) <= cursor,
+                )
+                for row in rows
+            ],
         )
 
     def undo(self, project: Project) -> Project:
@@ -278,6 +380,9 @@ class SqliteProjectHistory:
                     raise ValueError("Нет изменений для отмены")
                 self._restore(project, str(row["before_payload"]))
                 saved = self._save_project(project)
+                self._connection.execute(
+                    "UPDATE plan_change_receipts SET status='undone' WHERE project_id=? AND change_set_id IN (SELECT change_set_id FROM plan_changes WHERE project_id=? AND ordinal=?)",
+                    (project.id, project.id, cursor))
                 self._connection.execute(
                     "UPDATE plan_history_cursors SET cursor = ? WHERE project_id = ?",
                     (cursor - 1, project.id),
@@ -303,6 +408,9 @@ class SqliteProjectHistory:
                     raise ValueError("Нет изменений для повтора")
                 self._restore(project, str(row["after_payload"]))
                 saved = self._save_project(project)
+                self._connection.execute(
+                    "UPDATE plan_change_receipts SET status='applied' WHERE project_id=? AND change_set_id IN (SELECT change_set_id FROM plan_changes WHERE project_id=? AND ordinal=?)",
+                    (project.id, project.id, cursor + 1))
                 self._connection.execute(
                     "UPDATE plan_history_cursors SET cursor = ? WHERE project_id = ?",
                     (cursor + 1, project.id),

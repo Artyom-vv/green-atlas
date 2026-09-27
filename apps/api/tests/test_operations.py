@@ -1,31 +1,84 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from concurrent.futures import ThreadPoolExecutor
-from threading import Event, Thread
+from threading import Event, RLock, Thread
 from time import sleep
 
-from app.contracts import OperationKind, OperationStatus, ProjectOperation
 from app.application import ProjectApplication
-from app.contracts import GeometrySnapshot, Project
+from app.contracts import (
+    GeometrySnapshot,
+    OperationKind,
+    OperationStatus,
+    Project,
+    ProjectOperation,
+)
 from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.layer_contracts import Layer, LayerKind
 from app.exporting.adapters import DxfRoundTripWriter
 from app.geometry.adapters import ShapelyGeometryEngine
 from app.geometry.query_adapters import IndexedGeometryQuery
 from app.history.adapters import InMemoryProjectHistory
-from app.projects.adapters import InMemoryProjectRepository
 from app.operations.adapters import SqliteOperationRepository
-from app.planning.patterns import ShapelyCandidateGenerator
+from app.operations.application import GeometryOperationApplication
 from app.operations.progress import OperationCancelled, WorkProgress
-from app.projects.concurrency import reset_expected_project_version, set_expected_project_version
+from app.planning.patterns import ShapelyCandidateGenerator
+from app.projects.adapters import InMemoryProjectRepository
+from app.projects.concurrency import (
+    reset_expected_project_version,
+    set_expected_project_version,
+)
+from app.shared.identity import random_id, utc_now
 from app.validation.adapters import RuleBasedPlanValidator
+from app.validation.application import PlanValidation
+
+
+def operation_application(*, repository=None, operation_repository, geometry=None):
+    return GeometryOperationApplication(
+        repository=repository if repository is not None else InMemoryProjectRepository(),
+        operation_repository=operation_repository,
+        geometry=geometry if geometry is not None else ShapelyGeometryEngine(),
+        validation=PlanValidation(RuleBasedPlanValidator()),
+        commit_lock=RLock(), invalidate_spatial=lambda _: None,
+        now=utc_now, new_id=random_id,
+    )
+
+
+def test_geometry_start_requires_confirmation_of_active_suggestions() -> None:
+    project_repository = InMemoryProjectRepository()
+    project = project_repository.create(
+        Project(
+            name="Проверка автомаппинга",
+            layers=[
+                Layer(
+                    id="building",
+                    source_name="Здания",
+                    suggested_kind=LayerKind.BUILDING,
+                    mapped_kind=LayerKind.BUILDING,
+                    mapping_review_required=True,
+                    mapping_confirmed=False,
+                    object_count=1,
+                    color="#000000",
+                )
+            ],
+        )
+    )
+    application = operation_application(
+        repository=project_repository,
+        operation_repository=SqliteOperationRepository(":memory:"),
+    )
+
+    with __import__("pytest").raises(ValueError, match="Подтвердите предложенные"):
+        application.start_geometry_operation(project.id)
 
 
 def test_sqlite_operation_repository_persists_latest_state() -> None:
-    with TemporaryDirectory() as directory:
+    with TemporaryDirectory() as directory, ExitStack() as connections:
         path = Path(directory) / "operations.sqlite3"
         first = SqliteOperationRepository(path)
+        connections.callback(first._connection.close)
         operation = first.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
         operation.status = OperationStatus.COMPLETED
         operation.progress = 100
@@ -33,6 +86,7 @@ def test_sqlite_operation_repository_persists_latest_state() -> None:
         first.save(operation)
 
         reopened = SqliteOperationRepository(path)
+        connections.callback(reopened._connection.close)
         restored = reopened.get(operation.id)
         assert restored.status == OperationStatus.COMPLETED
         assert restored.progress == 100
@@ -40,10 +94,12 @@ def test_sqlite_operation_repository_persists_latest_state() -> None:
 
 
 def test_operation_repository_returns_the_single_active_operation_across_connections() -> None:
-    with TemporaryDirectory() as directory:
+    with TemporaryDirectory() as directory, ExitStack() as connections:
         path = Path(directory) / "operations.sqlite3"
         first = SqliteOperationRepository(path, recover=False)
+        connections.callback(first._connection.close)
         second = SqliteOperationRepository(path, recover=False)
+        connections.callback(second._connection.close)
         active = first.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
 
         duplicate = second.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
@@ -77,10 +133,7 @@ def test_double_start_returns_one_operation_before_any_background_work_begins() 
             return operation.model_copy(deep=True)
 
     operations = DelayedOperationRepository()
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.repository = project_repository
-    application.operation_repository = operations
-    application._operation_commit_lock = __import__("threading").RLock()
+    application = operation_application(repository=project_repository, operation_repository=operations)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         first = pool.submit(application.start_geometry_operation, project.id)
@@ -93,9 +146,10 @@ def test_double_start_returns_one_operation_before_any_background_work_begins() 
 
 
 def test_sqlite_operation_repository_marks_active_work_interrupted_on_restart() -> None:
-    with TemporaryDirectory() as directory:
+    with TemporaryDirectory() as directory, ExitStack() as connections:
         path = Path(directory) / "operations.sqlite3"
         first = SqliteOperationRepository(path)
+        connections.callback(first._connection.close)
         operation = first.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
         operation.status = OperationStatus.RUNNING
         operation.progress = 47
@@ -103,6 +157,7 @@ def test_sqlite_operation_repository_marks_active_work_interrupted_on_restart() 
         first.save(operation)
 
         reopened = SqliteOperationRepository(path)
+        connections.callback(reopened._connection.close)
         restored = reopened.get(operation.id)
         assert restored.status == OperationStatus.INTERRUPTED
         assert restored.progress == 47
@@ -112,9 +167,10 @@ def test_sqlite_operation_repository_marks_active_work_interrupted_on_restart() 
 
 
 def test_recovery_is_idempotent() -> None:
-    with TemporaryDirectory() as directory:
+    with TemporaryDirectory() as directory, ExitStack() as connections:
         path = Path(directory) / "operations.sqlite3"
         repository = SqliteOperationRepository(path)
+        connections.callback(repository._connection.close)
         operation = repository.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
         operation.status = OperationStatus.CANCELLING
         repository.save(operation)
@@ -132,7 +188,7 @@ def test_cancelled_geometry_result_is_not_committed() -> None:
 
     class CancellingGeometry:
         def __init__(self) -> None:
-            self.application: ProjectApplication | None = None
+            self.application: GeometryOperationApplication | None = None
             self.operation_id = ""
 
         def calculate(self, project: Project, progress=None) -> GeometrySnapshot:
@@ -143,11 +199,7 @@ def test_cancelled_geometry_result_is_not_committed() -> None:
             return GeometrySnapshot(feature_collection={"type": "FeatureCollection", "features": []}, allowed_area_m2=12)
 
     geometry = CancellingGeometry()
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.repository = project_repository
-    application.operation_repository = operation_repository
-    application.geometry = geometry
-    application._operation_commit_lock = __import__("threading").RLock()
+    application = operation_application(repository=project_repository, operation_repository=operation_repository, geometry=geometry)
     geometry.application = application
 
     operation = operation_repository.create(ProjectOperation(project_id=project.id, kind=OperationKind.CALCULATE_GEOMETRY))
@@ -200,28 +252,23 @@ def test_deleting_a_project_cancels_running_geometry_before_it_can_publish() -> 
 
 def test_progress_cannot_overwrite_a_cancelling_state() -> None:
     operation_repository = SqliteOperationRepository(":memory:")
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.operation_repository = operation_repository
-    application._operation_commit_lock = __import__("threading").RLock()
-    application.get = lambda project_id: Project(id=project_id, name="Гонка прогресса")
+    application = operation_application(operation_repository=operation_repository)
     operation = operation_repository.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
     operation.status = OperationStatus.RUNNING
     operation_repository.save(operation)
 
     application.cancel_operation("project-1", operation.id)
     with __import__("pytest").raises(OperationCancelled):
-        application._report_adapter_progress(operation.id, WorkProgress(stage="Поздний прогресс", fraction=0.9), 10, 90)
+        application.lifecycle.report(operation.id, WorkProgress(stage="Поздний прогресс", fraction=0.9), 10, 90)
 
     restored = operation_repository.get(operation.id)
     assert restored.status == OperationStatus.CANCELLING
-    assert restored.stage == "Останавливаем расчёт после текущего шага"
+    assert restored.stage == "Останавливаем операцию после текущего шага"
 
 
 def test_progress_never_rewinds_when_geometry_enters_an_atomic_stage() -> None:
     operation_repository = SqliteOperationRepository(":memory:")
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.operation_repository = operation_repository
-    application._operation_commit_lock = __import__("threading").RLock()
+    application = operation_application(operation_repository=operation_repository)
     operation = operation_repository.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
     operation.status = OperationStatus.RUNNING
     operation.progress = 71
@@ -230,7 +277,7 @@ def test_progress_never_rewinds_when_geometry_enters_an_atomic_stage() -> None:
     operation.progress_unit = "объектов"
     operation_repository.save(operation)
 
-    application._report_adapter_progress(operation.id, WorkProgress(stage="Сводим контуры", fraction=None), 2, 96)
+    application.lifecycle.report(operation.id, WorkProgress(stage="Сводим контуры", fraction=None), 2, 96)
     atomic = operation_repository.get(operation.id)
     assert atomic.progress == 71
     assert atomic.progress_mode == "indeterminate"
@@ -238,21 +285,18 @@ def test_progress_never_rewinds_when_geometry_enters_an_atomic_stage() -> None:
     assert atomic.total_items is None
     assert atomic.progress_unit is None
 
-    application._report_adapter_progress(operation.id, WorkProgress(stage="Поздний отчёт адаптера", fraction=0.2), 2, 96)
+    application.lifecycle.report(operation.id, WorkProgress(stage="Поздний отчёт адаптера", fraction=0.2), 2, 96)
     assert operation_repository.get(operation.id).progress == 71
 
 
 def test_background_start_cannot_revive_a_cancelled_queue() -> None:
     operation_repository = SqliteOperationRepository(":memory:")
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.operation_repository = operation_repository
-    application._operation_commit_lock = __import__("threading").RLock()
-    application.get = lambda project_id: Project(id=project_id, name="Отменённая очередь")
+    application = operation_application(operation_repository=operation_repository)
     operation = operation_repository.create(ProjectOperation(project_id="project-1", kind=OperationKind.CALCULATE_GEOMETRY))
 
     application.cancel_operation("project-1", operation.id)
     with __import__("pytest").raises(OperationCancelled):
-        application._update_operation(operation.id, status=OperationStatus.RUNNING, progress=1, stage="Поздний запуск")
+        application.lifecycle.update(operation.id, status=OperationStatus.RUNNING, progress=1, stage="Поздний запуск")
 
     assert operation_repository.get(operation.id).status == OperationStatus.CANCELLED
 
@@ -273,11 +317,7 @@ def test_background_result_does_not_overwrite_a_newer_project_version() -> None:
                 reset_expected_project_version(concurrent_token)
             return GeometrySnapshot(feature_collection={"type": "FeatureCollection", "features": []}, allowed_area_m2=12)
 
-    application = ProjectApplication.__new__(ProjectApplication)
-    application.repository = project_repository
-    application.operation_repository = operation_repository
-    application.geometry = ConcurrentGeometry()
-    application._operation_commit_lock = __import__("threading").RLock()
+    application = operation_application(repository=project_repository, operation_repository=operation_repository, geometry=ConcurrentGeometry())
     operation = operation_repository.create(ProjectOperation(project_id=project.id, kind=OperationKind.CALCULATE_GEOMETRY, project_state_version=project.state_version))
 
     application.run_geometry_operation(operation.id)

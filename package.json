@@ -6,18 +6,23 @@
   "scripts": {
     "dev:web": "pnpm --filter @green/web dev",
     "build": "pnpm --filter @green/ui build && pnpm --filter @green/web build",
-    "test": "pnpm --filter @green/ui test && pnpm --filter @green/web test",
+    "test": "pnpm --filter @green/api-client test && pnpm --filter @green/ui test && pnpm --filter @green/web test",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm --filter @green/web lint",
     "storybook": "pnpm --filter @green/ui storybook",
     "storybook:build": "pnpm --filter @green/ui build-storybook",
-    "generate:api": "apps/api/.venv/bin/python apps/api/scripts/export_openapi.py && packages/api-client/node_modules/.bin/openapi-typescript apps/api/openapi.json -o packages/api-client/src/schema.d.ts",
-    "check:api": "apps/api/.venv/bin/python apps/api/scripts/export_openapi.py && packages/api-client/node_modules/.bin/openapi-typescript apps/api/openapi.json -o packages/api-client/src/schema.d.ts && git diff --exit-code -- apps/api/openapi.json packages/api-client/src/schema.d.ts",
+    "format": "prettier --write \"apps/web/src/{app,pages,widgets,features,entities,shared}/**/*.{ts,tsx,css}\" \"packages/ui/src/**/*.{ts,tsx,css}\" \"packages/api-client/src/**/*.ts\"",
+    "format:check": "prettier --check \"apps/web/src/{app,pages,widgets,features,entities,shared}/**/*.{ts,tsx,css}\" \"packages/ui/src/**/*.{ts,tsx,css}\" \"packages/api-client/src/**/*.ts\"",
+    "check:bem": "node scripts/check-bem.mjs",
+    "generate:api": "node scripts/generate-api.mjs",
+    "check:api": "node scripts/generate-api.mjs --check",
     "test:e2e": "pnpm --filter @green/web test:e2e",
     "test:e2e:headless": "E2E_BROWSER_CHANNEL=chrome pnpm --filter @green/web test:e2e",
-    "verify:headless": "apps/api/.venv/bin/pytest -q && pnpm --filter @green/web typecheck && pnpm --filter @green/web lint && pnpm --filter @green/web test -- --run && pnpm --filter @green/web build && exec env E2E_BROWSER_CHANNEL=chrome pnpm --filter @green/web exec playwright test --workers=1"
+    "verify:headless": "apps/api/.venv/bin/pytest -q apps/api/tests && pnpm --filter @green/web typecheck && pnpm --filter @green/web lint && pnpm --filter @green/web test -- --run && pnpm --filter @green/web build && exec env E2E_BROWSER_CHANNEL=chrome pnpm --filter @green/web exec playwright test --workers=1"
   },
   "devDependencies": {
-    "geotiff": "3.0.5"
+    "geotiff": "3.0.5",
+    "prettier": "3.9.6",
+    "prettier-plugin-tailwindcss": "0.8.1"
   }
 }

@@ -18,10 +18,37 @@ def imported_modules(path: Path) -> set[str]:
 
 
 def test_application_and_ports_do_not_depend_on_frameworks_or_adapters() -> None:
-    application_imports = imported_modules(API_ROOT / "application.py")
-    assert not any(module.startswith("fastapi") or module.endswith(".adapters") for module in application_imports)
-    for port in API_ROOT.glob("*/ports.py"):
-        assert not any(module.startswith("fastapi") or module.endswith(".adapters") for module in imported_modules(port))
+    boundaries = {
+        API_ROOT / "application.py",
+        API_ROOT / "planning/changes.py",
+        API_ROOT / "planning/evaluation.py",
+        API_ROOT / "planning/rules.py",
+        API_ROOT / "geometry/queries.py",
+        *API_ROOT.glob("*/application.py"),
+        *API_ROOT.glob("*/*_application.py"),
+        *API_ROOT.glob("*/ports.py"),
+    }
+    for boundary in boundaries:
+        assert not any(
+            module.startswith("fastapi")
+            or module.endswith(".adapters")
+            or module == "app.api"
+            for module in imported_modules(boundary)
+        ), boundary
+
+
+def test_domain_contracts_do_not_depend_on_compatibility_facade() -> None:
+    for contract in API_ROOT.glob("*/*contracts.py"):
+        assert "app.contracts" not in imported_modules(contract), contract
+
+
+def test_agent_workflows_do_not_import_http_transport() -> None:
+    for name in ("commit_workflow.py", "control_workflow.py"):
+        path = API_ROOT / "agent_runtime" / name
+        assert not any(
+            module.startswith("fastapi") or module == "app.api"
+            for module in imported_modules(path)
+        ), path
 
 
 def test_ui_foundation_has_no_domain_vocabulary() -> None:

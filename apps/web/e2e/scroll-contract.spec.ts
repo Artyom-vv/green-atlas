@@ -32,6 +32,24 @@ test('project list owns vertical scrolling instead of the browser window', async
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 });
 
+test('project list distinguishes an active working revision', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await prepareWorkspace(page);
+  const projectId = new URL(page.url()).pathname.split('/')[2];
+  const zones = await page.request.put(`${apiBase}/projects/${projectId}/planting-zones`, { data: { zones: [{ id: 'list-zone', label: 'Главная аллея', geometry: { type: 'Polygon', coordinates: [[[12, 12], [60, 12], [60, 35], [12, 35], [12, 12]]] } }] } });
+  expect(zones.ok(), await zones.text()).toBeTruthy();
+  const plan = await page.request.post(`${apiBase}/projects/${projectId}/plan/manual`);
+  expect(plan.ok(), await plan.text()).toBeTruthy();
+  const object = await page.request.post(`${apiBase}/projects/${projectId}/plan/objects`, { data: { kind: 'tree', x: 20, y: 20 } });
+  expect(object.ok(), await object.text()).toBeTruthy();
+
+  await page.goto('/projects');
+  const row = page.locator('.projects-table tbody tr').filter({ has: page.locator(`a[href="/projects/${projectId}/workspace"]`) });
+  await expect(row).toHaveCount(1);
+  await expect(row.getByText('Редактируется')).toBeVisible();
+  await expect(row.getByText('1 посадка, 1 участок')).toBeVisible();
+});
+
 test('workspace rails scroll independently without replacing the map canvas', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 400 });
   await prepareWorkspace(page);

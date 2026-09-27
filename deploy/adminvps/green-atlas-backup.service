@@ -1,0 +1,13 @@
+[Unit]
+Description=Consistent Green Atlas SQLite backup
+
+[Service]
+Type=oneshot
+User=green-atlas
+Group=green-atlas
+ExecStart=/opt/green-atlas/venv/bin/python /opt/green-atlas/current/deploy/backup.py
+UMask=0027
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/green-atlas

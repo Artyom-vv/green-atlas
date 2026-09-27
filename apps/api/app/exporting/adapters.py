@@ -1,13 +1,40 @@
+from collections import Counter
+from hashlib import sha256
 from io import BytesIO, StringIO
 from typing import Any
 
 import ezdxf
+from ezdxf import xref
 from ezdxf.document import Drawing
+from ezdxf.entities import DXFEntity, Insert
+from ezdxf.entities.acis import Body
+from ezdxf.lldxf import const
 from ezdxf.lldxf.tagger import binary_tags_loader
+from ezdxf.sections.acdsdata import new_acds_data_section
 
-from app.contracts import ExportArtifact, Project
+from app.dxf_import.acis_lookup import indexed_acis_lookup
 from app.dxf_import.encoding import decode_text_dxf
 from app.dxf_import.units import meters_per_dxf_unit
+from app.exporting.contracts import ExportArtifact
+from app.projects.contracts import Project
+
+
+def _check_acis_export(document: Drawing) -> None:
+    """ezdxf silently skips modeler entities without their SAT/SAB payload."""
+    missing: Counter[str] = Counter()
+    with indexed_acis_lookup(document):
+        for entity in document.entitydb.values():
+            if entity.is_alive and isinstance(entity, Body) and not entity.acis_data:
+                missing[entity.dxftype()] += 1
+    if missing:
+        details = ", ".join(
+            f"{kind}: {count}" for kind, count in sorted(missing.items())
+        )
+        raise ValueError(
+            f"DXF-выпуск остановлен: у исходных объектов отсутствуют SAT/SAB-данные ({details}); "
+            "библиотека исключила бы их при сохранении. Проект и исходный файл сохранены. "
+            "Проверьте подготовку полного DXF-комплекта."
+        )
 
 
 GREEN_ATLAS_APP_ID = "GREEN_ATLAS"
@@ -21,7 +48,9 @@ PLANTING_LAYER_BASES = {
 def _read_document(content: bytes) -> Any:
     if content.startswith(b"AutoCAD Binary DXF"):
         return Drawing.load(binary_tags_loader(content))
-    return ezdxf.read(StringIO(decode_text_dxf(content)))
+    # Read Windows/CAD line endings like a text file so source entities are
+    # retained when the original upload is reopened for export.
+    return ezdxf.read(StringIO(decode_text_dxf(content), newline=None))
 
 
 def _new_layer_name(document: Any, base_name: str) -> str:
@@ -35,16 +64,179 @@ def _new_layer_name(document: Any, base_name: str) -> str:
     return candidate
 
 
+def _ensure_acis_section(document: Drawing) -> None:
+    if document.dxfversion < const.DXF2013 or document.acdsdata.is_valid:
+        return
+    if document.acdsdata.entities:
+        raise ValueError(
+            "DXF-выпуск остановлен: секция ACDSDATA повреждена"
+        )
+    document.acdsdata = new_acds_data_section(document)
+
+
+def _mark_reachable_entities(
+    document: Drawing,
+    appid: str,
+    drawing_path: str,
+    drawing_sha256: str,
+) -> set[str]:
+    expected: set[str] = set()
+
+    def mark(entities: Any, ancestry: frozenset[str]) -> None:
+        for entity in entities:
+            handle = str(entity.dxf.get("handle", ""))
+            if not handle or handle in expected:
+                continue
+            expected.add(handle)
+            entity.set_xdata(
+                appid,
+                [
+                    (1000, drawing_path),
+                    (1000, drawing_sha256),
+                    (1000, handle),
+                    (1000, entity.dxftype()),
+                ],
+            )
+            if isinstance(entity, Insert):
+                mark(entity.attribs, ancestry)
+                block_name = str(entity.dxf.name)
+            elif entity.dxftype() == "DIMENSION":
+                block_name = str(entity.dxf.get("geometry", ""))
+            else:
+                block_name = ""
+            if not block_name:
+                continue
+            if block_name in ancestry:
+                raise ValueError(
+                    "DXF-выпуск остановлен: цикл вложенных CAD-блоков"
+                )
+            block = document.blocks.get(block_name)
+            if block is not None:
+                mark(block, ancestry | {block_name})
+
+    for layout in document.layouts:
+        mark(layout, frozenset())
+    return expected
+
+
+def _merge_independent_drawings(
+    primary: Drawing, source_components: dict[str, bytes]
+) -> Drawing:
+    if not source_components:
+        return primary
+    primary_units = int(primary.header.get("$INSUNITS", 0) or 0)
+    for index, (drawing_path, content) in enumerate(
+        sorted(source_components.items()), start=1
+    ):
+        try:
+            child = _read_document(content)
+        except Exception as error:
+            raise ValueError(
+                f"Не удалось открыть дополнительный DXF: {drawing_path}"
+            ) from error
+        if int(child.header.get("$INSUNITS", 0) or 0) != primary_units:
+            raise ValueError(
+                f"Нельзя выпустить единый DXF: единицы {drawing_path} "
+                "не совпадают с основным чертежом"
+            )
+        if len(child.groups):
+            raise ValueError(
+                f"Нельзя без потерь объединить {drawing_path}: "
+                "DXF GROUPS не переносятся библиотекой"
+            )
+        unsupported = Counter(
+            entity.dxftype()
+            for entity in child.entitydb.values()
+            if entity.is_alive
+            and (
+                entity.dxftype() in {"ACAD_TABLE", "CUSTOM_CIVIL_OBJECT"}
+                or entity.dxftype().startswith(("ACAD_PROXY", "CUSTOM_"))
+            )
+        )
+        if unsupported:
+            details = ", ".join(
+                f"{kind}: {count}" for kind, count in sorted(unsupported.items())
+            )
+            raise ValueError(
+                f"Нельзя без потерь объединить {drawing_path}: "
+                f"библиотека не переносит {details}"
+            )
+        if any(block.block.is_xref for block in child.blocks):
+            raise ValueError(
+                f"Нельзя выпустить единый DXF: {drawing_path} "
+                "содержит неразрешённые XREF"
+            )
+        if any(
+            isinstance(entity, Body) for entity in child.entitydb.values()
+        ):
+            if primary.dxfversion < const.DXF2013:
+                raise ValueError(
+                    f"Нельзя перенести ACIS из {drawing_path} в DXF старше R2013"
+                )
+            _ensure_acis_section(primary)
+        digest = sha256(content).hexdigest()
+        appid = f"GREEN_ATLAS_SOURCE_{digest[:12].upper()}"
+        suffix = 2
+        while appid in primary.appids or appid in child.appids:
+            appid = f"GREEN_ATLAS_SOURCE_{digest[:8].upper()}_{suffix}"
+            suffix += 1
+        child.appids.add(appid)
+        expected = _mark_reachable_entities(
+            child, appid, drawing_path, digest
+        )
+        loader = xref.Loader(
+            child, primary, conflict_policy=xref.ConflictPolicy.XREF_PREFIX
+        )
+        loader.load_modelspace()
+        for layout in child.layouts:
+            if layout.name != "Model":
+                loader.load_paperspace_layout(layout)
+        try:
+            loader.execute(xref_prefix=f"GA{index}")
+        except Exception as error:
+            raise ValueError(
+                f"Не удалось без потерь перенести {drawing_path} в единый DXF"
+            ) from error
+        copied: dict[str, DXFEntity] = {}
+        duplicates: set[str] = set()
+        for entity in primary.entitydb.values():
+            if not entity.is_alive or not entity.has_xdata(appid):
+                continue
+            tags = entity.get_xdata(appid)
+            if len(tags) < 4:
+                raise ValueError("Повреждено provenance единого DXF")
+            source_handle = str(tags[2].value)
+            if source_handle in copied:
+                duplicates.add(source_handle)
+            copied[source_handle] = entity
+        missing = expected - copied.keys()
+        if missing or duplicates:
+            raise ValueError(
+                f"Единый DXF потерял объекты {drawing_path}: "
+                f"missing={len(missing)}, duplicates={len(duplicates)}"
+            )
+    return primary
+
+
 class DxfRoundTripWriter:
     """Round-trip writer: source entities stay intact, planting is added to new layers."""
 
-    def create(self, project: Project, source_content: bytes) -> tuple[ExportArtifact, bytes]:
+    def create(
+        self,
+        project: Project,
+        source_content: bytes,
+        source_components: dict[str, bytes] | None = None,
+    ) -> tuple[ExportArtifact, bytes]:
         if project.plan is None:
             raise ValueError("Нельзя экспортировать проект без плана")
         try:
             document = _read_document(source_content)
         except Exception as error:
             raise ValueError("Не удалось повторно открыть исходный DXF") from error
+        document = _merge_independent_drawings(
+            document, source_components or {}
+        )
+        _check_acis_export(document)
         planting_layers = {
             kind: _new_layer_name(document, base_name)
             for kind, (base_name, _color) in PLANTING_LAYER_BASES.items()
@@ -72,8 +264,13 @@ class DxfRoundTripWriter:
                 (1000, f"layout_radius_m={object_.layout_radius_m or object_.radius}"),
                 (1000, f"locked={'true' if object_.locked else 'false'}"),
             ]
+            if project.source_review is not None:
+                # Keep the review state when a recipient gets only the DXF.
+                xdata.append((1000, "source_review=pending"))
             if object_.species_revision_id:
-                xdata.append((1000, f"species_revision_id={object_.species_revision_id}"))
+                xdata.append(
+                    (1000, f"species_revision_id={object_.species_revision_id}")
+                )
             if object_.pattern_id:
                 xdata.append((1000, f"pattern_id={object_.pattern_id}"))
             for group_id in sorted(object_.group_ids):
@@ -97,6 +294,14 @@ class DxfRoundTripWriter:
             # gives us Unicode text; encoding it unconditionally as UTF-8
             # leaves the original $DWGCODEPAGE lying to CAD consumers. Let
             # ezdxf select the format-required output encoding instead.
-            content = stream.getvalue().encode(document.output_encoding, errors="dxfreplace")
-        artifact = ExportArtifact(filename=f"{project.name.lower().replace(' ', '_')}_plan.dxf", status="ready", size=len(content), download_url="")
+            content = stream.getvalue().encode(
+                document.output_encoding, errors="dxfreplace"
+            )
+        suffix = "draft_plan" if project.source_review is not None else "plan"
+        artifact = ExportArtifact(
+            filename=f"{project.name.lower().replace(' ', '_')}_{suffix}.dxf",
+            status="ready",
+            size=len(content),
+            download_url="",
+        )
         return artifact, content

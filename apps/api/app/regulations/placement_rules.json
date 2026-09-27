@@ -1,0 +1,74 @@
+{
+  "revision": "placement-rules/2026-09-25.1",
+  "sources": {
+    "pp743": {
+      "document": "743-ПП",
+      "edition": "2025-02-04",
+      "clause": "таблица 3.6.1",
+      "url": "https://www.mos.ru/upload/documents/files/7389/Postanovlenie743-PP.pdf",
+      "scope": "Базовые строки, деревья с диаметром кроны до 5 м; не полная проверка соответствия проекта"
+    },
+    "sp42_lct": {
+      "document": "СП 42.13330.2016",
+      "edition": "2019-12-19",
+      "clause": "пункт 9.6, таблица 9.1",
+      "url": "https://mchs.gov.ru/uploads/document/2025-04-18/eadacffc977fa556831d67be57ed83cb.pdf",
+      "scope": "Датированный профиль задания ЛЦТ, не утверждение применимости действующей редакции"
+    }
+  },
+  "setbacks": {
+    "building": {"id": "pp743-3.6.3-building", "source": "pp743", "label": "Отступ от наружной стены здания", "tree_m": 5.0, "shrub_m": 1.5},
+    "carriageway": {"id": "pp743-3.6.3-road-edge", "source": "pp743", "label": "Отступ от края проезжей части", "tree_m": 2.0, "shrub_m": 1.0},
+    "footway": {"id": "pp743-3.6.3-footway", "source": "pp743", "label": "Отступ от края тротуара или садовой дорожки", "tree_m": 0.7, "shrub_m": 0.5},
+    "retaining_wall": {"id": "pp743-3.6.3-retaining-wall", "source": "pp743", "label": "Отступ от подошвы или внутренней грани подпорной стенки", "tree_m": 3.0, "shrub_m": 1.0},
+    "pole": {"id": "pp743-3.6.3-pole", "source": "pp743", "label": "Отступ от опоры", "tree_m": 4.0, "shrub_m": null},
+    "gas": {"id": "sp42-9.6-network-gas", "source": "sp42_lct", "label": "Газопровод", "tree_m": 1.5, "shrub_m": null},
+    "sewer": {"id": "sp42-9.6-network-sewer", "source": "sp42_lct", "label": "Канализация", "tree_m": 1.5, "shrub_m": null},
+    "heat": {"id": "sp42-9.6-network-heat", "source": "sp42_lct", "label": "Тепловая сеть", "tree_m": 2.0, "shrub_m": 1.0},
+    "water": {"id": "sp42-9.6-network-water", "source": "sp42_lct", "label": "Водопровод", "tree_m": 2.0, "shrub_m": null},
+    "drainage": {"id": "sp42-9.6-network-drainage", "source": "sp42_lct", "label": "Дренаж", "tree_m": 2.0, "shrub_m": null},
+    "power_cable": {"id": "sp42-9.6-network-power_cable", "source": "sp42_lct", "label": "Силовой кабель", "tree_m": 2.0, "shrub_m": 0.7},
+    "communication_cable": {"id": "sp42-9.6-network-communication_cable", "source": "sp42_lct", "label": "Кабель связи", "tree_m": 2.0, "shrub_m": 0.7}
+  },
+  "working_geometry": {
+    "unknown_network_setback_m": 2.0,
+    "unresolved_review_horizon_m": 2.0,
+    "basis": "Решение заказчика 2026-09-25: расчёт по имеющейся геометрии, 2 м при недостатке сведений; не нормативное разрешение",
+    "base_tree_crown_diameter_m": 5.0
+  },
+  "layout": {
+    "basis": "Существующие настройки компоновки MVP, не нормативные отступы от объектов",
+    "growth_horizon_year": 20,
+    "tree_radius_m": 1.6,
+    "shrub_radius_m": 0.65,
+    "tree_canopy": {"minimum_m": 2.5, "crown_multiplier": 0.58, "extra_m": 0},
+    "tree_balanced": {"minimum_m": 3.5, "crown_multiplier": 0.82, "extra_m": 0},
+    "tree_open": {"minimum_m": 4.8, "crown_multiplier": 1, "extra_m": 1.7},
+    "shrub": {"minimum_m": 1.55, "crown_multiplier": 1, "extra_m": 0.35},
+    "mixed": {"minimum_m": 0, "crown_multiplier": 1, "extra_m": 1},
+    "road_edge_extra_m": 0.1,
+    "maximum_road_offset_m": 30
+  },
+  "technical": {"distance_tolerance_m": 0.000001, "cell_certificate_margin_m": 0.00001},
+  "candidate_search": {
+    "basis": "Технический бюджет перебора кандидатов. Проверяем небольшие партии по оставшемуся запросу; отступы и CAD-проверки не ослабляются",
+    "minimum_probes": 2048,
+    "maximum_probes": 5000,
+    "probes_per_requested_plant": 128,
+    "batch_size": 64,
+    "minimum_batch_size": 8,
+    "probes_per_missing_plant": 2,
+    "time_limit_s": 45,
+    "minimum_grid_cell_m": 0.001
+  },
+  "hybrid_search": {
+    "basis": "Технические параметры предварительного поиска, не нормативные отступы. Найденные позиции проверяет AutoCAD",
+    "batch_objects": 256,
+    "yield_seconds": 2.0,
+    "cached_domains": 8,
+    "cached_masks": 24000,
+    "buffer_quadrant_segments": 16,
+    "projection_area_relative_tolerance": 0.001,
+    "projection_area_absolute_tolerance_m2": 0.0001
+  }
+}

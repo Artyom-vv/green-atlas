@@ -1,0 +1,34 @@
+{
+  "direct": {
+    "verticesBytes": 720,
+    "indicesBytes": 432,
+    "transformsBytes": 0,
+    "primitives": 25,
+    "worldGeometrySha256": "ff71a6e6f3866980506b2ff7f4039a6b08907dcb9065687217abe638492c1cd2",
+    "transformsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "flattened": {
+    "verticesBytes": 720,
+    "indicesBytes": 432,
+    "transformsBytes": 0,
+    "primitives": 25,
+    "worldGeometrySha256": "bd53645c6ef08d0dabb02ac15d579a584709bc74476afefc0c3b8d276acde861",
+    "transformsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "instanced": {
+    "verticesBytes": 19680,
+    "indicesBytes": 288,
+    "transformsBytes": 48,
+    "primitives": 1250,
+    "worldGeometrySha256": "4335cb98182054efa7950f553da249232b5db9ff02bd186c06f7578c7c3909c5",
+    "transformsSha256": "21791291cc6676aaedd35035fed6c5c9323403bb8bdd7b01459ba5c2412859cb"
+  },
+  "chunked": {
+    "verticesBytes": 524800,
+    "indicesBytes": 262440,
+    "transformsBytes": 0,
+    "primitives": 65538,
+    "worldGeometrySha256": "756401c89b37a50ea80a51c2a2cea47d1e6c3a7c2b7f1837ae87d675efe29d6e",
+    "transformsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

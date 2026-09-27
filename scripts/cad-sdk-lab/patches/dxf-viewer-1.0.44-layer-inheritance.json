@@ -1,0 +1,38 @@
+{
+  "package": "dxf-viewer",
+  "version": "1.0.44",
+  "license": "MPL-2.0",
+  "upstream": "https://github.com/vagran/dxf-viewer",
+  "source_files": [
+    {
+      "path": "src/BatchingKey.js",
+      "original_lf_sha256": "e6854ef9cccbbd35ec833226dda6f8c4a349dc3632080b387a8c184d5b5cd19c",
+      "patched_lf_sha256": "2b0964d3344ba8269b83349ca575234f36076d06d6da6ecb8c38c4a7eacd71d6"
+    },
+    {
+      "path": "src/DxfScene.js",
+      "original_lf_sha256": "33a3f904c46aee36520c14802237cb4bf7114f148a2d474dc54801699a055978",
+      "patched_lf_sha256": "932b5a5d9a5d61f5ee54e08a9c9d54f1e2251ec5343d2a63e3c55c3f0d8c904c"
+    },
+    {
+      "path": "src/DxfViewer.js",
+      "original_lf_sha256": "3801145faab7e88bd6a4d2ef21e442ee17e9030b505e40c3384f56a5dbae5d0e",
+      "patched_lf_sha256": "c445c248c105313f3985329b29b83b379efc9d8be69ef6c75fdb1ca4ce106952"
+    },
+    {
+      "path": "src/TextRenderer.js",
+      "original_lf_sha256": "00218b99010db219891f93b600f06dbfd016ff883fb451b302ce0756f76988df",
+      "patched_lf_sha256": "10c73bd1d29673cf5452e56fee8ace41423c01bf54995a8e7cc54c78f70ef950"
+    },
+    {
+      "path": "src/index.d.ts",
+      "original_lf_sha256": "e4583a24c25ca31f16dbb6773dc02069c37b983c5952ea9952094d5253d85e90",
+      "patched_lf_sha256": "7c00490aa99b73abdd960d60502966bc1a57784b5767c667ab5c02d58e2d3182"
+    }
+  ],
+  "node_tests": 16,
+  "clean_npm_tarball": "https://registry.npmjs.org/dxf-viewer/-/dxf-viewer-1.0.44.tgz",
+  "tarball_sha256": "318146c024153ed3440e5c0aae8f1d357d39876dbcff0317ae6acead965c9b2d",
+  "patch_sha256": "bfdc18cba6521740b84a4213fc375793ae2f37eeb07cf8b111273e698a71f59c",
+  "clean_npm_apply_and_production_hash_match": true
+}

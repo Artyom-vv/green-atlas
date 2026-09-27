@@ -1,0 +1,855 @@
+{
+  "version": 2,
+  "schemaVersion": 2,
+  "libraryVersion": "3.0.0",
+  "generator": "scripts/import-quaternius-plant-assets.mjs",
+  "license": {
+    "spdx": "CC0-1.0",
+    "attributionRequired": false,
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "format": {
+    "container": "GLB",
+    "gltfVersion": "2.0",
+    "units": "meter",
+    "upAxis": "+Y",
+    "origin": "ground-center",
+    "geometryCompression": "EXT_meshopt_compression",
+    "textureFallback": "embedded WebP",
+    "texturePreferred": "embedded WebP"
+  },
+  "lodPolicy": {
+    "selectionMetric": "projected crown diameter in CSS pixels",
+    "hysteresisPx": 6,
+    "tiers": {
+      "near": {
+        "minDiameterPx": 160
+      },
+      "mid": {
+        "minDiameterPx": 32
+      },
+      "far": {
+        "minDiameterPx": 0
+      }
+    },
+    "continuity": "every tier is simplified from the same authored source mesh and keeps the same pivot"
+  },
+  "ageScaleProfiles": {
+    "young": {
+      "height": 0.34,
+      "crownWidth": 0.28,
+      "trunkWidth": 0.55
+    },
+    "juvenile": {
+      "height": 0.58,
+      "crownWidth": 0.5,
+      "trunkWidth": 0.72
+    },
+    "mature": {
+      "height": 1,
+      "crownWidth": 1,
+      "trunkWidth": 1
+    },
+    "veteran": {
+      "height": 1.08,
+      "crownWidth": 1.18,
+      "trunkWidth": 1.16
+    }
+  },
+  "fidelityStatement": "Six ready-made Quaternius CC0 models preserve authored trunks, textured foliage and distinct crown morphologies. Species mappings are visual approximations, not surveyed botanical twins.",
+  "speciesMap": {
+    "Tilia cordata": "broadleaf-round",
+    "Acer platanoides": "broadleaf-oval",
+    "Quercus robur": "broadleaf-spreading",
+    "Betula pendula": "broadleaf-oval",
+    "Sorbus aucuparia": "broadleaf-round",
+    "Ulmus laevis": "broadleaf-spreading",
+    "Pinus sylvestris": "pine-natural",
+    "Picea abies": "fir-natural",
+    "Cornus alba": "shrub-natural",
+    "Spiraea japonica": "shrub-natural"
+  },
+  "speciesMetadata": {
+    "Tilia cordata": {
+      "archetype": "broadleaf-round",
+      "labelRu": "Липа мелколистная",
+      "fidelity": "morphological"
+    },
+    "Acer platanoides": {
+      "archetype": "broadleaf-oval",
+      "labelRu": "Клён остролистный",
+      "fidelity": "morphological"
+    },
+    "Quercus robur": {
+      "archetype": "broadleaf-spreading",
+      "labelRu": "Дуб черешчатый",
+      "fidelity": "morphological"
+    },
+    "Betula pendula": {
+      "archetype": "broadleaf-oval",
+      "labelRu": "Берёза повислая",
+      "fidelity": "morphological"
+    },
+    "Sorbus aucuparia": {
+      "archetype": "broadleaf-round",
+      "labelRu": "Рябина обыкновенная",
+      "fidelity": "morphological"
+    },
+    "Ulmus laevis": {
+      "archetype": "broadleaf-spreading",
+      "labelRu": "Вяз гладкий",
+      "fidelity": "morphological"
+    },
+    "Pinus sylvestris": {
+      "archetype": "pine-natural",
+      "labelRu": "Сосна обыкновенная",
+      "fidelity": "morphological"
+    },
+    "Picea abies": {
+      "archetype": "fir-natural",
+      "labelRu": "Ель европейская",
+      "fidelity": "morphological"
+    },
+    "Cornus alba": {
+      "archetype": "shrub-natural",
+      "labelRu": "Дерён белый",
+      "fidelity": "morphological"
+    },
+    "Spiraea japonica": {
+      "archetype": "shrub-natural",
+      "labelRu": "Спирея японская",
+      "fidelity": "morphological"
+    }
+  },
+  "archetypes": {
+    "broadleaf-round": {
+      "id": "broadleaf-round",
+      "label": "Rounded broadleaf",
+      "nominalHeightM": 11,
+      "nominalRadiusM": 3.466,
+      "nominalCrownDiameterM": 6.931,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -3.264,
+          0,
+          -3.466
+        ],
+        "max": [
+          3.264,
+          11,
+          3.466
+        ]
+      },
+      "source": {
+        "provider": "Quaternius",
+        "assetId": "stylized-nature-megakit-standard",
+        "assetName": "Stylized Nature MegaKit (Standard)",
+        "model": "CommonTree_1.gltf",
+        "assetUrl": "https://quaternius.com/packs/stylizednaturemegakit.html",
+        "archiveUrl": "https://opengameart.org/sites/default/files/stylized_nature_megakitstandard.zip",
+        "archiveSha256": "298f6732b872e4cf7b30e6e7abf9641c7f6dc6b326df37ac089533ed7e3d58c9",
+        "authors": {
+          "Quaternius": "modeling and textures"
+        },
+        "license": "CC0-1.0",
+        "modifications": [
+          "model selection",
+          "ground-center normalization",
+          "uniform scale",
+          "same-source mesh simplification",
+          "texture resizing and WebP encoding",
+          "meshopt compression"
+        ],
+        "fidelity": "stylized-volumetric"
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-round.near.quaternius.glb",
+          "bytes": 211056,
+          "sha256": "b8fd15d801c5d88d8ebac52c2ba2223f56b1055b7f78d907936a52b0bd18dc22",
+          "triangleCount": 6265,
+          "sourceTriangleCount": 6265,
+          "triangleRetention": 1,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 3,
+          "textureMaxSize": 512,
+          "bounds": {
+            "min": [
+              -3.264,
+              0,
+              -3.465
+            ],
+            "max": [
+              3.264,
+              11,
+              3.465
+            ]
+          }
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-round.mid.quaternius.glb",
+          "bytes": 125848,
+          "sha256": "1446f8a9dc7cf1dfcf090310b7e698e41ec434704035708b06a3b04f0273341a",
+          "triangleCount": 5055,
+          "sourceTriangleCount": 6265,
+          "triangleRetention": 0.806864,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 2,
+          "textureMaxSize": 256,
+          "bounds": {
+            "min": [
+              -3.164,
+              0,
+              -3.465
+            ],
+            "max": [
+              3.264,
+              10.901,
+              3.465
+            ]
+          }
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-round.far.quaternius.glb",
+          "bytes": 44260,
+          "sha256": "f8107ddc56b201a9b38babca5398544194e577a2b78df3d798bfc91ebeabf9c4",
+          "triangleCount": 1377,
+          "sourceTriangleCount": 6265,
+          "triangleRetention": 0.219792,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 1,
+          "textureMaxSize": 128,
+          "bounds": {
+            "min": [
+              -3.164,
+              0,
+              -3.245
+            ],
+            "max": [
+              3.264,
+              10.831,
+              3.175
+            ]
+          }
+        }
+      ]
+    },
+    "broadleaf-oval": {
+      "id": "broadleaf-oval",
+      "label": "Tall oval broadleaf",
+      "nominalHeightM": 13,
+      "nominalRadiusM": 2.925,
+      "nominalCrownDiameterM": 5.85,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -2.802,
+          0,
+          -2.925
+        ],
+        "max": [
+          2.802,
+          13,
+          2.925
+        ]
+      },
+      "source": {
+        "provider": "Quaternius",
+        "assetId": "stylized-nature-megakit-standard",
+        "assetName": "Stylized Nature MegaKit (Standard)",
+        "model": "CommonTree_3.gltf",
+        "assetUrl": "https://quaternius.com/packs/stylizednaturemegakit.html",
+        "archiveUrl": "https://opengameart.org/sites/default/files/stylized_nature_megakitstandard.zip",
+        "archiveSha256": "298f6732b872e4cf7b30e6e7abf9641c7f6dc6b326df37ac089533ed7e3d58c9",
+        "authors": {
+          "Quaternius": "modeling and textures"
+        },
+        "license": "CC0-1.0",
+        "modifications": [
+          "model selection",
+          "ground-center normalization",
+          "uniform scale",
+          "same-source mesh simplification",
+          "texture resizing and WebP encoding",
+          "meshopt compression"
+        ],
+        "fidelity": "stylized-volumetric"
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-oval.near.quaternius.glb",
+          "bytes": 161348,
+          "sha256": "cf8e46d5c2fe3d9ca3ec3a8f6b7ef427d9a49fe8a98d3be93be2a9b3c16755ea",
+          "triangleCount": 3505,
+          "sourceTriangleCount": 3505,
+          "triangleRetention": 1,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 3,
+          "textureMaxSize": 512,
+          "bounds": {
+            "min": [
+              -2.802,
+              0,
+              -2.925
+            ],
+            "max": [
+              2.802,
+              13,
+              2.925
+            ]
+          }
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-oval.mid.quaternius.glb",
+          "bytes": 80132,
+          "sha256": "4ba101537a08514fb8ceab18b7b73abd9848aa7d108c340e006ff86a729ad7b9",
+          "triangleCount": 2582,
+          "sourceTriangleCount": 3505,
+          "triangleRetention": 0.736662,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 2,
+          "textureMaxSize": 256,
+          "bounds": {
+            "min": [
+              -2.802,
+              0,
+              -2.919
+            ],
+            "max": [
+              2.802,
+              13,
+              2.848
+            ]
+          }
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-oval.far.quaternius.glb",
+          "bytes": 31740,
+          "sha256": "bc8709d7f05a8b9ae4084f52fd88766744ba8d7089dc6052398977e5c50a668b",
+          "triangleCount": 771,
+          "sourceTriangleCount": 3505,
+          "triangleRetention": 0.219971,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 1,
+          "textureMaxSize": 128,
+          "bounds": {
+            "min": [
+              -2.723,
+              0,
+              -2.622
+            ],
+            "max": [
+              2.623,
+              12.819,
+              2.848
+            ]
+          }
+        }
+      ]
+    },
+    "broadleaf-spreading": {
+      "id": "broadleaf-spreading",
+      "label": "Spreading mature broadleaf",
+      "nominalHeightM": 15,
+      "nominalRadiusM": 5.369,
+      "nominalCrownDiameterM": 10.738,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -5.3,
+          0,
+          -5.369
+        ],
+        "max": [
+          5.3,
+          15,
+          5.369
+        ]
+      },
+      "source": {
+        "provider": "Quaternius",
+        "assetId": "stylized-nature-megakit-standard",
+        "assetName": "Stylized Nature MegaKit (Standard)",
+        "model": "TwistedTree_3.gltf",
+        "assetUrl": "https://quaternius.com/packs/stylizednaturemegakit.html",
+        "archiveUrl": "https://opengameart.org/sites/default/files/stylized_nature_megakitstandard.zip",
+        "archiveSha256": "298f6732b872e4cf7b30e6e7abf9641c7f6dc6b326df37ac089533ed7e3d58c9",
+        "authors": {
+          "Quaternius": "modeling and textures"
+        },
+        "license": "CC0-1.0",
+        "modifications": [
+          "model selection",
+          "ground-center normalization",
+          "uniform scale",
+          "same-source mesh simplification",
+          "texture resizing and WebP encoding",
+          "meshopt compression"
+        ],
+        "fidelity": "stylized-volumetric"
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/broadleaf-spreading.near.quaternius.glb",
+          "bytes": 288656,
+          "sha256": "d60bc31171ffbd0bcf59029bbab115b3d54ec52fef597f66325bd38abe870528",
+          "triangleCount": 10089,
+          "sourceTriangleCount": 10089,
+          "triangleRetention": 1,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 3,
+          "textureMaxSize": 512,
+          "bounds": {
+            "min": [
+              -5.3,
+              0,
+              -5.369
+            ],
+            "max": [
+              5.3,
+              15,
+              5.369
+            ]
+          }
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/broadleaf-spreading.mid.quaternius.glb",
+          "bytes": 185568,
+          "sha256": "117fa0a898fc4565fe069464ddca40b381d1a34946ab04dbbe1a95fa680992c3",
+          "triangleCount": 8245,
+          "sourceTriangleCount": 10089,
+          "triangleRetention": 0.817227,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 2,
+          "textureMaxSize": 256,
+          "bounds": {
+            "min": [
+              -5.27,
+              0,
+              -5.369
+            ],
+            "max": [
+              5.272,
+              14.978,
+              5.369
+            ]
+          }
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/broadleaf-spreading.far.quaternius.glb",
+          "bytes": 64592,
+          "sha256": "cb09ff9216dbb777a11ae74445b8b9287b45ad1dfcbecc16da361d1141b3283c",
+          "triangleCount": 2218,
+          "sourceTriangleCount": 10089,
+          "triangleRetention": 0.219843,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 1,
+          "textureMaxSize": 128,
+          "bounds": {
+            "min": [
+              -5.098,
+              0,
+              -5.369
+            ],
+            "max": [
+              5.272,
+              14.978,
+              5.369
+            ]
+          }
+        }
+      ]
+    },
+    "pine-natural": {
+      "id": "pine-natural",
+      "label": "Open pine",
+      "nominalHeightM": 12,
+      "nominalRadiusM": 4.659,
+      "nominalCrownDiameterM": 9.319,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -4.659,
+          0,
+          -4.247
+        ],
+        "max": [
+          4.659,
+          12,
+          4.247
+        ]
+      },
+      "source": {
+        "provider": "Quaternius",
+        "assetId": "stylized-nature-megakit-standard",
+        "assetName": "Stylized Nature MegaKit (Standard)",
+        "model": "Pine_2.gltf",
+        "assetUrl": "https://quaternius.com/packs/stylizednaturemegakit.html",
+        "archiveUrl": "https://opengameart.org/sites/default/files/stylized_nature_megakitstandard.zip",
+        "archiveSha256": "298f6732b872e4cf7b30e6e7abf9641c7f6dc6b326df37ac089533ed7e3d58c9",
+        "authors": {
+          "Quaternius": "modeling and textures"
+        },
+        "license": "CC0-1.0",
+        "modifications": [
+          "model selection",
+          "ground-center normalization",
+          "uniform scale",
+          "same-source mesh simplification",
+          "texture resizing and WebP encoding",
+          "meshopt compression"
+        ],
+        "fidelity": "stylized-volumetric"
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/pine-natural.near.quaternius.glb",
+          "bytes": 118448,
+          "sha256": "ee7622c75d42cc8c6246780c7526f706cb30813def8699e29041f02eab648f74",
+          "triangleCount": 3648,
+          "sourceTriangleCount": 3648,
+          "triangleRetention": 1,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 3,
+          "textureMaxSize": 512,
+          "bounds": {
+            "min": [
+              -4.66,
+              0,
+              -4.247
+            ],
+            "max": [
+              4.66,
+              12,
+              4.247
+            ]
+          }
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/pine-natural.mid.quaternius.glb",
+          "bytes": 71252,
+          "sha256": "bb52d2e611c5a009e90666c0345ca6d98215c60db77fb572f0ae5b2ce0c94075",
+          "triangleCount": 2988,
+          "sourceTriangleCount": 3648,
+          "triangleRetention": 0.819079,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 2,
+          "textureMaxSize": 256,
+          "bounds": {
+            "min": [
+              -4.659,
+              0,
+              -4.247
+            ],
+            "max": [
+              4.659,
+              11.934,
+              4.247
+            ]
+          }
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/pine-natural.far.quaternius.glb",
+          "bytes": 26084,
+          "sha256": "c23f858c4a94d9d77098bce76532b13e7724aedd1da29f8a877c818067c66002",
+          "triangleCount": 816,
+          "sourceTriangleCount": 3648,
+          "triangleRetention": 0.223684,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 1,
+          "textureMaxSize": 128,
+          "bounds": {
+            "min": [
+              -4.191,
+              0,
+              -4.247
+            ],
+            "max": [
+              4.66,
+              11.873,
+              4.247
+            ]
+          }
+        }
+      ]
+    },
+    "fir-natural": {
+      "id": "fir-natural",
+      "label": "Dense conifer",
+      "nominalHeightM": 14,
+      "nominalRadiusM": 3.968,
+      "nominalCrownDiameterM": 7.935,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -3.968,
+          0,
+          -3.673
+        ],
+        "max": [
+          3.968,
+          14,
+          3.673
+        ]
+      },
+      "source": {
+        "provider": "Quaternius",
+        "assetId": "stylized-nature-megakit-standard",
+        "assetName": "Stylized Nature MegaKit (Standard)",
+        "model": "Pine_4.gltf",
+        "assetUrl": "https://quaternius.com/packs/stylizednaturemegakit.html",
+        "archiveUrl": "https://opengameart.org/sites/default/files/stylized_nature_megakitstandard.zip",
+        "archiveSha256": "298f6732b872e4cf7b30e6e7abf9641c7f6dc6b326df37ac089533ed7e3d58c9",
+        "authors": {
+          "Quaternius": "modeling and textures"
+        },
+        "license": "CC0-1.0",
+        "modifications": [
+          "model selection",
+          "ground-center normalization",
+          "uniform scale",
+          "same-source mesh simplification",
+          "texture resizing and WebP encoding",
+          "meshopt compression"
+        ],
+        "fidelity": "stylized-volumetric"
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/fir-natural.near.quaternius.glb",
+          "bytes": 117832,
+          "sha256": "97d0104132c53c1896d9d6575f8274ca3c9491623494acd403878bf2fedd7bcf",
+          "triangleCount": 3370,
+          "sourceTriangleCount": 3370,
+          "triangleRetention": 1,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 3,
+          "textureMaxSize": 512,
+          "bounds": {
+            "min": [
+              -3.968,
+              0,
+              -3.673
+            ],
+            "max": [
+              3.968,
+              14,
+              3.673
+            ]
+          }
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/fir-natural.mid.quaternius.glb",
+          "bytes": 68688,
+          "sha256": "ab3c123b281f2e2b8e18e6e8e296bc10ae73375e2e1ed125dde65eb057f51c8b",
+          "triangleCount": 2664,
+          "sourceTriangleCount": 3370,
+          "triangleRetention": 0.790504,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 2,
+          "textureMaxSize": 256,
+          "bounds": {
+            "min": [
+              -3.968,
+              0,
+              -3.673
+            ],
+            "max": [
+              3.968,
+              13.989,
+              3.673
+            ]
+          }
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/fir-natural.far.quaternius.glb",
+          "bytes": 25544,
+          "sha256": "cb25321ca7791fbb0d476b6c96eb8231e1c1be0b431067381fec70f081b77092",
+          "triangleCount": 727,
+          "sourceTriangleCount": 3370,
+          "triangleRetention": 0.215727,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 2,
+          "textureCount": 1,
+          "textureMaxSize": 128,
+          "bounds": {
+            "min": [
+              -3.55,
+              0,
+              -3.673
+            ],
+            "max": [
+              3.335,
+              13.981,
+              2.763
+            ]
+          }
+        }
+      ]
+    },
+    "shrub-natural": {
+      "id": "shrub-natural",
+      "label": "Dense shrub",
+      "nominalHeightM": 1.8,
+      "nominalRadiusM": 1.118,
+      "nominalCrownDiameterM": 2.236,
+      "origin": "ground-center",
+      "upAxis": "+Y",
+      "bounds": {
+        "min": [
+          -1.09,
+          0,
+          -1.118
+        ],
+        "max": [
+          1.09,
+          1.8,
+          1.118
+        ]
+      },
+      "source": {
+        "provider": "Quaternius",
+        "assetId": "stylized-nature-megakit-standard",
+        "assetName": "Stylized Nature MegaKit (Standard)",
+        "model": "Bush_Common.gltf",
+        "assetUrl": "https://quaternius.com/packs/stylizednaturemegakit.html",
+        "archiveUrl": "https://opengameart.org/sites/default/files/stylized_nature_megakitstandard.zip",
+        "archiveSha256": "298f6732b872e4cf7b30e6e7abf9641c7f6dc6b326df37ac089533ed7e3d58c9",
+        "authors": {
+          "Quaternius": "modeling and textures"
+        },
+        "license": "CC0-1.0",
+        "modifications": [
+          "model selection",
+          "ground-center normalization",
+          "uniform scale",
+          "same-source mesh simplification",
+          "texture resizing and WebP encoding",
+          "meshopt compression"
+        ],
+        "fidelity": "stylized-volumetric"
+      },
+      "lods": [
+        {
+          "lod": "near",
+          "url": "/assets/plant-models/models/shrub-natural.near.quaternius.glb",
+          "bytes": 72376,
+          "sha256": "6da464dbd5426cfa805b568da06bb5cdd62b67ff3575b97653860290caedb9a4",
+          "triangleCount": 900,
+          "sourceTriangleCount": 900,
+          "triangleRetention": 1,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 1,
+          "textureCount": 1,
+          "textureMaxSize": 512,
+          "bounds": {
+            "min": [
+              -1.089,
+              0,
+              -1.118
+            ],
+            "max": [
+              1.089,
+              1.8,
+              1.118
+            ]
+          }
+        },
+        {
+          "lod": "mid",
+          "url": "/assets/plant-models/models/shrub-natural.mid.quaternius.glb",
+          "bytes": 33636,
+          "sha256": "519dfc4a00b82c0d1684bbd4944d49195d433a2f14bf8089e1adcc90aac49b6c",
+          "triangleCount": 522,
+          "sourceTriangleCount": 900,
+          "triangleRetention": 0.58,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 1,
+          "textureCount": 1,
+          "textureMaxSize": 256,
+          "bounds": {
+            "min": [
+              -1.089,
+              0.037,
+              -1.093
+            ],
+            "max": [
+              1.089,
+              1.8,
+              1.118
+            ]
+          }
+        },
+        {
+          "lod": "far",
+          "url": "/assets/plant-models/models/shrub-natural.far.quaternius.glb",
+          "bytes": 16552,
+          "sha256": "538517f81de5314da39663c1b4a43a8d9011fa9fb43c45c4411c691ee1165b95",
+          "triangleCount": 198,
+          "sourceTriangleCount": 900,
+          "triangleRetention": 0.22,
+          "foliageRepresentation": "artist-authored-alpha-mask",
+          "materialCount": 1,
+          "textureCount": 1,
+          "textureMaxSize": 128,
+          "bounds": {
+            "min": [
+              -1.089,
+              0.173,
+              -1.093
+            ],
+            "max": [
+              1.089,
+              1.8,
+              1.118
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "totals": {
+    "runtimeBytes": 1743612,
+    "ktx2Bytes": 0,
+    "transcoderBytes": 0,
+    "initialFallbackBytes": 208772,
+    "initialKtx2Bytes": 0,
+    "libraryBytes": 1743612,
+    "files": 18
+  }
+}

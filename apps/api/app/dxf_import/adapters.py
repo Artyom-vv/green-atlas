@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from io import StringIO
 from math import atan, atan2, cos, isfinite, pi, sin
-from numbers import Real
+from pathlib import Path
 from typing import Any, Callable
 from uuid import NAMESPACE_URL, uuid5
 
@@ -11,21 +11,52 @@ import ezdxf
 from ezdxf.document import Drawing
 from ezdxf.lldxf.tagger import binary_tags_loader
 from ezdxf.math import OCS, Vec3
-from ezdxf.path import from_hatch, make_path
+from ezdxf.path import make_path
 from shapely import STRtree
-from shapely.geometry import LineString as ShapelyLineString, Polygon as ShapelyPolygon
+from shapely.errors import GEOSException
+from shapely.geometry import LineString as ShapelyLineString
+from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import shape as shapely_shape
+from shapely.ops import polygonize, unary_union
 
-from app.contracts import CoordinateReference, DxfImportResult, GeometrySnapshot, Layer, LayerKind
+from app.dxf_import.acis_lookup import indexed_acis_lookup
+from app.dxf_import.axis_provenance import straight_axis_provenance
+from app.dxf_import.block_capacity import inspect_block_expansion
+from app.dxf_import.block_diagnostics import BlockGeometryFailure, record_failure, source_handle
+from app.dxf_import.capacity import SourceGeometryCapacity
+from app.dxf_import.component_provenance import component_definition_provenance
+from app.dxf_import.contracts import DxfImportResult
 from app.dxf_import.encoding import decode_text_dxf
+from app.dxf_import.layer_contracts import (
+    BoundaryCandidate,
+    BoundaryCandidateStatus,
+    Layer,
+    LayerKind,
+    LayerSuggestionConfidence,
+)
+from app.dxf_import.layer_suggestions import (
+    assess_layer_suggestion,
+    is_boundary_candidate_name,
+    suggest_layer_kind,
+)
+from app.dxf_import.mleader_compat import prepare_multileader_transforms
+from app.dxf_import.polygons import hatch_geometry, mpolygon_geometry
+from app.dxf_import.preview_marker import read_preview_marker
+from app.dxf_import.styles import SourceStyleResolver
 from app.dxf_import.units import DXF_UNIT_FACTORS
-
+from app.geometry.contracts import (
+    CoordinateReference,
+    DxfVerticalPrimitive,
+    GeometrySnapshot,
+)
+from app.geometry.geojson_size import coordinate_count as _geometry_coordinate_count
 
 SUPPORTED_TYPES = {
-    "LINE", "LWPOLYLINE", "POLYLINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "HATCH",
-    "3DFACE", "SOLID", "TRACE", "POINT", "TEXT", "MTEXT", "INSERT", "DIMENSION", "WIPEOUT",
+    "LINE", "LWPOLYLINE", "POLYLINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "HATCH", "MPOLYGON",
+    "3DFACE", "SOLID", "TRACE", "POINT", "TEXT", "MTEXT", "ATTDEF", "INSERT", "DIMENSION", "WIPEOUT",
     # These entities are common in survey/CAD exports. They are rendered as
     # native geometry where possible and never participate in planting rules.
-    "LEADER", "MLEADER", "MLINE", "HELIX", "MESH", "RAY", "XLINE", "IMAGE",
+    "LEADER", "MLEADER", "MULTILEADER", "MLINE", "HELIX", "MESH", "RAY", "XLINE", "IMAGE",
     "PDFUNDERLAY", "PDFREFERENCE", "DWFUNDERLAY", "DGNUNDERLAY",
     "ACAD_PROXY_ENTITY",
 }
@@ -40,21 +71,13 @@ MAX_NESTED_BLOCK_DEPTH = 16
 # calculation: it could make occupied ground look available.  Keep the source
 # intact, represent the array as context, and explicitly block calculation.
 MAX_EXPANDED_MINSERT_INSTANCES = 20_000
-# The map client keeps at most this many source features in its working cache.
-# Matching that bound prevents one dense DXF from becoming a much larger
-# server-side GeoJSON snapshot. The untouched DXF blob remains available.
-MAX_NORMALIZED_DXF_FEATURES = 25_000
-# A single survey polyline or hatch can have far more vertices than a useful
-# interactive map can render. Both caps are on the derived GeoJSON only; the
-# original drawing is never modified or discarded.
-MAX_NORMALIZED_COORDINATES_PER_FEATURE = 20_000
-MAX_NORMALIZED_COORDINATES = 250_000
+InsertComponents = list[list[tuple[dict[str, Any], Any, str]]]
 
 # These entities describe drafting or display context, not a finite physical
 # obstacle. They stay visible on the map, but must never acquire a planting
 # constraint even if their source layer is mapped manually to a physical kind.
 CONTEXT_ONLY_ENTITY_TYPES = {
-    "TEXT", "MTEXT", "DIMENSION", "LEADER", "MLEADER", "MLINE", "HELIX",
+    "TEXT", "MTEXT", "ATTDEF", "DIMENSION", "LEADER", "MLEADER", "MULTILEADER", "MLINE", "HELIX",
     "MESH", "RAY", "XLINE", "WIPEOUT", "IMAGE", "PDFUNDERLAY",
     "PDFREFERENCE", "DWFUNDERLAY", "DGNUNDERLAY", "ACAD_PROXY_ENTITY",
 }
@@ -124,69 +147,200 @@ def _insert_instance_count(entity: Any) -> int:
         return 1
 
 
-def _estimated_insert_component_count(entity: Any, depth: int = 0, ancestry: frozenset[str] = frozenset()) -> int:
-    """Estimate visible block components without expanding a virtual tree.
-
-    ``virtual_entities`` deliberately renders only the first member of a
-    nested MINSERT. Before calling it, inspect the raw block graph and count
-    all visible leaves. The same budget protects a normal INSERT which wraps a
-    large nested array, or a recursive/corrupt block graph that otherwise
-    cannot be safely interpreted as complete geometry.
-    """
-    if depth >= MAX_NESTED_BLOCK_DEPTH:
-        return MAX_EXPANDED_MINSERT_INSTANCES + 1
-    instances = _insert_instance_count(entity)
-    if instances > MAX_EXPANDED_MINSERT_INSTANCES:
-        return instances
-    try:
-        block_name = str(entity.dxf.name)
-        if not block_name or block_name in ancestry:
-            return MAX_EXPANDED_MINSERT_INSTANCES + 1
-        components = list(entity.block())
-    except Exception:
-        return MAX_EXPANDED_MINSERT_INSTANCES + 1
-    total = 0
-    next_ancestry = ancestry | {block_name}
-    for component in components:
-        nested_count = (
-            _estimated_insert_component_count(component, depth + 1, next_ancestry)
-            if component.dxftype() == "INSERT"
-            else 1
-        )
-        total += instances * nested_count
-        if total > MAX_EXPANDED_MINSERT_INSTANCES:
-            return MAX_EXPANDED_MINSERT_INSTANCES + 1
-    return total
-
-
 def _read_document(content: bytes | bytearray) -> Any:
     """Read ASCII and binary DXF uploads without writing them to disk."""
     if content.startswith(b"AutoCAD Binary DXF"):
         return Drawing.load(binary_tags_loader(content))
-    return ezdxf.read(StringIO(decode_text_dxf(content)))
-
-
-def _kind_for_layer(name: str) -> LayerKind:
-    value = name.lower().replace("ё", "е")
-    if any(word in value for word in ("site", "border", "boundary", "parcel", "границ", "участ")):
-        return LayerKind.SITE_BORDER
-    if any(word in value for word in ("build", "house", "structure", "здан", "сооруж")):
-        return LayerKind.BUILDING
-    if any(word in value for word in ("road", "street", "drive", "path", "trail", "foot", "walk", "alley", "lane", "sidewalk", "дорог", "проезд", "троп", "дорожк", "аллея")):
-        return LayerKind.ROAD
-    if any(word in value for word in ("hydro", "river", "lake", "pond", "stream", "waterbody", "водоем", "пруд", "река", "ручей")):
-        return LayerKind.WATER
-    if any(word in value for word in ("restricted", "obstacle", "technical_area", "equipment", "hardscape", "техзон", "технич", "препятств", "оборудован")):
-        return LayerKind.RESTRICTED
-    if any(word in value for word in ("util", "water", "heat", "gas", "sewer", "cable", "вод", "тепл", "газ", "канал", "кабел", "сет")):
-        return LayerKind.UTILITY
-    if any(word in value for word in ("green", "tree", "shrub", "exist", "park", "lawn", "flower", "landscape", "озелен", "дерев", "куст", "газон", "парк", "цветник")):
-        return LayerKind.EXISTING_GREEN
-    return LayerKind.IGNORE
+    # Match file-based DXF loading: ezdxf expects universal newlines, while
+    # StringIO's default preserves CR characters in Windows/CAD text uploads.
+    return ezdxf.read(StringIO(decode_text_dxf(content), newline=None))
 
 
 def _point(value: Any, factor: float) -> list[float]:
     return [round(float(value[0]) * factor, 6), round(float(value[1]) * factor, 6)]
+
+
+def _point3(value: Any, factor: float) -> list[float]:
+    """Convert a DXF WCS coordinate to metres without flattening Z."""
+    point = Vec3(value)
+    return [
+        round(float(point.x) * factor, 6),
+        round(float(point.y) * factor, 6),
+        round(float(point.z) * factor, 6),
+    ]
+
+
+def _terrain_document_evidence(document: Any) -> dict[str, Any] | None:
+    """Read the explicit terrain declaration written by our fixture pipeline.
+
+    A layer name alone is not evidence: CAD authors routinely reuse names.
+    Requiring the complete document declaration prevents an unrelated DXF
+    from silently upgrading arbitrary faces to confirmed terrain.
+    """
+    custom = document.header.custom_vars
+    values = {
+        "layer": custom.get("GREEN_ATLAS_TERRAIN_LAYER"),
+        "dataset": custom.get("GREEN_ATLAS_TERRAIN_DATASET"),
+        "url": custom.get("GREEN_ATLAS_TERRAIN_SOURCE_URL"),
+        "attribution": custom.get("GREEN_ATLAS_TERRAIN_ATTRIBUTION"),
+        "confidence": custom.get("GREEN_ATLAS_TERRAIN_CONFIDENCE"),
+        "datum": custom.get("GREEN_ATLAS_VERTICAL_DATUM"),
+        "datum_offset": custom.get("GREEN_ATLAS_VERTICAL_DATUM_OFFSET_M_ASL"),
+    }
+    if not all(values[key] for key in ("layer", "dataset", "url", "attribution", "confidence", "datum", "datum_offset")):
+        return None
+    if values["confidence"] not in {"surveyed", "estimated"}:
+        return None
+    try:
+        offset = float(values["datum_offset"])
+    except (TypeError, ValueError):
+        return None
+    if not isfinite(offset):
+        return None
+    return {**values, "datum_offset": offset}
+
+
+def _vertical_primitive(
+    entity: Any,
+    factor: float,
+    source_units: str,
+    primitive_id: str,
+    terrain_evidence: dict[str, Any] | None = None,
+) -> DxfVerticalPrimitive | None:
+    """Extract explicit WCS XYZ evidence independently of the 2D projection.
+
+    This is intentionally structural, not semantic: a MESH or 3DFACE is a
+    proven CAD surface, but it is *not* terrain until a user/source mapping
+    says so. Consequently every imported primitive starts as ``unmapped``.
+    """
+    entity_type = entity.dxftype()
+    vertices: list[list[float]] = []
+    faces: list[list[int]] = []
+    primitive_type = "polyline"
+    evidence = "explicit_xyz"
+    try:
+        if entity_type == "3DFACE":
+            for name in ("vtx0", "vtx1", "vtx2", "vtx3"):
+                value = entity.dxf.get(name)
+                if value is not None:
+                    point = _point3(value, factor)
+                    if not vertices or point != vertices[-1]:
+                        vertices.append(point)
+            if len(vertices) < 3:
+                return None
+            faces = [list(range(len(vertices)))]
+            primitive_type = "surface_mesh"
+        elif entity_type == "MESH":
+            data = entity.get_data()
+            vertices = [_point3(point, factor) for point in data.vertices]
+            faces = [
+                [int(index) for index in face if 0 <= int(index) < len(vertices)]
+                for face in data.faces
+            ]
+            faces = [face for face in faces if len(face) >= 3]
+            primitive_type = "surface_mesh"
+        elif entity_type == "POLYLINE" and entity.is_poly_face_mesh:
+            vertex_index: dict[int, int] = {}
+            for vertex in entity.vertices:
+                if int(vertex.dxf.get("flags", 0) or 0) == 128:
+                    continue
+                vertex_index[id(vertex)] = len(vertices)
+                vertices.append(_point3(vertex.dxf.location, factor))
+            for face in entity.faces():
+                indices = [vertex_index[id(vertex)] for vertex in face if id(vertex) in vertex_index]
+                if len(indices) >= 3:
+                    faces.append(indices)
+            primitive_type = "surface_mesh"
+        elif entity_type == "POLYLINE" and entity.is_polygon_mesh:
+            m_count, n_count = int(entity.dxf.m_count), int(entity.dxf.n_count)
+            for m_index in range(m_count):
+                for n_index in range(n_count):
+                    vertices.append(_point3(entity.get_mesh_vertex((m_index, n_index)).dxf.location, factor))
+            m_range = range(m_count if entity.is_m_closed else max(0, m_count - 1))
+            n_range = range(n_count if entity.is_n_closed else max(0, n_count - 1))
+            for m_index in m_range:
+                for n_index in n_range:
+                    faces.append([
+                        m_index * n_count + n_index,
+                        ((m_index + 1) % m_count) * n_count + n_index,
+                        ((m_index + 1) % m_count) * n_count + ((n_index + 1) % n_count),
+                        m_index * n_count + ((n_index + 1) % n_count),
+                    ])
+            primitive_type = "surface_mesh"
+        elif entity_type == "POLYLINE" and entity.is_3d_polyline:
+            vertices = [_point3(vertex.dxf.location, factor) for vertex in entity.vertices]
+            if entity.is_closed and vertices and vertices[-1] != vertices[0]:
+                vertices.append(vertices[0])
+        elif entity_type == "LINE":
+            vertices = [_point3(entity.dxf.start, factor), _point3(entity.dxf.end, factor)]
+        elif entity_type == "POINT":
+            vertices = [_point3(entity.dxf.location, factor)]
+            primitive_type = "point"
+        else:
+            # Planar entities can still carry an explicit elevation and/or a
+            # thickness along their OCS normal. Preserve that evidence using
+            # their already-normalised WCS anchor; the 2D geometry remains the
+            # authoritative footprint.
+            vertical = _source_vertical_properties(entity, factor)
+            if "source_base_elevation_m" not in vertical and "source_extrusion_height_m" not in vertical:
+                return None
+            anchor = None
+            for attribute in ("insert", "center", "start"):
+                if entity.dxf.hasattr(attribute):
+                    anchor = entity.dxf.get(attribute)
+                    break
+            if anchor is None and entity_type == "LWPOLYLINE":
+                first = next(iter(entity.get_points("xy")), None)
+                if first is not None:
+                    elevation = float(entity.dxf.get("elevation", 0) or 0)
+                    anchor = entity.ocs().to_wcs(Vec3(first[0], first[1], elevation))
+            if anchor is None:
+                return None
+            vertices = [_point3(anchor, factor)]
+            primitive_type = "point"
+            evidence = "explicit_extrusion" if "source_extrusion_height_m" in vertical else "explicit_elevation"
+        if not vertices or any(not all(isfinite(value) for value in point) for point in vertices):
+            return None
+        extrusion_vector_m = None
+        vertical = _source_vertical_properties(entity, factor)
+        if height := vertical.get("source_extrusion_height_m"):
+            normal = Vec3(entity.dxf.get("extrusion", (0, 0, 1))).normalize()
+            signed_height = float(entity.dxf.get("thickness", height)) * factor
+            extrusion_vector_m = [
+                round(float(normal.x) * signed_height, 6),
+                round(float(normal.y) * signed_height, 6),
+                round(float(normal.z) * signed_height, 6),
+            ]
+            evidence = "explicit_extrusion"
+        source_layer = str(entity.dxf.layer)
+        is_declared_terrain = bool(
+            terrain_evidence
+            and source_layer == terrain_evidence["layer"]
+            and primitive_type == "surface_mesh"
+        )
+        return DxfVerticalPrimitive(
+            primitive_id=primitive_id,
+            primitive_type=primitive_type,
+            vertices_m=vertices,
+            faces=faces,
+            source_layer=source_layer,
+            source_entity_type=entity_type,
+            source_handle=str(entity.dxf.get("handle", "")) or None,
+            source_file_units=source_units,
+            unit_scale_to_m=factor,
+            vertical_evidence=evidence,
+            extrusion_vector_m=extrusion_vector_m,
+            terrain_mapping_status="confirmed" if is_declared_terrain else "unmapped",
+            terrain_mapping_basis="dxf_document_metadata" if is_declared_terrain else None,
+            terrain_confidence=str(terrain_evidence["confidence"]) if is_declared_terrain else None,
+            source_dataset=str(terrain_evidence["dataset"]) if is_declared_terrain else None,
+            source_url=str(terrain_evidence["url"]) if is_declared_terrain else None,
+            source_attribution=str(terrain_evidence["attribution"]) if is_declared_terrain else None,
+            vertical_datum=str(terrain_evidence["datum"]) if is_declared_terrain else None,
+            vertical_datum_offset_m=float(terrain_evidence["datum_offset"]) if is_declared_terrain else None,
+        )
+    except Exception:
+        return None
 
 
 def _ocs_point(entity: Any, value: Any, factor: float) -> list[float]:
@@ -202,6 +356,75 @@ def _ocs_point(entity: Any, value: Any, factor: float) -> list[float]:
         return _point(entity.ocs().to_wcs(value), factor)
     except Exception:
         return _point(value, factor)
+
+
+_HEIGHT_ATTRIBUTE_TAGS = {"BUILDING_HEIGHT_M", "HEIGHT_M", "ВЫСОТА_М"}
+
+
+def _source_vertical_properties(
+    entity: Any,
+    factor: float,
+    attributes: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Preserve explicit DXF vertical evidence without deriving a volume.
+
+    A layer name, colour or 2D footprint does not prove a building height.
+    ``thickness`` does, but only when its extrusion is vertical.  A block
+    attribute is accepted only when its tag explicitly declares metres.  The
+    scene API can therefore extrude confirmed objects while leaving every
+    other footprint flat.
+    """
+
+    result: dict[str, Any] = {}
+    try:
+        if entity.dxf.hasattr("thickness"):
+            thickness = float(entity.dxf.thickness)
+            extrusion = Vec3(entity.dxf.get("extrusion", (0, 0, 1)))
+            if (
+                isfinite(thickness)
+                and abs(thickness) > 1e-9
+                and abs(float(extrusion.x)) <= 1e-9
+                and abs(float(extrusion.y)) <= 1e-9
+                and abs(abs(float(extrusion.z)) - 1.0) <= 1e-9
+            ):
+                result["source_extrusion_height_m"] = round(abs(thickness) * factor, 6)
+    except Exception:
+        pass
+
+    try:
+        elevation: Any | None = None
+        entity_type = entity.dxftype()
+        if entity_type in {"LWPOLYLINE", "HATCH", "MPOLYGON"} and entity.dxf.hasattr("elevation"):
+            elevation = entity.dxf.elevation
+        elif entity_type == "POLYLINE" and entity.dxf.hasattr("elevation"):
+            elevation = entity.dxf.elevation
+        elif entity_type in {"CIRCLE", "ARC"} and entity.dxf.hasattr("center"):
+            elevation = entity.dxf.center
+        elif entity_type in {"INSERT", "POINT", "TEXT", "MTEXT"} and entity.dxf.hasattr("insert"):
+            elevation = entity.dxf.insert
+        if elevation is not None:
+            if isinstance(elevation, (tuple, list, Vec3)):
+                value = float(elevation[2])
+            else:
+                value = float(elevation)
+            if isfinite(value):
+                result["source_base_elevation_m"] = round(value * factor, 6)
+    except Exception:
+        pass
+
+    for raw_tag, raw_value in (attributes or {}).items():
+        tag = str(raw_tag).strip().upper().replace(" ", "_")
+        if tag not in _HEIGHT_ATTRIBUTE_TAGS:
+            continue
+        try:
+            height = float(str(raw_value).strip().replace(",", "."))
+        except ValueError:
+            continue
+        if isfinite(height) and height > 0:
+            result["source_attribute_height_m"] = round(height, 6)
+            result["source_attribute_height_tag"] = str(raw_tag)
+            break
+    return result
 
 
 def _flatten_bulged_points(
@@ -325,6 +548,120 @@ def _wide_polyline_geometry(coordinates: list[list[float]], width_m: float) -> d
     }
 
 
+def _polyline_center_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
+    """Preserve the authored path independently from a displayed line width.
+
+    A closed, wide polyline used as a project boundary is visually a narrow
+    stroke, but its centre path is the actual enclosing ring. The map keeps
+    the stroke footprint; calculation may use this separately audited path
+    when the operator maps the layer as ``site_border``.
+    """
+    try:
+        if entity.dxftype() == "LWPOLYLINE":
+            coordinates = _lwpolyline_points(entity, factor)
+            closed = entity.closed
+        elif entity.dxftype() == "POLYLINE" and entity.is_2d_polyline:
+            coordinates = _polyline_points(entity, factor)
+            closed = entity.is_closed
+        else:
+            return None
+    except Exception:
+        return None
+    if len(coordinates) < 2:
+        return None
+    if closed and len(coordinates) >= 3:
+        if coordinates[-1] != coordinates[0]:
+            coordinates.append(coordinates[0])
+        return {"type": "Polygon", "coordinates": [coordinates]}
+    return {"type": "LineString", "coordinates": coordinates}
+
+
+def _polygon_parts(geometry: Any) -> list[Any]:
+    if geometry.is_empty:
+        return []
+    if geometry.geom_type == "Polygon":
+        return [geometry]
+    if geometry.geom_type in {"MultiPolygon", "GeometryCollection"}:
+        return [part for item in geometry.geoms for part in _polygon_parts(item)]
+    return []
+
+
+def _boundary_candidate(features: list[dict[str, Any]]) -> BoundaryCandidate:
+    polygons: list[Any] = []
+    lines: list[Any] = []
+    used_center_geometry = False
+    for feature in features:
+        properties = feature.get("properties", {})
+        source_geometry = properties.get("source_polyline_center_geometry")
+        if isinstance(source_geometry, dict):
+            used_center_geometry = True
+        else:
+            source_geometry = feature.get("geometry")
+        try:
+            geometry = shapely_shape(source_geometry)
+        except (KeyError, TypeError, ValueError):
+            return BoundaryCandidate(
+                status=BoundaryCandidateStatus.INVALID,
+                basis="source_geometry",
+                issue="Контур слоя не читается как плоская геометрия",
+            )
+        if geometry.is_empty or not geometry.is_valid:
+            return BoundaryCandidate(
+                status=BoundaryCandidateStatus.INVALID,
+                basis="authored_centerline" if used_center_geometry else "source_geometry",
+                issue="Контур слоя пуст или самопересекается",
+            )
+        polygons.extend(_polygon_parts(geometry))
+        if geometry.geom_type in {"LineString", "MultiLineString"}:
+            lines.append(geometry)
+
+    basis = "authored_centerline" if used_center_geometry else "source_surface"
+    surfaces = polygons
+    if not surfaces and lines:
+        surfaces = list(polygonize(lines))
+        basis = "polygonized_linework"
+    if not surfaces:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.UNAVAILABLE,
+            basis=basis,
+            issue="Слой не образует замкнутую поверхность",
+        )
+    try:
+        surface = unary_union(surfaces)
+    except GEOSException:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.INVALID,
+            basis=basis,
+            issue="Контуры слоя конфликтуют при объединении",
+        )
+    if surface.is_empty or not surface.is_valid:
+        return BoundaryCandidate(
+            status=BoundaryCandidateStatus.INVALID,
+            basis=basis,
+            issue="Объединённая поверхность слоя некорректна",
+        )
+    inset = surface.buffer(-1.5)
+    area = float(surface.area)
+    inset_area = float(inset.area)
+    status = (
+        BoundaryCandidateStatus.USABLE
+        if inset_area >= 24.0
+        else BoundaryCandidateStatus.THIN
+    )
+    return BoundaryCandidate(
+        status=status,
+        basis=basis,
+        area_m2=round(area, 3),
+        inset_1_5m_area_m2=round(inset_area, 3),
+        component_count=len(_polygon_parts(surface)),
+        issue=(
+            None
+            if status == BoundaryCandidateStatus.USABLE
+            else "После внутреннего отступа 1,5 м не остаётся рабочей площади"
+        ),
+    )
+
+
 def _underlay_clip_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
     """Show only a trustworthy, inside clipping frame of an external underlay.
 
@@ -429,39 +766,11 @@ def _hatch_polygon_geometry(loops: list[list[list[float]]]) -> dict[str, Any] | 
     return {"type": "MultiPolygon", "coordinates": polygons}
 
 
-def _hex_color(rgb: Any) -> str:
-    values = tuple(int(value) for value in rgb)
-    return f"#{values[0]:02X}{values[1]:02X}{values[2]:02X}"
-
-
-def _resolved_style(document: Any, entity: Any, layer_name: str, fallback: str) -> dict[str, Any]:
-    layer = document.layers.get(layer_name)
-    entity_rgb = getattr(entity, "rgb", None)
-    if entity_rgb is not None:
-        color = _hex_color(entity_rgb)
-    else:
-        aci = int(entity.dxf.get("color", 256) or 256)
-        if aci in {0, 256}:
-            layer_rgb = getattr(layer, "rgb", None)
-            if layer_rgb is not None:
-                color = _hex_color(layer_rgb)
-            else:
-                layer_aci = abs(int(layer.dxf.get("color", 7) or 7))
-                color = _hex_color(ezdxf.colors.aci2rgb(layer_aci)) if 1 <= layer_aci <= 255 else fallback
-        else:
-            color = _hex_color(ezdxf.colors.aci2rgb(abs(aci))) if 1 <= abs(aci) <= 255 else fallback
-    if color.upper() in {"#FFFFFF", "#000000"}:
-        color = fallback
-    linetype = str(entity.dxf.get("linetype", "BYLAYER") or "BYLAYER")
-    if linetype.upper() in {"BYLAYER", "BYBLOCK"}:
-        linetype = str(layer.dxf.get("linetype", "CONTINUOUS") or "CONTINUOUS")
-    lineweight = int(entity.dxf.get("lineweight", -1) or -1)
-    if lineweight < 0:
-        lineweight = int(layer.dxf.get("lineweight", -1) or -1)
-    return {"source_color": color, "source_linetype": linetype, "source_lineweight_mm": round(lineweight / 100, 2) if lineweight >= 0 else None}
-
-
-def _flatten_insert_components(reference: Any, factor: float, inherited_layer: str, depth: int = 0) -> list[tuple[dict[str, Any], Any, str]]:
+def _flatten_insert_components(
+    reference: Any, factor: float, inherited_layer: str, depth: int = 0,
+    failures: list[BlockGeometryFailure] | None = None,
+    insert_path: tuple[str, ...] = (),
+) -> list[tuple[dict[str, Any], Any, str]]:
     """Flatten a virtual block tree while preserving each explicit layer.
 
     ``Insert.virtual_entities()`` correctly applies nested transformations,
@@ -471,24 +780,34 @@ def _flatten_insert_components(reference: Any, factor: float, inherited_layer: s
     and setbacks retain their original semantics.
     """
     if depth >= MAX_NESTED_BLOCK_DEPTH:
+        record_failure(failures, reference, inherited_layer, insert_path, "Достигнута граница вложенности блоков")
         return []
     components: list[tuple[dict[str, Any], Any, str]] = []
     try:
         count = _insert_instance_count(reference)
         if count > MAX_EXPANDED_MINSERT_INSTANCES:
+            record_failure(failures, reference, inherited_layer, insert_path, "Превышен предел экземпляров массива")
             return []
         references = reference.multi_insert() if count > 1 else [reference]
-        for instance in references:
-            for virtual in instance.virtual_entities():
+        for instance_index, instance in enumerate(references, start=1):
+            path = (*insert_path, f"{source_handle(reference)}[{instance_index}]")
+
+            def skipped(virtual: Any, reason: str) -> None:
+                record_failure(failures, virtual, inherited_layer, path, reason)
+
+            for virtual in instance.virtual_entities(skipped_entity_callback=skipped):
                 declared_layer = str(virtual.dxf.get("layer", "0") or "0")
                 effective_layer = inherited_layer if declared_layer == "0" else declared_layer
                 if virtual.dxftype() == "INSERT":
-                    components.extend(_flatten_insert_components(virtual, factor, effective_layer, depth + 1))
+                    components.extend(_flatten_insert_components(virtual, factor, effective_layer, depth + 1, failures, path))
                     continue
                 geometry = _entity_geometry(virtual, factor)
                 if geometry is not None:
                     components.append((geometry, virtual, effective_layer))
-    except Exception:
+                elif virtual.dxftype() in SUPPORTED_TYPES and virtual.dxftype() not in CONTEXT_ONLY_ENTITY_TYPES:
+                    record_failure(failures, virtual, inherited_layer, path, "Не удалось получить полный плоский контур")
+    except Exception as error:
+        record_failure(failures, reference, inherited_layer, insert_path, f"Ошибка раскрытия блока: {error}")
         return []
     return components
 
@@ -522,7 +841,7 @@ def _block_definition_components(reference: Any, inherited_layer: str, depth: in
     return components
 
 
-def _insert_instance_components(entity: Any, factor: float) -> list[list[tuple[dict[str, Any], Any, str]]]:
+def _insert_instance_components(entity: Any, factor: float, failures: list[BlockGeometryFailure] | None = None) -> list[list[tuple[dict[str, Any], Any, str]]]:
     """Flatten an INSERT into its instance components and effective layers.
 
     Layer ``0`` follows the layer of the parent INSERT in DXF. A non-zero
@@ -535,14 +854,20 @@ def _insert_instance_components(entity: Any, factor: float) -> list[list[tuple[d
         instance_count = _insert_instance_count(entity)
         references = entity.multi_insert() if instance_count > 1 else [entity]
         instances: list[list[tuple[dict[str, Any], Any, str]]] = []
-        for reference in references:
-            instances.append(_flatten_insert_components(reference, factor, parent_layer))
+        for instance_index, reference in enumerate(references, start=1):
+            path = (f"{source_handle(entity)}[{instance_index}]",) if instance_count > 1 else ()
+            instances.append(_flatten_insert_components(reference, factor, parent_layer, 0, failures, path))
         return instances
-    except Exception:
+    except Exception as error:
+        record_failure(failures, entity, parent_layer, (source_handle(entity),), f"Ошибка раскрытия массива: {error}")
         return []
 
 
-def _insert_instance_geometries(entity: Any, factor: float) -> list[dict[str, Any]]:
+def _insert_instance_geometries(
+    entity: Any,
+    factor: float,
+    components_by_instance: InsertComponents | None = None,
+) -> list[dict[str, Any]]:
     """Return one normalized geometry per visible INSERT/MINSERT instance.
 
     MINSERT is stored as a single DXF entity, but each grid position matters
@@ -553,7 +878,9 @@ def _insert_instance_geometries(entity: Any, factor: float) -> list[dict[str, An
     try:
         instances: list[dict[str, Any]] = []
         references = list(entity.multi_insert()) if _insert_instance_count(entity) > 1 else [entity]
-        for reference, components in zip(references, _insert_instance_components(entity, factor), strict=False):
+        if components_by_instance is None:
+            components_by_instance = _insert_instance_components(entity, factor)
+        for reference, components in zip(references, components_by_instance, strict=False):
             geometries = [geometry for geometry, _virtual, _layer in components]
             if geometries:
                 instances.append({"type": "GeometryCollection", "geometries": geometries})
@@ -586,7 +913,7 @@ def _entity_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
         except Exception:
             return None
         return {"type": "GeometryCollection", "geometries": geometries} if geometries else None
-    if entity_type in {"DIMENSION", "LEADER", "MLEADER", "MLINE"}:
+    if entity_type in {"DIMENSION", "LEADER", "MLEADER", "MULTILEADER", "MLINE"}:
         # ezdxf exposes the rendered dimension as virtual LINE/ARC/TEXT/INSERT
         # entities (and MLINE/leader strokes) as virtual entities. Keeping that collection preserves the drafting context
         # without turning annotation geometry into a planting constraint.
@@ -728,30 +1055,10 @@ def _entity_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
             points[-1] = points[0]
             return {"type": "Polygon", "coordinates": [points]}
         return {"type": "LineString", "coordinates": points} if len(points) >= 2 else None
+    if entity_type == "MPOLYGON":
+        return mpolygon_geometry(entity, factor, _hatch_polygon_geometry)
     if entity_type == "HATCH":
-        # Boundary paths can be polylines, arcs, ellipses or splines. Flatten
-        # each one independently: merging them first loses the distinction
-        # between disconnected islands and holes.
-        loops: list[list[list[float]]] = []
-        try:
-            for boundary_path in from_hatch(entity):
-                loop = [_point(point, factor) for point in boundary_path.flattening(0.1, segments=16)]
-                if len(loop) < 3:
-                    continue
-                if loop[-1] != loop[0]:
-                    loop.append(loop[0])
-                loops.append(loop)
-        except Exception:
-            loops = []
-        polygon_geometry = _hatch_polygon_geometry(loops)
-        if polygon_geometry is not None:
-            return polygon_geometry
-        try:
-            hatch_path = make_path(entity)
-            points = [_point(point, factor) for point in hatch_path.flattening(0.1, segments=16)]
-        except Exception:
-            return None
-        return {"type": "LineString", "coordinates": points} if len(points) >= 2 else None
+        return hatch_geometry(entity, factor, _hatch_polygon_geometry)
     if entity_type in {"3DFACE", "SOLID", "TRACE"}:
         # SOLID and TRACE use the DXF storage order 0, 1, 2, 3, where 2 and
         # 3 are opposite corners rather than the next perimeter vertex. A
@@ -816,7 +1123,7 @@ def _entity_geometry(entity: Any, factor: float) -> dict[str, Any] | None:
             # expands MINSERT into separate top-level features below.
             return geometries[0]
         return {"type": "Point", "coordinates": _point(entity.dxf.insert, factor)}
-    if entity_type == "TEXT":
+    if entity_type in {"TEXT", "ATTDEF"}:
         # TEXT keeps its insertion point in OCS (unlike MTEXT, whose layout
         # point is already exposed by ezdxf in world coordinates).
         return {"type": "Point", "coordinates": _ocs_point(entity, entity.dxf.insert, factor)}
@@ -880,23 +1187,6 @@ def _has_only_finite_coordinates(geometry: dict[str, Any]) -> bool:
     return walk(geometry)
 
 
-def _geometry_coordinate_count(geometry: dict[str, Any]) -> int:
-    """Count GeoJSON positions without allocating a flattened coordinate list."""
-    def count(value: Any) -> int:
-        if isinstance(value, (list, tuple)):
-            if len(value) >= 2 and isinstance(value[0], Real) and isinstance(value[1], Real):
-                return 1
-            return sum(count(item) for item in value)
-        if isinstance(value, dict):
-            if "coordinates" in value:
-                return count(value["coordinates"])
-            if "geometries" in value:
-                return sum(count(item) for item in value["geometries"])
-        return 0
-
-    return count(geometry)
-
-
 def _has_polygon(geometry: dict[str, Any]) -> bool:
     geometry_type = geometry.get("type")
     if geometry_type in {"Polygon", "MultiPolygon"}:
@@ -908,29 +1198,89 @@ def _has_polygon(geometry: dict[str, Any]) -> bool:
 
 def _coordinate_reference(document: Any) -> CoordinateReference:
     geodata = document.modelspace().get_geodata()
-    if geodata is None:
+    if geodata is not None:
+        try:
+            epsg, xy_ordering = geodata.get_crs()
+            return CoordinateReference(
+                status="declared",
+                crs_id=f"EPSG:{epsg}",
+                name=f"Система координат EPSG:{epsg}",
+                source="dxf_geodata",
+                axis_order="xy" if xy_ordering else "yx",
+                evidence="Идентификатор прочитан из DXF GEODATA; требуется сверка с контрольной точкой городской основы.",
+            )
+        except Exception:
+            definition_present = bool(str(getattr(geodata, "coordinate_system_definition", "")).strip())
+            return CoordinateReference(
+                status="local",
+                source="dxf_geodata",
+                evidence="В DXF есть GEODATA, но CRS не распознан по EPSG." if definition_present else "В DXF есть локальная привязка без машиночитаемого определения CRS.",
+            )
+
+    # Green Atlas fixtures use a documented local tangent approximation, not
+    # a projected CRS. Accept it only as an atomic declaration: exposing a
+    # half-parsed origin would make downstream enrichment appear more certain
+    # than the source permits.
+    custom = document.header.custom_vars
+    values = {
+        "source": custom.get("GREEN_ATLAS_HORIZONTAL_SOURCE"),
+        "origin": custom.get("GREEN_ATLAS_ORIGIN_WGS84"),
+        "projection": custom.get("GREEN_ATLAS_LOCAL_PROJECTION"),
+        "earth_radius": custom.get("GREEN_ATLAS_EARTH_RADIUS_M"),
+    }
+    if not any(values.values()):
         return CoordinateReference()
+    if not all(values.values()):
+        return CoordinateReference(evidence="Локальная WGS84-привязка DXF неполна и не используется.")
     try:
-        epsg, xy_ordering = geodata.get_crs()
-        return CoordinateReference(
-            status="declared",
-            crs_id=f"EPSG:{epsg}",
-            name=f"Система координат EPSG:{epsg}",
-            source="dxf_geodata",
-            axis_order="xy" if xy_ordering else "yx",
-            evidence="Идентификатор прочитан из DXF GEODATA; требуется сверка с контрольной точкой городской основы.",
-        )
-    except Exception:
-        definition_present = bool(str(getattr(geodata, "coordinate_system_definition", "")).strip())
-        return CoordinateReference(
-            status="local",
-            source="dxf_geodata",
-            evidence="В DXF есть GEODATA, но CRS не распознан по EPSG." if definition_present else "В DXF есть локальная привязка без машиночитаемого определения CRS.",
-        )
+        origin_parts = [float(part.strip()) for part in str(values["origin"]).split(",")]
+        earth_radius = float(values["earth_radius"])
+    except (TypeError, ValueError):
+        return CoordinateReference(evidence="Локальная WGS84-привязка DXF повреждена и не используется.")
+    if (
+        len(origin_parts) != 2
+        or not all(isfinite(value) for value in origin_parts)
+        or not -90 <= origin_parts[0] <= 90
+        or not -180 <= origin_parts[1] <= 180
+        or str(values["projection"]) != "local_equirectangular_wgs84"
+        or not isfinite(earth_radius)
+        or not 6_000_000 <= earth_radius <= 7_000_000
+    ):
+        return CoordinateReference(evidence="Локальная WGS84-привязка DXF повреждена и не используется.")
+    return CoordinateReference(
+        status="declared",
+        name="Локальная эквиректангулярная аппроксимация WGS84",
+        source="dxf_custom_georeference",
+        axis_order="xy",
+        origin_wgs84=origin_parts,
+        local_projection="local_equirectangular_wgs84",
+        earth_radius_m=earth_radius,
+        horizontal_source=str(values["source"]),
+        evidence=(
+            "Из DXF прочитана объявленная локальная WGS84-привязка; "
+            "преобразование воспроизводимо, но не сверено по контрольным точкам и не является EPSG/GEODATA."
+        ),
+    )
 
 
 class EzdxfReader:
     """Reads supported DXF entities and normalizes coordinates to meters."""
+
+    def __init__(self, *, capacity: SourceGeometryCapacity | None = None) -> None:
+        self.capacity = capacity or SourceGeometryCapacity()
+
+    def read_prepared_file(self, path: Path) -> DxfImportResult:
+        """Use ezdxf's file stream for a verified prepared DXF in a bounded worker.
+
+        Normalization is identical to upload reading. Avoid constructing a full
+        Unicode StringIO copy alongside the SDK document for large local sources.
+        This never rewrites the source or invokes recover/audit repairs.
+        """
+        if path.suffix.lower() != ".dxf":
+            raise ValueError("Поддерживаются только DXF-файлы")
+        document = ezdxf.readfile(path)
+        with indexed_acis_lookup(document):
+            return self._normalize_document(document)
 
     def read(self, filename: str, content: bytes | bytearray) -> DxfImportResult:
         if not filename.lower().endswith(".dxf"):
@@ -942,10 +1292,31 @@ class EzdxfReader:
         except Exception as error:
             raise ValueError("DXF повреждён или имеет неподдерживаемую структуру") from error
 
+        with indexed_acis_lookup(document):
+            return self._normalize_document(document)
+
+    def _normalize_document(self, document: Drawing) -> DxfImportResult:
+        prepare_multileader_transforms(document)
+        preview_provenance = read_preview_marker(document)
+        styles = SourceStyleResolver(document)
         unit_code = int(document.header.get("$INSUNITS", 0) or 0)
         units_assumed = unit_code not in DXF_UNIT_FACTORS
         units, factor = DXF_UNIT_FACTORS.get(unit_code, ("м (принято)", 1.0))
         entities = list(document.modelspace())
+        terrain_document_evidence = _terrain_document_evidence(document)
+        vertical_primitives = [
+            primitive
+            for index, entity in enumerate(entities)
+            if (
+                primitive := _vertical_primitive(
+                    entity,
+                    factor,
+                    units,
+                    f"dxf-vertical-{index}",
+                    terrain_document_evidence,
+                )
+            ) is not None
+        ]
         paper_entity_count = 0
         for layout in document.layouts:
             if str(layout.name).lower() == "model":
@@ -966,6 +1337,7 @@ class EzdxfReader:
         unsupported = Counter(entity.dxftype() for entity in entities if entity.dxftype() not in SUPPORTED_TYPES)
         unsupported_by_layer: dict[str, Counter[str]] = {}
         unrenderable_geometry_count_by_layer: Counter[str] = Counter()
+        block_failures: list[BlockGeometryFailure] = []
         for entity in entities:
             entity_type = entity.dxftype()
             if entity_type not in SUPPORTED_TYPES:
@@ -976,6 +1348,7 @@ class EzdxfReader:
         # layer: this preserves the compact, fast representation for ordinary
         # repeated symbols while exposing semantically meaningful components.
         explicit_block_components: dict[int, list[list[tuple[dict[str, Any], Any, str]]]] = {}
+        compact_block_geometries: dict[int, list[dict[str, Any]]] = {}
         block_definition_component_cache: dict[tuple[str, str], list[tuple[str, str]] | None] = {}
         context_only_block_inserts: set[int] = set()
         oversized_minsert_instances: dict[int, int] = {}
@@ -988,14 +1361,19 @@ class EzdxfReader:
             if entity.dxftype() != "INSERT":
                 continue
             instance_count = _insert_instance_count(entity)
-            component_count = _estimated_insert_component_count(entity)
-            if component_count > MAX_EXPANDED_MINSERT_INSTANCES:
+            expansion = inspect_block_expansion(
+                entity,
+                max_components=self.capacity.max_features,
+                max_array_instances=MAX_EXPANDED_MINSERT_INSTANCES,
+                max_depth=MAX_NESTED_BLOCK_DEPTH,
+            )
+            if expansion.blocked:
                 # ``multi_insert`` would materialize every member just to
                 # audit its layers, which defeats the import safety limit.
                 # The same applies when the array lives inside a nested
                 # symbol: showing the first child would make unseen geometry
                 # look safely available.
-                oversized_minsert_instances[index] = component_count
+                oversized_minsert_instances[index] = expansion.components
                 continue
             parent_layer = str(entity.dxf.layer)
             definition_key = (str(entity.dxf.name), parent_layer)
@@ -1009,7 +1387,19 @@ class EzdxfReader:
                 unsupported_by_layer.setdefault(component_layer, Counter())[entity_type] += 1
                 counts[component_layer] += 1
                 entity_types_by_layer.setdefault(component_layer, Counter())[entity_type] += 1
-            instances = _insert_instance_components(entity, factor)
+            failures: list[BlockGeometryFailure] = []
+            instances = _insert_instance_components(entity, factor, failures)
+            block_failures.extend(failures)
+            diagnosed_components: Counter[tuple[str, str]] = Counter()
+            for failure in failures:
+                if failure.entity_type not in SUPPORTED_TYPES or failure.entity_type in CONTEXT_ONLY_ENTITY_TYPES:
+                    continue
+                component_layer = failure.source_layer
+                unrenderable_geometry_count_by_layer[component_layer] += 1
+                diagnosed_components[failure.entity_type, component_layer] += 1
+                if component_layer != parent_layer:
+                    counts[component_layer] += 1
+                entity_types_by_layer.setdefault(component_layer, Counter())[failure.entity_type] += 1
             components = [virtual for instance in instances for _geometry, virtual, _layer in instance]
             if not components:
                 if definition_components is None:
@@ -1019,6 +1409,9 @@ class EzdxfReader:
                 else:
                     for entity_type, component_layer in definition_components:
                         if entity_type in SUPPORTED_TYPES and entity_type not in CONTEXT_ONLY_ENTITY_TYPES:
+                            if diagnosed_components[entity_type, component_layer]:
+                                diagnosed_components[entity_type, component_layer] -= 1
+                                continue
                             unrenderable_geometry_count_by_layer[component_layer] += 1
                             # A failed virtual transform can otherwise hide
                             # an explicitly layered component from the whole
@@ -1045,6 +1438,17 @@ class EzdxfReader:
             )):
                 context_only_block_inserts.add(index)
             if not any(component_layer != parent_layer for instance in instances for _geometry, _virtual, component_layer in instance):
+                # The inspection pass already transformed this exact INSERT.
+                # Reuse its geometry; keep the cache within this one document
+                # so a different instance/transform can never share its result.
+                compact_block_geometries[index] = _insert_instance_geometries(entity, factor, instances)
+                if not compact_block_geometries[index] and instance_count == 1:
+                    # Match the existing single-INSERT fallback. The layer's
+                    # unrenderable diagnosis still blocks physical use; its
+                    # original anchor remains available for inspection.
+                    compact_block_geometries[index] = [
+                        {"type": "Point", "coordinates": _point(entity.dxf.insert, factor)}
+                    ]
                 continue
             explicit_block_components[index] = instances
             for instance in instances:
@@ -1058,17 +1462,14 @@ class EzdxfReader:
         document_underlays = Counter(entity.dxftype() for entity in entities if entity.dxftype() in {"PDFUNDERLAY", "PDFREFERENCE", "DWFUNDERLAY", "DGNUNDERLAY"})
         proxy_entities = sum(1 for entity in entities if entity.dxftype() == "ACAD_PROXY_ENTITY")
         features: list[dict[str, Any]] = []
-        rendered_feature_count_by_layer: Counter[str] = Counter()
-        truncated_feature_count_by_layer: Counter[str] = Counter()
-        oversized_geometry_count_by_layer: Counter[str] = Counter()
         nonfinite_geometry_by_layer: Counter[str] = Counter()
         rendered_coordinate_count = 0
 
         def append_feature(feature: dict[str, Any]) -> None:
-            """Keep a bounded, truthful map snapshot.
+            """Keep source geometry complete within explicit server capacity.
 
-            We never simplify dropped objects into smaller obstacles: that
-            could falsely turn occupied ground into an allowed planting zone.
+            Display detail is bounded by the viewport query. Capacity failure
+            aborts this read before any project/source revision is persisted.
             """
             nonlocal rendered_coordinate_count
             properties = feature.get("properties", {})
@@ -1078,17 +1479,13 @@ class EzdxfReader:
                 nonfinite_geometry_by_layer[source_layer] += 1
                 return
             coordinate_count = _geometry_coordinate_count(geometry)
-            if (
-                coordinate_count > MAX_NORMALIZED_COORDINATES_PER_FEATURE
-                or rendered_coordinate_count + coordinate_count > MAX_NORMALIZED_COORDINATES
-            ):
-                oversized_geometry_count_by_layer[source_layer] += 1
-                return
-            if len(features) >= MAX_NORMALIZED_DXF_FEATURES:
-                truncated_feature_count_by_layer[source_layer] += 1
-                return
+            self.capacity.check(
+                features=len(features) + 1,
+                coordinates=rendered_coordinate_count + coordinate_count,
+                feature_coordinates=coordinate_count,
+                layer=source_layer,
+            )
             features.append(feature)
-            rendered_feature_count_by_layer[source_layer] += 1
             rendered_coordinate_count += coordinate_count
         for index, entity in enumerate(entities):
             if index in oversized_mesh_faces:
@@ -1106,7 +1503,7 @@ class EzdxfReader:
                         "kind": LayerKind.IGNORE.value,
                         "entity_type": entity.dxftype(),
                         "source_handle": str(entity.dxf.get("handle", "")),
-                        **_resolved_style(document, entity, source_layer, fallback_color),
+                        **styles.entity(entity, source_layer, fallback_color),
                         "source_context_only": True,
                         "source_mesh_context": True,
                         "source_mesh_faces": face_count,
@@ -1129,7 +1526,7 @@ class EzdxfReader:
                         "kind": LayerKind.IGNORE.value,
                         "entity_type": "INSERT",
                         "source_handle": str(entity.dxf.get("handle", "")),
-                        **_resolved_style(document, entity, source_layer, fallback_color),
+                        **styles.entity(entity, source_layer, fallback_color),
                         "source_block": str(entity.dxf.name),
                         "source_block_instances": instance_count,
                         "source_block_components": component_count,
@@ -1153,12 +1550,14 @@ class EzdxfReader:
                         fallback_color = LAYER_COLORS[list(counts).index(source_layer) % len(LAYER_COLORS)]
                         properties: dict[str, Any] = {
                             "source_layer": source_layer,
-                            "kind": _kind_for_layer(source_layer).value,
+                            "kind": suggest_layer_kind(source_layer).value,
                             "entity_type": virtual.dxftype(),
                             # A virtual component has no persistent DXF handle;
                             # retain its parent handle as the audit link.
                             "source_handle": str(entity.dxf.get("handle", "")),
-                            **_resolved_style(document, virtual, source_layer, fallback_color),
+                            **styles.entity(virtual, source_layer, fallback_color),
+                            **component_definition_provenance(virtual),
+                            **_source_vertical_properties(virtual, factor, attributes),
                             "source_block": block_name,
                             "source_block_parent_layer": parent_layer,
                             "source_block_component": component_index,
@@ -1171,8 +1570,8 @@ class EzdxfReader:
                                 "geometry_fallback": True,
                                 "geometry_fallback_reason": "Бесконечная конструктивная линия показана точкой привязки.",
                             })
-                        if virtual.dxftype() in {"TEXT", "MTEXT"}:
-                            height_attribute = "height" if virtual.dxftype() == "TEXT" else "char_height"
+                        if virtual.dxftype() in {"TEXT", "MTEXT", "ATTDEF"}:
+                            height_attribute = "char_height" if virtual.dxftype() == "MTEXT" else "height"
                             properties.update({
                                 "source_text": str(virtual.plain_text()),
                                 "source_text_height": round(float(virtual.dxf.get(height_attribute, 2.5) or 2.5) * factor, 3),
@@ -1185,6 +1584,9 @@ class EzdxfReader:
                                     "source_polyline_width_m": source_width_m,
                                     "source_width_mode": "conservative_max",
                                 })
+                                center_geometry = _polyline_center_geometry(virtual, factor)
+                                if center_geometry is not None:
+                                    properties["source_polyline_center_geometry"] = center_geometry
                         if virtual.dxftype() in CONTEXT_ONLY_ENTITY_TYPES or _is_mesh_context(virtual):
                             properties["source_context_only"] = True
                         if _is_mesh_context(virtual):
@@ -1201,7 +1603,10 @@ class EzdxfReader:
                         })
                 continue
             block_instances = _insert_instance_count(entity) if entity.dxftype() == "INSERT" else 1
-            geometries = _insert_instance_geometries(entity, factor) if entity.dxftype() == "INSERT" and block_instances > 1 else [_entity_geometry(entity, factor)]
+            if index in compact_block_geometries:
+                geometries = compact_block_geometries.pop(index)
+            else:
+                geometries = _insert_instance_geometries(entity, factor) if entity.dxftype() == "INSERT" and block_instances > 1 else [_entity_geometry(entity, factor)]
             geometries = [geometry for geometry in geometries if geometry is not None]
             if not geometries:
                 source_layer = str(entity.dxf.layer)
@@ -1221,20 +1626,27 @@ class EzdxfReader:
             source_layer = str(entity.dxf.layer)
             fallback_color = LAYER_COLORS[list(counts).index(source_layer) % len(LAYER_COLORS)]
             for instance_index, geometry in enumerate(geometries):
+                source_attributes = (
+                    {str(attribute.dxf.tag): str(attribute.dxf.text) for attribute in entity.attribs}
+                    if entity.dxftype() == "INSERT"
+                    else None
+                )
                 properties: dict[str, Any] = {
                     "source_layer": source_layer,
-                    "kind": _kind_for_layer(source_layer).value,
+                    "kind": suggest_layer_kind(source_layer).value,
                     "entity_type": entity.dxftype(),
                     "source_handle": str(entity.dxf.get("handle", "")),
-                    **_resolved_style(document, entity, source_layer, fallback_color),
+                    **straight_axis_provenance(entity, geometry),
+                    **styles.entity(entity, source_layer, fallback_color),
+                    **_source_vertical_properties(entity, factor, source_attributes),
                 }
                 if entity.dxftype() in simplified:
                     properties.update({
                         "geometry_fallback": True,
                         "geometry_fallback_reason": "Бесконечная конструктивная линия показана точкой привязки.",
                     })
-                if entity.dxftype() in {"TEXT", "MTEXT"}:
-                    height_attribute = "height" if entity.dxftype() == "TEXT" else "char_height"
+                if entity.dxftype() in {"TEXT", "MTEXT", "ATTDEF"}:
+                    height_attribute = "char_height" if entity.dxftype() == "MTEXT" else "height"
                     properties.update({
                         "source_text": str(entity.plain_text()),
                         "source_text_height": round(float(entity.dxf.get(height_attribute, 2.5) or 2.5) * factor, 3),
@@ -1267,12 +1679,15 @@ class EzdxfReader:
                             "source_polyline_width_m": source_width_m,
                             "source_width_mode": "conservative_max",
                         })
+                        center_geometry = _polyline_center_geometry(entity, factor)
+                        if center_geometry is not None:
+                            properties["source_polyline_center_geometry"] = center_geometry
                 if entity.dxftype() == "INSERT":
                     properties.update({
                         "source_block": str(entity.dxf.name),
                         "source_rotation": round(float(entity.dxf.get("rotation", 0) or 0), 3),
                         "source_scale": [round(float(entity.dxf.get("xscale", 1) or 1), 4), round(float(entity.dxf.get("yscale", 1) or 1), 4)],
-                        "source_attributes": {str(attribute.dxf.tag): str(attribute.dxf.text) for attribute in entity.attribs},
+                        "source_attributes": source_attributes or {},
                         "block_rendered": geometry["type"] == "GeometryCollection",
                         "source_block_instances": block_instances,
                         "source_block_instance": instance_index + 1,
@@ -1317,41 +1732,99 @@ class EzdxfReader:
             elif feature["properties"]["kind"] == LayerKind.SITE_BORDER.value and feature["properties"]["source_layer"] not in polygon_layers:
                 feature["properties"]["kind"] = LayerKind.IGNORE.value
 
+        features_by_layer: dict[str, list[dict[str, Any]]] = {}
+        for feature in features:
+            source_layer = feature["properties"].get("source_layer")
+            if source_layer is not None:
+                features_by_layer.setdefault(source_layer, []).append(feature)
         layers: list[Layer] = []
         for index, (name, count) in enumerate(counts.items()):
-            kind = _kind_for_layer(name)
+            kind = suggest_layer_kind(name)
+            boundary_candidate = (
+                _boundary_candidate(features_by_layer.get(name, []))
+                if is_boundary_candidate_name(name)
+                else None
+            )
             if kind == LayerKind.SITE_BORDER and name not in polygon_layers:
                 kind = LayerKind.IGNORE
-            layer = document.layers.get(name)
-            layer_color = getattr(layer, "rgb", None)
-            if layer_color is None:
-                layer_aci = abs(int(layer.dxf.get("color", 7) or 7))
-                color = _hex_color(ezdxf.colors.aci2rgb(layer_aci)) if 1 <= layer_aci <= 255 else LAYER_COLORS[index % len(LAYER_COLORS)]
-            else:
-                color = _hex_color(layer_color)
-            if color.upper() in {"#FFFFFF", "#000000"}:
-                color = LAYER_COLORS[index % len(LAYER_COLORS)]
-            lineweight = int(layer.dxf.get("lineweight", -1) or -1)
+            if (
+                kind == LayerKind.SITE_BORDER
+                and boundary_candidate is not None
+                and boundary_candidate.status != BoundaryCandidateStatus.USABLE
+            ):
+                kind = LayerKind.IGNORE
+            geometry_complete = not (
+                unrenderable_geometry_count_by_layer[name]
+                or unsupported_by_layer.get(name)
+            )
+            confidence, reasons, review_required = assess_layer_suggestion(
+                kind,
+                entity_types=dict(entity_types_by_layer[name]),
+                has_polygon=name in polygon_layers,
+                geometry_complete=geometry_complete,
+                boundary_candidate=boundary_candidate,
+            )
+            style = styles.layer(name, LAYER_COLORS[index % len(LAYER_COLORS)])
             layers.append(Layer(
                 id=str(uuid5(NAMESPACE_URL, f"dxf-layer:{name}")),
                 source_name=name,
                 suggested_kind=kind,
+                suggestion_confidence=confidence,
+                suggestion_reasons=reasons,
+                mapping_review_required=review_required,
+                mapping_confirmed=not review_required,
                 mapped_kind=kind,
                 object_count=count,
-                color=color,
-                linetype=str(layer.dxf.get("linetype", "CONTINUOUS") or "CONTINUOUS"),
-                lineweight_mm=round(lineweight / 100, 2) if lineweight >= 0 else None,
+                bounds=_geometry_bounds(features_by_layer.get(name, [])),
+                color=style.color,
+                linetype=style.linetype,
+                lineweight_mm=style.lineweight_mm,
                 entity_types=dict(entity_types_by_layer[name]),
-                geometry_complete=not (
-                    truncated_feature_count_by_layer[name]
-                    or oversized_geometry_count_by_layer[name]
-                    or unrenderable_geometry_count_by_layer[name]
-                    or unsupported_by_layer.get(name)
-                ),
+                geometry_complete=geometry_complete,
+                unsupported_geometry_types=dict(unsupported_by_layer.get(name, {})),
+                unreadable_geometry_count=unrenderable_geometry_count_by_layer[name],
+                boundary_candidate=boundary_candidate,
                 required=kind == LayerKind.SITE_BORDER,
             ))
 
-        warnings: list[str] = []
+        usable_boundaries = [
+            layer
+            for layer in layers
+            if layer.boundary_candidate is not None
+            and layer.boundary_candidate.status == BoundaryCandidateStatus.USABLE
+        ]
+        if len(usable_boundaries) > 1:
+            # Several valid surfaces are a semantic choice, not evidence that
+            # every one is the project territory. Leave the source import
+            # editable and require one explicit operator selection instead of
+            # silently preferring a name heuristic.
+            for layer in usable_boundaries:
+                if layer.suggested_kind == LayerKind.SITE_BORDER:
+                    layer.suggested_kind = LayerKind.IGNORE
+                    layer.mapped_kind = LayerKind.IGNORE
+                    layer.suggestion_confidence = (
+                        LayerSuggestionConfidence.LOW
+                    )
+                    layer.suggestion_reasons = [
+                        "Найдено несколько подходящих контуров территории"
+                    ]
+                    # Choosing one contour is handled by the dedicated
+                    # boundary control; excluded alternatives are safe.
+                    layer.mapping_review_required = False
+                    layer.mapping_confirmed = True
+                    layer.required = False
+
+        kind_by_layer = {layer.source_name: layer.suggested_kind for layer in layers}
+        for feature in features:
+            properties = feature["properties"]
+            if properties.get("source_context_only"):
+                continue
+            source_layer = properties.get("source_layer")
+            if source_layer in kind_by_layer:
+                properties["kind"] = kind_by_layer[source_layer].value
+
+        warnings = styles.warnings()
+        warnings.extend(failure.warning() for failure in block_failures)
         if units_assumed:
             warnings.append("Единицы чертежа не заданы; координаты интерпретированы как метры.")
         if simplified:
@@ -1375,36 +1848,19 @@ class EzdxfReader:
         if nonfinite_geometry_by_layer:
             labels = ", ".join(f"{name}: {count}" for name, count in sorted(nonfinite_geometry_by_layer.items()))
             warnings.append(f"Объекты с некорректными координатами не показаны на карте: {labels}. Исходный DXF сохранён без изменений.")
-        if truncated_feature_count_by_layer:
-            labels = ", ".join(
-                f"{name}: показано {rendered_feature_count_by_layer[name]}, скрыто {count}"
-                for name, count in sorted(truncated_feature_count_by_layer.items())
-            )
-            warnings.append(
-                "Карта ограничена 25 000 объектами: "
-                f"{labels}. Неполный слой нельзя использовать для расчёта ограничений; "
-                "загрузите рабочий фрагмент или сопоставьте его как неиспользуемый."
-            )
-        if oversized_geometry_count_by_layer:
-            labels = ", ".join(f"{name}: {count}" for name, count in sorted(oversized_geometry_count_by_layer.items()))
-            warnings.append(
-                "Слишком детальная геометрия не показана на карте: "
-                f"{labels}. Неполный слой нельзя использовать для расчёта ограничений; "
-                "загрузите рабочий фрагмент DXF."
-            )
         if unrenderable_geometry_count_by_layer:
             labels = ", ".join(f"{name}: {count}" for name, count in sorted(unrenderable_geometry_count_by_layer.items()))
             warnings.append(
                 "Часть геометрии не удалось прочитать для карты: "
                 f"{labels}. Неполный слой нельзя использовать для расчёта ограничений; "
-                "исправьте DXF или загрузите рабочий фрагмент."
+                "проверьте объекты слоя и подготовьте их расчётное представление в полном DXF."
             )
         if unsupported:
             labels = ", ".join(f"{name}: {count}" for name, count in sorted(unsupported.items()))
             warnings.append(
                 f"Часть типов доступна только в исходном файле: {labels}. "
                 "Если такой слой назначен физическим ограничением, расчёт будет остановлен; "
-                "проверьте назначение слоя или загрузите рабочий фрагмент."
+                "проверьте назначение слоя и подготовьте расчётное представление его физических объектов."
             )
         if not features:
             warnings.append("В карте нет визуализируемой геометрии; исходные объекты и слои сохранены для просмотра и повторного экспорта.")
@@ -1421,7 +1877,11 @@ class EzdxfReader:
             and _has_polygon(feature["geometry"])
         ]
         if not site_features:
-            warnings.append("Не найдена замкнутая граница участка; назначьте корректный слой с полигоном.")
+            warnings.append(
+                "Авторский контур задаёт область просмотра; расчётный участок ещё не подготовлен."
+                if preview_provenance
+                else "Не найдена замкнутая граница участка; назначьте корректный слой с полигоном."
+            )
 
         # A title, underlay frame, mesh anchor or infinite construction line
         # can sit kilometres away from the actual territory. It remains
@@ -1435,14 +1895,28 @@ class EzdxfReader:
             and not feature["properties"].get("geometry_fallback")
         ] or features
 
+        if preview_provenance and preview_provenance.omitted_entity_count:
+            warnings.append(
+                "В предварительную карту не перенесены CAD-объекты с неполным "
+                f"геометрическим описанием: {preview_provenance.omitted_entity_count}. "
+                "Их адреса сохранены в журнале подготовки; требуется проверка полного исходника."
+            )
         return DxfImportResult(
             layers=layers,
-            geometry=GeometrySnapshot(feature_collection={"type": "FeatureCollection", "features": features}),
+            geometry=GeometrySnapshot(
+                feature_collection={"type": "FeatureCollection", "features": features},
+                vertical_primitives=vertical_primitives,
+            ),
             dxf_version=document.dxfversion,
             units=units,
             units_assumed=units_assumed,
             entity_count=len(entities) + paper_entity_count,
-            bounds=_geometry_bounds(extent_features),
+            bounds=(
+                list(preview_provenance.boundary_bounds_m)
+                if preview_provenance and preview_provenance.boundary_bounds_m
+                else _geometry_bounds(extent_features)
+            ),
             warnings=warnings,
+            preview_provenance=preview_provenance,
             coordinate_reference=_coordinate_reference(document),
         )

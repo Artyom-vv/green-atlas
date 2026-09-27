@@ -1,21 +1,29 @@
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-import sqlite3
 from threading import RLock
 
-from app.contracts import OperationError, OperationKind, OperationStatus, ProjectOperation
+from app.operations.contracts import (
+    OperationError,
+    OperationKind,
+    OperationStatus,
+    ProjectOperation,
+)
 
-
-ACTIVE_STATUSES = {OperationStatus.QUEUED, OperationStatus.RUNNING, OperationStatus.CANCELLING}
+ACTIVE_STATUSES = {
+    OperationStatus.QUEUED,
+    OperationStatus.RUNNING,
+    OperationStatus.CANCELLING,
+}
 
 
 def interrupted(operation: ProjectOperation) -> ProjectOperation:
     now = datetime.now(UTC).isoformat()
     operation.status = OperationStatus.INTERRUPTED
-    operation.stage = "Расчёт прерван перезапуском сервиса"
+    operation.stage = "Операция прервана перезапуском сервиса"
     operation.error = OperationError(
         code="OPERATION_INTERRUPTED",
-        message="Сохранён последний подтверждённый прогресс. Запустите расчёт повторно.",
+        message="Сохранён последний подтверждённый прогресс. Запустите операцию повторно.",
     )
     operation.completed_at = now
     operation.updated_at = now
@@ -29,12 +37,16 @@ class InMemoryOperationRepository:
 
     def create(self, operation: ProjectOperation) -> ProjectOperation:
         with self._lock:
-            active = next((
-                item for item in self._operations.values()
-                if item.project_id == operation.project_id
-                and item.kind == operation.kind
-                and item.status in ACTIVE_STATUSES
-            ), None)
+            active = next(
+                (
+                    item
+                    for item in self._operations.values()
+                    if item.project_id == operation.project_id
+                    and item.kind == operation.kind
+                    and item.status in ACTIVE_STATUSES
+                ),
+                None,
+            )
             if active is not None:
                 return active.model_copy(deep=True)
             if operation.id in self._operations:
@@ -54,9 +66,25 @@ class InMemoryOperationRepository:
             self._operations[operation.id] = operation.model_copy(deep=True)
             return operation.model_copy(deep=True)
 
-    def get_latest(self, project_id: str, kind: OperationKind) -> ProjectOperation | None:
+    def compare_and_save(
+        self, expected: ProjectOperation, operation: ProjectOperation
+    ) -> ProjectOperation | None:
         with self._lock:
-            matches = [item for item in self._operations.values() if item.project_id == project_id and item.kind == kind]
+            if self._operations.get(expected.id) != expected:
+                return None
+            if expected.id != operation.id:
+                raise ValueError("Cannot change operation identity")
+            return self.save(operation)
+
+    def get_latest(
+        self, project_id: str, kind: OperationKind
+    ) -> ProjectOperation | None:
+        with self._lock:
+            matches = [
+                item
+                for item in self._operations.values()
+                if item.project_id == project_id and item.kind == kind
+            ]
             if not matches:
                 return None
             return max(matches, key=lambda item: item.created_at).model_copy(deep=True)
@@ -72,6 +100,10 @@ class InMemoryOperationRepository:
 
 class SqliteOperationRepository:
     """Durable operation journal for the current API deployment."""
+
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
 
     def __init__(self, path: str | Path, *, recover: bool = True) -> None:
         self.path = str(path)
@@ -138,7 +170,12 @@ class SqliteOperationRepository:
             stopped = interrupted(operation)
             self._connection.execute(
                 "UPDATE project_operations SET status = ?, payload = ?, updated_at = ? WHERE id = ?",
-                (stopped.status.value, stopped.model_dump_json(), stopped.updated_at, stopped.id),
+                (
+                    stopped.status.value,
+                    stopped.model_dump_json(),
+                    stopped.updated_at,
+                    stopped.id,
+                ),
             )
 
     def _active(self, project_id: str, kind: OperationKind) -> ProjectOperation | None:
@@ -161,7 +198,15 @@ class SqliteOperationRepository:
                     return active
                 self._connection.execute(
                     "INSERT INTO project_operations (id, project_id, kind, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (operation.id, operation.project_id, operation.kind.value, operation.status.value, operation.model_dump_json(), operation.created_at, operation.updated_at),
+                    (
+                        operation.id,
+                        operation.project_id,
+                        operation.kind.value,
+                        operation.status.value,
+                        operation.model_dump_json(),
+                        operation.created_at,
+                        operation.updated_at,
+                    ),
                 )
         except sqlite3.IntegrityError as error:
             # Another application worker can cross the read/create boundary.
@@ -176,7 +221,9 @@ class SqliteOperationRepository:
 
     def get(self, operation_id: str) -> ProjectOperation:
         with self._lock:
-            row = self._connection.execute("SELECT payload FROM project_operations WHERE id = ?", (operation_id,)).fetchone()
+            row = self._connection.execute(
+                "SELECT payload FROM project_operations WHERE id = ?", (operation_id,)
+            ).fetchone()
         if row is None:
             raise KeyError(f"Operation {operation_id} not found")
         return ProjectOperation.model_validate_json(row["payload"])
@@ -185,19 +232,53 @@ class SqliteOperationRepository:
         with self._lock, self._connection:
             cursor = self._connection.execute(
                 "UPDATE project_operations SET status = ?, payload = ?, updated_at = ? WHERE id = ?",
-                (operation.status.value, operation.model_dump_json(), operation.updated_at, operation.id),
+                (
+                    operation.status.value,
+                    operation.model_dump_json(),
+                    operation.updated_at,
+                    operation.id,
+                ),
             )
         if cursor.rowcount == 0:
             raise KeyError(f"Operation {operation.id} not found")
         return operation.model_copy(deep=True)
 
-    def get_latest(self, project_id: str, kind: OperationKind) -> ProjectOperation | None:
+    def get_latest(
+        self, project_id: str, kind: OperationKind
+    ) -> ProjectOperation | None:
         with self._lock:
             row = self._connection.execute(
                 "SELECT payload FROM project_operations WHERE project_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 1",
                 (project_id, kind.value),
             ).fetchone()
         return ProjectOperation.model_validate_json(row["payload"]) if row else None
+
+    def compare_and_save(
+        self, expected: ProjectOperation, operation: ProjectOperation
+    ) -> ProjectOperation | None:
+        if expected.id != operation.id:
+            raise ValueError("Cannot change operation identity")
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT payload FROM project_operations WHERE id = ?", (expected.id,)
+            ).fetchone()
+            if (
+                row is None
+                or ProjectOperation.model_validate_json(row["payload"]) != expected
+            ):
+                return None
+            cursor = self._connection.execute(
+                """UPDATE project_operations SET status = ?, payload = ?, updated_at = ?
+                WHERE id = ? AND payload = ?""",
+                (
+                    operation.status.value,
+                    operation.model_dump_json(),
+                    operation.updated_at,
+                    operation.id,
+                    row["payload"],
+                ),
+            )
+        return operation.model_copy(deep=True) if cursor.rowcount else None
 
     def recover_incomplete(self) -> list[ProjectOperation]:
         with self._lock, self._connection:
@@ -206,10 +287,32 @@ class SqliteOperationRepository:
                 f"SELECT payload FROM project_operations WHERE status IN ({placeholders})",
                 tuple(status.value for status in ACTIVE_STATUSES),
             ).fetchall()
-            recovered = [interrupted(ProjectOperation.model_validate_json(row["payload"])) for row in rows]
-            for operation in recovered:
-                self._connection.execute(
-                    "UPDATE project_operations SET status = ?, payload = ?, updated_at = ? WHERE id = ?",
-                    (operation.status.value, operation.model_dump_json(), operation.updated_at, operation.id),
-                )
+            recovered = []
+            for row in rows:
+                while row is not None:
+                    current = ProjectOperation.model_validate_json(row["payload"])
+                    if current.status not in ACTIVE_STATUSES:
+                        break
+                    operation = interrupted(current)
+                    # A worker can publish after recovery reads active records.
+                    # Its committed receipt must win over this stale snapshot.
+                    updated = self._connection.execute(
+                        "UPDATE project_operations SET status = ?, payload = ?, updated_at = ? WHERE id = ? AND payload = ?",
+                        (
+                            operation.status.value,
+                            operation.model_dump_json(),
+                            operation.updated_at,
+                            operation.id,
+                            row["payload"],
+                        ),
+                    )
+                    if updated.rowcount:
+                        recovered.append(operation)
+                        break
+                    # A changed active progress record still needs recovery;
+                    # a newly terminal receipt must remain untouched.
+                    row = self._connection.execute(
+                        "SELECT payload FROM project_operations WHERE id = ?",
+                        (operation.id,),
+                    ).fetchone()
         return [item.model_copy(deep=True) for item in recovered]

@@ -6,7 +6,9 @@ requires-python = ">=3.11"
 dependencies = [
   "ezdxf>=1.4,<2",
   "fastapi>=0.115,<1",
+  "ijson>=3.5,<4",
   "pydantic>=2.10,<3",
+  "psutil>=7.2,<8",
   "python-multipart>=0.0.20,<1",
   "shapely>=2.1,<3",
   "uvicorn[standard]>=0.34,<1",
@@ -15,7 +17,11 @@ dependencies = [
 [dependency-groups]
 dev = [
   "httpx>=0.28,<1",
-  "pytest>=8.3,<9"
+  "mypy>=1.17,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.12,<1",
+  "types-shapely>=2.1,<3",
+  "types-psutil>=7.2,<8",
 ]
 
 [tool.pytest.ini_options]
@@ -23,10 +29,106 @@ pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
 
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+# Files under active architectural migration. Legacy modules are checked as
+# their owning scenario is migrated; a broad scan remains available explicitly.
+include = [
+  "app/dxf_import/native_*.py", "app/dxf_import/encoding.py", "tests/test_native_dxf_asset.py",
+  "app/geometry/axis*.py", "app/dxf_import/axis_provenance.py",
+  "tests/test_utility_axis.py", "tests/test_utility_axis_workflow.py",
+  "app/cad_import/*.py", "tests/test_cad_*.py",
+  "app/cad_intake/*.py", "app/operations/*.py",
+  "app/regulations/network*.py", "app/geometry/network*.py", "app/validation/networks.py", "tests/test_network_rules.py",
+  "app/dxf_import/http_execution.py", "tests/test_import_execution.py",
+  "app/dxf_import/preview_*.py", "app/dxf_import/admission.py", "app/dxf_import/assembly.py",
+  "app/geometry/viewport_representation.py", "tests/test_viewport_representation.py",
+  "app/geometry/query_adapters.py", "app/geometry/viewport_simplification.py", "tests/test_viewport_coverage.py",
+  "app/geometry/viewport_selection.py", "app/geometry/viewport_admission.py", "tests/test_viewport_fairness.py",
+  "app/dxf_import/capacity.py", "app/dxf_import/styles.py", "app/dxf_import/polygons.py",
+  "app/dxf_import/block_diagnostics.py", "tests/test_dxf_geometry_fidelity.py",
+  "app/dxf_import/utility_mapping.py", "app/geometry/constraint_index.py",
+  "app/geometry/geojson_size.py", "app/geometry/viewport_budget.py", "app/geometry/rule_trace.py",
+  "app/geometry/utility_contracts.py", "app/regulations/profiles.py", "app/regulations/trace_contracts.py",
+  "app/planning/sampling.py", "app/planning/trace.py", "app/planning/regular_grid.py", "tests/test_regular_grid.py",
+  "tests/test_utility_context.py", "tests/test_rule_trace.py", "tests/test_constraint_index.py",
+  "tests/test_sparse_sampling.py", "tests/test_source_viewport_budgets.py", "tests/test_dxf_reader_resilience.py",
+  "app/application.py", "app/contracts.py", "app/*/*contracts.py",
+  "app/operations/application.py", "app/geometry/queries.py",
+  "app/projects/application.py", "app/species/application.py",
+  "app/composition.py", "app/http_errors.py",
+  "app/dxf_import/application.py", "app/dxf_import/ports.py",
+  "app/exporting/application.py", "app/exporting/ports.py",
+  "app/projects/ports.py", "app/scene/*.py",
+  "app/shared/*.py", "app/validation/application.py", "app/history/application.py",
+  "app/history/ports.py", "app/planting_zones/*.py", "app/planning/rules.py",
+  "app/planning/evaluation.py", "app/planning/changes.py", "app/planning/results.py",
+  "app/planning/ports.py", "app/planning/*_application.py",
+  "app/planning/types.py", "app/planning/config.py", "app/planning/recommendation_config.py",
+  "tests/test_application_boundaries.py",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.mypy]
+# Check installed dependency stubs against the qualified runtime.
+# Ruff retains the application's Python 3.11 syntax boundary.
+python_version = "3.13"
+plugins = ["pydantic.mypy"]
+follow_imports = "silent"
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+files = [
+  "app/dxf_import/native_application.py", "app/dxf_import/native_contracts.py",
+  "app/dxf_import/native_ports.py", "app/dxf_import/native_response.py", "app/dxf_import/encoding.py",
+  "app/projects/source_contracts.py",
+  "app/geometry/axis_contracts.py", "app/geometry/axis_geometry.py",
+  "app/geometry/axis_bindings.py", "app/dxf_import/axis_provenance.py",
+  "app/cad_import",
+  "app/cad_intake", "app/operations/lifecycle.py", "app/operations/adapters.py", "app/operations/ports.py",
+  "app/regulations/network_rules.py", "app/regulations/network_summary.py", "app/geometry/network_constraints.py", "app/geometry/network_trace.py", "app/validation/networks.py",
+  "app/dxf_import/http_execution.py",
+  "app/dxf_import/preview_contracts.py", "app/dxf_import/preview_marker.py", "app/dxf_import/admission.py", "app/dxf_import/assembly.py",
+  "app/geometry/viewport_representation.py", "app/geometry/query_adapters.py",
+  "app/geometry/viewport_simplification.py",
+  "app/geometry/viewport_selection.py", "app/geometry/viewport_admission.py",
+  "app/dxf_import/capacity.py", "app/dxf_import/styles.py", "app/dxf_import/polygons.py",
+  "app/dxf_import/block_diagnostics.py",
+  "app/dxf_import/utility_mapping.py", "app/geometry/constraint_index.py",
+  "app/geometry/geojson_size.py", "app/geometry/viewport_budget.py", "app/geometry/rule_trace.py",
+  "app/geometry/utility_contracts.py", "app/regulations/profiles.py", "app/regulations/trace_contracts.py",
+  "app/planning/sampling.py", "app/planning/trace.py", "app/planning/regular_grid.py",
+  "app/application.py", "app/contracts.py",
+  "app/operations/application.py", "app/operations/contracts.py", "app/geometry/queries.py",
+  "app/geometry/contracts.py", "app/geometry/building_contracts.py",
+  "app/projects/application.py", "app/projects/contracts.py", "app/species/application.py", "app/species/contracts.py",
+  "app/dxf_import/contracts.py", "app/dxf_import/layer_contracts.py", "app/dxf_import/evidence_contracts.py",
+  "app/exporting/contracts.py", "app/validation/contracts.py", "app/history/contracts.py",
+  "app/planning/contracts.py", "app/planning/change_contracts.py", "app/planning/pattern_contracts.py", "app/planning/recommendation_contracts.py",
+  "app/planning/manual_application.py",
+  "app/composition.py", "app/http_errors.py",
+  "app/dxf_import/application.py", "app/dxf_import/ports.py",
+  "app/exporting/application.py", "app/exporting/ports.py",
+  "app/projects/ports.py", "app/scene", "app/shared",
+  "app/validation/application.py", "app/history/application.py", "app/history/ports.py",
+  "app/planting_zones", "app/planning/rules.py", "app/planning/evaluation.py",
+  "app/planning/changes.py", "app/planning/results.py", "app/planning/ports.py",
+  "app/planning/pattern_application.py", "app/planning/recommendation_application.py",
+  "app/planning/brush_application.py", "app/planning/types.py",
+  "app/planning/config.py", "app/planning/recommendation_config.py",
+]
+
+[tool.pydantic-mypy]
+init_typed = true
+warn_required_dynamic_aliases = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
-
