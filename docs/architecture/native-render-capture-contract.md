@@ -10,10 +10,10 @@
 Имена новых DTO и файлов ниже — предложения для согласования с их владельцами.
 
 Основания: [AutoCAD-контракт](autocad-contract.md),
-[план native-query от 23 сентября](../implementation/2026-09-23-native-query-integration-plan.md),
-[metric-scene handoff](../implementation/2026-09-23-metric-scene-package.md),
-[render map-context handoff](../implementation/2026-09-23-render-map-context.md),
-[реестр разрывов](../audits/2026-09-22-cad-pipeline.md).
+план native-query от 23 сентября (локальный отчёт),
+metric-scene handoff (локальный отчёт),
+render map-context handoff (локальный отчёт),
+реестр разрывов (локальный отчёт).
 Этот документ не разрешает новый CAD-парсер, развитие sampled-преобразователя,
 изменение геометрического алгоритма или обход проверок целостности.
 
@@ -358,7 +358,7 @@ footprint не заменяет native, не становится native-пре�
 
 ### Сверка нового render-стыка: 23 сентября
 
-Проверены [render-map-context.md](../implementation/2026-09-23-render-map-context.md)
+Проверены render-map-context.md (локальный отчёт)
 и фактические `parse_bbox`, `write_manifest`, `main` в
 [fetch_overture_render_context.py](../../scripts/cad-lab/fetch_overture_render_context.py).
 Границы совпадают: загрузчик работает только с внешней картой, raw context

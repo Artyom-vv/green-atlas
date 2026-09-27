@@ -3,14 +3,14 @@
 ## Current direction — 23 September
 
 Read [the authoritative development contract](../../docs/architecture/autocad-contract.md)
-and [pipeline mismatch register](../../docs/audits/2026-09-22-cad-pipeline.md) first.
+and pipeline mismatch register (локальный отчёт) first.
 The installed-button path and diagnostic live import are not yet unified.
 Live export is not connected. The GAOPEN producer-version mismatch (C03) is
 fixed in the **uninstalled** 0.1.34 test package; it is not evidence that the
 currently installed button is ready. The same build adds a narrow native
 two-polyline REGION path with strict source provenance. Real-street capture and
 calculation acceptance remain pending; see
-[the 23 September native report](../../docs/implementation/2026-09-23-native-multicurve-buildings.md).
+the 23 September native report (локальный отчёт).
 Historical acceptance below does not qualify the present complete product.
 Do not develop a parallel portable-parser import. Geometry-engine choice is pending.
 Local dependency graphs, the legacy ratchet and native clangd setup:
@@ -20,7 +20,7 @@ Local dependency graphs, the legacy ratchet and native clangd setup:
 
 The current priority is a user-installable AutoCAD → local Green Atlas integration, not
 further geometry expansion. Track it in
-[the product bridge goal](../../docs/implementation/2026-09-20-autocad-product-bridge-goal.md).
+the product bridge goal (локальный отчёт).
 The developer-oriented export/MCP workflow below is **not** the finished user flow.
 
 **User decision: everything local.** The new package contains `Green Atlas.app`
@@ -401,7 +401,7 @@ Historical native controls verified through 0.1.6:
   DXFs must be modelled as independently hashed drawings on one map unless an
   upstream process supplies a bound root DXF; they must not be relabelled as
   native AutoCAD XREFs. Evidence and official links are recorded in
-  [the XREF format boundary note](../../docs/research/2026-09-17-autocad-bridge/xref-format-boundary.md).
+  the XREF format boundary note (локальный отчёт).
 - Semantic layer classification is outside the bridge; a valid contour is not
   automatically a building, road, network or project boundary.
 - Kustanay is one real reference, not proof for every DXF. Rotated/scaled nested

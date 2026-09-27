@@ -44,3 +44,18 @@ artifacts/artifacts/
 /ga-metric-inventory-*/
 /docs/obsidian.zip
 docs/**/obj/
+
+# Local reports, progress notes and generated deliverables are not source code.
+/HANDOFF.md
+/output/
+/docs/audit/
+/docs/audit-*/
+/docs/audits/
+/docs/automation-check-audit.md
+/docs/product-cut-audit.md
+/docs/implementation/
+/docs/product-analysis-2026-08-13/
+/docs/product-audit-current/
+/docs/prototypes/
+/docs/research/
+/docs/task-source-render/

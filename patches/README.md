@@ -49,4 +49,4 @@ flattened, instanced и разбиение длинной polyline на chunks.
 polyline из 65 540 вершин; этот срез сохраняет прежний результат, не исправляет
 этот отдельный дефект и не объявляет полную CAD fidelity.
 Счётчики браузерного стенда приведены в
-[сравнении SDK](../docs/implementation/2026-09-15-official-implementation/sdk/renderer-comparison.md).
+сравнении SDK (локальный отчёт).

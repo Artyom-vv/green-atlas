@@ -1,44 +1,53 @@
-# Зелёный контур
+# Green Atlas
 
-Локальное рабочее пространство проектирования озеленения с входом через AutoCAD.
+Локальное приложение для проектирования озеленения по CAD-подоснове.
 
-Целевой вход — открытый DWG/DXF в AutoCAD → плагин → локальный Green Atlas.
-AutoCAD отвечает за интерпретацию CAD; отдельный импорт через ezdxf не развивается.
-Файл может содержать другие названия слоёв, локальную систему координат,
-неполную границу и смешанные типы CAD-геометрии.
-ВДНХ используется только как крупный нагрузочный fixture для проверки производительности;
-ни один пользовательский сценарий или контракт не привязан к этой территории.
+1. Откройте DWG/DXF и его подосновы в AutoCAD.
+2. Запустите Green Atlas через плагин, проверьте слои и подготовьте карту.
+3. Выберите участок, разместите растения и сохраните план.
+4. Соберите результат с отдельным CAD-чертежом, ведомостью и 3D-сценой.
 
-Сквозной путь пока не завершён: GAOPEN и прямой native snapshot расходятся,
-а выпуск AUTOCAD_LIVE не подключён. Расчёт на snapshot-геометрии существует,
-но имеет ограничения допуска и полноты. Не считать unit-тесты обещанием
-полного импорта любой улицы. [Действующий контракт и план](docs/architecture/autocad-contract.md),
-[реестр нестыковок](docs/audits/2026-09-22-cad-pipeline.md).
+AutoCAD читает и восстанавливает геометрию. Green Atlas рассчитывает отступы
+и размещение по сохранённому снимку. Для выпуска AutoCAD записывает посадки
+в отдельную копию чертежа и проверяет её повторным открытием.
+Распознавание слоёв поддерживает предложения модели и проверку человеком.
+
+Проверенный пример — Кустанайская. Пропущенные объекты и недоступные подосновы
+показываются в замечаниях. Поддержка всех улиц пока не подтверждена.
+
+[Документация и схемы](docs/README.md)
+[Состояние возможностей](<docs/obsidian/00 Обзор/Текущее состояние.md>)
+[CAD-контракт](docs/architecture/autocad-contract.md)
 
 ## Состав
 
-- `apps/web` — React-приложение и предметные UI-компоненты.
-- `tools/autocad-bridge` — native-плагин, передача и упаковка локального приложения.
-- `apps/api` — FastAPI, приём native snapshot, Shapely-расчёт; legacy DXF reader/writer пока сохранены для совместимости.
-- `packages/ui` — независимая дизайн-система «Технический атлас».
-- `packages/api-client` — OpenAPI-типы и HTTP-клиент.
-- `fixtures` — тестовые данные сквозного сценария.
-- `docs` — архитектура и правила зависимостей.
+- `apps/web` — интерфейс и карта.
+- `apps/api` — локальное хранение, геометрия, правила и посадки.
+- `tools/autocad-bridge` — плагин AutoCAD и упаковка приложения.
+- `packages/ui` — дизайн-система.
+- `packages/api-client` — типы API и HTTP-клиент.
+- `fixtures` — тестовые данные.
+- `docs` — документация, архитектура и база знаний.
 
-## Запуск web/API для разработки (не приёмка плагина)
+## Запуск для разработки
+
+Нужны Node/pnpm из `package.json` и Python из `apps/api/.python-version`.
+В Windows перед каждой командой применяйте `. ./scripts/windows-env.ps1`
+в той же PowerShell-сессии.
+
+Из корня репозитория:
 
 ```bash
-pnpm install
-cd apps/api
-uv sync --locked --group dev
-uv run --no-sync python scripts/check_runtime.py
-uv run uvicorn app.main:app --reload --port 8000
+pnpm install --frozen-lockfile
+uv sync --project apps/api --locked --group dev
+uv run --project apps/api --no-sync python apps/api/scripts/check_runtime.py
 ```
 
-API использует CPython из `apps/api/.python-version` (3.13.15) и готовые
-C-ускорители ezdxf. `uv.lock` фиксирует зависимости; проверка перед запуском
-останавливает неверное окружение или отключённые ускорители. Для Windows
-сначала примените [окружение на диске проекта](docs/implementation/windows-local-runtime.md).
+Запуск API из `apps/api`:
+
+```bash
+uv run --no-sync uvicorn app.main:app --reload --port 8000
+```
 
 Во втором терминале из корня:
 
@@ -46,25 +55,26 @@ C-ускорители ezdxf. `uv.lock` фиксирует зависимост�
 pnpm dev:web
 ```
 
-Web-приложение ожидает API на `http://127.0.0.1:8000`. Откройте `http://127.0.0.1:5173/projects/new/import` и используйте `fixtures/site.dxf`. Для нагрузочной проверки есть `fixtures/large-map/vdnkh-large.dxf`; это только большой чертёж, а не преднастроенная территория или источник правил.
+Интерфейс: `http://127.0.0.1:5173`, API: `http://127.0.0.1:8000`.
+Этот запуск предназначен для разработки. Сборка плагина и desktop-приложения
+описана в [инструкции CAD-моста](tools/autocad-bridge/README.md).
+Новый проект открывается через AutoCAD, а не через старый DXF-upload.
 
 ## Проверки
 
-Граница CAD-зависимостей: `python3 scripts/architecture/cad_dependencies.py --check`.
-Граф и clangd: [инструменты разработки](scripts/architecture/README.md).
-
 ```bash
-cd apps/api && uv run --group dev pytest
+python3 scripts/architecture/cad_dependencies.py --check
+python3 scripts/docs/check_vault.py
+uv run --project apps/api --group dev pytest apps/api/tests
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
-pnpm storybook:build
-pnpm test:e2e
-pnpm test:e2e:headless
-pnpm generate:api
+pnpm check:api
 ```
 
-`generate:api` экспортирует OpenAPI из FastAPI/Pydantic и заново создаёт `packages/api-client/src/schema.d.ts`. Сгенерированный файл не редактируется вручную.
+`pnpm generate:api` обновляет контракт API. Сгенерированные типы вручную
+не редактируются. Для сквозного CAD-теста нужны AutoCAD и совместимый плагин.
 
-Подробнее: [граница текущей сборки](docs/current-product-boundary.md), [архитектура](docs/architecture.md), [API-контракт](docs/api-contract.md), [правила модулей](docs/module-rules.md).
+Аудиты, результаты прогонов и сборки хранятся локально.
+[Правила содержимого репозитория](docs/repository-content.md).

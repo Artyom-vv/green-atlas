@@ -1,7 +1,7 @@
 # Native AutoCAD diagnostics (not an alternative product importer)
 
 Current priority: **direct native queries**, not capture-converter development.
-Newest: [whole-window native predicate](../../../docs/implementation/2026-09-23-native-window-query-experiment.md).
+Newest: whole-window native predicate (локальный отчёт).
 `run_xref_native.py --window-case <manifest>` inventories every available leaf
 in the loaded host/XREF tree using native AABB broad phase. An explicit optional
 calculation fixture applies the shared `AffineAreaQuery` and native curve
@@ -11,13 +11,13 @@ DRAFT. The Kustanayskaya fixture is research policy, not a new classifier.
 experiment. Evidence-stage12 covers DWG/DXF; stage13 reruns Kamchatskaya's
 41-case baseline after sharing the query interface. No installed-plugin changes.
 
-See [native-affine measurements](../../../docs/implementation/2026-09-23-native-affine-query-experiment.md)
+See native-affine measurements (локальный отчёт)
 and the executed native-affine section below. The following capture series
 is historical evidence, not an instruction to resume polygon conversion.
 
 ## Earlier reproducible DWG/DXF capture checks — 23 September
 
-See [the measured report](../../../docs/implementation/2026-09-23-native-dxf-roundtrip.md)
+See the measured report (локальный отчёт)
 before reusing the older experiments below. Plugin0.1.38 is installed;
 that does not mean every referenced street passes the product handoff.
 The full available Kamchatskaya DXF capture is1.08GB and the production
