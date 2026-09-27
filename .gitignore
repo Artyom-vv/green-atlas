@@ -53,3 +53,7 @@ artifacts/artifacts/
 /docs/product-cut-audit.md
 /docs/automation-check-audit.md
 /docs/audit-*/
+/design-qa.md
+/docs/design-knowledge/EVIDENCE.jsonl
+/docs/design-research/
+/docs/editor-viewer-direction.md
