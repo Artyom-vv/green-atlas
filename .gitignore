@@ -29,3 +29,22 @@ artifacts/**/*.ts
 artifacts/**/*.m3u8
 artifacts/**/*.zip
 artifacts/artifacts/
+
+# Reports and generated deliverables stay local.
+/output/
+/artifacts/
+/docs/audit/
+/docs/audits/
+/docs/audit-density/
+/docs/audit-before/
+/docs/audit-after/
+/docs/implementation/
+/docs/product-analysis-2026-08-13/
+/docs/product-audit-current/
+/docs/prototypes/
+/docs/research/
+/docs/task-source-render/
+/HANDOFF.md
+/docs/product-cut-audit.md
+/docs/automation-check-audit.md
+/docs/audit-*/
