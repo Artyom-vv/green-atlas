@@ -59,3 +59,7 @@ docs/**/obj/
 /docs/prototypes/
 /docs/research/
 /docs/task-source-render/
+/design-qa.md
+/docs/design-knowledge/EVIDENCE.jsonl
+/docs/design-research/
+/docs/editor-viewer-direction.md
