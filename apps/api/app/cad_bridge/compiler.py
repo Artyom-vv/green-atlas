@@ -43,7 +43,7 @@ SUPPORTED_PLUGIN_VERSIONS = {
     "0.1.36",
     "0.1.37",
     "0.1.38",
-    "0.1.40", "0.1.41", "0.1.42",
+    "0.1.40", "0.1.41", "0.1.42", "0.1.43", "0.1.44",
 }
 XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.6",
@@ -75,9 +75,9 @@ XREF_DEPENDENCY_PLUGIN_VERSIONS = {
     "0.1.36",
     "0.1.37",
     "0.1.38",
-    "0.1.40", "0.1.41", "0.1.42",
+    "0.1.40", "0.1.41", "0.1.42", "0.1.43", "0.1.44",
 }
-AREA_PROPOSAL_PLUGIN_VERSIONS = {"0.1.36", "0.1.37", "0.1.38", "0.1.40", "0.1.41", "0.1.42"}
+AREA_PROPOSAL_PLUGIN_VERSIONS = {"0.1.36", "0.1.37", "0.1.38", "0.1.40", "0.1.41", "0.1.42", "0.1.43", "0.1.44"}
 MULTI_OUTER_PLUGIN_VERSIONS = AREA_PROPOSAL_PLUGIN_VERSIONS | {"0.1.35"}
 DERIVED_REGION_PLUGIN_VERSIONS = MULTI_OUTER_PLUGIN_VERSIONS | {"0.1.34"}
 TRAVERSAL_DIAGNOSTICS = (
@@ -532,7 +532,7 @@ def _compile_probe(
         "0.1.36",
         "0.1.37",
         "0.1.38",
-        "0.1.40", "0.1.41", "0.1.42",
+        "0.1.40", "0.1.41", "0.1.42", "0.1.43", "0.1.44",
     }:
         if summary.get("paths") != len(raw_paths):
             raise CadSnapshotAdmissionError("native path count differs from geometry")

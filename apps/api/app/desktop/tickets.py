@@ -47,7 +47,7 @@ class LiveTicket(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     format: Literal["green-atlas.transfer/2"] = Field(alias="schema")
-    plugin_version: Literal["0.1.37", "0.1.38", "0.1.40", "0.1.41", "0.1.42"]
+    plugin_version: Literal["0.1.37", "0.1.38", "0.1.40", "0.1.41", "0.1.42", "0.1.43", "0.1.44"]
     manifest: LiveCaptureManifest
     producer: PublicationRequest
     source_name: str
@@ -74,7 +74,7 @@ class SessionTicket(LiveTicket):
 
 class LiveQueryTicket(LiveTicket):
     format: Literal["green-atlas.transfer/4"] = Field(alias="schema")
-    plugin_version: Literal["0.1.40", "0.1.41", "0.1.42"]
+    plugin_version: Literal["0.1.40", "0.1.41", "0.1.42", "0.1.43", "0.1.44"]
     live_session: LiveSession
 
     @model_validator(mode="after")

@@ -20,6 +20,27 @@ if /usr/libexec/PlistBuddy -c 'Print :GADevelopmentProfile' "$desktop_app/Conten
 fi
 codesign --verify --deep --strict "$desktop_app"
 bridge_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bridge_package/Contents/MacOS/GreenAtlasBridge.bundle/Contents/Info.plist")"
+desktop_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$desktop_app/Contents/Info.plist")"
+if [[ "$bridge_version" != "$desktop_version" ]]; then
+  echo "Plugin $bridge_version and desktop $desktop_version do not match." >&2
+  exit 1
+fi
+build_python="${GREEN_ATLAS_BUILD_PYTHON:-$repo_root/apps/api/.venv/bin/python}"
+PYTHONPATH="$repo_root/apps/api" "$build_python" - "$bridge_version" <<'PY'
+import sys
+from app.cad_bridge.compiler import (AREA_PROPOSAL_PLUGIN_VERSIONS,
+                                     SUPPORTED_PLUGIN_VERSIONS,
+                                     XREF_DEPENDENCY_PLUGIN_VERSIONS)
+from app.desktop.tickets import LiveQueryTicket
+
+version = sys.argv[1]
+accepted = LiveQueryTicket.model_fields["plugin_version"].annotation.__args__
+if not all(version in versions for versions in (
+    accepted, SUPPORTED_PLUGIN_VERSIONS, XREF_DEPENDENCY_PLUGIN_VERSIONS,
+    AREA_PROPOSAL_PLUGIN_VERSIONS,
+)):
+    raise SystemExit(f"Desktop API cannot accept the packaged plugin {version}")
+PY
 mkdir -p "$distribution_root"
 staging_root="$(mktemp -d "$distribution_root/build-XXXXXXXX")"
 installer_app="$staging_root/Green Atlas Installer.app"

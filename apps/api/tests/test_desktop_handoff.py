@@ -1,6 +1,8 @@
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
+from pathlib import Path
 from threading import Event
 
 import pytest
@@ -64,7 +66,8 @@ def finish(service, identifier):
     return service.get(identifier)
 
 
-def test_live_query_ticket_binds_same_capture_to_project(local, monkeypatch):
+@pytest.mark.parametrize("plugin_version", ["0.1.40", "0.1.43", "0.1.44"])
+def test_live_query_ticket_binds_same_capture_to_project(local, monkeypatch, plugin_version):
     from app.native_query.live_client import LiveQueryClient
     from test_native_live_client import session
     service, runtime, _ = local
@@ -72,12 +75,12 @@ def test_live_query_ticket_binds_same_capture_to_project(local, monkeypatch):
     payload = json.loads(path.read_text())
     capture_path = path.parent / "Drawing.autocad.json"
     probe = json.loads(capture_path.read_text())
-    probe["plugin_version"] = "0.1.40"
+    probe["plugin_version"] = plugin_version
     capture_path.write_text(json.dumps(probe))
     digest = sha256(capture_path.read_bytes()).hexdigest()
-    current = session(path.parent, plugin_version="0.1.40", snapshot_sha256=digest,
+    current = session(path.parent, plugin_version=plugin_version, snapshot_sha256=digest,
         inventory_path="/test/inventory.json", inventory_sha256="d" * 64)
-    payload.update(schema="green-atlas.transfer/4", plugin_version="0.1.40", live_session=current.model_dump())
+    payload.update(schema="green-atlas.transfer/4", plugin_version=plugin_version, live_session=current.model_dump())
     payload["manifest"]["files"][0].update(sha256=digest, bytes=capture_path.stat().st_size)
     path.write_text(json.dumps(payload))
     monkeypatch.setattr(LiveQueryClient, "reconnect", lambda self, token: current)
@@ -90,6 +93,25 @@ def test_live_query_ticket_binds_same_capture_to_project(local, monkeypatch):
     assert project.source_file.native_session == current
     assert project.geometry.feature_collection["features"]
     assert runtime.project_repository.get_source(project.id) == capture_path.read_bytes()
+
+
+def test_packaged_plugin_version_is_admitted_by_desktop_and_compiler():
+    from app.cad_bridge.compiler import (AREA_PROPOSAL_PLUGIN_VERSIONS,
+                                         SUPPORTED_PLUGIN_VERSIONS,
+                                         XREF_DEPENDENCY_PLUGIN_VERSIONS)
+    from app.desktop.tickets import LiveQueryTicket
+
+    root = Path(__file__).resolve().parents[3]
+    header = (root / "tools/autocad-bridge/native/bridge_config.h").read_text()
+    version = re.search(r'kPluginVersion\s*=\s*"([^"]+)"', header).group(1)
+    assert version in LiveQueryTicket.model_fields["plugin_version"].annotation.__args__
+    assert version in SUPPORTED_PLUGIN_VERSIONS
+    assert version in XREF_DEPENDENCY_PLUGIN_VERSIONS
+    assert version in AREA_PROPOSAL_PLUGIN_VERSIONS
+    for path in ("tools/autocad-bridge/native/Info.plist",
+                 "tools/autocad-bridge/desktop/Info.plist",
+                 "tools/autocad-bridge/PackageContents.xml"):
+        assert version in (root / path).read_text()
 
 
 def test_live_query_ticket_rejects_different_capture(local):
