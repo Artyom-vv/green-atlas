@@ -21,6 +21,14 @@ static NSURL *desktopURL(NSURL *package) {
     return [package URLByAppendingPathComponent:@"Contents/Applications/Green Atlas.app"];
 }
 
+// Finder may launch a quarantined app from an App Translocation path whose
+// parent resolves through a symlink. Compare children against the resolved
+// package root, while still rejecting symlinks *inside* the package.
+static BOOL isExpectedPackageChild(NSURL *package, NSURL *child, NSString *relative) {
+    NSURL *expected = [package.URLByResolvingSymlinksInPath URLByAppendingPathComponent:relative];
+    return [child.URLByResolvingSymlinksInPath.path isEqualToString:expected.path];
+}
+
 static BOOL supportedHost() {
 #if defined(__arm64__)
     return [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){26, 0, 0}];
@@ -49,14 +57,16 @@ static BOOL verifySignature(NSURL *package, NSError **error) {
         || ![info[@"LSMinimumSystemVersion"] isEqual:@"26.0"]
         || ![info[@"GASupportedArchitectures"] isEqual:@[@"arm64"]]
         || info[@"GADevelopmentProfile"] != nil
-        || ![desktop.path isEqual:desktop.URLByResolvingSymlinksInPath.path]) {
+        || !isExpectedPackageChild(package, desktop, @"Contents/Applications/Green Atlas.app")) {
         if (error) *error = failure(@"В пакете нет совместимого локального приложения Green Atlas.");
         return NO;
     }
     for (NSString *relative in @[@"Contents/MacOS/GreenAtlasDesktop", @"Contents/Resources/Runtime/GreenAtlasRuntime", @"Contents/Resources/Web/index.html"]) {
         NSURL *file = [desktop URLByAppendingPathComponent:relative];
         NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:file.path error:nil];
-        if (![attributes[NSFileType] isEqual:NSFileTypeRegular] || ![file.path isEqual:file.URLByResolvingSymlinksInPath.path]) {
+        NSString *packageRelative = [@"Contents/Applications/Green Atlas.app" stringByAppendingPathComponent:relative];
+        if (![attributes[NSFileType] isEqual:NSFileTypeRegular]
+            || !isExpectedPackageChild(package, file, packageRelative)) {
             if (error) *error = failure(@"Локальный движок или интерфейс отсутствует. Скачайте полный пакет.");
             return NO;
         }
@@ -258,6 +268,12 @@ static int selfTest(NSURL *source) {
     BOOL first = installPackage(source, root, &backup, &error) && backup == nil;
     NSURL *target = [root URLByAppendingPathComponent:PackageName];
     BOOL identity = ownedPackage(target);
+    NSURL *sourceParentLink = [root URLByAppendingPathComponent:@"source-parent-link"];
+    [manager createSymbolicLinkAtURL:sourceParentLink
+        withDestinationURL:source.URLByDeletingLastPathComponent error:nil];
+    NSURL *sourceThroughLink = [sourceParentLink URLByAppendingPathComponent:PackageName];
+    NSURL *linkedSourceRoot = [root URLByAppendingPathComponent:@"linked-source-install"];
+    BOOL linkedSource = installPackage(sourceThroughLink, linkedSourceRoot, nil, &error);
     BOOL update = installPackage(source, root, &backup, &error) && ownedPackage(backup);
     BOOL untouched = ownedPackage(source);
     NSURL *otherRoot = [root URLByAppendingPathComponent:@"unrelated"];
@@ -297,11 +313,11 @@ static int selfTest(NSURL *source) {
         && !isAutoCADEditor(nil, @"app")
         && requiresClosedApp(@"ru.green-atlas.desktop", @"app")
         && !requiresClosedApp(@"com.apple.finder", @"app");
-    BOOL passed = first && identity && update && untouched && refusal && symlink && corruptRefused && connectorRefused && missingRefused && qaRefused && processCheck;
+    BOOL passed = first && identity && linkedSource && update && untouched && refusal && symlink && corruptRefused && connectorRefused && missingRefused && qaRefused && processCheck;
     printf("{\"missing_desktop_refused\":%s,\"development_profile_refused\":%s,\"supported_host\":%s}\n", missingRefused ? "true" : "false", qaRefused ? "true" : "false", supportedHost() ? "true" : "false");
-    printf("{\"passed\":%s,\"install\":%s,\"identity\":%s,\"update_backup\":%s,\"source_preserved\":%s,\"unrelated_refused\":%s,\"symlink_refused\":%s,\"corrupted_package_refused\":%s,\"corrupted_connector_refused\":%s,\"background_helper_ignored\":%s}\n",
+    printf("{\"passed\":%s,\"install\":%s,\"identity\":%s,\"linked_source\":%s,\"update_backup\":%s,\"source_preserved\":%s,\"unrelated_refused\":%s,\"symlink_refused\":%s,\"corrupted_package_refused\":%s,\"corrupted_connector_refused\":%s,\"background_helper_ignored\":%s}\n",
         passed ? "true" : "false", first ? "true" : "false", identity ? "true" : "false",
-        update ? "true" : "false", untouched ? "true" : "false", refusal ? "true" : "false", symlink ? "true" : "false", corruptRefused ? "true" : "false", connectorRefused ? "true" : "false", processCheck ? "true" : "false");
+        linkedSource ? "true" : "false", update ? "true" : "false", untouched ? "true" : "false", refusal ? "true" : "false", symlink ? "true" : "false", corruptRefused ? "true" : "false", connectorRefused ? "true" : "false", processCheck ? "true" : "false");
     [manager removeItemAtURL:root error:nil];
     return passed ? 0 : 1;
 }
