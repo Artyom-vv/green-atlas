@@ -1,0 +1,111 @@
+{
+  "purpose": "local presentation demo, not a production pipeline acceptance test",
+  "street_stage_relation": "stages 01-03 share the restored 2026-09-23 .blend camera and objects; stage 04 edits stage 03; stage 05 is nearby observational reference",
+  "scene_source": {
+    "path": "artifacts/metric-scene-20260923/native-rebuild/final-native/street-geometry-prototype.blend",
+    "sha256": "421e25dc9d291d6babc90dcf853eae51a262bab6eca8e14b682c7e10ec6e5a6c"
+  },
+  "cycles_source": {
+    "path": "artifacts/metric-scene-20260923/native-rebuild/final-native/street-geometry-prototype.png",
+    "sha256": "70753e536defd9d19d902ca9250c38271c26f86bf47858e854296fc6bd8163a4"
+  },
+  "yandex_view": "https://yandex.com/maps/213/moscow/?ll=37.753371%2C55.618929&panorama%5Bdirection%5D=8.181318%2C0.000000&panorama%5Bfull%5D=true&panorama%5Bpoint%5D=37.753777%2C55.618724&panorama%5Bspan%5D=91.492845%2C60.000000&z=18",
+  "files": [
+    {
+      "path": "quality-target/last-quality-target.png",
+      "bytes": 2328229,
+      "sha256": "d699fc4608359f1d88589554b43f4ac9f805ce8e8ebaf5ed08f5f9bab5efafd4"
+    },
+    {
+      "path": "quality-target/user-reference.jpg",
+      "bytes": 116378,
+      "sha256": "aac934499b5096ce8f776d02f59b420d3fc0398d62c0f095b6e65916cdcffe62"
+    },
+    {
+      "path": "street/01-clay.png",
+      "bytes": 1228794,
+      "sha256": "5a925702fe5fa321cc2db0cc836e31a926931ec876f6505ca61196ec89b07b55"
+    },
+    {
+      "path": "street/02-green-mask-highlight.png",
+      "bytes": 1453955,
+      "sha256": "ce07c2064cdf807ef87d27a38d91300a8d361decb12a2b782281ff3e74b355eb"
+    },
+    {
+      "path": "street/03-cycles.png",
+      "bytes": 1451566,
+      "sha256": "70753e536defd9d19d902ca9250c38271c26f86bf47858e854296fc6bd8163a4"
+    },
+    {
+      "path": "street/04-imagegen.png",
+      "bytes": 2713322,
+      "sha256": "bb6f970e6d549d62f32fdce0a1457b847d5698fa5f0111dcd11f89229ef1157e"
+    },
+    {
+      "path": "street/05-yandex-reference.jpg",
+      "bytes": 215419,
+      "sha256": "a7d30893a383008a75f98bad520781b2328f2c606208dbc28d5e02ded6670ff7"
+    },
+    {
+      "path": "appendix/01-street-imagegen.png",
+      "bytes": 2575407,
+      "sha256": "e8c20be803cd5860b1173043304e03d8951899e96b5bc49266d2cb07912eee27"
+    },
+    {
+      "path": "appendix/01-street-source.png",
+      "bytes": 1465746,
+      "sha256": "d15e805c067b0870e8d7455535ede3a8d9c2902919f1a72b7d43780c2944c4e5"
+    },
+    {
+      "path": "appendix/02-reverse-imagegen.png",
+      "bytes": 2753142,
+      "sha256": "6606d0807daa6ea55911f71d525ebbc9e4fa0124585c130e9c292ba1edaa9e1f"
+    },
+    {
+      "path": "appendix/02-reverse-source.png",
+      "bytes": 1690865,
+      "sha256": "982772eae88e731b518767cb4cbbaf9c933a908721a9584374e0f6f8ba854347"
+    },
+    {
+      "path": "appendix/03-aerial-imagegen.png",
+      "bytes": 2674937,
+      "sha256": "dda1bc73937a0fe19f95951603c4fcce97c5c56ad40a5014d017334c8296c119"
+    },
+    {
+      "path": "appendix/03-aerial-source.png",
+      "bytes": 1555073,
+      "sha256": "4913f027d8a6916877d0bd42ef534cbfae38a5602c075f7e7379d932f8322f46"
+    },
+    {
+      "path": "flowchart.dot",
+      "bytes": 2584,
+      "sha256": "fe1cd4c42e6eb2d3b440b54dd11f1d1d9d234fede53362dfc57db29b7c26ff79"
+    },
+    {
+      "path": "flowchart.svg",
+      "bytes": 16063,
+      "sha256": "accc6b71117427cbef7c35c44c06b218f8247c06e0e5cf189928e41305d1a224"
+    },
+    {
+      "path": "flowchart.png",
+      "bytes": 246325,
+      "sha256": "2c03eee0bcb68e40042f0d878f6f5f4fe4f1efc49e0bb84934092fb2f43f04fc"
+    },
+    {
+      "path": "scene-packet.json.gz",
+      "bytes": 2141352,
+      "sha256": "aeb111f1231c9472204766ad76718dbf2ee751e1e181596735a5e0e78de5f7d8"
+    },
+    {
+      "path": "world.json.gz",
+      "bytes": 205074,
+      "sha256": "a650fd47ceca9baf8148c36244d708e43ae51dfe76b0922280ad2c84981bdaa0"
+    },
+    {
+      "path": "render-receipt.json",
+      "bytes": 21623,
+      "sha256": "0ddeb950a9e0a11c26b1dfd202eb8772a15205e3ba6dc96c493b632da8cf6e4b"
+    }
+  ],
+  "distribution": "presentation assets and object snapshot only; no Blender .blend, no import into the installed Green Atlas application"
+}

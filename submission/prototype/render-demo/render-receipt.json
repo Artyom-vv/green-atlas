@@ -1,0 +1,763 @@
+{
+  "adaptive_threshold": 0.012,
+  "appearance_profile": "native_v1",
+  "assets": [
+    {
+      "asset_key": "Populus-tremuloides",
+      "native_height_m": 16.377323150634766,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Populus-tremuloides_A_summer.blend",
+      "sha256": "b2594acec536edbd4dbe362c8ee4957888843d48f820bf83a7f3d0c5f1063037"
+    },
+    {
+      "asset_key": "Tilia-europaea",
+      "native_height_m": 12.279956817626953,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Tilia-europaea_A_summer.blend",
+      "sha256": "9c2698f5f6687201f64a25a638b08aa59c651f5009a4541bd651457f2c20856b"
+    },
+    {
+      "asset_key": "Betula-pendula",
+      "native_height_m": 11.815528869628906,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Betula-pendula_A_summer.blend",
+      "sha256": "36bbdeb52659b7329700ccb4f03a7e3289b48c2861e54266b559f561df1eb69a"
+    },
+    {
+      "asset_key": "Acer-pseudoplatanus",
+      "native_height_m": 19.952022552490234,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Acer-pseudoplatanus_B_summer.blend",
+      "sha256": "1cc06aed0e6a617f33fddd39a64746a5ac4fe9b8cd4d35e81ea7e0b282b0b0b2"
+    },
+    {
+      "asset_key": "Populus-tremuloides",
+      "native_height_m": 22.705129623413086,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Populus-tremuloides_B_summer.blend",
+      "sha256": "f8ae337b4e5b571a4b1594cf2e3a167ad606aa81741ab48750eadb5912a63d37"
+    },
+    {
+      "asset_key": "Tilia-europaea",
+      "native_height_m": 10.705883979797363,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Tilia-europaea_B_summer.blend",
+      "sha256": "6824c0a650724b4472b24bf8df0d6d265daded47caad2747b0797d09a3626476"
+    },
+    {
+      "asset_key": "Betula-pendula",
+      "native_height_m": 9.2835693359375,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Betula-pendula_B_summer.blend",
+      "sha256": "a39508d772eaf2e69246cdbda2ecf02532a10079ca3ed23753342bc25c556d68"
+    },
+    {
+      "asset_key": "Acer-pseudoplatanus",
+      "native_height_m": 20.647594451904297,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Acer-pseudoplatanus_A_summer.blend",
+      "sha256": "af5bb22e20bacb39bdbb4b4d4bf7905d4b50da83e72ef9e76a3a4c114518d2f4"
+    },
+    {
+      "asset_key": "Salix-babylonica",
+      "native_height_m": 13.129517555236816,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Salix-babylonica_A_summer.blend",
+      "sha256": "222e5803d53762e48d75670e8357c4ce526954f761a469755d4baf5b183b90c4"
+    },
+    {
+      "asset_key": "Prunus-cerasifera",
+      "native_height_m": 4.813154697418213,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Prunus-cerasifera_B_summer.blend",
+      "sha256": "ee38cc3733f150412e82e0cdd27bb501387d53c26e723de73b99931528c45ca7"
+    },
+    {
+      "asset_key": "Salix-babylonica",
+      "native_height_m": 17.23328971862793,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Salix-babylonica_B_summer.blend",
+      "sha256": "f8f1b34de0ce5fb93d4e9971872c07508530e6af6e370771e4b15d0e06e80d14"
+    },
+    {
+      "asset_key": "Alnus-glutinosa",
+      "native_height_m": 15.894576072692871,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Alnus-glutinosa_A_summer.blend",
+      "sha256": "4d6d7dc2e8a03ecc41c792126a17784024dd207499f490dbc5a1fa8cbedd1e48"
+    },
+    {
+      "asset_key": "Prunus-cerasifera",
+      "native_height_m": 5.654293537139893,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Prunus-cerasifera_A_summer.blend",
+      "sha256": "4dfed6d56974c27a274c9036b8dac52b053159c9cc14ec1f7e629a4b58370226"
+    },
+    {
+      "asset_key": "Malus-domestica",
+      "native_height_m": 5.762324333190918,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Malus-domestica_A_summer.blend",
+      "sha256": "b6c7d190c3a8611c827c4e58116505f2f445e645218def4293aff8c5dd75b38e"
+    },
+    {
+      "asset_key": "Fraxinus-excelsior",
+      "native_height_m": 9.239081382751465,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Fraxinus-excelsior_A_summer.blend",
+      "sha256": "54bea0aa50f60076a60b016f27f0e903545bb6d559c633e7db3a60112127ec35"
+    },
+    {
+      "asset_key": "Acer-winter",
+      "native_height_m": 20.41164779663086,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Acer-pseudoplatanus_A_winter.blend",
+      "sha256": "f3da63d2a0915778fc52aba15de0a3531cfa842b115e051ed6637c5b6591b329"
+    },
+    {
+      "asset_key": "Larix-decidua",
+      "native_height_m": 5.200873374938965,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/coniferous/Tree_Larix-decidua_A_spring-summer-autumn.blend",
+      "sha256": "4a10e10056c1a8217502a2821237860b37d29e8ad3976ba0baeee1e8c54f204b"
+    },
+    {
+      "asset_key": "Larix-decidua",
+      "native_height_m": 3.4651541709899902,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/coniferous/Tree_Larix-decidua_B_spring-summer-autumn.blend",
+      "sha256": "a555d451d29b4b86515c7f9707ae944ab064e4a9c6fed6b9b93a2cb0bd7e9022"
+    },
+    {
+      "asset_key": "Picea-abies",
+      "native_height_m": 2.4129557609558105,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/coniferous/Tree_Picea-abies_A_spring-summer-autumn.blend",
+      "sha256": "4334f5f8d4718fc2b5a28541ebcc87ec7dc89d4059f8971259a552af3ed6db74"
+    },
+    {
+      "asset_key": "Aesculus-hippocastanum",
+      "native_height_m": 32.295936584472656,
+      "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/deciduous/Tree_Aesculus-hippocastanum_A_summer.blend",
+      "sha256": "ff7e3f071f5ba093165e60943fa2791953bb1b80dbe2215d6a030ace70043767"
+    }
+  ],
+  "camera": {
+    "lens_mm_proxy": 32.0,
+    "position_scene_xyz_m": [
+      0.0,
+      0.0,
+      1.68
+    ],
+    "sensor_width_mm": 36.0,
+    "status": "position and direction from named mapped street axis; height and lens fixed render preset",
+    "target_scene_xyz_m": [
+      -36.542961,
+      117.474392,
+      -0.213852
+    ]
+  },
+  "counts": {
+    "automatic_context_surfaces": 0,
+    "automatic_infrastructure_rendered": 26,
+    "automatic_infrastructure_source": 26,
+    "buildings": 85,
+    "context_window_proxies": 2732,
+    "curbs": 3767,
+    "facade_joint_proxies": 3236,
+    "lawn_blade_clumps": 32977,
+    "project_marking_surfaces_hidden": 0,
+    "project_marking_surfaces_rendered": 1,
+    "retail_glazing_proxies": 37,
+    "road_markings": 0,
+    "surfaces": 4,
+    "vegetation": 199
+  },
+  "diagnostics_rendered": false,
+  "engine": "CYCLES",
+  "input": {
+    "path": "/Users/artem/Documents/ЛЦТ/artifacts/metric-scene-20260923/native-rebuild/controlled-scene/scene-packet.json",
+    "sha256": "d16f50d02b6091ac37705af2578e8448961a3e799edf2ebfe23ee822533c16a5"
+  },
+  "lighting": {
+    "preset": "clear_day_neutral",
+    "status": "locked_render_preset",
+    "sun_azimuth_deg": 138.0,
+    "sun_elevation_deg": 36.0
+  },
+  "lighting_profile": {
+    "appearance_override": {
+      "exposure": 0.45,
+      "hdri_used": false,
+      "sun_angle_degrees": 2.5,
+      "sun_energy": 2.0,
+      "sun_rotation_degrees": [
+        38.0,
+        0.0,
+        215.0
+      ],
+      "world_color": [
+        0.83,
+        0.9,
+        1.0
+      ],
+      "world_strength": 1.0
+    },
+    "profile": "stable_daylight",
+    "source": {
+      "preset": "clear_day_neutral",
+      "status": "locked_render_preset",
+      "sun_azimuth_deg": 138.0,
+      "sun_elevation_deg": 36.0
+    }
+  },
+  "native_appearance_assets": [
+    {
+      "id": "ambientcg.Grass005.2k-jpg",
+      "license": "CC0",
+      "maps": {
+        "diffuse": {
+          "path": "/Users/artem/Documents/ЛЦТ/.runtime/cad-vegetation-20260919/pbr/grass005/Grass005_2K-JPG_Color.jpg",
+          "sha256": "2acdf15d09e790a114743f21bc0332a86e386cb77c54507323d626f67f0f2e10"
+        },
+        "normal_gl": {
+          "path": "/Users/artem/Documents/ЛЦТ/.runtime/cad-vegetation-20260919/pbr/grass005/Grass005_2K-JPG_NormalGL.jpg",
+          "sha256": "c8406e8b784fbcd22d706fbe0c24175c327bca7e19ad8d09457fad8a05089548"
+        },
+        "roughness": {
+          "path": "/Users/artem/Documents/ЛЦТ/.runtime/cad-vegetation-20260919/pbr/grass005/Grass005_2K-JPG_Roughness.jpg",
+          "sha256": "20c302c4cf059d6676d83528ae7cbf62ca35944e691dc6377a164ce9c31c8e67"
+        }
+      },
+      "source_url": "https://ambientcg.com/view?id=Grass005"
+    },
+    {
+      "id": "polyhaven.kloofendal_48d_partly_cloudy.1k-hdr",
+      "license": "CC0",
+      "path": "apps/web/public/assets/environment/kloofendal_48d_partly_cloudy_1k.hdr",
+      "sha256": "5477b7dbb2aea4a6947cb36b96339c119f90bf36a03b039af3254b5e6a22896d",
+      "source_url": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy",
+      "use": "loaded but disconnected by stable_daylight appearance preset"
+    },
+    {
+      "assets": [
+        {
+          "native_height_m": 0.10307354480028152,
+          "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/grass/Grass_Cut-grid_B_spring-summer.blend",
+          "sha256": "a90af6c676edb884ffd7e5f1bb7b510f9388797b6c92b50ccb7b8ea1315006da"
+        },
+        {
+          "native_height_m": 0.10307354480028152,
+          "path": ".runtime/botaniq-68-inspection/selected/botaniq_full/blends_280/grass/Grass_Cut_A_spring-summer.blend",
+          "sha256": "cbd1ce240d9e1073595894b3e3c1317574621838885361d5f388c0c171118f10"
+        }
+      ],
+      "id": "botaniq.controlled_mown_lawn_mix",
+      "instance_count": 17627,
+      "placement": "deterministic 0.56 m overlapping grid clipped to exact authored lawn triangles within 85 m of camera",
+      "seed": "9389513521922795528",
+      "tuned_materials": [
+        "bq_Grass",
+        "bq_Grass_Grid"
+      ]
+    }
+  ],
+  "neural_finish": {
+    "reason": "geometry and semantic render are audited before neural finishing",
+    "status": "disabled"
+  },
+  "output": {
+    "blend": "/Users/artem/Documents/ЛЦТ/artifacts/metric-scene-20260923/native-rebuild/final-native/street-geometry-prototype.blend",
+    "image": "/Users/artem/Documents/ЛЦТ/artifacts/metric-scene-20260923/native-rebuild/final-native/street-geometry-prototype.png",
+    "image_sha256": "70753e536defd9d19d902ca9250c38271c26f86bf47858e854296fc6bd8163a4"
+  },
+  "presentation_population_counts": {
+    "passenger_car": 0,
+    "pedestrian": 0
+  },
+  "presentation_population_rendered": false,
+  "render_backend": {
+    "device": "METAL",
+    "devices": [
+      {
+        "name": "Apple M3 Pro",
+        "type": "CPU",
+        "use": false
+      },
+      {
+        "name": "Apple M3 Pro (GPU - 14 cores)",
+        "type": "METAL",
+        "use": true
+      }
+    ],
+    "engine": "CYCLES",
+    "requested": "cycles"
+  },
+  "repaired_texture_images": 87,
+  "resolution": [
+    1280,
+    720
+  ],
+  "samples_requested": 64,
+  "scene_state": "project",
+  "schema": "green-atlas.nspd-street-render-receipt.v1",
+  "stable_leaf_tuning": [
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Acer-pseudoplatanus"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.6000000238418579
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Aesculus-hippocastanum"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.5
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Alnus-glutinosa"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Betula-pendula"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.5
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Fraxinus-excelsior"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.3499999940395355
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Larix-decidua"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Maulus-domestica"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.6000000238418579
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Picea-abies"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Populus-tremuloides"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Prunus-cerasifera"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.5
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Salix-babylonica"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Tilia-europaea"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Acer-pseudoplatanus"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Betula-pendula"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.3499999940395355
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Larix-decidua"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Populus-tremuloides"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Prunus-cerasifera"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.5
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Salix-babylonica"
+    },
+    {
+      "changes": {
+        "Bump Strength": {
+          "after": 0.18,
+          "before": 1.0
+        },
+        "Normal Strength": {
+          "after": 0.25,
+          "before": 1.0
+        },
+        "Roughness": {
+          "after": 0.62,
+          "before": 0.4000000059604645
+        },
+        "Translucency Factor": {
+          "after": 0.6,
+          "before": 0.5
+        },
+        "Value": {
+          "after": 1.22,
+          "before": 1.0
+        }
+      },
+      "material": "bq_Leaf_Tilia-europaea"
+    }
+  ],
+  "status": "geometry_material_prototype_not_beauty_admitted"
+}

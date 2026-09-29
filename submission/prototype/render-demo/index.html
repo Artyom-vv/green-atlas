@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Green Atlas — демо рендера</title>
+  <style>
+    :root { color-scheme: light; --ink:#182720; --muted:#506359; --line:#cbd8ce; --bg:#f5f7f3; --card:#fff; --green:#22794c; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; }
+    main { max-width:1440px; padding:48px 28px 80px; margin:auto; }
+    h1 { font-size:clamp(32px,4vw,58px); letter-spacing:-.04em; line-height:1.08; margin:0 0 16px; }
+    h2 { font-size:28px; letter-spacing:-.025em; margin:56px 0 18px; }
+    p { max-width:900px; margin:0 0 16px; }
+    .eyebrow { color:var(--green); font-size:13px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; margin-bottom:15px; }
+    .intro { color:var(--muted); font-size:19px; }
+    .notice { max-width:none; border-left:5px solid #bd8b2d; background:#fff7e5; padding:15px 20px; margin:30px 0; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; box-shadow:0 8px 28px rgba(22,52,35,.045); }
+    .card img { display:block; width:100%; aspect-ratio:16/9; object-fit:contain; background:#dce5e0; }
+    .card a:focus-visible { outline:4px solid var(--green); outline-offset:-4px; }
+    .caption { padding:18px 20px 22px; }
+    .step { color:var(--green); font-weight:800; font-size:12px; letter-spacing:.1em; text-transform:uppercase; }
+    .caption h3 { font-size:21px; margin:4px 0 6px; }
+    .caption p { color:var(--muted); margin:0; }
+    .reference { grid-column:1 / -1; }
+    .reference img { aspect-ratio:auto; max-height:700px; object-fit:contain; }
+    .feature img { display:block; width:100%; max-height:760px; object-fit:contain; background:#dce5e0; }
+    .diagram { background:#f7f8f4; border:1px solid var(--line); border-radius:16px; padding:18px; text-align:center; }
+    .diagram img { width:100%; max-width:1000px; height:auto; }
+    .links { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0; }
+    .links a { background:#e3eee6; color:#124d2d; border-radius:8px; padding:8px 12px; font-weight:650; text-decoration:none; }
+    .links a:hover { background:#d3e5d9; }
+    footer { border-top:1px solid var(--line); padding-top:20px; margin-top:60px; color:var(--muted); }
+    @media(max-width:760px) { main { padding:26px 16px 55px; } .grid { grid-template-columns:1fr; } .reference { grid-column:auto; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Green Atlas / Демо визуального пайплайна</div>
+  <h1>От пространственной сцены<br>к презентационному кадру</h1>
+  <p class="intro">Сначала выбранный качественный ориентир, затем проверяемая цепочка из сохранённой сцены: технические виды, Cycles, нейроотделка и панорама для сравнения.</p>
+  <p class="notice"><strong>Статус:</strong> это исторический диагностический пример. Нейроотделка не является геометрически проверенным результатом; панорама снята с другой точки. Целевая блок-схема ниже не означает, что весь маршрут уже автоматизирован в продукте.</p>
+
+  <h2>Качественный ориентир</h2>
+  <article class="card feature"><a href="quality-target/last-quality-target.png"><img src="quality-target/last-quality-target.png" alt="Поздний качественный кадр с фактурой зданий, матовыми окнами и дорожной разметкой"></a><div class="caption"><div class="step">Выбранный поздний результат ImageGen</div><h3>Фасады, стёкла и разметка</h3><p>Этот кадр пользователь указал как лучший по внешнему виду. Его исходный PNG сохранился, но соответствие именно восстановленной ниже сцене Blender не доказано. Машина, прохожие и нарисованная разметка не считаются подтверждёнными объектными данными.</p></div></article>
+
+  <h2>Последовательность из одной сохранённой сцены</h2>
+
+  <section class="grid" aria-label="Последовательность кадров">
+    <article class="card"><a href="street/01-clay.png"><img src="street/01-clay.png" alt="Серая трёхмерная сцена улицы в Workbench"></a><div class="caption"><div class="step">01 / геометрия</div><h3>Сцена без материалов</h3><p>Workbench показывает положение зданий, дорог, бордюров и деревьев без реалистичного шейдинга.</p></div></article>
+    <article class="card"><a href="street/02-green-mask-highlight.png"><img src="street/02-green-mask-highlight.png" alt="Те же объекты с цветовой подсветкой озеленения"></a><div class="caption"><div class="step">02 / диагностическая подсветка</div><h3>Классы озеленения</h3><p>Те же камера и геометрия. Цвета назначены по именам объектов Blender; это демонстрация классов, не точная CAD-маска.</p></div></article>
+    <article class="card"><a href="street/03-cycles.png"><img src="street/03-cycles.png" alt="Нативный рендер улицы в Blender Cycles"></a><div class="caption"><div class="step">03 / нативный рендер</div><h3>Blender Cycles</h3><p>Botaniq, объёмная трава, материалы поверхностей и дневной свет. Фасады остаются условными.</p></div></article>
+    <article class="card"><a href="street/04-imagegen.png"><img src="street/04-imagegen.png" alt="Визуальная нейроотделка того же Cycles-кадра"></a><div class="caption"><div class="step">04 / визуальная отделка</div><h3>ImageGen</h3><p>Материалы и свет выглядят богаче. Детали, изменённые моделью, требуют отдельной проверки по сцене и источникам.</p></div></article>
+    <article class="card reference"><a href="street/05-yandex-reference.jpg"><img src="street/05-yandex-reference.jpg" alt="Панорама Яндекс Карт на Кустанайской улице с мини-картой и атрибуцией"></a><div class="caption"><div class="step">05 / внешний референс</div><h3>Кустанайская улица на Яндекс Картах</h3><p>Панорама 2025 года рядом с домом 10А. Вид направлен вдоль той же улицы, но точка и поле зрения отличаются от виртуального кадра.</p></div></article>
+  </section>
+
+  <h2>Что должно происходить автоматически</h2>
+  <p>Целевая схема разделяет исходные данные, проверенное размещение объектов, художественные настройки и необязательную нейроотделку. Для каждого объекта в пакете сцены нужны координаты, класс и источник.</p>
+  <div class="diagram"><a href="flowchart.svg"><img src="flowchart.svg" alt="Блок-схема целевого пути от AutoCAD и картографии к Blender, Cycles и проверке"></a></div>
+  <div class="links"><a href="flowchart.png">Блок-схема PNG</a><a href="flowchart.svg">Блок-схема SVG</a><a href="README.md">Методика и ограничения</a><a href="manifest.json">Хеши файлов</a></div>
+
+  <h2>Сохранённые сравнения с трёх ракурсов</h2>
+  <p>Пары от 21 сентября показывают один и тот же вход и результат ImageGen внутри каждого ракурса. Старый проект Blender для этих пар утрачен, поэтому они вынесены отдельно от основной цепочки.</p>
+  <section class="grid" aria-label="Архивные сравнения">
+    <article class="card"><a href="appendix/01-street-source.png"><img src="appendix/01-street-source.png" alt="Архивный нативный уличный кадр"></a><div class="caption"><div class="step">Архив / улица</div><h3>Нативный кадр</h3></div></article>
+    <article class="card"><a href="appendix/01-street-imagegen.png"><img src="appendix/01-street-imagegen.png" alt="Архивная нейрообработка уличного кадра"></a><div class="caption"><div class="step">Архив / улица</div><h3>ImageGen</h3></div></article>
+    <article class="card"><a href="appendix/02-reverse-source.png"><img src="appendix/02-reverse-source.png" alt="Архивный нативный обратный ракурс"></a><div class="caption"><div class="step">Архив / обратный ракурс</div><h3>Нативный кадр</h3></div></article>
+    <article class="card"><a href="appendix/02-reverse-imagegen.png"><img src="appendix/02-reverse-imagegen.png" alt="Архивная нейрообработка обратного ракурса"></a><div class="caption"><div class="step">Архив / обратный ракурс</div><h3>ImageGen</h3></div></article>
+    <article class="card"><a href="appendix/03-aerial-source.png"><img src="appendix/03-aerial-source.png" alt="Архивный нативный вид сверху"></a><div class="caption"><div class="step">Архив / вид сверху</div><h3>Нативный кадр</h3></div></article>
+    <article class="card"><a href="appendix/03-aerial-imagegen.png"><img src="appendix/03-aerial-imagegen.png" alt="Архивная нейрообработка вида сверху"></a><div class="caption"><div class="step">Архив / вид сверху</div><h3>ImageGen</h3></div></article>
+  </section>
+  <footer>Файлы размещены локально в <code>output/render-demo-20260929</code>. Детальная атрибуция, ограничения и способ воспроизведения указаны в README.</footer>
+</main>
+</body>
+</html>

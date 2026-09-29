@@ -1,0 +1,25 @@
+digraph GreenAtlasRender {
+  graph [rankdir=TB, bgcolor="#f7f8f4", pad="0.35", nodesep="0.32", ranksep="0.50", fontname="Arial", label="Целевой путь от исходников к проверяемому рендеру", labelloc=t, fontsize=22, fontcolor="#202b27"];
+  node [shape=box, style="rounded,filled", color="#9eada4", fillcolor="#ffffff", fontname="Arial", fontsize=13, fontcolor="#1e3028", margin="0.18,0.13"];
+  edge [color="#668978", penwidth=1.7, arrowsize=0.7];
+
+  cad [label="Открытый DWG/DXF в AutoCAD\nXREF, геоподоснова, отметки,\nпроектные объекты", fillcolor="#e1eee6"];
+  map [label="Внешняя картография\nздания, дороги, контекст\nс источником и датой", fillcolor="#e1eee6"];
+  assets [label="Библиотека ассетов\nрастения, PBR, МАФ\nверсии и права", fillcolor="#e1eee6"];
+  preset [label="Параметры кадра\nкамера, сезон, свет, качество", fillcolor="#e1eee6"];
+
+  capture [label="Плагин AutoCAD\nподготовленный снимок CAD"];
+  match [label="Green Atlas локально\nклассы, координаты, высоты,\nсопоставление, проверки пропусков"];
+  packet [label="Пакет сцены\nобъекты с ID и координатами,\nгеометрия, источники, неопределённость", fillcolor="#d9e9ed"];
+  assemble [label="Blender\nрельеф, дороги, бордюры, здания,\nозеленение, материалы и свет"];
+  cycles [label="Cycles\nнативный кадр + классовые маски\n+ ведомость параметров", fillcolor="#d9e9ed"];
+  ai [label="Опциональная нейроотделка\nтолько внешний вид в разрешённых\nобластях; проверка изменений", fillcolor="#fceccf"];
+  review [label="Сверка с картой и панорамой\nобъекты, положение, озеленение,\nнеподтверждённые детали", fillcolor="#fceccf"];
+  deliver [label="Результат\nсцена .blend, нативный рендер,\nмаски, опциональная версия AI,\nпаспорт происхождения", fillcolor="#d4ead8"];
+
+  cad -> capture -> match -> packet -> assemble -> cycles -> review -> deliver;
+  map -> match;
+  assets -> assemble;
+  preset -> assemble;
+  cycles -> ai -> review;
+}

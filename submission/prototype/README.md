@@ -1,5 +1,7 @@
 # Прототип Green Atlas: Кустанайская улица
 
+Отдельное [демо пространственной сцены и рендера](render-demo/README.md) показывает сохранённые кадры, объектный пакет и схему целевого процесса. Это презентационный материал: установленное приложение пока не открывает Blender-сцену как проект и не создаёт такой рендер автоматически.
+
 Проверочный комплект для macOS 14 и новее, Apple Silicon и полного AutoCAD 2027.
 Сборка на macOS 14/15 совместима по [требованиям AutoCAD 2027](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/System-requirements-for-AutoCAD-2027-including-Specialized-Toolsets.html) и минимальной
 версии бинарников, но пока испытана вручную только на macOS 26. В этой папке
