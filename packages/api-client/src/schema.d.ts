@@ -636,6 +636,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/plan/automatic/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Automatic Plan */
+        post: operations["preview_automatic_plan_api_projects__project_id__plan_automatic_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/plan/patterns/preview": {
         parameters: {
             query?: never;
@@ -1878,6 +1895,49 @@ export interface components {
             special_territories_note: string;
             /** Entries */
             entries: components["schemas"]["AssortmentEntry"][];
+        };
+        /** AutomaticPlacementPreview */
+        AutomaticPlacementPreview: {
+            /** Requested */
+            requested: number;
+            /** Found */
+            found: number;
+            /** Shortfall */
+            shortfall: number;
+            /**
+             * Selected Kind
+             * @enum {string}
+             */
+            selected_kind: "tree" | "shrub" | "mixed";
+            /** Selection Basis */
+            selection_basis: string;
+            /** Species Revision Ids */
+            species_revision_ids: string[];
+            change_set?: components["schemas"]["ChangeSetPreview"] | null;
+        };
+        /** AutomaticPlacementRequest */
+        AutomaticPlacementRequest: {
+            /** Base Plan Version */
+            base_plan_version: number;
+            /** Zone Id */
+            zone_id: string;
+            /**
+             * Near
+             * @default area
+             * @enum {string}
+             */
+            near: "building" | "road" | "area";
+            /**
+             * Plant Kind
+             * @default auto
+             * @enum {string}
+             */
+            plant_kind: "auto" | "tree" | "shrub" | "mixed";
+            /**
+             * Target Count
+             * @default 8
+             */
+            target_count: number;
         };
         /** AxisDistanceEvidence */
         AxisDistanceEvidence: {
@@ -3696,6 +3756,7 @@ export interface components {
             /** Layer Id */
             layer_id: string;
             category: components["schemas"]["LayerCategory"] | null;
+            calculation_role?: components["schemas"]["LayerKind"] | null;
             /**
              * Confidence
              * @enum {string}
@@ -3705,6 +3766,10 @@ export interface components {
             evidence: string[];
             /** Unresolved */
             unresolved: string[];
+            /** Review Question */
+            review_question?: string | null;
+            /** Review Roles */
+            review_roles?: components["schemas"]["LayerKind"][];
         };
         /**
          * LayerSuggestionConfidence
@@ -8140,6 +8205,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanMutationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_automatic_plan_api_projects__project_id__plan_automatic_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomaticPlacementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomaticPlacementPreview"];
                 };
             };
             /** @description Validation Error */

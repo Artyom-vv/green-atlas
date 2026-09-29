@@ -28,7 +28,7 @@ export const PlacementChoice: FC<PlacementChoiceProps> = ({
         disabled={busy}
         onClick={() => onChoose(true)}
       >
-        Подобрать по задаче
+        Подобрать автоматически
       </Button>
     </div>
   </div>

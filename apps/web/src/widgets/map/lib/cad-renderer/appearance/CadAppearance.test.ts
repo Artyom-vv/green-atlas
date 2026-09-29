@@ -82,7 +82,7 @@ describe('CAD project appearance', () => {
     f.appearance.apply('design', { Road: 'utility' });
     expect(previous).toHaveBeenCalledOnce();
     expect(f.objects[1].material.uniforms.color.value.getHexString()).toBe(
-      '8a4b00',
+      '718da8',
     );
     const derived = vi.spyOn(f.objects[1].material, 'dispose');
     const original = vi.spyOn(f.material, 'dispose');

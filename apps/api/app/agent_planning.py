@@ -1,8 +1,7 @@
 """Compile retained placement intent into existing validated preview tools."""
+from app.agent_conditions import bind_placement_conditions
 from app.agent_memory import TaskState
 from app.agent_tools import execute_tool
-from app.agent_conditions import bind_placement_conditions
-from app.agent_perception import select_zone_by_spatial_intent
 from app.planning.errors import ExistingTargetSelectionRequired
 
 DELEGATED_LAYOUT_SAMPLE_LIMIT = 8
@@ -179,10 +178,13 @@ def prepare_placement(application, project_id: str, task: TaskState,
               "species_revision_id": species_ids[0], "size_class": "standard",
               "spacing_policy": values.spacing_policy or "balanced"}
     if values.arrangement in {"building_contour", "building_groves"}:
-        if values.plant_kind != "tree":
-            raise ValueError("Для кустарников вдоль зданий требуется отдельный рисунок")
-        args = {**common, "max_sites": quantity, "arrangement": "contour" if values.arrangement == "building_contour" else "groves"}
-        proposal = execute_tool(application, project_id, "preview_building_groups", args)
+        if values.plant_kind == "tree":
+            args = {**common, "max_sites": quantity, "arrangement": "contour" if values.arrangement == "building_contour" else "groves"}
+            proposal = execute_tool(application, project_id, "preview_building_groups", args)
+        else:
+            args = {**common, "target_count": quantity, "placement_mode": "count",
+                    "plant_kind": "shrub", "mask_id": "building_contour" if values.arrangement == "building_contour" else "building_screen"}
+            proposal = execute_tool(application, project_id, "preview_mask", args)
     elif values.arrangement in {"area", "grid", "groves", "road_edges"}:
         args = {**common, "target_count": quantity, "placement_mode": "count", "plant_kind": values.plant_kind}
         if values.arrangement == "area":

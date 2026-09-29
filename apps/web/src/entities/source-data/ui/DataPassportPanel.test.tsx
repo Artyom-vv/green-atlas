@@ -172,11 +172,18 @@ describe('DataPassportPanel', () => {
     expect(screen.getByText('Что требует уточнения')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /^Граница участка/ }),
-    ).toHaveAttribute('aria-expanded', 'false');
+      screen.queryByRole('button', { name: /^Граница участка/ }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /^Инженерные сети/ }),
     ).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Учтено (1)' }));
+    expect(
+      screen.getByRole('button', { name: /^Граница участка/ }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      screen.queryByRole('button', { name: /^Инженерные сети/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('does not render a warning when every reported class is verified', () => {

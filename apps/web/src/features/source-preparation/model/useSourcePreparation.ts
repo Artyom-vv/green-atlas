@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
@@ -11,6 +11,7 @@ import { mappingKey } from './preparationRecovery';
 import { usePreparationCommit } from './usePreparationCommit';
 import { saveNativeAreaDecision } from './saveNativeAreaDecision';
 import { partialGeometryAccepted } from '@/entities/source-data/model/partialGeometryAccepted';
+import { autoAcceptRecognizedLayers } from './autoAcceptRecognizedLayers';
 import { sourceWarningText } from '@/entities/source-data/model/sourceWarningText';
 import {
   EMPTY_LAYERS,
@@ -65,11 +66,13 @@ export function useSourcePreparation({
     id?: string;
   }>();
   const layers = projectQuery.data?.layers ?? EMPTY_LAYERS;
+  const allSavedLayersConfirmed =
+    layers.length > 0 && layers.every((layer) => layer.mapping_confirmed === true);
   const currentSource = sourceIdentity(projectQuery.data);
   const layerRecognitionQuery = useQuery({
     queryKey: ['layer-recognition', projectId, currentSource],
     queryFn: () => preparationApi.getLayerRecognition(projectId),
-    enabled: Boolean(projectQuery.data?.layers?.length),
+    enabled: Boolean(projectQuery.data?.layers?.length) && !allSavedLayersConfirmed,
     staleTime: Infinity,
     retry: false,
     // The desktop WebView may report an inactive document while its window is
@@ -91,18 +94,72 @@ export function useSourcePreparation({
     projectQuery.data?.source_file?.content_sha256
       ? layerRecognitionQuery.data
       : undefined;
+  const reviewOnly =
+    projectQuery.data?.import_status?.editability === 'read_only';
   const cadPreview = projectQuery.data?.import_status?.mode === 'cad_preview';
   const operationId =
     !cadPreview && trackedOperation?.source === currentSource
       ? trackedOperation.id
       : undefined;
   const savedMappings = useMemo(() => layerMappings(layers), [layers]);
-  // Refetches of one source preserve edits; a new source never renders the
-  // old source's draft, including the render before an effect could reset it.
-  const mappings =
+  const autoApplySource = useRef<string | undefined>(undefined);
+  const autoApplyRecognition = useMutation({
+    mutationFn: (values: LayerMapping[]) => preparationApi.saveMappings(projectId, values),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData<Project>(['setup-project', projectId], fresh);
+      void queryClient.invalidateQueries({ queryKey: ['data-passport', projectId] });
+    },
+  });
+  const autoApplyPending = autoApplyRecognition.isPending;
+  const autoApplyMutate = autoApplyRecognition.mutate;
+  const draftMappings =
     mappingDraft?.source === currentSource
       ? mappingDraft.mappings
       : savedMappings;
+  const automaticallyMapped = useMemo(
+    () => {
+      const accepted = autoAcceptRecognizedLayers(
+        layers, savedMappings, layerRecognition,
+      );
+      // A territory or role edited while Luna is running belongs to the user.
+      // Apply the model only to layers whose draft still matches the saved state.
+      return Object.fromEntries(Object.entries(draftMappings).map(([id, draft]) => [
+        id,
+        mappingKey([draft]) === mappingKey([savedMappings[id]])
+          ? accepted[id] ?? draft
+          : draft,
+      ]));
+    },
+    [layers, savedMappings, draftMappings, layerRecognition],
+  );
+  const automaticAcceptanceNeeded =
+    mappingKey(Object.values(automaticallyMapped)) !==
+    mappingKey(Object.values(draftMappings));
+  const automaticAcceptancePending = Boolean(
+    layerRecognition?.status === 'completed' && automaticAcceptanceNeeded &&
+    !reviewOnly && !autoApplyRecognition.isError &&
+    !(projectQuery.data?.map_ready && projectQuery.data.plan && !projectQuery.data.source_review),
+  );
+  useEffect(() => {
+    if (!projectQuery.data || !layerRecognition || reviewOnly ||
+        layerRecognition.status !== 'completed' ||
+        (projectQuery.data.map_ready && projectQuery.data.plan && !projectQuery.data.source_review) ||
+        autoApplyPending ||
+        autoApplySource.current === currentSource) return;
+    if (!automaticAcceptanceNeeded) return;
+    autoApplySource.current = currentSource;
+    if (mappingKey(Object.values(draftMappings)) !==
+        mappingKey(Object.values(savedMappings))) {
+      setMappingDraft({ source: currentSource, mappings: automaticallyMapped });
+    } else {
+      autoApplyMutate(Object.values(automaticallyMapped));
+    }
+  }, [projectQuery.data, layerRecognition, reviewOnly,
+    autoApplyPending, autoApplyMutate, automaticallyMapped, automaticAcceptanceNeeded,
+    currentSource, draftMappings, savedMappings]);
+  // Refetches of one source preserve edits; a new source never renders the
+  // old source's draft, including the render before an effect could reset it.
+  const mappings = draftMappings;
   const mappingsChanged =
     mappingKey(Object.values(mappings)) !==
     mappingKey(Object.values(savedMappings));
@@ -120,8 +177,6 @@ export function useSourcePreparation({
     !projectQuery.data.source_review &&
     !editingSource,
   );
-  const reviewOnly =
-    projectQuery.data?.import_status?.editability === 'read_only';
 
   const requiredLayers = useMemo(
     () => layers.filter((layer) => layer.required),
@@ -132,9 +187,20 @@ export function useSourcePreparation({
       layers.filter((layer) => layer.boundary_candidate?.status === 'usable'),
     [layers],
   );
+  const liveBoundary = projectQuery.data?.import_status?.mode === 'autocad_live';
   const selectedBoundary = useMemo(
-    () => layers.some((layer) => mappings[layer.id]?.kind === 'site_border'),
-    [layers, mappings],
+    () => layers.some((layer) => mappings[layer.id]?.kind === 'site_border'
+      && (!liveBoundary || !layer.boundary_candidate
+        || layer.boundary_candidate.status === 'usable')),
+    [layers, mappings, liveBoundary],
+  );
+  const invalidBoundary = useMemo(
+    () => liveBoundary
+      ? layers.find((layer) => mappings[layer.id]?.kind === 'site_border'
+        && layer.boundary_candidate
+        && layer.boundary_candidate.status !== 'usable')
+      : undefined,
+    [layers, mappings, liveBoundary],
   );
   const requiredReady = useMemo(
     () =>
@@ -163,17 +229,22 @@ export function useSourcePreparation({
     [layers, mappings],
   );
   const readinessBlockedReason =
-    usableBoundaryCandidates.length > 0 && !selectedBoundary
-      ? 'Выберите один контур территории для расчёта.'
+    invalidBoundary
+      ? `Слой «${invalidBoundary.source_name}» не образует пригодную площадь. Выберите замкнутый контур в разделе «Территория»`
+      : usableBoundaryCandidates.length > 0 && !selectedBoundary
+      ? 'Выберите границу проектных работ в разделе «Территория»'
       : !requiredReady
         ? 'Назначьте роль обязательным слоям границы перед подготовкой карты.'
-        : unconfirmedMappings.some(
-              (layer) => mappings[layer.id]?.kind !== 'ignore',
-            )
+        : unconfirmedMappings.length > 0
           ? 'Проверьте предложенные роли слоёв.'
-          : incompleteConstraintLayers.length && !partialAccepted
-            ? 'Разрешите расчёт по доступным объектам или исправьте неполные слои.'
-            : undefined;
+          : undefined;
+  const readinessSection =
+    invalidBoundary || (usableBoundaryCandidates.length > 0 && !selectedBoundary)
+      ? '01'
+      : !requiredReady || unconfirmedMappings.length > 0
+        ? '03'
+        : undefined;
+  const partialGeometryPending = incompleteConstraintLayers.length > 0 && !partialAccepted;
   const hasPlanningBoundary = selectedBoundary;
   const latestOperationQuery = useQuery({
     queryKey: [
@@ -196,6 +267,7 @@ export function useSourcePreparation({
     enabled: Boolean(operationId),
     retry: false,
     refetchOnMount: 'always',
+    refetchIntervalInBackground: true,
     refetchInterval: (query) =>
       !query.state.error && operationActive(query.state.data)
         ? OPERATION_POLL_INTERVAL_MS
@@ -269,13 +341,19 @@ export function useSourcePreparation({
       )
         return;
       const values = Object.values(mappings);
-      preparationMutation.mutate({
+      const start = (project: Project) => preparationMutation.mutate({
         projectId,
         source: currentSource,
         mappings: values,
         draftKey: mappingKey(values),
-        baseStateVersion: projectQuery.data.state_version ?? 0,
+        baseStateVersion: project.state_version ?? 0,
       });
+      if (partialGeometryPending) {
+        // This is the same explicit primary action the operator sees beside
+        // the incompleteness notice. Keep the source-specific decision durable
+        // before calculating, without a separate unlock button.
+        void acceptPartialGeometry.mutateAsync().then(start).catch(() => undefined);
+      } else start(projectQuery.data);
     },
   };
   const cancelOperation = useMutation({
@@ -372,6 +450,7 @@ export function useSourcePreparation({
     Boolean(operationId && operationQuery.isLoading) ||
     operationActive(operation);
   const preparationBlocked =
+    autoApplyPending ||
     openEditor.isPending ||
     acceptPartialGeometry.isPending ||
     decideNativeArea.isPending ||
@@ -382,6 +461,7 @@ export function useSourcePreparation({
     preparationMutation.needsRecovery ||
     Boolean(reloadError);
   const mutationError =
+    autoApplyRecognition.error ??
     saveMutation.error ??
     cancelOperation.error ??
     openEditor.error ??
@@ -434,6 +514,8 @@ export function useSourcePreparation({
     form,
     startSourceEditing: () => setEditingSource(true),
     layerRecognition,
+    allSavedLayersConfirmed,
+    automaticAcceptancePending,
     layerRecognitionQuery,
     retryLayerRecognition,
     projectQuery,
@@ -451,6 +533,8 @@ export function useSourcePreparation({
     cadPreview,
     sourceReviewMessage: projectQuery.data?.import_status?.message,
     readinessBlockedReason,
+    readinessSection,
+    partialGeometryPending,
     unconfirmedMappings,
     incompleteConstraintLayers,
     partialAccepted,

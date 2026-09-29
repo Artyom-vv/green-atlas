@@ -6,6 +6,9 @@ describe('resolution-independent overview', () => {
     const markup =
       '<svg><g data-kind="lawn" data-shape="area" fill="none" stroke="#123456"><path d="M0,0L10,0L10,10Z"/></g><g data-kind="building" data-shape="line" stroke="#123456"><path d="M0,0L1,1"/></g></svg>';
     const design = createOverviewSvg(markup);
+    expect(design.element.getAttribute('role')).toBe('img');
+    expect(design.element.getAttribute('aria-label')).toBe('Подоснова чертежа');
+    expect(design.element.hasAttribute('aria-hidden')).toBe(false);
     const groups = design.element.querySelectorAll('g > g');
     expect(groups[0].getAttribute('fill')).toBe('#d0e7ac');
     expect(groups[0].getAttribute('fill-opacity')).toBe('1');

@@ -57,6 +57,12 @@ export type SpeciesShortlistItem = Schemas['SpeciesShortlistItem'];
 
 export type RecommendationRequest = Schemas['RecommendationRequest'];
 
+export type AutomaticPlacementRequest = Schemas['AutomaticPlacementRequest'];
+export type AutomaticPlacementPreview = Omit<
+  Schemas['AutomaticPlacementPreview'],
+  'change_set'
+> & { change_set?: ChangeSetPreview | null };
+
 type BuildingScreenDefaults =
   | 'arrangement'
   | 'species_revision_id'

@@ -41,7 +41,7 @@ export const ReleaseForm: FC<ReleaseFormProps> = ({
           <ReleaseForecastField onGrowthHorizon={onGrowthHorizon} />
         )}
         <section
-          className="rounded-control grid gap-2 bg-neutral-100 p-3"
+          className="grid gap-2 border-0 border-y border-solid border-neutral-200 py-3"
           aria-label="Проверка плана перед выпуском"
         >
           {sourcePending && (
@@ -64,7 +64,7 @@ export const ReleaseForm: FC<ReleaseFormProps> = ({
         </section>
         {mode === 'final' && <ReleaseBasisFields />}
       </FieldGroup>
-      <div className="grid gap-2 border-0 border-t border-solid border-neutral-200 pt-3">
+      <div className="grid gap-2">
         {blockedReasons.length > 0 && (
           <div id={reasonId} className="grid gap-1 text-xs text-neutral-600">
             {blockedReasons.map((reason) => (
@@ -74,9 +74,10 @@ export const ReleaseForm: FC<ReleaseFormProps> = ({
             ))}
           </div>
         )}
-        <FormActions className="justify-start">
+        <FormActions>
           <Button
             variant="primary"
+            className="w-full"
             startIcon={mode === 'draft' ? <FileArchive /> : <PackageCheck />}
             loading={loading}
             disabled={!ready}

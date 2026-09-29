@@ -19,6 +19,9 @@ if [[ -n "${GREEN_ATLAS_DESKTOP_TEST_PROFILE:-}" ]]; then
   /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier ru.green-atlas.desktop.qa' "$app/Contents/Info.plist"
 fi
 ditto "$runtime_root" "$app/Contents/Resources/Runtime"
+if [[ -n "${GREEN_ATLAS_LAYER_RECOGNITION_PRESETS:-}" ]]; then
+  ditto "$GREEN_ATLAS_LAYER_RECOGNITION_PRESETS" "$app/Contents/Resources/LayerRecognition"
+fi
 cd "$repo_root/apps/web"
 VITE_API_URL='' node node_modules/vite/bin/vite.js build --outDir "$app/Contents/Resources/Web"
 xcrun clang++ -std=c++17 -fobjc-arc -arch arm64 -mmacosx-version-min=26.0 -O2 \

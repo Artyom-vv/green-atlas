@@ -71,6 +71,7 @@ describe('assisted planning product surface', () => {
       'openSourceEditor',
       'planningAssistantStatus',
       'prepareConversationTask',
+      'previewAutomaticPlacement',
       'previewBrush',
       'previewBuildingScreen',
       'previewPlanChanges',

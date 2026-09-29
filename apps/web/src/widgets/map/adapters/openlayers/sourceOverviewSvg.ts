@@ -12,6 +12,11 @@ export function createOverviewSvg(
   const svg = document.createElementNS(NS, 'svg');
   const world = document.createElementNS(NS, 'g');
   svg.append(world);
+  // Treat the drawing as one accessible graphic. Merely marking the SVG as
+  // hidden still makes WebKit walk every ignored path during AX enumeration.
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Подоснова чертежа');
+  svg.setAttribute('focusable', 'false');
   svg.style.pointerEvents = 'none';
   svg.style.position = 'absolute';
   svg.style.inset = '0';

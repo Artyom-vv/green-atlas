@@ -778,8 +778,9 @@ def build_dxf_import_from_snapshot_path(
                 else None,
                 suggestion_confidence=confidence,
                 suggestion_reasons=reasons,
-                mapping_review_required=review_required,
-                mapping_confirmed=not review_required,
+                # Confidence in a name is not an operator's confirmation.
+                mapping_review_required=True,
+                mapping_confirmed=False,
                 boundary_candidate=candidate,
                 required=kind == LayerKind.SITE_BORDER,
             )
@@ -801,8 +802,8 @@ def build_dxf_import_from_snapshot_path(
             layer.suggestion_reasons = [
                 "Найдено несколько подходящих контуров территории"
             ]
-            layer.mapping_review_required = False
-            layer.mapping_confirmed = True
+            layer.mapping_review_required = True
+            layer.mapping_confirmed = False
             layer.required = False
 
     kind_by_layer = {
@@ -1082,8 +1083,8 @@ def apply_cad_snapshot(
         layer.mapped_kind = kind
         layer.suggestion_confidence = confidence
         layer.suggestion_reasons = reasons
-        layer.mapping_review_required = review_required
-        layer.mapping_confirmed = not review_required
+        layer.mapping_review_required = True
+        layer.mapping_confirmed = False
         layer.boundary_candidate = candidate
         layer.required = kind == LayerKind.SITE_BORDER
 
@@ -1103,8 +1104,8 @@ def apply_cad_snapshot(
             layer.suggestion_reasons = [
                 "Найдено несколько подходящих контуров территории"
             ]
-            layer.mapping_review_required = False
-            layer.mapping_confirmed = True
+            layer.mapping_review_required = True
+            layer.mapping_confirmed = False
             layer.required = False
 
     kind_by_layer = {

@@ -69,6 +69,15 @@ def envelope_distance(kind: str) -> float:
     return max(CONSTRAINT_KINDS[kind][2].values())
 
 
+def _area_parts(geometry: BaseGeometry) -> list[BaseGeometry]:
+    """Keep measured surfaces; separate drawing lines never enlarge a site."""
+    if geometry.geom_type == "Polygon":
+        return [geometry] if not geometry.is_empty else []
+    if geometry.geom_type in {"MultiPolygon", "GeometryCollection"}:
+        return [part for child in geometry.geoms for part in _area_parts(child)]
+    return []
+
+
 class PositionChecker:
     """Compiles project geometry once for repeated placement checks."""
 
@@ -98,20 +107,21 @@ class PositionChecker:
             for feature in self.features
             if feature.get("properties", {}).get("kind") == "site_surface"
         ]
-        site_features = site_surface_features or [
+        site_border_features = [
             feature
             for feature in self.features
             if feature.get("properties", {}).get("kind") == "site_border"
         ]
-        site_geometries: list[BaseGeometry] = []
-        for feature in site_features:
-            try:
-                geometry = shape(feature["geometry"])
-            except Exception:
-                continue
-            if geometry.is_empty:
-                continue
-            site_geometries.append(geometry)
+        def surfaces(features: list[dict]) -> list[BaseGeometry]:
+            result: list[BaseGeometry] = []
+            for feature in features:
+                try:
+                    result.extend(_area_parts(shape(feature["geometry"])))
+                except Exception:
+                    continue
+            return result
+
+        site_geometries = surfaces(site_surface_features) or surfaces(site_border_features)
         if site_geometries:
             self.site = unary_union(site_geometries)
             self.prepared_site = prep(self.site)
@@ -121,8 +131,7 @@ class PositionChecker:
                 geometry = shape(zone.geometry)
             except Exception:
                 continue
-            if not geometry.is_empty:
-                selected_geometries.append(geometry)
+            selected_geometries.extend(_area_parts(geometry))
         if selected_geometries:
             self.selected_area = unary_union(selected_geometries)
             self.prepared_selected_area = prep(self.selected_area)

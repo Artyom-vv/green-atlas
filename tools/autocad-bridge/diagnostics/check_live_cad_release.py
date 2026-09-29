@@ -33,7 +33,9 @@ def main():
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    root = args.output.absolute()
+    # /tmp is a symlink on macOS; production capture storage rejects paths
+    # below symlinked parents. Resolve before creating the private test root.
+    root = args.output.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     if not str(root).isascii():
         raise ValueError("Use an ASCII scratch directory for AutoCAD script encoding")

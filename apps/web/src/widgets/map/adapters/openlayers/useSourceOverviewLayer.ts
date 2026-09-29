@@ -6,7 +6,7 @@ import {
   type CadGeometryLayers,
 } from './cadGeometryDisplay';
 import { readSourceOverview, visibleOverviewSvg } from './sourceOverview';
-import { createOverviewSvg } from './sourceOverviewSvg';
+import { createOverviewCanvas } from './sourceOverviewCanvas';
 import type { CadAppearanceMode } from '../../model/cadSource';
 
 /** Complete captured visual behind bounded hit-test geometry. No fake features. */
@@ -28,13 +28,16 @@ export function useSourceOverviewLayer({
   renderMode?: CadAppearanceMode;
 }) {
   const overview = readSourceOverview(geometry);
+  const overviewSvg = overview?.svg;
+  const overviewFeatures = overview?.rendered_features;
+  const hiddenNamesKey = JSON.stringify(hiddenNames ?? []);
   useEffect(() => {
     const map = mapRef.current;
     const target = targetRef.current;
-    if (!map || !overview || disabled) return;
+    if (!map || !overviewSvg || disabled) return;
     const display = cadGeometryDisplay(layersRef.current);
-    const drawing = createOverviewSvg(
-      visibleOverviewSvg(overview.svg, hiddenNames ?? []),
+    const drawing = createOverviewCanvas(
+      visibleOverviewSvg(overviewSvg, JSON.parse(hiddenNamesKey) as string[]),
       renderMode,
     );
     const container = document.createElement('div');
@@ -56,9 +59,12 @@ export function useSourceOverviewLayer({
     });
     map.addLayer(layer);
     display.ready('source');
+    // Mount the ready overview even when a background WKWebView defers RAF.
+    // Navigation still uses OpenLayers' normal animation loop.
+    map.renderSync();
     if (target)
       target.dataset.sourceOverviewFeatures = String(
-        overview.rendered_features,
+        overviewFeatures ?? 0,
       );
     return () => {
       map.removeLayer(layer);
@@ -73,8 +79,9 @@ export function useSourceOverviewLayer({
     mapRef,
     targetRef,
     layersRef,
-    overview,
-    hiddenNames,
+    overviewSvg,
+    overviewFeatures,
+    hiddenNamesKey,
     disabled,
     renderMode,
   ]);

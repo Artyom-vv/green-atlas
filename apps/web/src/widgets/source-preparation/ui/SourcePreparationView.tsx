@@ -1,4 +1,4 @@
-import type { FC } from 'react';
+import { useState, type FC } from 'react';
 import { AppHeader } from '@/shared/ui/AppHeader';
 import { FlowDocument, ProjectSteps } from '@/widgets/project-flow';
 import { PreparationStatus } from './PreparationStatus';
@@ -11,6 +11,7 @@ import type { SourcePreparationViewProps } from './SourcePreparationView.props';
 export const SourcePreparationView: FC<SourcePreparationViewProps> = (
   props,
 ) => {
+  const [reviewRequest, setReviewRequest] = useState<{ section: string; sequence: number }>();
   const {
     projectName,
     reviewOnly,
@@ -36,6 +37,7 @@ export const SourcePreparationView: FC<SourcePreparationViewProps> = (
           </div>
         )}
         <FlowDocument
+          layout="panels"
           title={
             cadPreview
               ? 'Предварительная карта'
@@ -47,7 +49,7 @@ export const SourcePreparationView: FC<SourcePreparationViewProps> = (
             reviewOnly
               ? (sourceReviewMessage ??
                 'В отдельном DXF нет всех данных для продолжения проекта. Они сохраняются в полном ZIP-пакете выпуска.')
-              : 'Подтвердите слои, которые ограничивают посадку.'
+              : 'Проверьте территорию и назначения слоёв'
           }
           footer={
             <PreparationActions
@@ -55,12 +57,17 @@ export const SourcePreparationView: FC<SourcePreparationViewProps> = (
               onImport={onImport}
               onPlan={onPlan}
               mapReady={mapReady}
+              onNeedsReview={(section) => setReviewRequest((previous) => ({
+                section, sequence: (previous?.sequence ?? 0) + 1,
+              }))}
             />
           }
         >
-          <div className="flex flex-col gap-3">
-            <PreparationStatus {...PreparationStatusPropsFor(props)} />
-            <SourceLayerForm {...SourceLayerFormPropsFor(props)} />
+          <div className="flex flex-col">
+            <div className="px-4 empty:hidden sm:px-6">
+              <PreparationStatus {...PreparationStatusPropsFor(props)} />
+            </div>
+            <SourceLayerForm {...SourceLayerFormPropsFor(props)} reviewRequest={reviewRequest} />
           </div>
         </FlowDocument>
       </main>

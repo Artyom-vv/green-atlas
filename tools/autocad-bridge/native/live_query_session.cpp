@@ -135,6 +135,19 @@ std::string inspectSession(const std::string& token) { return checked(token).met
 std::string archiveSession(const std::string& token, const std::string& destination) {
     auto& current = checked(token);
     const auto identity = current.metadata();
+    // The live-query queue is polled in application context. XREF symbol
+    // restoration inside capturePackage requires the owning document locked
+    // even when it is the active drawing (AutoCAD returns eLockViolation/320).
+    struct DocumentLock {
+        AcApDocument* document;
+        explicit DocumentLock(AcApDocument* value) : document(value) {
+            if (!document || !acDocManager ||
+                acDocManager->lockDocument(document, AcAp::kWrite) != Acad::eOk)
+                throw std::runtime_error("capture document lock unavailable");
+        }
+        ~DocumentLock() { acDocManager->unlockDocument(document); }
+    } lock(current.document);
+    current.check();
     ga::capture::capturePackage(*current.host, destination, current.snapshotHash);
     // The archive was made in this modal command after checking the session.
     // restore/forward XREF symbol notifications may invalidate later editor

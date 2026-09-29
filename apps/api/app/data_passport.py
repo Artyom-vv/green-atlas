@@ -204,7 +204,7 @@ def build_data_passport(project: Project, *, geometry=None) -> DataPassport:
             semantic_confidence="low",
             decision_level="warning",
             **source_provenance,
-            note="Не участвуют в расчёте, пока им не назначен класс",
+            note="Назначьте тип или подтвердите исключение. Пока назначение неизвестно, поиск учитывает неопределённость этих объектов",
         ))
 
     if incomplete:

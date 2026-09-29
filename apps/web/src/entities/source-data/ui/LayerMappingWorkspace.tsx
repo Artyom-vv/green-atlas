@@ -1,101 +1,143 @@
-import { useRef, useState } from 'react';
-import { Button, Disclosure, TextInput, Text } from '@green/ui';
+import { useState } from 'react';
+import { Button, TextInput, Text } from '@green/ui';
 import type { LayerMappingTableProps } from './LayerMappingTable';
 import { LayerMappingTable } from './LayerMappingTable';
 import { LayerMappingReview } from './LayerMappingReview';
 import { toLayerMapping } from '../model/layerKinds';
 
 /** One stable list: confirming a row must not move it under the user's cursor. */
-export function LayerMappingWorkspace(props: LayerMappingTableProps) {
+export function LayerMappingWorkspace(
+  props: LayerMappingTableProps & {
+    automaticAcceptancePending?: boolean;
+  },
+) {
   const { layers, mappings, readOnly } = props;
   const [query, setQuery] = useState('');
-  const [reviewIds, setReviewIds] = useState<string[] | null>(null);
-  const table = useRef<HTMLDivElement>(null);
   const pending = layers.filter(
     (layer) =>
       (mappings[layer.id] ?? toLayerMapping(layer)).confirmed === false,
   );
-  const search = query.trim().toLocaleLowerCase('ru');
-  const visible = layers.filter(
-    (layer) =>
-      (reviewIds === null || reviewIds.includes(layer.id)) &&
-      layer.source_name.toLocaleLowerCase('ru').includes(search),
+  const proposalsById = new Map(
+    props.recognition?.proposals.map((item) => [item.layer_id, item]) ?? [],
   );
+  const categoriesById = new Map(
+    props.recognition?.categories.map((item) => [item.category, item]) ?? [],
+  );
+  const reviewReasons = pending.reduce(
+    (counts, layer) => {
+      const proposal = proposalsById.get(layer.id);
+      const category = proposal?.category
+        ? categoriesById.get(proposal.category)
+        : undefined;
+      if (category?.kind === 'site_border') counts.boundary += 1;
+      else if (category && category.kind == null) counts.descriptive += 1;
+      else counts.uncertain += 1;
+      return counts;
+    },
+    { boundary: 0, descriptive: 0, uncertain: 0 },
+  );
+  const confirmedCount = layers.length - pending.length;
+  const [view, setView] = useState<'review' | 'list'>('review');
+  const showReview = !readOnly && view === 'review';
+  const search = query.trim().toLocaleLowerCase('ru');
+  const visible = layers.filter((layer) =>
+    layer.source_name.toLocaleLowerCase('ru').includes(search),
+  );
+  if (props.automaticAcceptancePending)
+    return (
+      <section aria-label="Сопоставление слоёв" className="min-w-0">
+        <p className="m-0 text-sm text-neutral-600" role="status">
+          Принимаем однозначные назначения слоёв
+        </p>
+      </section>
+    );
   return (
     <section
       aria-label="Сопоставление слоёв"
       className="@container grid min-w-0 gap-3"
     >
-      {!readOnly && pending.length > 0 && (
-        <Disclosure
-          variant="panel"
-          title={`Предложения по группам (${pending.length})`}
-          description="Подтвердить одинаковые типы сразу для нескольких слоёв"
+      {props.recognition?.status === 'completed' && (
+        <div
+          className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-neutral-600"
+          role="status"
         >
+          <span>
+            Распознано Luna: {props.recognition.processed_count} из{' '}
+            {layers.length}
+          </span>
+          <span>
+            Подтверждено: {confirmedCount} из {layers.length}
+          </span>
+          {pending.length > 0 && <span>Проверить: {pending.length}</span>}
+          {pending.length > 0 && (
+            <details className="basis-full text-neutral-600">
+              <summary className="w-fit cursor-pointer">
+                Почему нужна проверка
+              </summary>
+              <p className="mt-2 mb-0">
+                Границы: {reviewReasons.boundary}, без расчётной роли:{' '}
+                {reviewReasons.descriptive}, другие: {reviewReasons.uncertain}
+              </p>
+            </details>
+          )}
+        </div>
+      )}
+      {!readOnly && (
+        <div
+          role="group"
+          aria-label="Просмотр слоёв"
+          className="flex flex-wrap gap-1"
+        >
+          <Button
+            variant={showReview ? 'secondary' : 'ghost'}
+            aria-pressed={showReview}
+            onClick={() => setView('review')}
+          >
+            Подтверждение ({pending.length})
+          </Button>
+          <Button
+            variant={!showReview ? 'secondary' : 'ghost'}
+            aria-pressed={!showReview}
+            onClick={() => setView('list')}
+          >
+            Все слои ({layers.length})
+          </Button>
+        </div>
+      )}
+      {showReview ? (
+        <section aria-label="Подтверждение групп" className="grid gap-2">
+          {!pending.length && (
+            <p className="m-0 text-sm">Все типы слоёв подтверждены</p>
+          )}
           <LayerMappingReview
             {...props}
             layers={pending}
             showComposition={false}
           />
-        </Disclosure>
-      )}
-      <div className="grid min-w-0 items-center gap-2 @2xl:grid-cols-[minmax(0,1fr)_auto]">
-        <TextInput
-          aria-label="Поиск слоя"
-          placeholder="Найти слой по названию"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {!readOnly && (
-          <div className="flex flex-wrap gap-1">
-            <Button
-              variant={reviewIds === null ? 'secondary' : 'ghost'}
-              aria-pressed={reviewIds === null}
-              onClick={() => setReviewIds(null)}
-            >
-              Все
-            </Button>
-            <Button
-              variant={reviewIds !== null ? 'secondary' : 'ghost'}
-              aria-pressed={reviewIds !== null}
-              onClick={() => setReviewIds(pending.map((layer) => layer.id))}
-            >
-              Требуют проверки ({pending.length})
-            </Button>
+        </section>
+      ) : (
+        <>
+          <div className="grid min-w-0 items-center gap-2">
+            <TextInput
+              aria-label="Поиск слоя"
+              placeholder="Найти слой по названию"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
           </div>
-        )}
-      </div>
-      <Text variant="caption" className="text-neutral-600" role="status">
-        Показано {visible.length} из {layers.length}.
-        {!readOnly && ' Alt + ↑/↓ — переход между слоями.'}
-        {reviewIds !== null &&
-          ' Подтверждённые строки остаются на месте; нажмите фильтр ещё раз, чтобы обновить список.'}
-      </Text>
-      <div
-        ref={table}
-        className="max-h-[65vh] overflow-auto rounded-xl border border-neutral-200"
-        onKeyDown={(event) => {
-          if (!event.altKey || !['ArrowDown', 'ArrowUp'].includes(event.key))
-            return;
-          const controls = Array.from(
-            table.current?.querySelectorAll<HTMLSelectElement>(
-              'select[aria-label^="Тип слоя"]:not(:disabled)',
-            ) ?? [],
-          );
-          const current = controls.indexOf(event.target as HTMLSelectElement);
-          if (current < 0) return;
-          const next = controls[current + (event.key === 'ArrowDown' ? 1 : -1)];
-          if (next) {
-            event.preventDefault();
-            next.focus();
-          }
-        }}
-      >
-        <LayerMappingTable {...props} layers={visible} />
-        {!visible.length && (
-          <p className="px-4 text-sm text-neutral-600">Слои не найдены</p>
-        )}
-      </div>
+          <Text variant="caption" className="text-neutral-600" role="status">
+            Показано {visible.length} из {layers.length}
+          </Text>
+          <div
+            className="max-h-[65vh] overflow-auto border border-neutral-200"
+          >
+            <LayerMappingTable {...props} layers={visible} />
+            {!visible.length && (
+              <p className="px-4 text-sm text-neutral-600">Слои не найдены</p>
+            )}
+          </div>
+        </>
+      )}
     </section>
   );
 }

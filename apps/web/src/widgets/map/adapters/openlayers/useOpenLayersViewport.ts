@@ -101,6 +101,7 @@ import {
 import type { MapViewportOptions } from '../../model/mapViewportOptions';
 import { projection } from './projection';
 import { polygonAtCoordinate } from './polygonTargets';
+import { shouldPanMap } from './shouldPanMap';
 
 import {
   MAX_CACHED_GEOMETRY_FEATURES,
@@ -659,14 +660,8 @@ export function useOpenLayersViewport(
     planLayerRef.current = planLayer;
     const mouseWheelZoom = new MouseWheelZoom();
     const temporaryPan = new DragPan({
-      condition: (event) => {
-        const original = event.originalEvent as PointerEvent;
-        return (
-          spacePanRef.current ||
-          original.button === 1 ||
-          toolRef.current === 'pan'
-        );
-      },
+      condition: (event) =>
+        shouldPanMap(event, toolRef.current, spacePanRef.current),
     });
     const map = new Map({
       target,
@@ -696,6 +691,7 @@ export function useOpenLayersViewport(
         attribution: false,
       }),
       interactions: defaultInteractions({
+        dragPan: false,
         mouseWheelZoom: false,
         shiftDragZoom: false,
       }).extend([mouseWheelZoom, temporaryPan]),
@@ -797,17 +793,24 @@ export function useOpenLayersViewport(
       );
     };
     let resizeFrame = 0;
-    const initialFrame = requestAnimationFrame(() => {
+    const initializeView = () => {
       resizeMap();
       const initial = initialExtentRef.current;
       const size = map.getSize();
-      if (initial?.every(Number.isFinite) && size?.[0] && size?.[1]) {
+      if (
+        initial?.every(Number.isFinite) && size?.[0] && size?.[1] &&
+        fittedExtentKeyRef.current !== initial.join(':')
+      ) {
         fullExtentRef.current = [...initial];
         view.fit(initial, { size, padding: [28, 28, 28, 28], maxZoom: 24 });
         fittedExtentKeyRef.current = initial.join(':');
       }
       publishExtent();
-    });
+    };
+    // WebKit can suspend animation frames while the desktop window is behind
+    // another app. Starting the data request must not wait for a first paint.
+    initializeView();
+    const initialFrame = requestAnimationFrame(initializeView);
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(resizeFrame);
       resizeFrame = requestAnimationFrame(() => {
@@ -994,6 +997,9 @@ export function useOpenLayersViewport(
     let latestPointerMove: MapBrowserEvent | undefined;
     let pointerMoveFrame = 0;
     const processPointerMove = (event: MapBrowserEvent) => {
+      // Navigation never needs feature hit tests or React pointer updates.
+      // Large captured drawings must remain responsive while the user pans.
+      if (toolRef.current === 'pan' || spacePanRef.current) return;
       if (event.dragging) {
         // Translate owns selected-feature geometry while a direct drag is in
         // progress. Sending intermediate coordinates to the API both races
@@ -1217,6 +1223,9 @@ export function useOpenLayersViewport(
       snapInteractionRef.current = null;
       translateInteractionRef.current = null;
       mapRef.current = null;
+      // StrictMode recreates the OpenLayers map with a fresh View. Its old
+      // fitted key must not suppress the initial fit on that new View.
+      fittedExtentKeyRef.current = undefined;
     };
   }, [
     areaDrawingSourceRef,
@@ -1270,23 +1279,22 @@ export function useOpenLayersViewport(
     fullExtentRef.current = [...initialExtent];
     const extentKey = initialExtent.join(':');
     if (fittedExtentKeyRef.current === extentKey) return;
-    const frame = requestAnimationFrame(() => {
-      if (fittedExtentKeyRef.current === extentKey) return;
-      fittedExtentKeyRef.current = extentKey;
-      // The initial working-area camera is distinct from "show entire DXF".
-      // A late CAD load must not replace it with remote legends/title blocks.
-      const map = mapRef.current;
-      const size = map?.getSize();
-      if (map && size?.[0] && size[1]) {
-        map.getView().fit([...initialExtent], {
-          size,
-          padding: [28, 28, 28, 28],
-          maxZoom: 24,
-        });
-      }
-      if (planSourceRef.current.getFeatures().length) fitPlan();
+    // A background WKWebView may defer RAF indefinitely. Fit immediately
+    // when the project bounds arrive, otherwise the first viewport query is
+    // sent around (0, 0) and the editor appears to contain no drawing.
+    const map = mapRef.current;
+    map?.updateSize();
+    const size = map?.getSize();
+    if (!map || !size?.[0] || !size[1]) return;
+    // The working-area camera is distinct from "show entire DXF". A late
+    // CAD load must not replace it with remote legends or title blocks.
+    map.getView().fit([...initialExtent], {
+      size,
+      padding: [28, 28, 28, 28],
+      maxZoom: 24,
     });
-    return () => cancelAnimationFrame(frame);
+    fittedExtentKeyRef.current = extentKey;
+    if (planSourceRef.current.getFeatures().length) fitPlan();
   }, [fitPlan, initialExtent, planSourceRef]);
 
   useEffect(

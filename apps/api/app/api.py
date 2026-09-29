@@ -16,7 +16,7 @@ from fastapi import (
 )
 from fastapi.responses import Response
 
-from app import building_screen
+from app import automatic_placement, building_screen
 from app.application import ProjectApplication
 from app.native_query.face_review import NativeFaceDecision, NativeFaceReview
 from app.composition import get_application, get_layer_recognition
@@ -237,9 +237,15 @@ def source_layer_review(
 ) -> LayerRecognition:
     try:
         project = application.get(project_id, lightweight=True)
+        source = project.source_file
+        capture = (
+            source.cad_snapshot_provenance.live_capture
+            if source and source.cad_snapshot_provenance else None
+        )
         return recognition.review(
             project.layers,
-            project.source_file.content_sha256 if project.source_file else None,
+            source.content_sha256 if source else None,
+            original_dwg_sha=capture.original_disk_sha256 if capture else None,
         )
     except Exception as error:
         raise handle(error) from error
@@ -253,8 +259,15 @@ def retry_source_layer_review(
 ) -> LayerRecognition:
     try:
         project = application.get(project_id, lightweight=True)
+        source = project.source_file
+        capture = (
+            source.cad_snapshot_provenance.live_capture
+            if source and source.cad_snapshot_provenance else None
+        )
         return recognition.review(project.layers,
-            project.source_file.content_sha256 if project.source_file else None, retry=True)
+            source.content_sha256 if source else None,
+            original_dwg_sha=capture.original_disk_sha256 if capture else None,
+            retry=True)
     except Exception as error:
         raise handle(error) from error
 
@@ -642,6 +655,19 @@ def apply_plan_change_set(
 ) -> PlanMutationResult:
     try:
         return application.apply_change_set(project_id, payload)
+    except Exception as error:
+        raise handle(error) from error
+
+
+@router.post("/projects/{project_id}/plan/automatic/preview",
+             response_model=automatic_placement.AutomaticPlacementPreview)
+def preview_automatic_plan(
+    project_id: str,
+    payload: automatic_placement.AutomaticPlacementRequest,
+    application: ProjectApplication = Depends(get_application),
+) -> automatic_placement.AutomaticPlacementPreview:
+    try:
+        return automatic_placement.preview_automatic_placement(application, project_id, payload)
     except Exception as error:
         raise handle(error) from error
 

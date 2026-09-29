@@ -11,11 +11,9 @@ export const PreparationStatus: FC<PreparationStatusProps> = ({
   previousSourceOperation,
   cancelOperation,
   saveMutation,
-  readinessBlockedReason,
   downloadSource,
 }) => (
   <>
-    {' '}
     {preparationRecovery && (
       <InlineMessage tone="warning" title="Восстановление подготовки">
         <div className="flex flex-wrap items-center gap-3">
@@ -60,9 +58,7 @@ export const PreparationStatus: FC<PreparationStatusProps> = ({
             operation={operation}
             title="Подготовка карты"
             actionBusy={cancelOperation.isPending || saveMutation.isPending}
-            retryBlockedReason={readinessBlockedReason}
             onCancel={() => cancelOperation.mutate(operation.id!)}
-            onRetry={() => saveMutation.mutate()}
             onDownloadSource={() => {
               window.location.href = downloadSource();
             }}

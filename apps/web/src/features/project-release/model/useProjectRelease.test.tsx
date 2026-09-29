@@ -370,6 +370,25 @@ describe('useProjectRelease', () => {
 });
 
 describe('release receipt boundaries', () => {
+  it('reports a definitive server refusal without claiming the outcome is unknown', async () => {
+    const refusal = new ApiClientError(
+      'BAD_REQUEST',
+      'Модуль выпуска AutoCAD не установлен',
+    );
+    const create = vi.spyOn(api, 'createRelease').mockRejectedValue(refusal);
+    const view = renderHook(
+      () => useProjectRelease('project-1', { initialHorizon: 20 }),
+      { wrapper: wrapper() },
+    );
+    act(() => view.result.current.createRelease.mutate());
+    await waitFor(() =>
+      expect(view.result.current.createRelease.error).toBe(refusal),
+    );
+    expect(view.result.current.submissionUnknown).toBe(false);
+    expect(view.result.current.hasDraft).toBe(true);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
   it('persists the receipt before publication failure and recovers with GET without another POST', async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },

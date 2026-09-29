@@ -256,11 +256,18 @@ export function useProjectRelease(
         );
       }
     } catch (cause) {
+      // A validated 4xx response is a definitive refusal: no package was
+      // published. Only a lost/ambiguous response may have committed a package.
+      const rejected =
+        cause instanceof ApiClientError &&
+        ['BAD_REQUEST', 'NOT_FOUND', 'VALIDATION_ERROR'].includes(cause.code);
       updateReleaseDraft(projectId, (latest) =>
         latest.submission?.id === submission.id
           ? {
               ...latest,
-              submission: { ...latest.submission!, phase: 'unknown' },
+              submission: rejected
+                ? undefined
+                : { ...latest.submission!, phase: 'unknown' },
               error:
                 cause instanceof Error
                   ? cause

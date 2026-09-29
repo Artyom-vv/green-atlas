@@ -2570,6 +2570,71 @@
         }
       }
     },
+    "/api/projects/{project_id}/plan/automatic/preview": {
+      "post": {
+        "summary": "Preview Automatic Plan",
+        "operationId": "preview_automatic_plan_api_projects__project_id__plan_automatic_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomaticPlacementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticPlacementPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/plan/patterns/preview": {
       "post": {
         "summary": "Preview Plan Pattern",
@@ -7130,6 +7195,111 @@
           "entries"
         ],
         "title": "AssortmentInventory"
+      },
+      "AutomaticPlacementPreview": {
+        "properties": {
+          "requested": {
+            "type": "integer",
+            "title": "Requested"
+          },
+          "found": {
+            "type": "integer",
+            "title": "Found"
+          },
+          "shortfall": {
+            "type": "integer",
+            "title": "Shortfall"
+          },
+          "selected_kind": {
+            "type": "string",
+            "enum": [
+              "tree",
+              "shrub",
+              "mixed"
+            ],
+            "title": "Selected Kind"
+          },
+          "selection_basis": {
+            "type": "string",
+            "title": "Selection Basis"
+          },
+          "species_revision_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Species Revision Ids"
+          },
+          "change_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSetPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "requested",
+          "found",
+          "shortfall",
+          "selected_kind",
+          "selection_basis",
+          "species_revision_ids"
+        ],
+        "title": "AutomaticPlacementPreview"
+      },
+      "AutomaticPlacementRequest": {
+        "properties": {
+          "base_plan_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Plan Version"
+          },
+          "zone_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Zone Id"
+          },
+          "near": {
+            "type": "string",
+            "enum": [
+              "building",
+              "road",
+              "area"
+            ],
+            "title": "Near",
+            "default": "area"
+          },
+          "plant_kind": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "tree",
+              "shrub",
+              "mixed"
+            ],
+            "title": "Plant Kind",
+            "default": "auto"
+          },
+          "target_count": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Target Count",
+            "default": 8
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base_plan_version",
+          "zone_id"
+        ],
+        "title": "AutomaticPlacementRequest"
       },
       "AxisDistanceEvidence": {
         "properties": {
@@ -12095,6 +12265,16 @@
               }
             ]
           },
+          "calculation_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LayerKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "confidence": {
             "type": "string",
             "enum": [
@@ -12119,6 +12299,25 @@
             "type": "array",
             "maxItems": 8,
             "title": "Unresolved"
+          },
+          "review_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Question"
+          },
+          "review_roles": {
+            "items": {
+              "$ref": "#/components/schemas/LayerKind"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Review Roles"
           }
         },
         "additionalProperties": false,

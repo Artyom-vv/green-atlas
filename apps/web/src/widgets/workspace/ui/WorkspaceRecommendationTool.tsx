@@ -1,6 +1,8 @@
 import type { WorkspaceRecommendationToolProps } from './WorkspaceRecommendationTool.props';
 import { recommendationToolBindings } from './recommendationToolBindings';
 import type { FC } from 'react';
+import { useState } from 'react';
+import { AutomaticPlacementPanel } from './AutomaticPlacementPanel';
 import {
   RecommendationPanel,
   RecommendationReviewPanel,
@@ -9,6 +11,7 @@ import { errorMessage as message } from '@/shared/errors/errorMessage';
 export const WorkspaceRecommendationTool: FC<
   WorkspaceRecommendationToolProps
 > = (props) => {
+  const [detailed, setDetailed] = useState(false);
   const {
     applyChanges,
     buildingTargets,
@@ -25,6 +28,9 @@ export const WorkspaceRecommendationTool: FC<
     setGrowthHorizon,
     speciesNames,
   } = props;
+  if (!detailed || props.automaticPreview) {
+    return <AutomaticPlacementPanel {...props} onDetailed={() => setDetailed(true)} />;
+  }
   return (
     <>
       <div

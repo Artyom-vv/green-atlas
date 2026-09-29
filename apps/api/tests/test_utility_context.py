@@ -110,23 +110,17 @@ def test_old_mapping_client_preserves_context_without_invalidating_geometry():
     assert invalidated == []
 
 
-def test_review_required_mapping_must_be_explicitly_confirmed():
+def test_review_required_mapping_can_be_saved_before_calculation():
     project = mapped_project()
     project.layers[1].mapping_review_required = True
     project.layers[1].mapping_confirmed = False
     service, project, _invalidated = import_service(project)
 
-    with pytest.raises(ValueError, match="Подтвердите предложенные роли"):
-        service.save_mappings(
-            project.id,
-            [
-                LayerMapping(
-                    layer_id="utility",
-                    kind="utility",
-                    confirmed=False,
-                )
-            ],
-        )
+    pending = service.save_mappings(
+        project.id,
+        [LayerMapping(layer_id="utility", kind="utility", confirmed=False)],
+    )
+    assert not pending.layers[1].mapping_confirmed
 
     saved = service.save_mappings(
         project.id,

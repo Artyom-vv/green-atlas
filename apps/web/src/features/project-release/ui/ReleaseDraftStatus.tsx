@@ -3,8 +3,6 @@ import { Button, FormActions, InlineMessage } from '@green/ui';
 import type { ReleaseDraftContext } from '../model/releaseDraft';
 
 export interface ReleaseDraftStatusProps {
-  hasDraft?: boolean;
-  storageAvailable?: boolean;
   draftStale?: boolean;
   draftContext?: Pick<ReleaseDraftContext, 'planVersion' | 'geometryVersion'>;
   planVersion: number;
@@ -12,13 +10,10 @@ export interface ReleaseDraftStatusProps {
   draftNotice?: string;
   submissionUnknown?: boolean;
   loading?: boolean;
-  onClearDraft: () => void;
   onReviewContext: () => void;
 }
 
 export const ReleaseDraftStatus: FC<ReleaseDraftStatusProps> = ({
-  hasDraft,
-  storageAvailable = true,
   draftStale,
   draftContext,
   planVersion,
@@ -26,24 +21,9 @@ export const ReleaseDraftStatus: FC<ReleaseDraftStatusProps> = ({
   draftNotice,
   submissionUnknown,
   loading,
-  onClearDraft,
   onReviewContext,
 }) => (
   <>
-    {hasDraft && (
-      <FormActions className="justify-between">
-        <span className="text-neutral-600" role="status">
-          {loading
-            ? 'Собираем пакет. Заметки сохранены.'
-            : storageAvailable
-              ? 'Черновик сохранён в этой вкладке'
-              : 'Черновик сохранён до закрытия страницы'}
-        </span>
-        <Button variant="ghost" disabled={loading} onClick={onClearDraft}>
-          Очистить черновик
-        </Button>
-      </FormActions>
-    )}
     {draftStale && (
       <InlineMessage tone="warning">
         <div className="grid gap-2">

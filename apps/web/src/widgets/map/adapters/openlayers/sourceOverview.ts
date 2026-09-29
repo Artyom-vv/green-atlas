@@ -22,17 +22,26 @@ export function readSourceOverview(
   return overview as SourceOverview;
 }
 
-/** Modify inert image markup, never inject source names or SVG into page DOM. */
+/** Filter generated SVG groups without constructing a DOM for the whole CAD drawing. */
 export function visibleOverviewSvg(
   svg: string,
   hiddenNames: readonly string[],
 ): string {
   if (!hiddenNames.length) return svg;
-  const document = new DOMParser().parseFromString(svg, 'image/svg+xml');
   const hidden = new Set(hiddenNames);
-  for (const group of document.querySelectorAll('[data-source-layer]')) {
-    if (hidden.has(group.getAttribute('data-source-layer') ?? ''))
-      group.remove();
-  }
-  return new XMLSerializer().serializeToString(document);
+  return svg.replace(/<g\b([^>]*)>[\s\S]*?<\/g>/g, (group, attributes: string) => {
+    const encodedName = /\bdata-source-layer=(["'])(.*?)\1/.exec(attributes)?.[2];
+    if (!encodedName) return group;
+    const name = encodedName
+      .replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (_, code: string) =>
+        String.fromCodePoint(code[0].toLowerCase() === 'x'
+          ? Number.parseInt(code.slice(1), 16) : Number(code)),
+      )
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+    return hidden.has(name) ? '' : group;
+  });
 }

@@ -10,6 +10,7 @@ import {
   ApiClientError,
   type LayerRecognition,
   type Project,
+  type ProjectOperation,
 } from '@green/api-client';
 import { preparationApi } from '../api/preparationApi';
 import { useSourcePreparation } from './useSourcePreparation';
@@ -40,6 +41,309 @@ const source: Project = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('source preparation form recovery', () => {
+  it('does not rerun recognition for an already confirmed source', async () => {
+    const project: Project = {
+      ...source,
+      source_file: nativeProject.source_file,
+      layers: [{ ...source.layers![0], mapping_confirmed: true }],
+    };
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    const recognize = vi.spyOn(preparationApi, 'getLayerRecognition');
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper },
+    );
+    try {
+      await waitFor(() => expect(result.current.allSavedLayersConfirmed).toBe(true));
+      expect(recognize).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+  it('does not treat an open CAD line as a selected territory', async () => {
+    const project: Project = {
+      ...source,
+      source_file: nativeProject.source_file,
+      import_status: { mode: 'autocad_live', editability: 'editable', message: 'AutoCAD' },
+      layers: [
+        {
+          ...source.layers![0], id: 'open', source_name: 'Граница проектирования',
+          mapped_kind: 'site_border', mapping_confirmed: true,
+          boundary_candidate: {
+            status: 'unavailable', basis: 'polygonized_linework',
+            area_m2: 0, inset_1_5m_area_m2: 0, component_count: 0,
+            issue: 'Слой не образует замкнутую поверхность',
+          },
+        },
+        {
+          ...source.layers![0], id: 'closed', source_name: 'Граница работ',
+          mapped_kind: 'ignore', mapping_confirmed: true,
+          boundary_candidate: {
+            status: 'usable', basis: 'source_surface',
+            area_m2: 100, inset_1_5m_area_m2: 64, component_count: 1,
+          },
+        },
+      ],
+    };
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    vi.spyOn(preparationApi, 'getLayerRecognition').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper },
+    );
+    try {
+      await waitFor(() => expect(result.current.readinessBlockedReason)
+        .toContain('не образует пригодную площадь'));
+      expect(result.current.readinessSection).toBe('01');
+      expect(result.current.hasPlanningBoundary).toBe(false);
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+  it('saves only decisive model roles on a fresh source and leaves disputes for review', async () => {
+    const project: Project = {
+      ...source,
+      source_file: nativeProject.source_file,
+      layers: [
+        {
+          ...source.layers![0],
+          mapping_review_required: true,
+          mapping_confirmed: false,
+        },
+        {
+          ...source.layers![0],
+          id: 'boundary',
+          source_name: 'Граница',
+          mapped_kind: 'ignore',
+          mapping_review_required: true,
+          mapping_confirmed: false,
+        },
+      ],
+    };
+    const recognition: LayerRecognition = {
+      source_sha256: project.source_file!.content_sha256 ?? null,
+      provider: 'openai/gpt-6-luna',
+      status: 'completed',
+      processed_count: 2,
+      total_count: 2,
+      categories: [
+        { category: 'carriageway', kind: 'road', label: 'Проезжая часть' },
+        { category: 'project_boundary', kind: 'site_border', label: 'Граница' },
+      ],
+      proposals: [
+        {
+          layer_id: 'road',
+          category: 'carriageway',
+          confidence: 'high',
+          evidence: [],
+          unresolved: [],
+        },
+        {
+          layer_id: 'boundary',
+          category: 'project_boundary',
+          confidence: 'high',
+          evidence: [],
+          unresolved: [],
+        },
+      ],
+    };
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    vi.spyOn(preparationApi, 'getLayerRecognition').mockResolvedValue(
+      recognition,
+    );
+    const save = vi
+      .spyOn(preparationApi, 'saveMappings')
+      .mockImplementation(async (_id, values) => ({
+        ...project,
+        layers: project.layers!.map((item) => {
+          const matched = values.find((value) => value.layer_id === item.id)!;
+          return {
+            ...item,
+            mapped_kind: matched.kind,
+            category: matched.category,
+            mapping_confirmed: matched.confirmed,
+          };
+        }),
+      }));
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper },
+    );
+    try {
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      const values = save.mock.calls[0][1];
+      expect(values.find((value) => value.layer_id === 'road')).toMatchObject({
+        kind: 'road',
+        category: 'carriageway',
+        confirmed: true,
+      });
+      expect(
+        values.find((value) => value.layer_id === 'boundary')?.confirmed,
+      ).toBe(false);
+      await waitFor(() =>
+        expect(
+          result.current.unconfirmedMappings.map((item) => item.id),
+        ).toEqual(['boundary']),
+      );
+      expect(save).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+  it('accepts Luna roles after a territory was selected during recognition', async () => {
+    const project: Project = {
+      ...source,
+      source_file: nativeProject.source_file,
+      import_status: { mode: 'autocad_live', editability: 'editable', message: 'AutoCAD' },
+      layers: [
+        { ...source.layers![0], mapping_review_required: true, mapping_confirmed: false },
+        {
+          ...source.layers![0], id: 'boundary', source_name: 'Граница работ',
+          mapped_kind: 'ignore', mapping_review_required: true,
+          mapping_confirmed: false,
+          boundary_candidate: {
+            status: 'usable', basis: 'source_surface', area_m2: 100,
+            inset_1_5m_area_m2: 64, component_count: 1,
+          },
+        },
+      ],
+    };
+    const recognition: LayerRecognition = {
+      source_sha256: project.source_file!.content_sha256 ?? null,
+      provider: 'openai/gpt-6-luna', status: 'completed',
+      processed_count: 2, total_count: 2,
+      categories: [{ category: 'carriageway', kind: 'road', label: 'Проезжая часть' }],
+      proposals: [{
+        layer_id: 'road', category: 'carriageway', confidence: 'high',
+        evidence: [], unresolved: [],
+      }],
+    };
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(project);
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(null);
+    vi.spyOn(preparationApi, 'getLayerRecognition').mockResolvedValue({
+      ...recognition, status: 'running', processed_count: 0,
+    });
+    const save = vi.spyOn(preparationApi, 'saveMappings');
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate: vi.fn() }),
+      { wrapper },
+    );
+    try {
+      await waitFor(() => expect(result.current.mappings.boundary).toBeDefined());
+      act(() => result.current.setMappings({
+        ...result.current.mappings,
+        boundary: {
+          ...result.current.mappings.boundary,
+          kind: 'site_border', confirmed: true,
+        },
+      }));
+      act(() => {
+        client.setQueriesData({ queryKey: ['layer-recognition', 'project'] }, recognition);
+      });
+      await waitFor(() => expect(result.current.mappings.road).toMatchObject({
+        kind: 'road', category: 'carriageway', confirmed: true,
+      }));
+      expect(result.current.mappings.boundary).toMatchObject({
+        kind: 'site_border', confirmed: true,
+      });
+      expect(result.current.unconfirmedMappings).toEqual([]);
+      expect(save).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+  it('leaves preparation when the operation finishes in an inactive desktop window', async () => {
+    const operation: ProjectOperation = {
+      id: 'operation',
+      project_id: 'project',
+      kind: 'calculate_geometry',
+      status: 'running',
+      project_state_version: 1,
+      progress: 10,
+      progress_mode: 'determinate',
+      stage: 'Расчёт',
+    };
+    vi.spyOn(preparationApi, 'getProject').mockResolvedValue(source);
+    vi.spyOn(preparationApi, 'getDataPassport').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLayerRecognition').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    vi.spyOn(preparationApi, 'getLatestOperation').mockResolvedValue(operation);
+    const readOperation = vi
+      .spyOn(preparationApi, 'getOperation')
+      .mockResolvedValueOnce(operation)
+      .mockResolvedValue({ ...operation, status: 'completed', progress: 100 });
+    const navigate = vi.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    focusManager.setFocused(false);
+    const { unmount } = renderHook(
+      () => useSourcePreparation({ projectId: 'project', navigate }),
+      { wrapper },
+    );
+    try {
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith('/projects/project/workspace'),
+      );
+      expect(readOperation).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      client.clear();
+      focusManager.setFocused(undefined);
+    }
+  });
+
   it('finishes model polling even when the desktop document is inactive', async () => {
     const project = { ...source, source_file: nativeProject.source_file };
     const running: LayerRecognition = {
@@ -212,7 +516,8 @@ describe('source preparation form recovery', () => {
       await waitFor(() =>
         expect(result.current.incompleteConstraintLayers).toHaveLength(1),
       );
-      expect(Boolean(result.current.readinessBlockedReason)).toBe(!accepted);
+      expect(result.current.readinessBlockedReason).toBeUndefined();
+      expect(result.current.partialGeometryPending).toBe(!accepted);
       unmount();
       client.clear();
     },
@@ -315,7 +620,7 @@ describe('source preparation form recovery', () => {
 
     await waitFor(() =>
       expect(result.current.readinessBlockedReason).toBe(
-        'Выберите один контур территории для расчёта.',
+        'Выберите границу проектных работ в разделе «Территория»',
       ),
     );
     act(() =>

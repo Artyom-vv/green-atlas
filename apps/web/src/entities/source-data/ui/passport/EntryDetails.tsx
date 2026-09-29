@@ -14,10 +14,16 @@ const STATUS_LABELS: Record<DataPassportEntry['status'], string> = {
 };
 export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
   <Disclosure
-    variant="panel"
+    variant="section"
     title={
       <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <span className="flex-1 font-medium">{entry.label}</span>
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="font-medium">{entry.label}</span>
+          <span className="text-xs font-normal text-neutral-500">
+            Объектов: {entry.object_count.toLocaleString('ru-RU')}, слоёв:{' '}
+            {entry.layer_names?.length ?? 0}
+          </span>
+        </span>
         <span
           className={
             entry.status === 'partial' || entry.status === 'missing'
@@ -29,7 +35,6 @@ export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
         </span>
       </span>
     }
-    description={`Объектов: ${entry.object_count.toLocaleString('ru-RU')}, слоёв: ${entry.layer_names?.length ?? 0}`}
   >
     <div className="grid min-w-0 gap-4 text-xs wrap-anywhere text-neutral-700">
       <SourceFacts

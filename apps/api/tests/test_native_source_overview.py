@@ -23,6 +23,20 @@ def test_overview_declares_semantics_without_closing_open_lines():
     assert groups['building'].attrib['fill'] == 'none'
 
 
+def test_overview_keeps_simple_segments_and_rings_without_topology_work(monkeypatch):
+    from shapely.geometry import LineString, Point, Polygon
+    from shapely.geometry.base import BaseGeometry
+    from app.geometry.source_overview import _display_paths
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError('simple display geometry must not call GEOS simplify')
+
+    monkeypatch.setattr(BaseGeometry, 'simplify', unexpected)
+    assert _display_paths(LineString([(0, 0), (1, 1)]), 2)[0][0] == 'line'
+    assert _display_paths(Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]), 2)[0][0] == 'area'
+    assert _display_paths(Point(1, 1), 2)[0][0] == 'line'
+
+
 def test_picking_budget_does_not_erase_unmapped_native_context():
     features = [{'type': 'Feature', 'id': str(i),
         'properties': {'kind': 'building' if i == 0 else 'ignore',

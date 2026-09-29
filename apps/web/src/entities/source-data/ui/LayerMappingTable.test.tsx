@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Layer, LayerMapping } from '@green/api-client';
 import { LayerMappingTable } from './LayerMappingTable';
@@ -55,19 +55,16 @@ describe('LayerMappingTable', () => {
       />,
     );
     expect(
-      screen.getByText('Предложение: Площадка с твёрдым покрытием'),
+      screen.getByText('На чертеже: Площадка с твёрдым покрытием'),
     ).toBeVisible();
     fireEvent.click(
-      screen.getByRole('button', { name: 'Принять предложение' }),
+      screen.getByRole('button', { name: 'Подтвердить: Техническая / непригодная зона' }),
     );
     expect(onChange.mock.calls[0][0][layer.id]).toMatchObject({
       kind: 'restricted',
       category: 'hard_surface',
       confirmed: true,
     });
-    expect(
-      screen.getByRole('combobox', { name: `Тип слоя ${layer.source_name}` }),
-    ).toHaveFocus();
   });
   it('keeps an uncertain automatic role pending until the operator confirms it', () => {
     const mapping: LayerMapping = {
@@ -86,18 +83,15 @@ describe('LayerMappingTable', () => {
       />,
     );
 
-    expect(screen.getByText('Слой чертежа и объекты')).toBeInTheDocument();
+    expect(screen.getByText('Исходный слой')).toBeInTheDocument();
     expect(
       screen.getByRole('list', { name: 'Слои чертежа' }),
     ).not.toHaveTextContent(/[\u00b7\u2022\u2219\u22c5\u2027]/);
-    expect(screen.getByText('проверьте роль')).toHaveAttribute(
+    expect(screen.getByText('Требует решения')).toHaveAttribute(
       'title',
       'Название слоя соответствует роли',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить роль' }));
-    expect(
-      screen.getByRole('combobox', { name: `Тип слоя ${layer.source_name}` }),
-    ).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить: Инженерная сеть' }));
     expect(onChange).toHaveBeenCalledWith({
       [layer.id]: { ...mapping, confirmed: true },
     });
@@ -116,16 +110,18 @@ describe('LayerMappingTable', () => {
         onChange={onChange}
       />,
     );
-    expect(screen.getByRole('combobox')).toHaveValue('unassigned');
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Исключить из расчёта' }),
-    );
+    expect(screen.queryByRole('combobox')).toBeNull();
+    fireEvent.click(screen.getByText('Указать влияние на посадки'));
+    expect(screen.getByRole('combobox', { name: /Участие в расчёте/ })).toHaveValue('unassigned');
+    fireEvent.change(screen.getByRole('combobox', { name: /Участие в расчёте/ }), {
+      target: { value: 'ignore' },
+    });
     expect(onChange.mock.calls[0][0][ignored.id]).toMatchObject({
       kind: 'ignore',
       confirmed: true,
     });
   });
-  it('uses descriptive geometry rather than silently excluding the category', () => {
+  it('uses descriptive geometry rather than silently excluding the category', async () => {
     const ignored = { ...layer, mapped_kind: 'ignore' as const };
     const onChange = vi.fn();
     render(
@@ -146,16 +142,22 @@ describe('LayerMappingTable', () => {
         }}
       />,
     );
-    fireEvent.change(screen.getByRole('combobox'), {
-      target: { value: 'category:terrain_slope' },
-    });
+    fireEvent.click(screen.getByText('Указать влияние на посадки'));
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить распознанный тип' }));
+    const search = screen.getByRole('combobox', { name: /Найти тип объектов/ });
+    act(() => search.focus());
+    fireEvent.change(search, { target: { value: 'Откос' } });
+    expect(await screen.findByRole('option', { name: /Откос рельефа/ })).toBeVisible();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
     expect(onChange.mock.calls[0][0][ignored.id]).toMatchObject({
-      kind: 'restricted',
-      confirmed: true,
+      kind: 'ignore',
+      confirmed: false,
       category: 'terrain_slope',
     });
   });
-  it('confirms the selected type without a second role selector', () => {
+  it('requires an explicit calculation role for a descriptive type', () => {
     const slope = {
       ...layer,
       mapped_kind: 'ignore' as const,
@@ -180,12 +182,16 @@ describe('LayerMappingTable', () => {
         }}
       />,
     );
-    expect(screen.getAllByRole('combobox')).toHaveLength(1);
+    expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByText('Учитывать как')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Указать влияние на посадки'));
+    expect(screen.getByRole('combobox', { name: /Участие в расчёте/ })).toBeVisible();
     expect(
-      screen.queryByRole('button', { name: 'Исключить из расчёта' }),
-    ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить роль' }));
+      screen.queryByRole('button', { name: 'Подтвердить роль' }),
+    ).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: /Участие в расчёте/ }), {
+      target: { value: 'restricted' },
+    });
     expect(onChange.mock.calls[0][0][slope.id]).toMatchObject({
       kind: 'restricted',
       confirmed: true,

@@ -68,7 +68,7 @@ CATEGORIES = {
     LayerCategory.RETAINING_WALL: ("restricted", "Подпорная стенка"),
     LayerCategory.CURB: ("road", "Бортовой камень"),
     LayerCategory.MANHOLE: ("restricted", "Люк или колодец"),
-    LayerCategory.POLE: ("restricted", "Опора или столб"),
+    LayerCategory.POLE: ("restricted", "Опора, столб или вышка"),
     LayerCategory.MONUMENT: ("restricted", "Памятник или постамент"),
     LayerCategory.FOUNTAIN: ("restricted", "Фонтан"),
     LayerCategory.GEODETIC_MARKER: ("restricted", "Геодезический пункт"),

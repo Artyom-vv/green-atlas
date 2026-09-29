@@ -74,6 +74,29 @@ const draftPlan = {
 } as Plan;
 
 describe('ReleasePanel', () => {
+  it('exposes forecast without opening another section and sends the chosen year', () => {
+    const onCreate = vi.fn();
+    const onGrowthHorizon = vi.fn();
+    render(
+      <ReleasePanel
+        plan={draftPlan}
+        onCreate={onCreate}
+        onDownload={vi.fn()}
+        onGrowthHorizon={onGrowthHorizon}
+      />,
+    );
+    const slider = screen.getByRole('slider', {
+      name: 'Горизонт прогноза в пакете',
+    });
+    expect(slider).toBeVisible();
+    fireEvent.change(slider, { target: { value: '12' } });
+    expect(onGrowthHorizon).toHaveBeenCalledWith(12);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Собрать черновой пакет' }),
+    );
+    expect(onCreate).toHaveBeenCalledWith({ mode: 'draft', scene_horizon: 12 });
+  });
+
   it('shows unverified source constraints and keeps the draft available', () => {
     const plan = {
       ...draftPlan,

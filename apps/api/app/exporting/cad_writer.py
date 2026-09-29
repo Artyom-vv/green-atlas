@@ -18,10 +18,24 @@ from app.projects.contracts import Project
 def release_config(database_path: str) -> NativeQueryProcessConfig:
     bundle_path = os.environ.get("GREEN_ATLAS_CAD_RELEASE_WORKER")
     if not bundle_path:
-        raise ValueError(
-            "Модуль выпуска AutoCAD не установлен. Обновите комплект Green Atlas"
+        # The packaged desktop passes an explicit worker. A local API started
+        # beside an installed Mac add-in uses that same installed worker, not
+        # an arbitrary build artefact or an older backup bundle.
+        installed = (
+            Path.home()
+            / "Library/Application Support/Autodesk/ApplicationAddins"
+            / "GreenAtlasBridge.bundle/Contents/Workers/GreenAtlasQuery.bundle"
         )
+        if not installed.is_dir():
+            raise ValueError(
+                "Модуль выпуска AutoCAD не установлен. Обновите комплект Green Atlas"
+            )
+        bundle_path = str(installed)
     bundle = Path(bundle_path).absolute()
+    if not (bundle / "Contents/Info.plist").is_file() or not (
+        bundle / "Contents/MacOS/GreenAtlasBridge"
+    ).is_file():
+        raise ValueError("Модуль выпуска AutoCAD повреждён. Переустановите Green Atlas")
     info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
     acad = Path(
         os.environ.get(
@@ -85,6 +99,14 @@ class AutoCadReleaseWriter:
             for item in project.plan.objects
         )
         config = self.config_factory(self.database_path)
+        if (
+            isinstance(config, NativeQueryProcessConfig)
+            and config.plugin_version != session.plugin_version
+        ):
+            raise ValueError(
+                "Версия модуля выпуска не совпадает с версией захвата AutoCAD. "
+                "Обновите плагин и откройте чертёж заново"
+            )
         package = self.archive.package(project)
         result = self.write(package, plants, session.units_code, config)
         result.files["green-atlas-plan.json"] = json.dumps(

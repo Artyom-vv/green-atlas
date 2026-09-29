@@ -111,7 +111,18 @@ def _paths(geometry: BaseGeometry, radius: float) -> Iterable[tuple[str, str]]:
 
 def _display_paths(geometry, resolution):
     try:
-        display = geometry.simplify(resolution * 0.2, preserve_topology=True)
+        # Two-point segments and small rings cannot usefully be simplified for
+        # this overview. Avoid starting GEOS topology analysis for every such
+        # entity in a city-scale drawing (the calculation geometry is intact).
+        if geometry.geom_type == 'Point':
+            display = geometry
+        elif geometry.geom_type in {'LineString', 'LinearRing'} and len(geometry.coords) <= 2:
+            display = geometry
+        elif (geometry.geom_type == 'Polygon' and not geometry.interiors
+              and len(geometry.exterior.coords) <= 5):
+            display = geometry
+        else:
+            display = geometry.simplify(resolution * 0.2, preserve_topology=True)
         return list(_paths(display if not display.is_empty else geometry, resolution * 0.8))
     except Exception:
         return list(_paths(geometry, resolution * 0.8))

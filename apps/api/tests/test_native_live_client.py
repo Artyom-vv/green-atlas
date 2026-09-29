@@ -121,6 +121,7 @@ def test_native_edit_error_is_not_a_geometry_fallback(tmp_path):
         LiveQueryClient(tmp_path, timeout_seconds=2).inspect(session(tmp_path))
     thread.join()
     assert not errors and caught.value.code == "live_source_changed_or_inactive"
+    assert "повторно проверьте посадки" in str(caught.value)
 
 
 @pytest.mark.parametrize("replaced", [False, True])

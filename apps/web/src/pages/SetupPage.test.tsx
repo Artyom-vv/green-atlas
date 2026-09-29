@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -120,6 +121,19 @@ function openPage(queryClient = client(), route = '/projects/project-1/setup') {
   );
 }
 
+async function layerRole(name: string) {
+  const section = await screen.findByRole('region', { name: 'Слои', hidden: true });
+  if (section.getAttribute('data-expanded') !== 'true')
+    fireEvent.click(screen.getByRole('heading', { name: 'Слои' }));
+  const all = await screen.findByRole('button', { name: /Все слои/ });
+  if (all.getAttribute('aria-pressed') !== 'true') fireEvent.click(all);
+  const label = await screen.findByTitle(name);
+  const row = label.closest('li')!;
+  const advanced = within(row).getByText(/Изменить назначение|Другой вариант/);
+  if (!advanced.closest('details')?.open) fireEvent.click(advanced);
+  return within(row).getByLabelText(`Участие в расчёте ${name}`);
+}
+
 beforeEach(() => {
   vi.spyOn(api, 'getProject').mockResolvedValue(project());
   vi.spyOn(api, 'getDataPassport').mockImplementation(
@@ -174,13 +188,13 @@ describe('import to source-bound setup', () => {
       name: 'Подготовить карту',
     });
     await waitFor(() => expect(action).toBeEnabled());
-    expect(screen.getByLabelText('Тип слоя BUILDING_A')).toBeEnabled();
+    expect(await layerRole('BUILDING_A')).toBeEnabled();
     fireEvent.click(action);
     await waitFor(() =>
       expect(api.startGeometryOperation).toHaveBeenCalledWith('project-1'),
     );
   });
-  it('lets the operator accept missing geometry and then start calculation', async () => {
+  it('accepts missing geometry and starts calculation from the single primary action', async () => {
     const source = project();
     source.source_file!.content_sha256 = 'a'.repeat(64);
     source.layers![1].geometry_complete = false;
@@ -195,25 +209,21 @@ describe('import to source-bound setup', () => {
       .mockResolvedValue(accepted);
     openPage();
     const action = await screen.findByRole('button', {
-      name: 'Использовать доступную геометрию',
+      name: 'Подготовить карту',
     });
     await waitFor(() => expect(action).toBeEnabled());
     expect(
-      screen.getByRole('button', { name: 'Подготовить карту' }),
-    ).toBeDisabled();
+      screen.getByText(/Кнопка «Подготовить карту» сохранит решение/),
+    ).toBeVisible();
     fireEvent.click(action);
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Подготовить карту' }),
-      ).toBeEnabled(),
+      expect(api.startGeometryOperation).toHaveBeenCalledWith('project-1'),
     );
     expect(accept).toHaveBeenCalledWith('project-1', 'a'.repeat(64), {
       expectedStateVersion: 1,
     });
-    expect(api.startGeometryOperation).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Подготовить карту' }));
-    await waitFor(() =>
-      expect(api.startGeometryOperation).toHaveBeenCalledWith('project-1'),
+    expect(accept.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(api.startGeometryOperation).mock.invocationCallOrder[0],
     );
   });
   it('publishes a replacement before navigation, clears only source-derived cache and submits the new layers', async () => {
@@ -236,9 +246,9 @@ describe('import to source-bound setup', () => {
     fireEvent.change(view.container.querySelector('input[type=file]')!, {
       target: { files: [new File(['0\nEOF\n'], 'site.dxf')] },
     });
-    expect(await screen.findByLabelText('Тип слоя BUILDING_B')).toHaveValue(
-      'building',
-    );
+    expect(
+      await layerRole('BUILDING_B'),
+    ).toHaveValue('building');
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: 'Подготовить карту' }),
@@ -292,9 +302,9 @@ describe('import to source-bound setup', () => {
     fireEvent.change(view.container.querySelector('input[type=file]')!, {
       target: { files: [new File(['DXF'], 'site.dxf')] },
     });
-    expect(await screen.findByLabelText('Тип слоя BUILDING_B')).toHaveValue(
-      'building',
-    );
+    expect(
+      await layerRole('BUILDING_B'),
+    ).toHaveValue('building');
     await act(async () => {
       staleRead.resolve(project());
     });
@@ -307,9 +317,12 @@ describe('import to source-bound setup', () => {
   it('preserves edits for one source but switches mappings when the same filename is imported again', async () => {
     const queryClient = client();
     openPage(queryClient);
-    fireEvent.change(await screen.findByLabelText('Тип слоя BUILDING_A'), {
-      target: { value: 'utility' },
-    });
+    fireEvent.change(
+      await layerRole('BUILDING_A'),
+      {
+        target: { value: 'utility' },
+      },
+    );
     await act(async () => {
       queryClient.setQueryData(['setup-project', 'project-1'], {
         ...project(),
@@ -320,13 +333,15 @@ describe('import to source-bound setup', () => {
         })),
       });
     });
-    expect(screen.getByLabelText('Тип слоя BUILDING_A')).toHaveValue('utility');
+    expect(await layerRole('BUILDING_A')).toHaveValue(
+      'utility',
+    );
     await act(async () => {
       queryClient.setQueryData(['setup-project', 'project-1'], project('b'));
     });
-    expect(await screen.findByLabelText('Тип слоя BUILDING_B')).toHaveValue(
-      'building',
-    );
+    expect(
+      await layerRole('BUILDING_B'),
+    ).toHaveValue('building');
     expect(screen.queryByText('BUILDING_A')).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
@@ -361,7 +376,7 @@ describe('import to source-bound setup', () => {
       expect(
         await screen.findByRole('button', { name: 'Подготовить карту' }),
       ).toBeEnabled();
-      expect(screen.getByLabelText('Тип слоя BUILDING_B')).toHaveValue(
+      expect(await layerRole('BUILDING_B')).toHaveValue(
         'building',
       );
       expect(
@@ -446,7 +461,7 @@ describe('geometry operation status recovery', () => {
     vi.mocked(api.getLatestOperation).mockResolvedValue(operation('completed'));
     openPage();
     await screen.findByRole('button', { name: 'Открыть карту' });
-    const layer = screen.getByLabelText('Тип слоя BUILDING_A');
+    const layer = await layerRole('BUILDING_A');
     fireEvent.change(layer, { target: { value: 'water' } });
     expect(
       screen.getByRole('button', { name: 'Подготовить карту' }),
@@ -577,7 +592,7 @@ describe('geometry operation status recovery', () => {
     ).toBe(true);
   });
 
-  it('restores a saved cancelling operation through the same ID and enables retry only after a terminal result', async () => {
+  it('restores a saved cancelling operation through the same ID and enables the primary action after a terminal result', async () => {
     vi.mocked(api.getLatestOperation).mockResolvedValue(
       operation('cancelling'),
     );
@@ -595,7 +610,7 @@ describe('geometry operation status recovery', () => {
       screen.getByRole('button', { name: 'Повторить загрузку статуса' }),
     );
     expect(
-      await screen.findByRole('button', { name: 'Запустить повторно' }),
+      await screen.findByRole('button', { name: 'Подготовить карту' }),
     ).toBeEnabled();
     expect(api.getOperation).toHaveBeenCalledTimes(2);
     expect(api.startGeometryOperation).not.toHaveBeenCalled();
@@ -636,14 +651,17 @@ describe('geometry operation status recovery', () => {
     openPage();
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Запустить повторно' }),
+        screen.getByRole('button', { name: 'Подготовить карту' }),
       ).toBeEnabled(),
     );
-    fireEvent.change(await screen.findByLabelText('Тип слоя BUILDING_A'), {
-      target: { value: 'utility' },
-    });
+    fireEvent.change(
+      await layerRole('BUILDING_A'),
+      {
+        target: { value: 'utility' },
+      },
+    );
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Запустить повторно' }),
+      await screen.findByRole('button', { name: 'Подготовить карту' }),
     );
     await waitFor(() =>
       expect(api.startGeometryOperation).toHaveBeenCalledExactlyOnceWith(
@@ -652,7 +670,12 @@ describe('geometry operation status recovery', () => {
     );
     expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
       { layer_id: 'boundary-a', kind: 'site_border', visible: true },
-      { layer_id: 'building-a', kind: 'utility', visible: true, confirmed: true },
+      {
+        layer_id: 'building-a',
+        kind: 'utility',
+        visible: true,
+        confirmed: true,
+      },
     ]);
     expect(
       vi.mocked(api.saveMappings).mock.invocationCallOrder[0],
@@ -661,144 +684,80 @@ describe('geometry operation status recovery', () => {
     );
   });
 
-  it.each([
-    {
-      name: 'required boundary',
-      status: 'failed',
-      incomplete: false,
-      field: 'BOUNDARY_A',
-      invalid: 'ignore',
-      fixed: 'site_border',
-      reason:
+  it('opens the required layer step from the primary action instead of leaving it disabled', async () => {
+    vi.mocked(api.getLatestOperation).mockResolvedValue(operation('failed'));
+    vi.mocked(api.getOperation).mockResolvedValueOnce(operation('failed'));
+    openPage();
+    await waitFor(() => expect(api.getOperation).toHaveBeenCalledOnce());
+    fireEvent.change(await layerRole('BOUNDARY_A'), {
+      target: { value: 'ignore' },
+    });
+    const action = screen.getByRole('button', { name: 'Подготовить карту' });
+    expect(action).toBeEnabled();
+    expect(
+      screen.getByText(
         'Назначьте роль обязательным слоям границы перед подготовкой карты.',
-    },
-    {
-      name: 'incomplete constraint',
-      status: 'cancelled',
-      incomplete: true,
-      field: 'BUILDING_A',
-      invalid: 'utility',
-      fixed: 'ignore',
-      reason:
-        'Разрешите расчёт по доступным объектам или исправьте неполные слои.',
-    },
-  ] as const)(
-    'blocks an invalid $name for both preparation actions, then retries only corrected mappings',
-    async (scenario) => {
-      const source = project();
-      source.layers = source.layers!.map((layer) =>
-        layer.id === 'building-a' && scenario.incomplete
-          ? { ...layer, geometry_complete: false, mapped_kind: 'ignore' }
-          : layer,
-      );
-      vi.mocked(api.getProject).mockResolvedValue(source);
-      vi.mocked(api.getLatestOperation).mockResolvedValue(
-        operation(scenario.status),
-      );
-      vi.mocked(api.getOperation)
-        .mockResolvedValueOnce(operation(scenario.status))
-        .mockImplementation(() => new Promise(() => {}));
-      vi.mocked(api.startGeometryOperation).mockResolvedValue({
-        ...operation(),
-        id: 'geometry-2',
-      });
-      openPage();
-      await waitFor(() => {
-        expect(api.getOperation).toHaveBeenCalledOnce();
-        expect(
-          screen.getByRole('button', { name: 'Запустить повторно' }),
-        ).toBeEnabled();
-      });
-      fireEvent.change(screen.getByLabelText(`Тип слоя ${scenario.field}`), {
-        target: { value: scenario.invalid },
-      });
-      const retry = screen.getByRole('button', { name: 'Запустить повторно' });
-      expect(retry).toBeDisabled();
-      expect(retry).toHaveAccessibleDescription(scenario.reason);
+      ),
+    ).toBeVisible();
+    fireEvent.click(action);
+    expect(screen.getByRole('region', { name: 'Слои' })).toHaveAttribute(
+      'data-expanded',
+      'true',
+    );
+    expect(api.saveMappings).not.toHaveBeenCalled();
+    expect(api.startGeometryOperation).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Участие в расчёте BOUNDARY_A'), {
+      target: { value: 'site_border' },
+    });
+    fireEvent.click(action);
+    await waitFor(() =>
+      expect(api.startGeometryOperation).toHaveBeenCalledExactlyOnceWith(
+        'project-1',
+      ),
+    );
+    expect(api.saveMappings).toHaveBeenCalledOnce();
+  });
+
+  it('keeps one pending preparation under the single primary action', async () => {
+    vi.mocked(api.getLatestOperation).mockResolvedValue(operation('failed'));
+    vi.mocked(api.getOperation)
+      .mockResolvedValueOnce(operation('failed'))
+      .mockImplementation(() => new Promise(() => {}));
+    const saved = deferred<Project>();
+    vi.mocked(api.saveMappings).mockReturnValue(saved.promise);
+    vi.mocked(api.startGeometryOperation).mockResolvedValue({
+      ...operation(),
+      id: 'geometry-2',
+    });
+    openPage();
+    await waitFor(() => {
+      expect(api.getOperation).toHaveBeenCalledOnce();
       expect(
         screen.getByRole('button', { name: 'Подготовить карту' }),
-      ).toBeDisabled();
-      expect(
-        screen.getByRole('button', { name: 'Скачать исходный DXF' }),
       ).toBeEnabled();
-      fireEvent.click(retry);
-      expect(api.saveMappings).not.toHaveBeenCalled();
-      expect(api.startGeometryOperation).not.toHaveBeenCalled();
-      fireEvent.change(screen.getByLabelText(`Тип слоя ${scenario.field}`), {
-        target: { value: scenario.fixed },
-      });
-      expect(retry).toBeEnabled();
-      expect(retry).not.toHaveAttribute('aria-describedby');
-      fireEvent.click(retry);
-      await waitFor(() =>
-        expect(api.startGeometryOperation).toHaveBeenCalledExactlyOnceWith(
-          'project-1',
-        ),
-      );
-      expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
-        { layer_id: 'boundary-a', kind: 'site_border', visible: true,
-          ...(!scenario.incomplete ? { confirmed: true, category: 'project_boundary' } : {}) },
-        {
-          layer_id: 'building-a',
-          kind: scenario.incomplete ? 'ignore' : 'building',
-          visible: true,
-          ...(scenario.incomplete ? { confirmed: true } : {}),
-        },
-      ]);
-      expect(
-        vi.mocked(api.saveMappings).mock.invocationCallOrder[0],
-      ).toBeLessThan(
-        vi.mocked(api.startGeometryOperation).mock.invocationCallOrder[0],
-      );
-    },
-  );
-
-  it.each(['Подготовить карту', 'Запустить повторно'])(
-    'shares one pending preparation when started through %s',
-    async (firstAction) => {
-      vi.mocked(api.getLatestOperation).mockResolvedValue(operation('failed'));
-      vi.mocked(api.getOperation)
-        .mockResolvedValueOnce(operation('failed'))
-        .mockImplementation(() => new Promise(() => {}));
-      const saved = deferred<Project>();
-      vi.mocked(api.saveMappings).mockReturnValue(saved.promise);
-      vi.mocked(api.startGeometryOperation).mockResolvedValue({
-        ...operation(),
-        id: 'geometry-2',
-      });
-      openPage();
-      await waitFor(() => {
-        expect(api.getOperation).toHaveBeenCalledOnce();
-        expect(
-          screen.getByRole('button', { name: 'Запустить повторно' }),
-        ).toBeEnabled();
-      });
-      fireEvent.click(screen.getByRole('button', { name: firstAction }));
-      await waitFor(() => expect(api.saveMappings).toHaveBeenCalledOnce());
-      expect(
-        screen.getByRole('button', { name: 'Готовим карту' }),
-      ).toBeDisabled();
-      expect(
-        screen.getByRole('button', { name: 'Запустить повторно' }),
-      ).toBeDisabled();
-      fireEvent.click(screen.getByRole('button', { name: 'Готовим карту' }));
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Запустить повторно' }),
-      );
-      expect(api.saveMappings).toHaveBeenCalledOnce();
-      expect(api.startGeometryOperation).not.toHaveBeenCalled();
-      await act(async () => {
-        saved.resolve(project());
-      });
-      await waitFor(() =>
-        expect(api.startGeometryOperation).toHaveBeenCalledExactlyOnceWith(
-          'project-1',
-        ),
-      );
-      expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
-        { layer_id: 'boundary-a', kind: 'site_border', visible: true },
-        { layer_id: 'building-a', kind: 'building', visible: true },
-      ]);
-    },
-  );
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Подготовить карту' }));
+    await waitFor(() => expect(api.saveMappings).toHaveBeenCalledOnce());
+    expect(
+      screen.getByRole('button', { name: 'Готовим карту' }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Запустить повторно' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Готовим карту' }));
+    expect(api.saveMappings).toHaveBeenCalledOnce();
+    expect(api.startGeometryOperation).not.toHaveBeenCalled();
+    await act(async () => {
+      saved.resolve(project());
+    });
+    await waitFor(() =>
+      expect(api.startGeometryOperation).toHaveBeenCalledExactlyOnceWith(
+        'project-1',
+      ),
+    );
+    expect(api.saveMappings).toHaveBeenCalledExactlyOnceWith('project-1', [
+      { layer_id: 'boundary-a', kind: 'site_border', visible: true },
+      { layer_id: 'building-a', kind: 'building', visible: true },
+    ]);
+  });
 });

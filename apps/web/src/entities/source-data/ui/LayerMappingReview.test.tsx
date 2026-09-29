@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Layer, LayerMapping } from '@green/api-client';
+import type { Layer, LayerMapping, LayerRecognition } from '@green/api-client';
 import { LayerMappingReview } from './LayerMappingReview';
 
 function layer(id: string, kind: 'utility' | 'building'): Layer {
@@ -23,6 +23,34 @@ function layer(id: string, kind: 'utility' | 'building'): Layer {
 
 describe('LayerMappingReview', () => {
   afterEach(cleanup);
+  it('confirms the detailed proposal instead of the old broad role', () => {
+    const source = { ...layer('grass', 'building'), mapped_kind: 'existing_green' as const };
+    const mapping: LayerMapping = { layer_id: source.id, kind: 'existing_green', confirmed: false, visible: true };
+    const recognition: LayerRecognition = {
+      source_sha256: null, provider: 'openai/gpt-6-luna', status: 'completed',
+      categories: [{category: 'lawn', kind: 'lawn', label: 'Газон'}],
+      proposals: [{layer_id: source.id, category: 'lawn', confidence: 'high', evidence: ['Газон'], unresolved: []}],
+      processed_count: 1, total_count: 1,
+    };
+    const onChange = vi.fn();
+    render(<LayerMappingReview layers={[source]} mappings={{grass: mapping}} recognition={recognition} onChange={onChange} showComposition={false} />);
+    expect(screen.getByText('Газон', { selector: 'div.font-semibold' })).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', {name: 'Подтвердить'}));
+    expect(onChange).toHaveBeenCalledWith({grass: {...mapping, kind: 'lawn', category: 'lawn', confirmed: true}});
+  });
+  it('does not overwrite an already confirmed decision with a model proposal', () => {
+    const source = layer('building', 'building');
+    const mapping: LayerMapping = {layer_id: source.id, kind: 'building', confirmed: true, visible: true};
+    const recognition: LayerRecognition = {source_sha256: null, provider: 'model', status: 'completed', processed_count: 1, total_count: 1,
+      categories: [{category: 'lawn', kind: 'lawn', label: 'Газон'}],
+      proposals: [{layer_id: source.id, category: 'lawn', confidence: 'high', evidence: [], unresolved: []}]};
+    const onChange = vi.fn();
+    render(<LayerMappingReview layers={[source]} mappings={{building: mapping}} recognition={recognition} onChange={onChange} showComposition={false} />);
+    expect(screen.queryByText('Газон', { selector: 'div.font-semibold' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: 'Подтвердить'}));
+    expect(onChange).toHaveBeenCalledWith({building: mapping});
+  });
   it('confirms one semantic group without creating an action for every layer', () => {
     const layers = [
       layer('network-a', 'utility'),
@@ -83,6 +111,25 @@ describe('LayerMappingReview', () => {
     expect(
       screen.queryByRole('button', { name: /^Подтвердить$/ }),
     ).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+  it('does not bulk-confirm a descriptive category without a calculation role', () => {
+    const source = layer('mixed', 'building');
+    const onChange = vi.fn();
+    const recognition: LayerRecognition = {
+      source_sha256: null, provider: 'openai/gpt-6-luna', status: 'completed',
+      processed_count: 1, total_count: 1,
+      categories: [{ category: 'mixed_source', kind: null, label: 'Смешанные объекты' }],
+      proposals: [{ layer_id: 'mixed', category: 'mixed_source', confidence: 'high', evidence: [], unresolved: [] }],
+    };
+    render(<LayerMappingReview
+      layers={[source]}
+      mappings={{ mixed: { layer_id: 'mixed', kind: 'building', confirmed: false, visible: true } }}
+      recognition={recognition}
+      onChange={onChange}
+    />);
+    expect(screen.getByText('Расчётная роль не установлена')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Подтвердить' })).not.toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
   });
 });

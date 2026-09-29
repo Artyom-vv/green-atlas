@@ -80,6 +80,8 @@ class Runtime:
                     error = str(problem)
                 self._layer_recognition = LayerRecognitionService(
                     Path(self.database_path + ".layer-recognition"), provider, error,
+                    presets=Path(os.environ["GREEN_ATLAS_LAYER_RECOGNITION_PRESETS"])
+                    if os.environ.get("GREEN_ATLAS_LAYER_RECOGNITION_PRESETS") else None,
                 )
             return self._layer_recognition
 

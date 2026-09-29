@@ -19,9 +19,13 @@ export interface SourceLayerFormProps extends Pick<
   | 'nativeAreaProposals'
   | 'decideNativeArea'
   | 'layerRecognition'
+  | 'allSavedLayersConfirmed'
+  | 'automaticAcceptancePending'
   | 'layerRecognitionQuery'
   | 'retryLayerRecognition'
-> {}
+> {
+  reviewRequest?: { section: string; sequence: number };
+}
 export const SourceLayerFormPropsFor = (
   state: Pick<
     SourcePreparationState,
@@ -43,6 +47,8 @@ export const SourceLayerFormPropsFor = (
     | 'nativeAreaProposals'
     | 'decideNativeArea'
     | 'layerRecognition'
+    | 'allSavedLayersConfirmed'
+    | 'automaticAcceptancePending'
     | 'layerRecognitionQuery'
     | 'retryLayerRecognition'
   >,
@@ -58,6 +64,7 @@ export const SourceLayerFormPropsFor = (
   layers: state.layers,
   mappings: state.mappings,
   setMappings: state.setMappings,
+  automaticAcceptancePending: state.automaticAcceptancePending,
   dataPassportQuery: state.dataPassportQuery,
   mutationError: state.mutationError,
   reloadAfterConflict: state.reloadAfterConflict,
@@ -65,6 +72,7 @@ export const SourceLayerFormPropsFor = (
   nativeAreaProposals: state.nativeAreaProposals,
   decideNativeArea: state.decideNativeArea,
   layerRecognition: state.layerRecognition,
+  allSavedLayersConfirmed: state.allSavedLayersConfirmed,
   layerRecognitionQuery: state.layerRecognitionQuery,
   retryLayerRecognition: state.retryLayerRecognition,
 });

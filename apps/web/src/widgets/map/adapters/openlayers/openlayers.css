@@ -9,6 +9,13 @@
   background: var(--color-neutral-50, #fafbfc);
 }
 
+/* The drawing is an interaction surface, not selectable page text. */
+[data-map-view],
+[data-map-view] * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 [data-map-view] .ol-zoom {
   display: none;
 }

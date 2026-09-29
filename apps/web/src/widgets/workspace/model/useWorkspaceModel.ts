@@ -22,6 +22,7 @@ import {
   previewWorkspacePattern,
   previewWorkspaceBrush,
   previewWorkspaceRecommendation,
+  previewWorkspaceAutomatic,
 } from '@/features/workspace/api/workspacePreviews';
 import type {
   EditorPanel as WorkspacePanel,
@@ -78,6 +79,8 @@ import type { SceneReviewHandle } from '@/widgets/scene/ui/SceneReview';
 import type { BuildingScreenRequest } from '@green/api-client';
 import {
   type BrushPreview,
+  type AutomaticPlacementPreview,
+  type AutomaticPlacementRequest,
   type BrushPreviewRequest,
   type BrushStroke,
   type ChangeSetPreview,
@@ -348,6 +351,21 @@ export function useWorkspaceModel(projectId: string) {
       setRightOpen(true);
     },
   });
+  const previewAutomatic = useLatestPreview<
+    AutomaticPlacementRequest,
+    AutomaticPlacementPreview
+  >({
+    scopeKey: JSON.stringify(projectBasis),
+    execute: (request, signal) =>
+      previewWorkspaceAutomatic(projectId, request, signal),
+    onAccepted: (result) => {
+      const frame = placementPreviewFrame(result.change_set?.additions ?? []);
+      if (frame) mapViewport.current?.fitGeometry(frame);
+      setActiveLayerId(undefined);
+      setPanel(null);
+      setRightOpen(true);
+    },
+  });
   const previewBrush = useLatestPreview<BrushPreviewRequest, BrushPreview>({
     scopeKey: JSON.stringify([
       ...projectBasis,
@@ -421,10 +439,12 @@ export function useWorkspaceModel(projectId: string) {
     onApply: (result) => { applyChanges.mutate(result); },
   });
   const recommendationPreview = previewRecommendation.data;
+  const automaticPreview = previewAutomatic.data;
   const brushPreview = previewBrush.data;
   const changePreview =
     patternPreview?.change_set ??
     recommendationPreview?.change_set ??
+    automaticPreview?.change_set ??
     brushPreview?.change_set ??
     manualPreview;
   const growthHorizon = assistant.horizon ?? 0;
@@ -832,6 +852,9 @@ export function useWorkspaceModel(projectId: string) {
         setRecommendationOpen(false);
         previewRecommendation.reset();
       }
+      if (accepted.id === automaticPreview?.change_set?.id) {
+        previewAutomatic.reset();
+      }
       if (accepted.id === brushPreview?.change_set?.id) {
         setBrushStrokes([]);
         previewBrush.reset();
@@ -870,6 +893,7 @@ export function useWorkspaceModel(projectId: string) {
     previewChanges.isPending ||
     previewPattern.isPending ||
     previewRecommendation.isPending ||
+    previewAutomatic.isPending ||
     applyChanges.isPending ||
     deleteObjects.blocked ||
     undoChange.isPending ||
@@ -987,6 +1011,7 @@ export function useWorkspaceModel(projectId: string) {
     previewChanges.reset();
     previewPattern.reset();
     previewRecommendation.reset();
+    previewAutomatic.reset();
     previewBrush.reset();
     applyChanges.reset();
     deleteObjects.reset();
@@ -1001,6 +1026,7 @@ export function useWorkspaceModel(projectId: string) {
     discardZoneDrawing();
     setRecommendationOpen(false);
     previewRecommendation.reset();
+    previewAutomatic.reset();
     setBrushStrokes([]);
     previewBrush.reset();
     setSpeciesAssignmentOpen(false);
@@ -1017,6 +1043,7 @@ export function useWorkspaceModel(projectId: string) {
     previewChanges,
     previewPattern,
     previewRecommendation,
+    previewAutomatic,
     redoChange,
     refresh,
     saveManagedZones,
@@ -1090,10 +1117,12 @@ export function useWorkspaceModel(projectId: string) {
       }
       previewPattern.cancel();
       previewRecommendation.cancel();
+      previewAutomatic.cancel();
       previewBrush.cancel();
       previewPattern.reset();
       setRecommendationOpen(false);
       previewRecommendation.reset();
+      previewAutomatic.reset();
       setBrushStrokes([]);
       previewBrush.reset();
       setSpeciesAssignmentOpen(false);
@@ -1140,6 +1169,7 @@ export function useWorkspaceModel(projectId: string) {
       projectHasPlan,
       previewPattern,
       previewRecommendation,
+      previewAutomatic,
       previewBrush,
       previewChanges,
       editor,
@@ -1302,6 +1332,7 @@ export function useWorkspaceModel(projectId: string) {
         Boolean(changePreview) ||
         recommendationOpen ||
         Boolean(recommendationPreview) ||
+        Boolean(automaticPreview) ||
         Boolean(patternPreview) ||
         brushStrokes.length > 0 ||
         speciesAssignmentOpen;
@@ -1312,10 +1343,12 @@ export function useWorkspaceModel(projectId: string) {
       previewPattern.cancel();
       previewChanges.reset();
       previewRecommendation.cancel();
+      previewAutomatic.cancel();
       previewBrush.cancel();
       previewPattern.reset();
       setRecommendationOpen(false);
       previewRecommendation.reset();
+      previewAutomatic.reset();
       setBrushStrokes([]);
       previewBrush.reset();
       setRowAxis(undefined);
@@ -1358,6 +1391,7 @@ export function useWorkspaceModel(projectId: string) {
       previewChanges,
       previewPattern,
       previewRecommendation,
+      previewAutomatic,
       previewBrush,
       applyChanges,
       deleteObjects,
@@ -1394,7 +1428,7 @@ export function useWorkspaceModel(projectId: string) {
     drawingPlacementArea: placementAreaDrawing,
     hasPattern: Boolean(patternPreview),
     hasChange: Boolean(changePreview),
-    hasRecommendation: Boolean(recommendationPreview),
+    hasRecommendation: Boolean(recommendationPreview || automaticPreview),
     assigningSpecies: speciesAssignmentOpen,
     selectionCount: selectedIds.length,
     hasArea: Boolean(mapAreaTarget),
@@ -1414,6 +1448,7 @@ export function useWorkspaceModel(projectId: string) {
     activeToolHint,
     addMapArea,
     applyChanges,
+    automaticPreview,
     assistant,
     assistantPreview,
     assistantZonePreview,
@@ -1506,6 +1541,7 @@ export function useWorkspaceModel(projectId: string) {
     previewDraft,
     previewPattern,
     previewRecommendation,
+    previewAutomatic,
     previewSelectionLock,
     previewSelectionMoveLive,
     previewSpeciesAssignment,

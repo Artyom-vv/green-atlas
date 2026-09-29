@@ -9,7 +9,7 @@ export const MAP_DESIGN_PALETTE: Readonly<
   planting_area: ['rgba(0,0,0,0)', '#84948c'],
   site_border: ['rgba(0,0,0,0)', '#35414e'],
   allowed: ['rgba(25,135,84,.025)', 'rgba(25,135,84,.13)'],
-  utility: ['rgba(0,0,0,0)', '#8a4b00'],
+  utility: ['rgba(0,0,0,0)', '#718da8'],
   restricted: ['rgba(183,100,0,.05)', '#8a4b00'],
 };
 

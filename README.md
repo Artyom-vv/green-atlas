@@ -18,6 +18,7 @@ AutoCAD читает и восстанавливает геометрию. Green
 [Документация и схемы](docs/README.md)
 [Состояние возможностей](<docs/obsidian/00 Обзор/Текущее состояние.md>)
 [CAD-контракт](docs/architecture/autocad-contract.md)
+[Прототип и порядок проверки Кустанайской](submission/prototype/README.md)
 
 ## Состав
 

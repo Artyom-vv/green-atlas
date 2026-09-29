@@ -5,6 +5,7 @@ import json
 import os
 import selectors
 import shutil
+import sqlite3
 import subprocess
 import time
 import urllib.error
@@ -51,6 +52,11 @@ def test_relocated_runtime_without_python_path(frozen):
     web = root / "web"
     web.mkdir()
     (web / "index.html").write_text("<title>Packaged desktop test</title>")
+    presets = os.environ.get("GREEN_ATLAS_FROZEN_PRESETS")
+    if presets:
+        shutil.copytree(Path(presets), root / "LayerRecognition")
+        # Prove the sample is reproducible without an API account or local CLI.
+        env["GREEN_ATLAS_LAYER_MODEL_PROVIDER"] = "names"
     transfers = root / "Transfers"
     transfers.mkdir()
     configured = os.environ.get("GREEN_ATLAS_NATIVE_TICKET")
@@ -126,11 +132,18 @@ def test_relocated_runtime_without_python_path(frozen):
                 assert len(projects) == 1
                 project_id = projects[0]["id"]
                 transfer = json.loads(ticket.read_bytes())
-                if transfer["schema"] == "green-atlas.transfer/2":
+                if transfer["schema"] in {"green-atlas.transfer/2", "green-atlas.transfer/4"}:
                     project = api(f"/api/projects/{project_id}")
                     assert project["import_status"]["mode"] == "autocad_live"
                     assert project["source_file"]["content_sha256"] == transfer["manifest"]["files"][0]["sha256"]
                     assert project["layers"]
+                    if presets:
+                        assert all(not item["mapping_confirmed"] for item in project["layers"])
+                        recognition = api(f"/api/projects/{project_id}/source-layer-review")
+                        assert recognition["status"] == "completed", recognition["message"]
+                        assert recognition["provider"] == "openai/gpt-6-luna"
+                        assert recognition["processed_count"] == len(project["layers"])
+                        assert "Сохранённые" in recognition["message"]
                     (root / "live-handoff-acceptance.json").write_text(json.dumps({
                         "project_id": project_id,
                         "scope": "isolated frozen runtime storage, not GUI acceptance",
@@ -164,6 +177,88 @@ def test_relocated_runtime_without_python_path(frozen):
             process.stdout.close()
 
 
+def test_relocated_runtime_saves_automatic_planting(frozen):
+    """Opt-in Kustanayskaya control uses the exact installed runtime binary."""
+    source = os.environ.get("GREEN_ATLAS_PREPARED_DB")
+    project_id = os.environ.get("GREEN_ATLAS_PREPARED_PROJECT_ID")
+    if not source or not project_id:
+        pytest.skip("Set GREEN_ATLAS_PREPARED_DB and GREEN_ATLAS_PREPARED_PROJECT_ID")
+    binary, root, env = frozen
+    data = root / "prepared-data"
+    data.mkdir()
+    with sqlite3.connect(source) as original, sqlite3.connect(data / "projects.sqlite3") as copy:
+        original.backup(copy)
+    web = root / "prepared-web"
+    web.mkdir()
+    (web / "index.html").write_text("<title>Isolated planting control</title>")
+    env.pop("GREEN_ATLAS_DB_PATH", None)
+    env["GREEN_ATLAS_LAYER_MODEL_PROVIDER"] = "names"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def launch():
+        process = subprocess.Popen(
+            [str(binary), "--data-dir", str(data), "--web-dir", str(web)],
+            cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        with selectors.DefaultSelector() as events:
+            events.register(process.stdout, selectors.EVENT_READ)
+            assert events.select(timeout=30), "Frozen runtime did not start"
+            line = process.stdout.readline()
+        assert line, process.stderr.read()[-4000:]
+        receipt = json.loads(line)
+
+        def api(path, payload=None):
+            request = urllib.request.Request(
+                receipt["origin"] + path,
+                data=json.dumps(payload).encode() if payload is not None else None,
+                headers={
+                    "X-Green-Atlas-Local-Session": receipt["session_token"],
+                    "Content-Type": "application/json",
+                },
+            )
+            with opener.open(request, timeout=120) as response:
+                return json.load(response)
+
+        return process, api
+
+    path = f"/api/projects/{project_id}"
+    process, api = launch()
+    try:
+        project = api(path)
+        assert project["map_ready"] and project["planting_zones"]
+        before = len(project["plan"]["objects"])
+        preview = api(path + "/plan/automatic/preview", {
+            "base_plan_version": project["plan"]["version"],
+            "zone_id": project["planting_zones"][0]["id"],
+            "near": "area", "plant_kind": "auto", "target_count": 8,
+        })
+        assert preview["found"] > 0 and preview["change_set"]["can_apply"], preview
+        change = preview["change_set"]
+        saved = api(path + "/plan/change-sets/apply", {
+            "preview_id": change["id"], "digest": change["digest"],
+            "base_plan_version": change["base_plan_version"],
+        })
+        assert len(saved["added_ids"]) == preview["found"]
+        assert len(saved["plan"]["objects"]) == before + preview["found"]
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+        process.stdout.close()
+        process.stderr.close()
+
+    process, api = launch()
+    try:
+        reopened = api(path)
+        assert len(reopened["plan"]["objects"]) == before + preview["found"]
+        assert {item["id"] for item in reopened["plan"]["objects"]} >= set(saved["added_ids"])
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+        process.stdout.close()
+        process.stderr.close()
+
+
 def test_frozen_native_compiler_uses_real_prepared_ticket(frozen):
     configured = os.environ.get("GREEN_ATLAS_NATIVE_TICKET")
     if not configured:
@@ -172,7 +267,7 @@ def test_frozen_native_compiler_uses_real_prepared_ticket(frozen):
         )
     ticket_path = Path(configured)
     ticket = json.loads(ticket_path.read_bytes())
-    if ticket["schema"] == "green-atlas.transfer/2":
+    if ticket["schema"] in {"green-atlas.transfer/2", "green-atlas.transfer/4"}:
         pytest.skip("Live tickets use the import worker exercised by the frozen handoff test")
     binary, root, env = frozen
     package = root / "package"

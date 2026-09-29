@@ -1,14 +1,19 @@
 import pytest
 from shapely.geometry import box, mapping
+from test_placement_allocation import application
 
 from app.agent_memory import TaskPatch, TaskState
-from app.agent_planning import DELEGATED_LAYOUT_SAMPLE_LIMIT, prepare_placement, prepare_task
+from app.agent_planning import (
+    DELEGATED_LAYOUT_SAMPLE_LIMIT,
+    prepare_placement,
+    prepare_task,
+)
 from app.contracts import PlanObject
-from test_placement_allocation import application
 
 
 def test_mixed_contour_uses_one_validated_preview_without_mutating_plan():
     from math import hypot
+
     from app.planning.domain import required_spacing
     app, project = application()
     project.geometry.feature_collection['features'].append({'type': 'Feature', 'properties': {'kind': 'building'}, 'geometry': mapping(box(75, 75, 125, 125))})
@@ -53,6 +58,26 @@ def test_retained_oak_contour_task_reaches_real_preview():
     assert 0 < result['found'] <= 100
     assert result['shortfall'] == 100 - result['found']
     assert result['requires_confirmation']
+    assert app.get(project.id).plan.objects == []
+
+
+def test_automatic_shrubs_follow_building_contour_without_committing():
+    app, project = application()
+    project.geometry.feature_collection['features'].append({
+        'type': 'Feature', 'properties': {'kind': 'building'},
+        'geometry': mapping(box(75, 75, 125, 125)),
+    })
+    app.repository.save(project)
+    task = TaskState().amended(TaskPatch(
+        operation='place', scope='zones', zone_ids=['west'],
+        plant_kind='shrub', quantity=8, quantity_mode='target',
+        arrangement='building_contour', species_mode='automatic',
+    ), 'user')
+    result = prepare_placement(app, project.id, task)
+    assert result['requires_confirmation']
+    assert 0 < result['found'] <= 8
+    assert all(item['kind'] == 'shrub' and item['species_revision_id']
+               for item in result['change_set']['additions'])
     assert app.get(project.id).plan.objects == []
 
 

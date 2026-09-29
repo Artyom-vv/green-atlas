@@ -36,6 +36,13 @@ def test_native_site_candidate_keeps_small_local_open_annotation() -> None:
     local_line = LineString([(1, 1), (5, 1), (5, 5)])
     candidate = _boundary_candidate([surface, local_line])
     assert candidate.status == BoundaryCandidateStatus.USABLE
+
+
+def test_imported_name_confidence_does_not_confirm_a_role():
+    result = build_dxf_import_from_snapshot(snapshot(), source_sha256='a' * 64)
+    assert result.layers
+    assert all(layer.mapping_review_required for layer in result.layers)
+    assert all(layer.mapping_confirmed is False for layer in result.layers)
 from app.geometry.adapters import _unprojectable_physical_layers
 from app.geometry.contracts import GeometrySnapshot
 from app.projects.adapters import InMemoryProjectRepository

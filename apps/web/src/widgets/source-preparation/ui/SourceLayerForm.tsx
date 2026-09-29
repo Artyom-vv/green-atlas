@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import { Button, Disclosure, InlineMessage } from '@green/ui';
+import { Disclosure, InlineMessage } from '@green/ui';
 import { LayerMappingWorkspace } from '@/entities/source-data/ui/LayerMappingWorkspace';
 import { BoundaryCandidatePicker } from '@/entities/source-data/ui/BoundaryCandidatePicker';
 import { DataPassportPanel } from '@/entities/source-data/ui/DataPassportPanel';
@@ -8,7 +8,7 @@ import { isProjectConflict } from '@/entities/project/model/projectConflict';
 import { errorMessage } from '@/shared/errors/errorMessage';
 import { NativeAreaReview } from './NativeAreaReview';
 import { SourceObjectReview } from './SourceObjectReview';
-import { SourceSection } from './SourceSection';
+import { SourceSection, SourceSections } from './SourceSection';
 import { SourceReadIssues } from './SourceReadIssues';
 import { SourcePreparationError } from './SourcePreparationError';
 import { LayerRecognitionStatus } from '@/entities/source-data/ui/LayerRecognitionStatus';
@@ -17,8 +17,8 @@ import type { SourceLayerFormProps } from './SourceLayerForm.props';
 export const SourceLayerForm: FC<SourceLayerFormProps> = ({
   sourceWarnings,
   incompleteConstraintLayers,
+  unconfirmedMappings,
   partialAccepted,
-  acceptPartialGeometry,
   hasPlanningBoundary,
   reviewOnly,
   preparationBlocked,
@@ -32,8 +32,11 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
   nativeAreaProposals,
   decideNativeArea,
   layerRecognition,
+  allSavedLayersConfirmed,
+  automaticAcceptancePending,
   layerRecognitionQuery,
   retryLayerRecognition,
+  reviewRequest,
 }) => {
   const hasBoundaryCandidates = layers.some(
     (layer) => layer.boundary_candidate?.status === 'usable',
@@ -44,7 +47,14 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
       layer.boundary_candidate.issue,
   );
   return (
-    <div className="space-y-3">
+    <SourceSections
+      reviewRequest={reviewRequest}
+      defaultSection={
+        !hasPlanningBoundary && hasBoundaryCandidates ? '01' :
+          unconfirmedMappings.length ? '03' :
+          !partialAccepted && incompleteConstraintLayers.length ? '02' : '01'
+      }
+    >
       <SourceSection
         number="01"
         title="Территория"
@@ -53,6 +63,7 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
         {!reviewOnly && (
           <BoundaryCandidatePicker
             readOnly={preparationBlocked}
+            requireAttestation={projectQuery.data?.import_status?.mode === 'autocad_live'}
             layers={layers}
             mappings={mappings}
             onChange={setMappings}
@@ -63,7 +74,6 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
         number="02"
         title="Геометрия"
         description="Контуры, замыкания и пропущенные объекты"
-        defaultOpen={!partialAccepted}
       >
         {!!sourceWarnings.length && (
           <Disclosure
@@ -131,27 +141,11 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
         </div>
         {!reviewOnly && !!incompleteConstraintLayers.length && (
           <InlineMessage tone="warning" title="Часть геометрии недоступна">
-            <div className="space-y-2">
-              <p className="m-0">
-                {partialAccepted
-                  ? 'Расчёт по доступным объектам разрешён — пропущенные объекты не проверяются'
-                  : 'Для части объектов нет расчётной геометрии — они не будут проверяться'}
-              </p>
-              {!partialAccepted && (
-                <Button
-                  variant="secondary"
-                  disabled={
-                    preparationBlocked ||
-                    !projectQuery.data?.source_file?.content_sha256
-                  }
-                  onClick={() => acceptPartialGeometry.mutate()}
-                >
-                  {acceptPartialGeometry.isPending
-                    ? 'Сохраняем решение…'
-                    : 'Использовать доступную геометрию'}
-                </Button>
-              )}
-            </div>
+            <p className="m-0">
+              {partialAccepted
+                ? 'Карта строится по доступным объектам. Пропуски остаются в отчёте.'
+                : 'Кнопка «Подготовить карту» сохранит решение считать по доступным объектам. Пропуски останутся в отчёте и не будут проверены.'}
+            </p>
           </InlineMessage>
         )}
         {!reviewOnly && !!boundaryIssues.length && (
@@ -189,20 +183,23 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
       <SourceSection
         number="03"
         title="Слои"
-        description="Выберите тип объектов и подтвердите предложения"
+        description="Проверьте, как слои влияют на посадки"
       >
-        <LayerRecognitionStatus
-          recognition={layerRecognition}
-          loading={layerRecognitionQuery.isLoading}
-          error={
-            layerRecognitionQuery.isError || retryLayerRecognition?.isError
-          }
-          retrying={retryLayerRecognition?.isPending}
-          onRetry={() => retryLayerRecognition.mutate()}
-        />
+        {!allSavedLayersConfirmed && (
+          <LayerRecognitionStatus
+            recognition={layerRecognition}
+            loading={layerRecognitionQuery.isLoading}
+            error={
+              layerRecognitionQuery.isError || retryLayerRecognition?.isError
+            }
+            retrying={retryLayerRecognition?.isPending}
+            onRetry={() => retryLayerRecognition.mutate()}
+          />
+        )}
         <LayerMappingWorkspace
           key={projectQuery.data?.id}
           recognition={layerRecognition}
+          automaticAcceptancePending={automaticAcceptancePending}
           readOnly={reviewOnly || preparationBlocked}
           layers={layers}
           mappings={mappings}
@@ -214,7 +211,6 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
           number="04"
           title="Сведения"
           description="Полнота исходных данных"
-          defaultOpen={false}
         >
           <DataPassportPanel passport={dataPassportQuery.data} header={null} />
         </SourceSection>
@@ -233,6 +229,6 @@ export const SourceLayerForm: FC<SourceLayerFormProps> = ({
             mappings={mappings}
           />
         ))}
-    </div>
+    </SourceSections>
   );
 };

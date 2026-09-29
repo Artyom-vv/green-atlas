@@ -1,6 +1,6 @@
 import type { DataPassport } from '@green/api-client';
-import { Disclosure, InlineMessage, Text } from '@green/ui';
-import { useId, type FC, type ReactNode } from 'react';
+import { Disclosure, InlineMessage, SegmentedControl, Text } from '@green/ui';
+import { useId, useState, type FC, type ReactNode } from 'react';
 import { PassportAttention } from './passport/PassportAttention';
 import { PassportIncluded } from './passport/PassportIncluded';
 import { SourceFacts } from './passport/SourceFacts';
@@ -23,6 +23,9 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
   const included = entries.filter(
     (entry) => entry.used_in_calculation && entry.status === 'verified',
   );
+  const [view, setView] = useState<'attention' | 'included'>(
+    attention.length ? 'attention' : 'included',
+  );
   return (
     <section
       className="grid min-w-0 gap-4 text-neutral-800"
@@ -36,19 +39,6 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
       ) : (
         header
       )}
-      <SourceFacts
-        items={[
-          { label: 'Файл', value: passport.source_file_name ?? 'Не указан' },
-          {
-            label: 'Импортирован',
-            value: passport.source_imported_at
-              ? new Date(passport.source_imported_at).toLocaleDateString(
-                  'ru-RU',
-                )
-              : 'Дата не указана',
-          },
-        ]}
-      />
       {limited ? (
         <InlineMessage tone={blocked ? 'warning' : 'info'}>
           {blocked
@@ -60,10 +50,37 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
           Проверка учитывает только загруженные слои
         </Text>
       )}
-      <PassportAttention entries={attention} passport={passport} />
-      {!!passport.gaps?.length && (
+      <SegmentedControl
+        label="Состав паспорта"
+        value={view}
+        onChange={setView}
+        className="w-fit max-w-full"
+        options={[
+          { value: 'attention', label: `Проверить (${attention.length})` },
+          { value: 'included', label: `Учтено (${included.length})` },
+        ]}
+      />
+      <div hidden={view !== 'attention'}>
+        {attention.length ? (
+          <PassportAttention entries={attention} passport={passport} />
+        ) : (
+          <p className="m-0 text-xs text-neutral-600">
+            Замечаний к составу слоёв нет
+          </p>
+        )}
+      </div>
+      <div hidden={view !== 'included'}>
+        {included.length ? (
+          <PassportIncluded entries={included} passport={passport} />
+        ) : (
+          <p className="m-0 text-xs text-neutral-600">
+            Нет классов с полной проверкой
+          </p>
+        )}
+      </div>
+      {view === 'attention' && !!passport.gaps?.length && (
         <Disclosure
-          variant="panel"
+          variant="section"
           title={`Основания ограничений (${passport.gaps.length})`}
         >
           <ul className="m-0 space-y-1 pl-5 text-xs">
@@ -73,10 +90,18 @@ export const DataPassportPanel: FC<DataPassportPanelProps> = ({
           </ul>
         </Disclosure>
       )}
-      <PassportIncluded entries={included} passport={passport} />
-      <Disclosure variant="panel" title="Координаты и происхождение">
+      <Disclosure variant="section" title="О файле и координатах">
         <SourceFacts
           items={[
+            { label: 'Файл', value: passport.source_file_name ?? 'Не указан' },
+            {
+              label: 'Импортирован',
+              value: passport.source_imported_at
+                ? new Date(passport.source_imported_at).toLocaleDateString(
+                    'ru-RU',
+                  )
+                : 'Дата не указана',
+            },
             {
               label: 'Владелец данных',
               value: passport.source_owner ?? 'Не указан',

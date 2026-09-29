@@ -11,7 +11,7 @@ from app.cad_bridge.compiler import compile_live_document
 from app.cad_bridge.provider import build_dxf_import_from_snapshot
 from app.cad_intake.composition import ImportedDrawing, compose_dxf_imports
 from app.dxf_import import limits
-from app.dxf_import.admission import cad_preview_status
+from app.dxf_import.admission import cad_preview_status, require_usable_site_boundary
 from app.dxf_import.assembly import assemble_imported_project
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.dxf_import.contracts import (
@@ -491,8 +491,11 @@ class ImportApplication:
                 )
                 meaning_changed = meaning_changed or layer.category != category
                 layer.category = category
+                # A legacy None already means accepted. Recording it as True
+                # must not invalidate otherwise unchanged calculated geometry.
                 meaning_changed = meaning_changed or (
-                    layer.mapping_confirmed != (mapping.confirmed is not False)
+                    (layer.mapping_confirmed is not False)
+                    != (mapping.confirmed is not False)
                 )
                 context = layer.utility_context
                 if mapping.kind != LayerKind.UTILITY:
@@ -523,6 +526,7 @@ class ImportApplication:
                 layer.mapped_kind = mapping.kind
                 layer.mapping_confirmed = mapping.confirmed is not False
                 layer.visible = mapping.visible
+        require_usable_site_boundary(project)
         missing = [
             layer.source_name
             for layer in project.layers
@@ -534,17 +538,8 @@ class ImportApplication:
         ]
         if missing:
             raise ValueError(f"Не сопоставлены обязательные слои: {', '.join(missing)}")
-        unconfirmed = [
-            layer.source_name
-            for layer in project.layers
-            if layer.mapping_review_required
-            and layer.mapped_kind not in {None, LayerKind.IGNORE}
-            and not layer.mapping_confirmed
-        ]
-        if unconfirmed:
-            raise ValueError(
-                "Подтвердите предложенные роли слоёв: " + ", ".join(unconfirmed)
-            )
+        # Persist safe model decisions while uncertain layers remain pending.
+        # Calculation and geometry preparation still enforce the confirmation gate.
         if axis_bindings_changed and any(
             layer.utility_axis_bindings for layer in project.layers
         ):

@@ -5,12 +5,9 @@ import {
   type WorkspacePlacementToolProps,
 } from './WorkspacePlacementTool';
 
-vi.mock('./WorkspaceRecommendationTool', () => ({
-  WorkspaceRecommendationTool: () => null,
-}));
 afterEach(cleanup);
 
-it('keeps the selected placement form visible and mounted while drawing and reviewing a zone', () => {
+it('opens the manual form directly and keeps it mounted while drawing and reviewing a zone', () => {
   const props = {
     busy: false,
     closeRightPanel: vi.fn(),
@@ -21,10 +18,8 @@ it('keeps the selected placement form visible and mounted while drawing and revi
     patternTool: <input aria-label="Черновик размещения" defaultValue="24" />,
   } as unknown as WorkspacePlacementToolProps;
   const { rerender } = render(<WorkspacePlacementTool {...props} />);
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Выбрать состав и количество' }),
-  );
   const draft = screen.getByRole('textbox', { name: 'Черновик размещения' });
+  expect(screen.queryByRole('button', { name: 'Подобрать автоматически' })).toBeNull();
   fireEvent.change(draft, { target: { value: '32' } });
 
   rerender(
@@ -35,7 +30,7 @@ it('keeps the selected placement form visible and mounted while drawing and revi
     />,
   );
   expect(draft).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Способ подбора' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Способ подбора' })).toBeNull();
 
   rerender(
     <WorkspacePlacementTool

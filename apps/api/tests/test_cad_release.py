@@ -16,7 +16,7 @@ from app.exporting.cad_contracts import (
     encode_plantings,
     validate_receipt,
 )
-from app.exporting.cad_writer import AutoCadReleaseWriter
+from app.exporting.cad_writer import AutoCadReleaseWriter, release_config
 from app.exporting.contracts import ReleaseCreateRequest
 from app.exporting.evidence import UNAVAILABLE_CHECKS
 from app.native_query.live_client import LiveSession
@@ -298,3 +298,27 @@ def test_writer_uses_source_units_and_keeps_complete_plan_metadata():
     saved = json.loads(result.files["green-atlas-plan.json"])
     assert saved["plan"] == plan.model_dump(mode="json")
     assert saved["metres_per_unit"] == 0.001
+
+
+def test_release_config_uses_only_current_installed_worker_when_unconfigured(tmp_path, monkeypatch):
+    installed = (tmp_path / "Library/Application Support/Autodesk/ApplicationAddins"
+                 / "GreenAtlasBridge.bundle/Contents/Workers/GreenAtlasQuery.bundle")
+    (installed / "Contents/MacOS").mkdir(parents=True)
+    (installed / "Contents/Info.plist").write_bytes(
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<plist version="1.0"><dict><key>CFBundleShortVersionString</key>'
+        b'<string>0.1.42</string></dict></plist>'
+    )
+    (installed / "Contents/MacOS/GreenAtlasBridge").write_bytes(b"worker")
+    monkeypatch.setattr("app.exporting.cad_writer.Path.home", lambda: tmp_path)
+    monkeypatch.delenv("GREEN_ATLAS_CAD_RELEASE_WORKER", raising=False)
+    config = release_config(str(tmp_path / "projects.sqlite3"))
+    assert config.worker_bundle == installed
+    assert config.plugin_version == "0.1.42"
+
+
+def test_release_config_rejects_missing_installed_worker(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.exporting.cad_writer.Path.home", lambda: tmp_path)
+    monkeypatch.delenv("GREEN_ATLAS_CAD_RELEASE_WORKER", raising=False)
+    with pytest.raises(ValueError, match="Модуль выпуска AutoCAD не установлен"):
+        release_config(str(tmp_path / "projects.sqlite3"))

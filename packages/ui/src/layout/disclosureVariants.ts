@@ -9,6 +9,12 @@ export const disclosure = tv({
   },
   variants: {
     variant: {
+      section: {
+        root: 'border-0 border-b border-solid border-neutral-200 bg-white',
+        trigger:
+          'min-h-14 px-4 py-3 hover:bg-neutral-50 focus-visible:-outline-offset-2 aria-expanded:bg-neutral-50 sm:px-6',
+        content: 'border-0 px-4 pt-2 pb-5 sm:px-6',
+      },
       framed: {
         root: 'rounded-control overflow-hidden border border-solid border-neutral-300 bg-white',
         trigger: 'hover:bg-neutral-100',

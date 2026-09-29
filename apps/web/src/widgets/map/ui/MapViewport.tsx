@@ -1,10 +1,11 @@
-import { useCallback, useState, type FC, type Ref } from 'react';
+import { useCallback, useEffect, useState, type FC, type Ref } from 'react';
 import type { CadRenderState } from '../model/cadSource';
 import { CadMapActivity } from './CadMapActivity';
 import { useOpenLayersViewport } from '../adapters/openlayers/useOpenLayersViewport';
 import type { MapViewportOptions } from '../model/mapViewportOptions';
 import type { MapViewportHandle } from '../model/mapContracts';
 import { mapViewport } from './mapViewportVariants';
+import { preventMapLookup } from '../lib/preventMapLookup';
 import '../adapters/openlayers/openlayers.css';
 
 export interface MapViewportProps extends MapViewportOptions {
@@ -25,6 +26,10 @@ export const MapViewport: FC<MapViewportProps> = ({ ref, ...options }) => {
     { ...options, onCadRenderState: handleCadState },
     ref,
   );
+  useEffect(() => {
+    const target = targetRef.current;
+    if (target) return preventMapLookup(target);
+  }, [targetRef]);
   const { tool, growthHorizon, brushStrokes } = options;
   return (
     <>

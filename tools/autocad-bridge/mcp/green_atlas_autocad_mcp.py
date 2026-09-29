@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import plistlib
 import subprocess
 import sys
 import time
@@ -20,7 +21,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPILER = ROOT / "scripts" / "cad-lab" / "compile_autocad_region_probe.py"
-PLUGIN_VERSION = "0.1.38"
+# Use the packaged plugin identity; a separate literal drifts after an update.
+with (ROOT / "tools/autocad-bridge/native/Info.plist").open("rb") as metadata:
+    PLUGIN_VERSION = plistlib.load(metadata)["CFBundleShortVersionString"]
 QUEUE_VERSION = "v033"
 PROTOCOL_VERSION = "2025-06-18"
 
@@ -115,22 +118,24 @@ def _bridge_status() -> dict[str, Any]:
             progress = json.loads(progress_paths[0].read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             progress = None
+    if process_alive is False:
+        reason = "AutoCAD process is not running; open AutoCAD and try again"
+    elif reported_version != PLUGIN_VERSION:
+        reason = (
+            "AutoCAD plugin version mismatch: "
+            f"expected {PLUGIN_VERSION}, got {reported_version or 'not reported'}"
+        )
+    elif not status.get("ready"):
+        reason = "AutoCAD plugin is not active"
+    else:
+        reason = None
     return {
         **status,
         "ready": ready,
         "process_alive": process_alive,
         "process_check": process_check,
         "status_path": str(status_path),
-        "reason": (
-            None
-            if ready
-            else (
-                "AutoCAD plugin version mismatch: "
-                f"expected {PLUGIN_VERSION}, got {reported_version}"
-                if reported_version
-                else "AutoCAD plugin is not active"
-            )
-        ),
+        "reason": reason,
         "active_request": progress,
     }
 

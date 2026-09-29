@@ -53,13 +53,30 @@ const mappings: Record<string, LayerMapping> = {
 describe('BoundaryCandidatePicker', () => {
   afterEach(cleanup);
   it('does not suggest a territory when no usable contour exists', () => {
-    render(<BoundaryCandidatePicker layers={[layers[0]]} mappings={mappings} onChange={vi.fn()} />);
-    expect(screen.queryByLabelText('Контур территории')).toBeNull();
+    render(
+      <BoundaryCandidatePicker
+        layers={[layers[0]]}
+        mappings={mappings}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole('group', { name: 'Граница территории' }),
+    ).toBeNull();
   });
 
   it('disables boundary changes while preparation is running', () => {
-    render(<BoundaryCandidatePicker layers={layers} mappings={mappings} readOnly onChange={vi.fn()} />);
-    expect(screen.getByLabelText('Контур территории')).toBeDisabled();
+    render(
+      <BoundaryCandidatePicker
+        layers={layers}
+        mappings={mappings}
+        readOnly
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: /Граница заказа/ }),
+    ).toBeDisabled();
   });
 
   it('offers only usable contours and replaces the previous site mapping', () => {
@@ -72,10 +89,8 @@ describe('BoundaryCandidatePicker', () => {
       />,
     );
 
-    expect(screen.queryByRole('option', { name: /Граница работ/ })).toBeNull();
-    fireEvent.change(screen.getByLabelText('Контур территории'), {
-      target: { value: 'order' },
-    });
+    expect(screen.queryByRole('button', { name: /Граница работ/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Граница заказа/ }));
     expect(onChange).toHaveBeenCalledWith({
       thin: mappings.thin,
       order: {
@@ -87,25 +102,106 @@ describe('BoundaryCandidatePicker', () => {
     });
   });
 
-  it('keeps category and role consistent when switching, clearing and restoring a boundary', () => {
+  it('keeps category and role consistent when switching a boundary', () => {
     const onChange = vi.fn();
     const initial: Record<string, LayerMapping> = {
       ...mappings,
-      thin: { ...mappings.thin, kind: 'site_border', category: 'project_boundary', confirmed: true },
+      thin: {
+        ...mappings.thin,
+        kind: 'site_border',
+        category: 'project_boundary',
+        confirmed: true,
+      },
     };
-    const { rerender } = render(<BoundaryCandidatePicker layers={layers} mappings={initial} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText('Контур территории'), { target: { value: 'order' } });
+    const { rerender } = render(
+      <BoundaryCandidatePicker
+        layers={layers}
+        mappings={initial}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Граница заказа/ }));
     const switched = onChange.mock.lastCall![0];
-    expect(switched.thin).toEqual({ ...initial.thin, kind: 'ignore', category: 'boundary_decoration' });
-    expect(switched.order).toMatchObject({ kind: 'site_border', category: 'project_boundary', confirmed: true });
+    expect(switched.thin).toEqual({
+      ...initial.thin,
+      kind: 'ignore',
+      category: 'boundary_decoration',
+    });
+    expect(switched.order).toMatchObject({
+      kind: 'site_border',
+      category: 'project_boundary',
+      confirmed: true,
+    });
     expect(initial.thin.kind).toBe('site_border');
-    rerender(<BoundaryCandidatePicker layers={layers} mappings={switched} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText('Контур территории'), { target: { value: '' } });
-    const cleared = onChange.mock.lastCall![0];
-    expect(Object.values(cleared).some((m) => (m as LayerMapping).kind === 'site_border')).toBe(false);
-    expect(cleared.order.category).toBe('boundary_decoration');
-    rerender(<BoundaryCandidatePicker layers={layers} mappings={cleared} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText('Контур территории'), { target: { value: 'order' } });
-    expect(onChange.mock.lastCall![0]).toEqual(switched);
+    rerender(
+      <BoundaryCandidatePicker
+        layers={layers}
+        mappings={switched}
+        onChange={onChange}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: /Граница заказа/ }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('explains why a named alternative work boundary is not offered', () => {
+    const valid = {
+      ...layers[1], id: 'valid', source_name: 'Генплан|Граница работ',
+    };
+    const invalid = {
+      ...layers[0], id: 'invalid', source_name: 'Генплан|Граница проектирования',
+      boundary_candidate: {
+        status: 'unavailable' as const, basis: 'polygonized_linework',
+        area_m2: 0, inset_1_5m_area_m2: 0, component_count: 0,
+        issue: 'Нет замкнутой площади',
+      },
+    };
+    render(
+      <BoundaryCandidatePicker
+        layers={[valid, invalid]}
+        mappings={mappings}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Граница проектирования \(Нет замкнутой площади\)/))
+      .toBeVisible();
+    expect(screen.queryByRole('button', { name: /Граница проектирования/ }))
+      .toBeNull();
+  });
+
+  it('explains an existing invalid boundary and offers the usable replacement', () => {
+    render(
+      <BoundaryCandidatePicker
+        layers={layers}
+        mappings={{
+          ...mappings,
+          thin: { ...mappings.thin, kind: 'site_border', confirmed: true },
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'После внутреннего отступа',
+    );
+    expect(screen.getByRole('button', { name: /Граница заказа/ }))
+      .toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('lets the operator remove an invalid boundary when no usable contour exists', () => {
+    const onChange = vi.fn();
+    render(
+      <BoundaryCandidatePicker
+        layers={[layers[0]]}
+        mappings={{
+          thin: { ...mappings.thin, kind: 'site_border', confirmed: true },
+        }}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Не использовать эту границу' }));
+    expect(onChange).toHaveBeenCalledWith({
+      thin: expect.objectContaining({ kind: 'ignore', confirmed: true }),
+    });
   });
 });

@@ -6,6 +6,8 @@ export interface PreparationActionsProps extends Pick<
   | 'calculating'
   | 'statusUnknown'
   | 'readinessBlockedReason'
+  | 'readinessSection'
+  | 'partialGeometryPending'
   | 'checkingStatus'
   | 'saveMutation'
   | 'mappingsChanged'
@@ -16,6 +18,7 @@ export interface PreparationActionsProps extends Pick<
   onPlan: () => void;
   mapReady: boolean;
   cadPreview?: boolean;
+  onNeedsReview?: (section: string) => void;
 }
 export const PreparationActionsPropsFor = (
   state: Pick<
@@ -25,6 +28,8 @@ export const PreparationActionsPropsFor = (
     | 'calculating'
     | 'statusUnknown'
     | 'readinessBlockedReason'
+    | 'readinessSection'
+    | 'partialGeometryPending'
     | 'checkingStatus'
     | 'saveMutation'
     | 'mappingsChanged'
@@ -38,6 +43,8 @@ export const PreparationActionsPropsFor = (
   calculating: state.calculating,
   statusUnknown: state.statusUnknown,
   readinessBlockedReason: state.readinessBlockedReason,
+  readinessSection: state.readinessSection,
+  partialGeometryPending: state.partialGeometryPending,
   checkingStatus: state.checkingStatus,
   saveMutation: state.saveMutation,
   mappingsChanged: state.mappingsChanged,

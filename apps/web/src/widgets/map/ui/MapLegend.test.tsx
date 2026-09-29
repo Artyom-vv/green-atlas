@@ -18,6 +18,12 @@ it('uses distinct lawn/building/pavement fills and the same palette in the rende
   expect(cadDesignAppearance('газон', 'line', { газон: 'lawn' }).color).toBe(
     MAP_DESIGN_PALETTE.lawn[1],
   );
+  expect(MAP_DESIGN_PALETTE.utility[1]).not.toBe(
+    MAP_DESIGN_PALETTE.restricted[1],
+  );
+  expect(cadDesignAppearance('сеть', 'line', { сеть: 'utility' }).color).toBe(
+    MAP_DESIGN_PALETTE.utility[1],
+  );
 });
 it('shows only mapped visible classes and never calls lawn a planting allowance', () => {
   render(

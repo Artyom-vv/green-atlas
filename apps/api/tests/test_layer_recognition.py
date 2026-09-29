@@ -35,6 +35,7 @@ def layer(name):
     ("Топография|Леса и газоны", "mixed_vegetation"),
     ("Топография|Геодезические пункты", "geodetic_marker"),
     ("Топография|Навесы", "canopy"),
+    ("Топография|Вышки", "pole"),
     ("ИОТ1_нумерация опор", "annotation"),
     ("Топография|Номер дома", "annotation"),
     ("0", "mixed_source"), ("Вопросы к сетям", None),
@@ -58,6 +59,12 @@ def test_unknown_is_not_a_proposal_to_ignore():
     assert result.proposals[0].category is None
     assert result.proposals[0].confidence == "low"
     assert result.source_sha256 == "a" * 64
+
+
+def test_descriptive_category_has_no_implicit_calculation_role():
+    result = recognize_layers([layer("Граница растительности и грунта")], None)
+    category = next(item for item in result.categories if item.category == "surface_boundary")
+    assert category.kind is None
 
 
 def test_no_geometry_or_network_rule_claim_from_name():

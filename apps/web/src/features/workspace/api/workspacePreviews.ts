@@ -5,6 +5,7 @@ import {
   type PatternPreviewRequest,
   type PatternPreview,
   type RecommendationRequest,
+  type AutomaticPlacementRequest,
 } from '@green/api-client';
 import { completePatternPreview } from './completePatternPreview';
 import { PATTERN_PASS_RESPONSE_TIMEOUT_MS } from './patternPreviewPass';
@@ -27,6 +28,12 @@ export const previewWorkspaceBrush = (
   request: BrushPreviewRequest,
   signal: AbortSignal,
 ) => api.previewBrush(projectId, request, signal);
+
+export const previewWorkspaceAutomatic = (
+  projectId: string,
+  request: AutomaticPlacementRequest,
+  signal: AbortSignal,
+) => api.previewAutomaticPlacement(projectId, request, signal);
 
 export const previewWorkspaceRecommendation = (
   projectId: string,

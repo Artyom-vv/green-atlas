@@ -60,7 +60,11 @@ class LiveQueryError(ValueError):
             "live_timeout": "AutoCAD не ответил на запрос",
             "live_process_stopped": "Сеанс расчёта AutoCAD завершён — требуется переподключение",
             "live_session_expired": "Связь с чертежом устарела — обновите исходные данные",
-            "live_source_changed_or_inactive": "Чертёж изменён или не активен в AutoCAD",
+            "live_source_changed_or_inactive": (
+                "Чертёж изменён или не активен в AutoCAD. Активируйте исходный "
+                "чертёж; если ошибка остаётся, откройте его через плагин заново "
+                "и повторно проверьте посадки перед выпуском"
+            ),
             "live_source_file_changed": "Исходный файл изменён после загрузки",
             "live_xref_graph_changed": "Состав подоснов изменён после загрузки",
         }

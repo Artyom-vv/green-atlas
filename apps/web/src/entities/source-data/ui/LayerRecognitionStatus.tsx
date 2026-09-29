@@ -21,9 +21,18 @@ export function LayerRecognitionStatus({
   const done = recognition?.processed_count ?? 0;
   const total = recognition?.total_count ?? 0;
   const model = recognition?.provider.includes('gpt-6-luna');
+  if (
+    model &&
+    recognition?.status === 'completed' &&
+    !failed &&
+    !loading &&
+    !retrying
+  ) {
+    return null;
+  }
   return (
     <div
-      className="grid gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4"
+      className="grid gap-2 border-0 border-l-2 border-solid border-blue-300 bg-neutral-50 px-3 py-2"
       aria-busy={running || loading || retrying}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">

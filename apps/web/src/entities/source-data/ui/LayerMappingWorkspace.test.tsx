@@ -50,29 +50,69 @@ function Harness() {
 
 it('searches full names without changing mapping decisions', () => {
   render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: 'Все слои (2)' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'Поиск слоя' }), {
     target: { value: 'газон' },
   });
   expect(screen.getByText('Тротуар за Газон')).toBeVisible();
-  expect(screen.queryByText('Здание', { selector: 'code' })).toBeNull();
+  expect(screen.queryByText('Здание', { selector: 'div' })).toBeNull();
   expect(screen.getByRole('status')).toHaveTextContent('Показано 1 из 2');
 });
 
-it('keeps confirmed rows and keyboard focus in place until the filter is refreshed', () => {
+it('exposes group confirmation immediately, without a nested disclosure', () => {
   render(<Harness />);
-  fireEvent.click(screen.getByRole('button', { name: 'Требуют проверки (2)' }));
-  const controls = screen.getAllByRole('combobox');
-  controls[0].focus();
-  fireEvent.keyDown(controls[0], { key: 'ArrowDown', altKey: true });
-  expect(controls[1]).toHaveFocus();
+  const groups = screen.getByRole('region', { name: 'Подтверждение групп' });
+  const confirmations = within(groups).getAllByRole('button', {
+    name: 'Подтвердить',
+  });
+  expect(confirmations).toHaveLength(1);
+  expect(confirmations[0]).toBeVisible();
+  expect(screen.getByText('Группа 1 из 2')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Далее' }));
+  expect(screen.getByText('Группа 2 из 2')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+  fireEvent.click(within(groups).getByRole('button', { name: 'Подтвердить' }));
+  expect(
+    screen.getByRole('button', { name: 'Подтверждение (1)' }),
+  ).toBeVisible();
+  expect(screen.queryByRole('combobox')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Все слои (2)' }));
+  expect(screen.queryByRole('combobox')).toBeNull();
+});
+
+it('keeps confirmed rows in place without expanding every classifier', () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: 'Все слои (2)' }));
   const row = screen.getByText('Тротуар за Газон').closest('li')!;
   fireEvent.click(
-    within(row).getByRole('button', { name: 'Подтвердить роль' }),
+    within(row).getByRole('button', { name: 'Подтвердить: Дорога / проезд' }),
   );
   expect(screen.getByText('Тротуар за Газон').closest('li')).toBe(row);
-  expect(screen.getAllByRole('combobox')).toHaveLength(2);
-  fireEvent.click(screen.getByRole('button', { name: 'Требуют проверки (1)' }));
-  expect(screen.queryByText('Тротуар за Газон')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Все' }));
+  expect(screen.queryByRole('combobox')).toBeNull();
   expect(screen.getByText('Тротуар за Газон')).toBeVisible();
+});
+
+it('opens a group in place without navigating away from pending decisions', () => {
+  render(<Harness />);
+  fireEvent.click(screen.getAllByText('Посмотреть слой и решение')[0]);
+  expect(
+    screen.getByRole('region', { name: 'Подтверждение групп' }),
+  ).toBeVisible();
+  expect(screen.queryByRole('combobox')).toBeNull();
+});
+
+it('does not show zero accepted layers while automatic decisions are being saved', () => {
+  render(
+    <LayerMappingWorkspace
+      automaticAcceptancePending
+      layers={layers}
+      mappings={{}}
+      onChange={() => {}}
+    />,
+  );
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Принимаем однозначные назначения слоёв',
+  );
+  expect(screen.queryByText(/Подтверждено/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /Подтвердить/ })).toBeNull();
 });

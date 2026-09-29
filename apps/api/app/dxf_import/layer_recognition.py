@@ -25,9 +25,14 @@ class LayerRoleProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     layer_id: str
     category: LayerCategory | None
+    # A non-binding suggestion for categories without a fixed calculation role.
+    # Never treated as a confirmed mapping or a verified source condition.
+    calculation_role: LayerKind | None = None
     confidence: Literal["high", "medium", "low"]
     evidence: list[str] = Field(max_length=8)
     unresolved: list[str] = Field(max_length=8)
+    review_question: str | None = None
+    review_roles: list[LayerKind] = Field(default_factory=list, max_length=3)
 
 
 class LayerRecognition(BaseModel):
@@ -71,7 +76,7 @@ _RULES: tuple[tuple[str, LayerCategory], ...] = (
     (r"оград|парапет|огражд", LayerCategory.FENCE),
     (r"отмостк", LayerCategory.HARD_SURFACE),
     (r"люк|колод", LayerCategory.MANHOLE),
-    (r"столб|опор|фонар|светофор|светильник", LayerCategory.POLE),
+    (r"столб|опор|вышк|мачт|фонар|светофор|светильник", LayerCategory.POLE),
     (r"памятник|постамент", LayerCategory.MONUMENT),
     (r"фонтан", LayerCategory.FOUNTAIN),
     (r"водоотвод.*лот", LayerCategory.OPEN_DRAIN),
@@ -169,8 +174,14 @@ class NameLayerRecognition:
 def recognize_layers(
     layers: list[Layer], source_sha256: str | None,
     provider: LayerRecognitionProvider | None = None,
+    context: list[Layer] | None = None,
 ) -> LayerRecognition:
-    proposals = (provider or NameLayerRecognition()).propose(layers)
+    if provider is not None and context is not None and callable(
+        getattr(type(provider), "propose_with_context", None)
+    ):
+        proposals = provider.propose_with_context(layers, context)
+    else:
+        proposals = (provider or NameLayerRecognition()).propose(layers)
     # Also applies to a future OpenAI structured-output provider: hallucinated,
     # missing or duplicate identities must never be joined to live layers.
     if (len(proposals) != len(layers)
@@ -179,7 +190,7 @@ def recognize_layers(
     return LayerRecognition(
         source_sha256=source_sha256,
         provider="name-rules-v1" if provider is None else type(provider).__name__,
-        categories=[LayerCategoryOption(category=key, kind=kind or LayerKind.RESTRICTED, label=label)
+        categories=[LayerCategoryOption(category=key, kind=kind, label=label)
                     for key, (kind, label) in CATEGORIES.items()],
         proposals=proposals,
     )

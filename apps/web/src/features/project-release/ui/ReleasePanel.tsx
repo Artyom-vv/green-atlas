@@ -12,6 +12,7 @@ import type { ReleaseDraftContext } from '../model/releaseDraft';
 import { ReleaseForm } from './ReleaseForm';
 import { ReleaseFiles } from './ReleaseFiles';
 import { ReleaseDraftStatus } from './ReleaseDraftStatus';
+import { ReleaseDraftSettings } from './ReleaseDraftSettings';
 import { ReleaseHeader } from './ReleaseHeader';
 
 export interface ReleasePanelProps {
@@ -84,8 +85,6 @@ export const ReleasePanel: FC<ReleasePanelProps> = ({
           ) : (
             <>
               <ReleaseDraftStatus
-                hasDraft={hasDraft}
-                storageAvailable={storageAvailable}
                 draftStale={draftStale}
                 draftContext={draftContext}
                 planVersion={plan.version}
@@ -93,7 +92,6 @@ export const ReleasePanel: FC<ReleasePanelProps> = ({
                 draftNotice={draftNotice}
                 submissionUnknown={submissionUnknown}
                 loading={loading}
-                onClearDraft={onClearDraft}
                 onReviewContext={onReviewContext}
               />
               <ReleaseForm
@@ -103,6 +101,13 @@ export const ReleasePanel: FC<ReleasePanelProps> = ({
                 onCreate={onCreate}
                 onGrowthHorizon={onGrowthHorizon}
               />
+              {hasDraft && (
+                <ReleaseDraftSettings
+                  storageAvailable={storageAvailable}
+                  loading={loading}
+                  onClear={onClearDraft}
+                />
+              )}
             </>
           )}
           {Boolean(error) && (

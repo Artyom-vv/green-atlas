@@ -50,9 +50,12 @@ def main() -> int:
     parser.add_argument("--cad-worker", type=Path)
     args = parser.parse_args()
     data_root = configure_local_storage(args.data_dir)
-    # Desktop chooses a configured OpenAI key or the signed-in local Codex CLI.
-    # Without either, the UI explicitly reports name-only recognition.
+    # Desktop uses OpenAI or exact-input packaged proposals, never a local
+    # developer's Codex session as an implicit dependency.
     os.environ.setdefault("GREEN_ATLAS_LAYER_MODEL_PROVIDER", "auto")
+    os.environ["GREEN_ATLAS_LAYER_RECOGNITION_PRESETS"] = str(
+        args.web_dir.parent / "LayerRecognition"
+    )
     if args.cad_worker:
         os.environ["GREEN_ATLAS_CAD_RELEASE_WORKER"] = str(args.cad_worker.absolute())
     if not (args.web_dir / "index.html").is_file():

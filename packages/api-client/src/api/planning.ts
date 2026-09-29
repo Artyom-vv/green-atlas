@@ -5,6 +5,8 @@ import {
   normalizeRecommendationPreview,
 } from '../adapters/previews';
 import type {
+  AutomaticPlacementPreview,
+  AutomaticPlacementRequest,
   BrushPreviewRequest,
   BuildingScreenRequest,
   BuildingScreenTargets,
@@ -98,6 +100,20 @@ export const planningApi = {
       `/api/projects/${projectId}/plan/recommendations/preview`,
       { ...json(recommendation), signal },
     ).then(normalizeRecommendationPreview),
+  previewAutomaticPlacement: (
+    projectId: string,
+    draft: AutomaticPlacementRequest,
+    signal?: AbortSignal,
+  ): Promise<AutomaticPlacementPreview> =>
+    request<WireSchema<'AutomaticPlacementPreview'>>(
+      `/api/projects/${projectId}/plan/automatic/preview`,
+      { ...json(draft), signal },
+    ).then((result) => ({
+      ...result,
+      change_set: result.change_set
+        ? normalizeChangeSetPreview(result.change_set)
+        : result.change_set,
+    })),
   getBuildingScreenTargets: (
     projectId: string,
     zoneIds: string[],

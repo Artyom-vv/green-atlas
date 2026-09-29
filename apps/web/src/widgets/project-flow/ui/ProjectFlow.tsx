@@ -66,6 +66,7 @@ export const ProjectSteps: FC<ProjectStepsProps> = ({
 );
 
 export interface FlowDocumentProps {
+  layout?: 'card' | 'panels';
   title: ReactNode;
   description?: ReactNode;
   children: ReactNode;
@@ -74,16 +75,23 @@ export interface FlowDocumentProps {
 }
 
 export const FlowDocument: FC<FlowDocumentProps> = ({
+  layout = 'card',
   title,
   description,
   children,
   footer,
   header,
 }) => (
-  <section className="min-h-0 min-w-0 flex-1 bg-neutral-100 p-4">
-    <div className="rounded-dialog flex h-full w-full flex-col overflow-hidden border border-neutral-200 bg-white">
+  <section
+    className={`min-h-0 min-w-0 flex-1 ${layout === 'panels' ? 'bg-white' : 'bg-neutral-100 p-4'}`}
+  >
+    <div
+      className={`flex h-full w-full flex-col overflow-hidden bg-white ${layout === 'card' ? 'rounded-dialog border border-neutral-200' : ''}`}
+    >
       {header === undefined ? (
-        <header className="flex min-h-29 shrink-0 flex-col justify-center gap-2 border-b border-neutral-200 px-8 py-6">
+        <header
+          className={`flex shrink-0 flex-col justify-center gap-2 border-b border-neutral-200 ${layout === 'panels' ? 'px-4 py-5 sm:px-6' : 'min-h-29 px-8 py-6'}`}
+        >
           <Text as="h1" variant="pageHeading">
             {title}
           </Text>
@@ -96,11 +104,15 @@ export const FlowDocument: FC<FlowDocumentProps> = ({
       ) : (
         header
       )}
-      <div className="min-h-0 flex-1 overflow-auto overscroll-contain px-8 py-6 [scrollbar-gutter:stable]">
+      <div
+        className={`min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable] ${layout === 'card' ? 'px-8 py-6' : ''}`}
+      >
         {children}
       </div>
       {footer ? (
-        <footer className="flex min-h-16 shrink-0 flex-wrap items-center justify-end gap-2 border-t border-neutral-200 px-8 py-3">
+        <footer
+          className={`flex min-h-16 shrink-0 flex-wrap items-center justify-end gap-2 border-t border-neutral-200 py-3 ${layout === 'panels' ? 'px-4 sm:px-6' : 'px-8'}`}
+        >
           {footer}
         </footer>
       ) : null}

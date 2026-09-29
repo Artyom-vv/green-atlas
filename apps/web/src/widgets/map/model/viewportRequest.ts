@@ -5,8 +5,10 @@ import {
 } from './viewportResolutionRange';
 
 export const VIEWPORT_REQUEST_POLICY = {
-  bufferRatio: 0.8,
-  safeInsetRatio: 0.18,
+  // A quarter-screen margin keeps short pans covered without requesting
+  // almost seven screenfuls of dense CAD geometry on every settled zoom.
+  bufferRatio: 0.25,
+  safeInsetRatio: 0.1,
   settleMs: 180,
   cacheMs: 30_000,
 } as const;

@@ -12,7 +12,10 @@ from test_cad_bridge_compiler import (
 
 from app.cad_bridge.compiler import compile_live_document, compile_region_probe
 from app.cad_bridge.provider import verify_cad_snapshot_integrity
-from app.main import app
+from app.dxf_import.admission import require_usable_site_boundary
+from app.dxf_import.layer_contracts import BoundaryCandidateStatus
+from app.main import app, get_application
+from app.projects.contracts import Project
 
 
 def live_bytes(probe=None):
@@ -140,6 +143,50 @@ def test_native_area_requires_explicit_decision_and_reaches_calculation(monkeypa
     ).status_code in (409, 412)
 
 
+def test_live_mapping_rejects_a_site_role_without_an_attested_area():
+    client = TestClient(app)
+    pid = client.post('/api/projects', json={'name': 'Boundary role validation'}).json()['id']
+    url = f'/api/projects/{pid}'
+    opened = client.post(url + '/source-autocad-live',
+        data={'autocad_version': '2027.0.1', 'target': 'macos-arm64'},
+        files={'file': ('document.json', live_bytes(live_area_probe()), 'application/json')})
+    assert opened.status_code == 200, opened.text
+    layers = opened.json()['layers']
+    building = next(layer for layer in layers if layer['source_name'] == 'Здания')
+    boundary = next(layer for layer in layers if layer['source_name'] == 'Граница участка')
+    assert building['boundary_candidate'] is None
+    assert boundary['boundary_candidate']['status'] == 'usable'
+
+    valid = client.put(url + '/layer-mappings', json={'mappings': [
+        {'layer_id': building['id'], 'kind': 'building', 'confirmed': True},
+        {'layer_id': boundary['id'], 'kind': 'site_border', 'confirmed': True},
+    ]})
+    assert valid.status_code == 200, valid.text
+    saved = Project.model_validate(client.get(url, params={'include_geometry': 'true'}).json())
+    selected = next(layer for layer in saved.layers if layer.source_name == 'Граница участка')
+    selected.boundary_candidate.status = BoundaryCandidateStatus.UNAVAILABLE
+    # Simulate a previously saved project with an invalid boundary assignment.
+    get_application().repository.save(saved)
+    invalid = client.put(url + '/layer-mappings', json={'mappings': [
+        {'layer_id': building['id'], 'kind': 'building', 'confirmed': True},
+        {'layer_id': boundary['id'], 'kind': 'site_border', 'confirmed': True},
+    ]})
+    assert invalid.status_code == 400, invalid.text
+    assert client.post(url + '/operations/geometry').status_code == 400
+    with pytest.raises(ValueError, match='не образует пригодную площадь'):
+        require_usable_site_boundary(saved)
+    selected.boundary_candidate.status = BoundaryCandidateStatus.USABLE
+    selected.boundary_candidate = None
+    require_usable_site_boundary(saved)  # A genuine native area needs no name-based tag.
+    geometry = saved.source_geometry or saved.geometry
+    geometry.feature_collection['features'] = [
+        feature for feature in geometry.feature_collection['features']
+        if feature.get('properties', {}).get('source_layer') != 'Граница участка'
+    ]
+    with pytest.raises(ValueError, match='не образует пригодную площадь'):
+        require_usable_site_boundary(saved)
+
+
 def test_live_capture_hashes_geometry_payload_not_stale_disk_file():
     content = live_bytes()
     snapshot = compile_live(content)
@@ -178,7 +225,7 @@ def test_partial_live_source_can_be_reviewed_then_calculated_without_dxf(monkeyp
     url = f'/api/projects/{pid}'
     opened = client.post(url + '/source-autocad-live',
         data={'autocad_version': '2027.0.1', 'target': 'macos-arm64'}, files={
-        'file': ('document.json', live_bytes(), 'application/json'),
+        'file': ('document.json', live_bytes(live_area_probe()), 'application/json'),
     }).json()
     source_hash = opened['source_file']['content_sha256']
     assert opened['source_file']['prepared_provenance'] is None
@@ -201,7 +248,9 @@ def test_partial_live_source_can_be_reviewed_then_calculated_without_dxf(monkeyp
     assert client.post(url + '/source-partial-geometry/accept',
         json={'source_sha256': source_hash}).json()['state_version'] == accepted['state_version']
     mapping = client.put(url + '/layer-mappings', json={'mappings': [
-        {'layer_id': layer['id'], 'kind': 'site_border', 'confirmed': True}
+        {'layer_id': layer['id'],
+         'kind': 'site_border' if layer['source_name'] == 'Граница участка' else 'building',
+         'confirmed': True}
         for layer in accepted['layers']
     ]})
     assert mapping.status_code == 200, mapping.text

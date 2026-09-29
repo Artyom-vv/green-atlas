@@ -63,3 +63,7 @@ docs/**/obj/
 /docs/design-knowledge/EVIDENCE.jsonl
 /docs/design-research/
 /docs/editor-viewer-direction.md
+
+# Finder extraction of the distributable prototype archives is local only.
+/submission/prototype/*.app/
+/submission/prototype/Кустан*ская/

@@ -7,7 +7,7 @@ import { DataPassportPanel } from '@/entities/source-data/ui/DataPassportPanel';
 import { LayerMappingWorkspace } from '@/entities/source-data/ui/LayerMappingWorkspace';
 import { LayerRecognitionStatus } from '@/entities/source-data/ui/LayerRecognitionStatus';
 import type { SourceReadOnlyDocumentProps } from './SourceReadOnlyDocument.props';
-import { SourceSection } from './SourceSection';
+import { SourceSection, SourceSections } from './SourceSection';
 import { SourceReadIssues } from './SourceReadIssues';
 import { NativeFaceReview } from './NativeFaceReview';
 export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
@@ -21,11 +21,19 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
   startSourceEditing,
   reviewOnly,
   layerRecognition,
+  allSavedLayersConfirmed,
   layerRecognitionQuery,
   retryLayerRecognition,
   projectQuery,
-}) => (
+}) => {
+  const invalidBoundary = projectQuery.data?.import_status?.mode === 'autocad_live'
+    ? layers.find((layer) => mappings[layer.id]?.kind === 'site_border'
+      && layer.boundary_candidate
+      && layer.boundary_candidate.status !== 'usable')
+    : undefined;
+  return (
   <FlowDocument
+    layout="panels"
     title="Исходные данные"
     footer={
       <>
@@ -48,7 +56,17 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
       </>
     }
   >
-    <div className="space-y-3">
+    {invalidBoundary && (
+      <div className="px-4 pt-4 sm:px-6">
+        <InlineMessage tone="warning" title="Граница расчёта требует исправления">
+          Слой «{invalidBoundary.source_name}» не образует пригодную площадь
+          <Button variant="ghost" onClick={startSourceEditing}>
+            Выбрать контур
+          </Button>
+        </InlineMessage>
+      </div>
+    )}
+    <SourceSections defaultSection="01">
       <SourceSection
         number="01"
         title="Полнота данных"
@@ -80,15 +98,17 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
         description={`Слои чертежа (${layers.length})`}
         defaultOpen={false}
       >
-        <LayerRecognitionStatus
-          recognition={layerRecognition}
-          loading={layerRecognitionQuery.isLoading}
-          error={
-            layerRecognitionQuery.isError || retryLayerRecognition?.isError
-          }
-          retrying={retryLayerRecognition?.isPending}
-          onRetry={() => retryLayerRecognition?.mutate()}
-        />
+        {!allSavedLayersConfirmed && (
+          <LayerRecognitionStatus
+            recognition={layerRecognition}
+            loading={layerRecognitionQuery.isLoading}
+            error={
+              layerRecognitionQuery.isError || retryLayerRecognition?.isError
+            }
+            retrying={retryLayerRecognition?.isPending}
+            onRetry={() => retryLayerRecognition?.mutate()}
+          />
+        )}
         <LayerMappingWorkspace
           recognition={layerRecognition}
           readOnly
@@ -130,7 +150,7 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
           </Disclosure>
         )}
       </SourceSection>
-      <Text as="p" variant="caption">
+      <Text as="p" variant="caption" className="px-4 py-4 sm:px-6">
         Другой чертёж —{' '}
         <Link
           className="text-blue-700 underline underline-offset-2"
@@ -139,6 +159,7 @@ export const SourceReadOnlyDocument: FC<SourceReadOnlyDocumentProps> = ({
           новый проект
         </Link>
       </Text>
-    </div>
+    </SourceSections>
   </FlowDocument>
-);
+  );
+};

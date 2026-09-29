@@ -1,6 +1,6 @@
 import type { FC } from 'react';
-import { ArrowLeft, PackageCheck } from 'lucide-react';
-import { Button, Icon } from '@green/ui';
+import { ArrowLeft } from 'lucide-react';
+import { Button } from '@green/ui';
 
 export interface ReleaseHeaderProps {
   planVersion: number;
@@ -18,14 +18,19 @@ export const ReleaseHeader: FC<ReleaseHeaderProps> = ({
   onShowFiles,
 }) => (
   <header className="flex flex-wrap items-center gap-3">
-    <Icon icon={<PackageCheck />} size={20} />
     <div className="grid min-w-0 grow basis-48 gap-1">
       <strong className="text-sm font-semibold">
         {showRelease ? 'Файлы проекта' : `План версии ${planVersion}`}
       </strong>
-      <span className="text-neutral-600">
-        Чертёж, ведомость, дендроплан и 3D-сцена.
-      </span>
+      <ul
+        aria-label="Состав пакета"
+        className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-neutral-600"
+      >
+        <li>Чертёж</li>
+        <li>Ведомость</li>
+        <li>Дендроплан</li>
+        <li>3D-сцена</li>
+      </ul>
     </div>
     {!showRelease && hasFiles && (
       <Button

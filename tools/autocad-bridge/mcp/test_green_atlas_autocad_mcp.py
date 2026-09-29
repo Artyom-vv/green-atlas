@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import plistlib
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 
 import green_atlas_autocad_mcp
+import pytest
 from green_atlas_autocad_mcp import (
     PLUGIN_VERSION,
     TOOLS,
@@ -108,6 +111,43 @@ def test_bridge_status_rejects_stale_plugin_version(tmp_path, monkeypatch) -> No
 
     assert status["ready"] is False
     assert f"expected {PLUGIN_VERSION}, got 0.1.28" in status["reason"]
+
+
+def test_transport_uses_packaged_plugin_version() -> None:
+    root = Path(__file__).resolve().parents[1]
+    with (root / "native/Info.plist").open("rb") as stream:
+        assert PLUGIN_VERSION == plistlib.load(stream)["CFBundleShortVersionString"]
+    assert PLUGIN_VERSION == ET.parse(root / "PackageContents.xml").getroot().attrib["AppVersion"]
+    assert f'kPluginVersion = "{PLUGIN_VERSION}"' in (root / "native/bridge_config.h").read_text()
+
+
+@pytest.mark.parametrize("reported", [PLUGIN_VERSION, "0.1.28"])
+def test_dead_process_is_not_reported_as_version_mismatch(tmp_path, monkeypatch, reported) -> None:
+    (tmp_path / "status.json").write_text(
+        json.dumps({"ready": True, "plugin_version": reported, "pid": 42})
+    )
+    monkeypatch.setattr(green_atlas_autocad_mcp, "_queue_directory", lambda: tmp_path)
+
+    def missing_process(pid, sig):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(green_atlas_autocad_mcp.os, "kill", missing_process)
+    result = _bridge_status()
+    assert result["ready"] is False
+    assert result["process_check"] == "not-found"
+    assert "process is not running" in result["reason"]
+    assert "version mismatch" not in result["reason"]
+
+
+def test_inactive_plugin_is_not_reported_as_version_mismatch(tmp_path, monkeypatch) -> None:
+    (tmp_path / "status.json").write_text(
+        json.dumps({"ready": False, "plugin_version": PLUGIN_VERSION, "pid": 42})
+    )
+    monkeypatch.setattr(green_atlas_autocad_mcp, "_queue_directory", lambda: tmp_path)
+    monkeypatch.setattr(green_atlas_autocad_mcp.os, "kill", lambda *_: None)
+    result = _bridge_status()
+    assert result["ready"] is False
+    assert result["reason"] == "AutoCAD plugin is not active"
 
 
 def test_timeout_requests_native_cancellation(tmp_path, monkeypatch) -> None:

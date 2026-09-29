@@ -12,6 +12,7 @@ from shapely.ops import polygonize, unary_union
 from app.dxf_import.admission import (
     partial_geometry_accepted,
     require_confirmed_layer_mapping,
+    require_usable_site_boundary,
 )
 from app.dxf_import.layer_contracts import LayerKind
 from app.dxf_import.utility_mapping import (
@@ -117,7 +118,7 @@ def _native_building_paths_without_surface(
     derived_members: set[tuple[str, tuple[str, ...]]] = set()
     for feature in source_features:
         properties = feature.get("properties", {})
-        if feature.get("geometry", {}).get("type") not in {"Polygon", "MultiPolygon"}:
+        if (feature.get("geometry") or {}).get("type") not in {"Polygon", "MultiPolygon"}:
             continue
         for member in properties.get("source_derived_from", []):
             if isinstance(member, dict):
@@ -136,7 +137,7 @@ def _native_building_paths_without_surface(
             mapping_by_layer.get(source_layer) != LayerKind.BUILDING
             or properties.get("source_geometry_provider") != "autocad_snapshot_v1"
             or "source_closed_path" not in properties
-            or feature.get("geometry", {}).get("type") in {"Polygon", "MultiPolygon"}
+            or (feature.get("geometry") or {}).get("type") in {"Polygon", "MultiPolygon"}
         ):
             continue
         identity = (
@@ -300,6 +301,7 @@ class ShapelyGeometryEngine:
         self, project: Project, progress: ProgressReporter | None = None
     ) -> GeometrySnapshot:
         require_confirmed_layer_mapping(project)
+        require_usable_site_boundary(project)
         allow_partial = partial_geometry_accepted(project.source_file)
         provenance = (
             project.source_file.prepared_provenance if project.source_file else None
@@ -433,7 +435,7 @@ class ShapelyGeometryEngine:
                 # footprint. For any mapped physical geometry that is
                 # less safe than stopping the calculation: an operator must
                 # decide which intended contour is authoritative.
-                if kind in PHYSICAL_LAYER_KINDS:
+                if kind in PHYSICAL_LAYER_KINDS or kind == LayerKind.LAWN:
                     invalid_constraint_layers.add(str(source_layer))
                     properties["source_invalid_geometry"] = True
                 visible_features.append(feature)

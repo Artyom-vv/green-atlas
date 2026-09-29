@@ -17,6 +17,18 @@ export interface LayerMappingTableProps {
   recognition?: LayerRecognition;
 }
 
+function layerDisplayName(sourceName: string) {
+  const parts = sourceName.split('|');
+  if (parts.length === 1) return { name: sourceName, origin: 'Основной чертёж' };
+  const source = parts.slice(0, -1).at(-1)?.split('_').at(-1) ?? '';
+  const origin = /топограф/i.test(source)
+    ? 'Топографическая подоснова'
+    : /сети/i.test(source)
+      ? 'Инженерная подоснова'
+      : source;
+  return { name: parts.at(-1) ?? sourceName, origin };
+}
+
 /** A container-responsive list keeps long CAD names and review actions inside each row. */
 export const LayerMappingTable: FC<LayerMappingTableProps> = ({
   layers,
@@ -28,19 +40,20 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
   <div className="@container">
     <div
       aria-hidden="true"
-      className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 border-0 border-b border-solid border-neutral-200 bg-neutral-50 px-4 py-3 text-xs font-medium text-neutral-600 @2xl:grid"
+      className="hidden grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] gap-6 border-0 border-b border-solid border-neutral-200 bg-neutral-50 px-4 py-3 text-xs font-medium text-neutral-600 @2xl:grid"
     >
-      <span>Слой чертежа и объекты</span>
-      <span>Тип объектов</span>
+      <span>Исходный слой</span>
+      <span>Участие в расчёте</span>
     </div>
     <ul aria-label="Слои чертежа" className="m-0 list-none p-0">
       {layers.map((layer) => {
         const mapping = mappings[layer.id] ?? toLayerMapping(layer);
         const needsReview = mapping.confirmed === false;
+        const display = layerDisplayName(layer.source_name);
         return (
           <li
             key={layer.id}
-            className={`grid min-w-0 gap-4 border-0 border-b border-solid border-neutral-200 p-4 last:border-b-0 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @2xl:gap-6 ${needsReview ? 'bg-amber-50/60' : 'bg-white'}`}
+            className={`grid min-w-0 gap-4 border-0 border-b border-solid border-neutral-200 p-4 last:border-b-0 @2xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] @2xl:gap-6 ${needsReview ? 'bg-amber-50/60' : 'bg-white'}`}
           >
             <div className="min-w-0">
               <div className="grid grid-cols-[12px_minmax(0,1fr)] items-start gap-2">
@@ -49,9 +62,13 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
                   className="mt-1 size-3 rounded-xs border-2 border-(--layer-color)"
                   style={{ '--layer-color': layer.color } as CSSProperties}
                 />
-                <code className="font-mono text-xs leading-5 wrap-anywhere text-neutral-800">
-                  {layer.source_name}
-                </code>
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-neutral-600">{display.origin}</div>
+                  <div className="mt-0.5 text-sm font-medium leading-5 wrap-anywhere text-neutral-900" title={layer.source_name}>
+                    {display.name}
+                  </div>
+                  <span className="sr-only">Полное имя слоя: {layer.source_name}</span>
+                </div>
               </div>
               <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 pl-5 text-xs">
                 <span className="text-neutral-600">
@@ -65,7 +82,7 @@ export const LayerMappingTable: FC<LayerMappingTableProps> = ({
                     className="text-amber-700"
                     title={layer.suggestion_reasons?.join('\n')}
                   >
-                    проверьте роль
+                    Требует решения
                   </span>
                 ) : (
                   mapping.confirmed === true && (

@@ -2,7 +2,7 @@
 #import <WebKit/WebKit.h>
 #import "project-route.h"
 
-@interface Desktop : NSObject <NSApplicationDelegate, WKNavigationDelegate, NSURLSessionTaskDelegate>
+@interface Desktop : NSObject <NSApplicationDelegate, WKNavigationDelegate, WKDownloadDelegate, NSURLSessionTaskDelegate>
 @property(strong) NSWindow *window;
 @property(strong) WKWebView *web;
 @property(strong) NSTextField *status;
@@ -35,6 +35,8 @@
     file.submenu = [[NSMenu alloc] initWithTitle:@"Файл"];
     NSMenuItem *open = [file.submenu addItemWithTitle:@"Открыть подготовленный снимок…" action:@selector(openSnapshot:) keyEquivalent:@"o"];
     open.target = self;
+    NSMenuItem *projects = [file.submenu addItemWithTitle:@"К проектам" action:@selector(openProjects:) keyEquivalent:@""];
+    projects.target = self;
     [menu addItem:file];
     NSMenuItem *edit = [[NSMenuItem alloc] init];
     edit.submenu = [[NSMenu alloc] initWithTitle:@"Правка"];
@@ -90,6 +92,9 @@
         if (response == NSModalResponseOK && ![self application:NSApp openFile:panel.URL.path]) [self fail:@"Выберите подготовленный снимок AutoCAD."];
     }];
 }
+- (void)openProjects:(id)sender {
+    if (self.ready) [self openProject:@"/projects"];
+}
 - (void)fail:(NSString *)message {
     [self progressVisible:YES];
     self.status.stringValue = message;
@@ -118,7 +123,37 @@
     NSURL *url = action.request.URL;
     NSURL *origin = [NSURL URLWithString:self.origin];
     BOOL local = [url.scheme isEqual:origin.scheme] && [url.host isEqual:origin.host] && [url.port isEqual:origin.port] && !url.user && !url.password;
+    if (local && GAIsReleaseArtifactPath(url.path) && !url.query && !url.fragment) {
+        decisionHandler(WKNavigationActionPolicyDownload);
+        return;
+    }
     decisionHandler(local || [url.absoluteString isEqual:@"about:blank"] ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+}
+- (void)webView:(WKWebView *)webView navigationAction:(WKNavigationAction *)navigationAction didBecomeDownload:(WKDownload *)download {
+    download.delegate = self;
+}
+- (void)webView:(WKWebView *)webView navigationResponse:(WKNavigationResponse *)navigationResponse didBecomeDownload:(WKDownload *)download {
+    download.delegate = self;
+}
+- (void)download:(WKDownload *)download decideDestinationUsingResponse:(NSURLResponse *)response suggestedFilename:(NSString *)suggestedFilename completionHandler:(void (^)(NSURL * _Nullable))completionHandler {
+    // A fresh panel is important here: WebKit can offer ZIP, CSV and DWG
+    // downloads in one session, and a reused panel may keep the prior type filter.
+    NSSavePanel *panel = [[NSSavePanel alloc] init];
+    panel.allowedContentTypes = @[];
+    panel.allowsOtherFileTypes = YES;
+    panel.canCreateDirectories = YES;
+    panel.nameFieldStringValue = suggestedFilename.length ? suggestedFilename : @"green-atlas-artifact";
+    panel.directoryURL = [[NSFileManager defaultManager] URLsForDirectory:NSDownloadsDirectory inDomains:NSUserDomainMask].firstObject;
+    [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse result) {
+        completionHandler(result == NSModalResponseOK ? panel.URL : nil);
+    }];
+}
+- (void)download:(WKDownload *)download didFailWithError:(NSError *)error resumeData:(NSData *)resumeData {
+    if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled) return;
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Не удалось скачать файл";
+    alert.informativeText = error.localizedDescription ?: @"Повторите загрузку из проекта.";
+    [alert beginSheetModalForWindow:self.window completionHandler:nil];
 }
 - (void)launchEngine {
     if (self.engine.running) return;
