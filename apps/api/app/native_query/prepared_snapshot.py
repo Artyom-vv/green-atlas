@@ -21,7 +21,7 @@ from app.native_query.hybrid_geometry import (
     uses_linear_geometry,
 )
 from app.native_query.live_inventory import QueryObject
-from app.operations.progress import progress_items
+from app.operations.progress import progress_items, cancellable_lock
 from app.regulations.placement_config import PLACEMENT_RULES_REVISION
 
 PREPARED_REVISION = "autocad-prepared-geometry/1"
@@ -151,7 +151,7 @@ class PreparedStore:
 
 def prepare_snapshot(engine, project, progress=None):
     """Only preparation touches AutoCAD, before and after capturing the ledger."""
-    with engine._lock:
+    with cancellable_lock(engine._lock):
         engine.assert_current(project)
         key = preparation_key(project, engine.session, engine.linear_layers)
         projection = HybridGeometry(engine, project, require_accuracy=True)

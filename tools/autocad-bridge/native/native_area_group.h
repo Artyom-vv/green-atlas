@@ -15,8 +15,10 @@ public:
     ~AreaGroupQuery();
     AreaGroupQuery(const AreaGroupQuery&) = delete;
     AreaGroupQuery& operator=(const AreaGroupQuery&) = delete;
-    void prepare(const std::vector<AcDbEntity*>& curves, const AcGeMatrix3d& transform);
+    void prepare(const std::vector<AcDbEntity*>& curves, const AcGeMatrix3d& transform,
+                 bool deferDistances = false);
     ga::direct::Answer queryPlanar(const AcGePoint3d& point) const;
+    ga::direct::Answer membershipPlanar(const AcGePoint3d& point) const;
     const AffineEvidence& evidence() const;
     // Exact detached REGION for downstream AutoCAD boolean/offset operations.
     std::unique_ptr<AcDbRegion> copyWorldRegion() const;

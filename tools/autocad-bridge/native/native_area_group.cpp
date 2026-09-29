@@ -70,7 +70,7 @@ struct AreaGroupQuery::Impl {
 };
 AreaGroupQuery::AreaGroupQuery():impl(std::make_unique<Impl>()) {}
 AreaGroupQuery::~AreaGroupQuery()=default;
-void AreaGroupQuery::prepare(const std::vector<AcDbEntity*>& curves,const AcGeMatrix3d& transform) {
+void AreaGroupQuery::prepare(const std::vector<AcDbEntity*>& curves,const AcGeMatrix3d& transform,bool deferDistances) {
     impl=std::make_unique<Impl>();
     const double sourceLength=verifyCycle(curves);
     AcArray<AcDbEntity*> inputs; for(auto* curve:curves) inputs.append(curve);
@@ -89,7 +89,7 @@ void AreaGroupQuery::prepare(const std::vector<AcDbEntity*>& curves,const AcGeMa
         +64*std::numeric_limits<double>::epsilon()*sourceLength;
     if(!std::isfinite(perimeter)||std::abs(perimeter-sourceLength)>tolerance)
         throw std::runtime_error("native group boundary does not cover all input lengths");
-    auto query=std::make_unique<AffineAreaQuery>(); query->prepare(*impl->region,transform);
+    auto query=std::make_unique<AffineAreaQuery>(); query->prepare(*impl->region,transform,deferDistances);
     if(query->evidence().faces!=1||query->evidence().localArea<=0)
         throw std::runtime_error("native group did not produce one nonempty face");
     impl->query=std::move(query);
@@ -98,6 +98,10 @@ void AreaGroupQuery::prepare(const std::vector<AcDbEntity*>& curves,const AcGeMa
 ga::direct::Answer AreaGroupQuery::queryPlanar(const AcGePoint3d& p) const {
     if(!impl->query) throw std::runtime_error("native area group not ready");
     return impl->query->queryPlanar(p);
+}
+ga::direct::Answer AreaGroupQuery::membershipPlanar(const AcGePoint3d& p) const {
+    if(!impl->query) throw std::runtime_error("native area group not ready");
+    return impl->query->membershipPlanar(p);
 }
 const AffineEvidence& AreaGroupQuery::evidence() const {
     if(!impl->query) throw std::runtime_error("native area group not ready");

@@ -35,7 +35,14 @@ unsigned selftest() {
             expect(result.faces.size()==(gap<=.02?1:0),"bounded face/metric gap control");
             if(!result.faces.empty()) {
                 expect(std::abs(result.faces[0].query->evidence().localArea-100*scale*scale)<.001,"area control");
-                expect(result.faces[0].query->queryPlanar({5*scale,5*scale,0}).membership=="occupied","inside control");
+                auto& query=*result.faces[0].query;
+                expect(query.evidence().edgeCount==0,"catalog does not eagerly build distances");
+                const auto membership=query.membershipPlanar({5*scale,5*scale,0});
+                expect(membership.membership=="occupied"&&!membership.distanceComplete,"native membership-only control");
+                expect(query.evidence().edgeCount==0,"containment does not trigger distance preparation");
+                const auto answer=query.queryPlanar({5*scale,5*scale,0});
+                expect(answer.membership=="occupied"&&answer.distanceComplete&&std::abs(answer.distance-5*scale)<1e-7,"deferred distance control");
+                expect(query.evidence().edgeCount>0,"first distance query builds the oracle");
                 expect(result.faces[0].query->queryPlanar({20*scale,5*scale,0}).membership=="outside","outside control");
             }
             ++count;
@@ -48,16 +55,46 @@ unsigned selftest() {
     sources.push_back({"1","building",std::move(poly),false});
     auto tail=ga::faces::assemble(std::move(sources),1);
     expect(tail.faces.size()==1&&std::abs(tail.faces[0].query->evidence().localArea-100)<1e-8,"loop with tail control");
-    return count+1;
+    ++count;
+    for(const double scale:{1.,1000.}) {
+        const double radius=10*scale,pi=std::acos(-1.);
+        std::vector<ga::faces::Source> arcs;
+        arcs.push_back({"a","curve",std::make_unique<AcDbArc>(AcGePoint3d::kOrigin,
+            AcGeVector3d::kZAxis,radius,0,pi),false});
+        arcs.push_back({"b","curve",std::make_unique<AcDbArc>(AcGePoint3d::kOrigin,
+            AcGeVector3d::kZAxis,radius,pi,2*pi),false});
+        auto curved=ga::faces::assemble(std::move(arcs),scale);
+        expect(curved.faces.size()==1,"arc face control");
+        auto& lazy=*curved.faces[0].query;
+        expect(lazy.evidence().edgeCount==0,"arc distance preparation is deferred");
+        std::vector<AcDbEntity*> curves;
+        for(auto& fragment:curved.faces[0].fragments) curves.push_back(fragment.curve.get());
+        ga::nativeQuery::AreaGroupQuery eager;
+        eager.prepare(curves,AcGeMatrix3d::kIdentity);
+        expect(std::abs(eager.evidence().localArea-lazy.evidence().localArea)<1e-7*scale*scale,"eager/lazy native areas agree");
+        for(const auto point:{AcGePoint3d(0,0,0),AcGePoint3d(radius,0,0),AcGePoint3d(2*radius,0,0)}) {
+            const auto a=lazy.queryPlanar(point),b=eager.queryPlanar(point);
+            expect(a.status==b.status&&a.membership==b.membership&&a.distanceComplete&&b.distanceComplete
+                &&std::abs(a.distance-b.distance)<1e-7,"eager/lazy native curved distances agree");
+        }
+        ++count;
+    }
+    return count;
 }
 void command() {
     ACHAR path[4096]={};if(acedGetString(1,_T("\nProduction face test request: "),path)!=RTNORM)return;
     try {
         std::ifstream in(AcString(path).utf8Str());const auto output=line(in);
         expect(!std::ifstream(output).good(),"output exists");
-        const auto count=std::stoi(line(in));expect(count>0&&count<10000,"input count");
+        const auto count=std::stoi(line(in));expect(count>=0&&count<10000,"input count");
         auto* host=acdbHostApplicationServices()->workingDatabase();
         resbuf before{},after{};acedGetVar(_T("DBMOD"),&before);
+        if(count==0) {
+            const auto controls=selftest();
+            acedGetVar(_T("DBMOD"),&after);expect(before.resval.rint==after.resval.rint,"controls changed DBMOD");
+            expect(ga::bridge::writeAtomicText(output,"{\"selftests\":"+std::to_string(controls)+",\"passed\":true}"),"publish controls");
+            return;
+        }
         std::vector<ga::faces::Source> sources;
         for(int i=0;i<count;++i) {
             const auto route=line(in),layer=line(in);

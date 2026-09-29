@@ -36,6 +36,7 @@ Graph intersectAndSplit(std::vector<Input>& inputs, Result& result,
         checkCancelled(cancelled);
         auto& left=inputs[order[a]];
         for(std::size_t b=a+1;b<order.size();++b) {
+            if((b&255)==0) checkCancelled(cancelled);
             auto& right=inputs[order[b]];
             if(right.bounds.minPoint().x>left.bounds.maxPoint().x+kEquality) break;
             if(right.bounds.minPoint().y>left.bounds.maxPoint().y+kEquality

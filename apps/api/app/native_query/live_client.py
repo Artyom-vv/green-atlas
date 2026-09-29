@@ -26,6 +26,7 @@ from app.native_query.contracts import (
 )
 from app.native_query.protocol import decode_reply, encode_request
 from app.native_query.face_contracts import FacePreparation
+from app.operations.progress import OperationCancelled, check_operation_cancelled
 
 LIVE_PROTOCOL = "green-atlas.live-query/1"
 
@@ -116,6 +117,7 @@ class LiveQueryClient:
     def _exchange(
         self, operation: str, request_id: str, session_id: str
     ) -> LiveSession:
+        check_operation_cancelled()
         self._check_process()
         self._directory()
         request = self.queue / f"request-{request_id}.txt"
@@ -126,12 +128,19 @@ class LiveQueryClient:
             f"{LIVE_PROTOCOL}\n{operation}\n{session_id}\n{deadline}\n".encode(),
         )
         end = time.monotonic() + self.timeout_seconds
-        while not response.exists():
-            self._check_process()
-            if time.monotonic() >= end:
-                (self.queue / f"cancel-{request_id}").touch(exist_ok=False)
-                raise LiveQueryError("live_timeout")
-            time.sleep(min(0.05, max(0, end - time.monotonic())))
+        try:
+            while not response.exists():
+                check_operation_cancelled()
+                self._check_process()
+                if time.monotonic() >= end:
+                    (self.queue / f"cancel-{request_id}").touch(exist_ok=False)
+                    raise LiveQueryError("live_timeout")
+                time.sleep(min(0.05, max(0, end - time.monotonic())))
+            check_operation_cancelled()
+        except OperationCancelled:
+            # Signal only this request; another UI review may share the session.
+            (self.queue / f"cancel-{request_id}").touch(exist_ok=True)
+            raise
         if response.stat().st_size > 65536:
             raise ValueError("Live reply exceeds metadata size limit")
         reply = LiveReply.model_validate_json(response.read_bytes())

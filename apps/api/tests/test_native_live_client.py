@@ -16,6 +16,7 @@ from app.native_query.live_client import (
     LiveQueryError,
     LiveSession,
 )
+from app.operations.progress import OperationCancelled, operation_cancellation
 
 
 def session(tmp_path, **overrides):
@@ -32,6 +33,39 @@ def session(tmp_path, **overrides):
         unavailable_xrefs=1,
     )
     return LiveSession(**(values | overrides))
+
+
+def test_user_cancellation_signals_only_the_waiting_native_request(tmp_path):
+    client = LiveQueryClient(tmp_path, timeout_seconds=90)
+    identity = uuid4().hex
+    def cancel_after_publish():
+        if (tmp_path / f"request-{identity}.txt").exists():
+            raise OperationCancelled()
+    started = time.monotonic()
+    with operation_cancellation(cancel_after_publish), pytest.raises(OperationCancelled):
+        client._exchange("prepare_faces", identity, "a" * 32)
+    assert time.monotonic() - started < 1
+    assert list(tmp_path.glob("cancel-*")) == [tmp_path / f"cancel-{identity}"]
+
+
+def test_cancellation_before_publish_creates_no_native_request(tmp_path):
+    def cancel():
+        raise OperationCancelled()
+    with operation_cancellation(cancel), pytest.raises(OperationCancelled):
+        LiveQueryClient(tmp_path)._exchange("inspect", uuid4().hex, "a" * 32)
+    assert not list(tmp_path.glob("request-*"))
+
+
+def test_cancellation_context_is_reset_after_failure(tmp_path):
+    def cancel():
+        raise OperationCancelled()
+    with pytest.raises(OperationCancelled), operation_cancellation(cancel):
+        LiveQueryClient(tmp_path)._exchange("inspect", uuid4().hex, "a" * 32)
+    current = session(tmp_path)
+    thread, errors = serve_once(tmp_path, lambda identity, operation, token: envelope(identity, current))
+    LiveQueryClient(tmp_path, timeout_seconds=2).inspect(current)
+    thread.join()
+    assert not errors
 
 
 def serve_once(queue, callback):

@@ -27,9 +27,11 @@ Input input(std::unique_ptr<AcDbCurve> curve, const std::set<std::string>& route
         throw std::runtime_error("face curve is not finite and horizontal");
     return result;
 }
-std::vector<Input> primitives(std::vector<Source>& sources, Result& result) {
+std::vector<Input> primitives(std::vector<Source>& sources, Result& result,
+                              const std::function<bool()>& cancelled) {
     std::vector<Input> expanded;
     for(auto& source:sources) {
+        checkCancelled(cancelled);
         try {
             if(AcDbPolyline::cast(source.curve.get())) {
                 AcDbVoidPtrArray parts;
@@ -53,6 +55,7 @@ std::vector<Input> primitives(std::vector<Source>& sources, Result& result) {
                 result.issues.push_back(source.route+": curve retained without face splitting");
             }
         } catch(const std::exception& error) {
+            checkCancelled(cancelled);
             result.issues.push_back(source.route+": "+error.what());
         }
     }
@@ -64,7 +67,7 @@ Result assemble(std::vector<Source> sources, double unitsPerMetre,
         throw std::runtime_error("native face units unavailable");
     Result result;
     checkCancelled(cancelled);
-    auto inputs=primitives(sources,result);
+    auto inputs=primitives(sources,result,cancelled);
     const auto repairs=connect(inputs,kRepairGapMetres*unitsPerMetre,cancelled);
     auto graph=intersectAndSplit(inputs,result,cancelled);
     for(const auto& source:sources) if(source.needsArea&&!source.clipping) graph.needsArea.insert(source.route);

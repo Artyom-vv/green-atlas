@@ -7,7 +7,7 @@ from app.native_query.live_client import LiveQueryClient, LiveQueryError
 from app.native_query.live_provider import LiveNativeGeometryEngine
 from app.native_query.prepared_provider import PreparedGeometryEngine
 from app.native_query.prepared_snapshot import preparation_key, prepare_snapshot
-from app.operations.progress import WorkProgress
+from app.operations.progress import WorkProgress, cancellable_lock
 from app.planting_zones.domain import (
     validate_changed_planting_zones,
     validate_planting_zones,
@@ -31,7 +31,7 @@ class ProjectLiveGeometry:
         if source.content_sha256 != session.snapshot_sha256:
             raise ValueError("Расчётный сеанс не соответствует исходным данным проекта")
         key = session.model_dump_json()
-        with self._lock:
+        with cancellable_lock(self._lock):
             current = self._engines.get(project.id)
             if current is None or current[0] != key:
                 try:
@@ -49,7 +49,7 @@ class ProjectLiveGeometry:
         if session is None or self.prepared_store is None:
             return self.live_engine(project)
         key = preparation_key(project, session)
-        with self._lock:
+        with cancellable_lock(self._lock):
             cached = self._prepared.get(project.id)
             if cached is not None and cached._basis_key == key:
                 return cached

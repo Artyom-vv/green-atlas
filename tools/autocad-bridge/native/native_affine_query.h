@@ -25,9 +25,11 @@ public:
     ~AffineAreaQuery();
     AffineAreaQuery(const AffineAreaQuery&) = delete;
     AffineAreaQuery& operator=(const AffineAreaQuery&) = delete;
-    void prepare(AcDbEntity& entity, const AcGeMatrix3d& transform);
+    void prepare(AcDbEntity& entity, const AcGeMatrix3d& transform, bool deferDistances = false);
     ga::direct::Answer query(const AcGePoint3d& world) const;
     ga::direct::Answer queryPlanar(const AcGePoint3d& point) const;
+    // Exact native containment only. Does not report or approximate distances.
+    ga::direct::Answer membershipPlanar(const AcGePoint3d& point) const;
     const AffineEvidence& evidence() const;
     double analyticDistance(const AcGePoint3d& point) const;
 };

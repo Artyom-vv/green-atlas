@@ -1,5 +1,7 @@
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 from time import monotonic
 from typing import TypeVar
 
@@ -20,6 +22,40 @@ class WorkProgress:
 
 
 ProgressReporter = Callable[[WorkProgress], None]
+
+_cancellation_check: ContextVar[Callable[[], None] | None] = ContextVar(
+    "operation_cancellation_check", default=None
+)
+
+
+def check_operation_cancelled() -> None:
+    check = _cancellation_check.get()
+    if check is not None:
+        check()
+
+
+@contextmanager
+def operation_cancellation(check: Callable[[], None]):
+    """Propagate cancellation through blocking adapters without global state."""
+    token = _cancellation_check.set(check)
+    try:
+        yield
+    finally:
+        _cancellation_check.reset(token)
+
+
+@contextmanager
+def cancellable_lock(lock):
+    """A queued operation can be cancelled while another preparation owns a lock."""
+    while True:
+        check_operation_cancelled()
+        if lock.acquire(timeout=0.1):
+            break
+    try:
+        check_operation_cancelled()
+        yield
+    finally:
+        lock.release()
 
 T = TypeVar("T")
 PROGRESS_REPORT_INTERVAL_S = 0.25  # Bound journal writes, not work or accuracy.

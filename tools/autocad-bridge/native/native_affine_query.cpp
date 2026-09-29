@@ -34,14 +34,18 @@ double nearest(const AcGeCurve3d& curve,const AcGePoint3d& point) {
 struct NativeAffine : AffineEvidence {
     ga::direct::Prepared local;
     AcGeMatrix3d inverse;
+    AcGeMatrix3d worldTransform;
+    double amplification=0;
+    bool distancesReady=false;
     std::vector<std::unique_ptr<AcGeNurbCurve3d>> curves;
-    void prepare(AcDbEntity& entity,const AcGeMatrix3d& transform) {
+    void prepare(AcDbEntity& entity,const AcGeMatrix3d& transform,bool deferDistances) {
         double normSquared=0;
         for(int i=0;i<4;++i) for(int j=0;j<4;++j) {
             if(!std::isfinite(transform(i,j))) throw std::runtime_error("nonfinite transform");
             if(i<3&&j<3) normSquared+=transform(i,j)*transform(i,j);
         }
-        const double amplification=std::sqrt(normSquared); // Conservative norm, not a distance scale.
+        amplification=std::sqrt(normSquared); // Conservative norm, not a distance scale.
+        worldTransform=transform;
         if(!transform.isUniScaledOrtho() && std::abs(transform.det())<1e-15)
             throw std::runtime_error("singular transform");
         inverse=transform.inverse();
@@ -66,6 +70,14 @@ struct NativeAffine : AffineEvidence {
             ||std::abs(transform(2,0))+std::abs(transform(2,1))>1e-9)
             throw std::runtime_error("not horizontal in planar affine experiment");
         auto planePoint=low; planePoint.transformBy(transform); worldZ=planePoint.z;
+        if(!deferDistances) prepareDistances();
+    }
+    void prepareDistances() {
+        if(distancesReady) return;
+        // A failed native fit cannot leave a partial distance oracle reusable.
+        curves.clear(); straightEdges.clear(); edgeWitnesses.clear();
+        maxFit=0; maxWitnessDistance=0; edgeCount=0; allStraight=true;
+        const auto& transform=worldTransform;
         const double requested=kWorldTolerance/std::max(1.0,amplification);
         AcBrBrepEdgeTraverser it; require(it.setBrep(local.local),"local edge traversal");
         for(;!it.done();require(it.next(),"next edge")) {
@@ -106,6 +118,7 @@ struct NativeAffine : AffineEvidence {
         }
         if(curves.empty()) throw std::runtime_error("no native edges");
         edgeCount=curves.size();
+        distancesReady=true;
     }
     ga::direct::Answer query(const AcGePoint3d& world) const {
         auto localPoint=world; localPoint.transformBy(inverse);
@@ -129,19 +142,26 @@ struct NativeAffine : AffineEvidence {
 struct AffineAreaQuery::Impl { NativeAffine native; bool ready=false; };
 AffineAreaQuery::AffineAreaQuery():impl(std::make_unique<Impl>()) {}
 AffineAreaQuery::~AffineAreaQuery()=default;
-void AffineAreaQuery::prepare(AcDbEntity& entity,const AcGeMatrix3d& transform) {
+void AffineAreaQuery::prepare(AcDbEntity& entity,const AcGeMatrix3d& transform,bool deferDistances) {
     // A failed re-prepare cannot leave old geometry available under a new identity.
     impl=std::make_unique<Impl>();
-    impl->native.prepare(entity,transform);
+    impl->native.prepare(entity,transform,deferDistances);
     impl->ready=true;
 }
 ga::direct::Answer AffineAreaQuery::query(const AcGePoint3d& point) const {
     if(!impl->ready||!finite(point)) throw std::runtime_error("native area not ready or nonfinite point");
+    impl->native.prepareDistances();
     return impl->native.query(point);
 }
 ga::direct::Answer AffineAreaQuery::queryPlanar(const AcGePoint3d& point) const {
     if(!finite(point)) throw std::runtime_error("nonfinite planar query point");
     return query({point.x,point.y,impl->native.worldZ});
+}
+ga::direct::Answer AffineAreaQuery::membershipPlanar(const AcGePoint3d& point) const {
+    if(!impl->ready||!finite(point)) throw std::runtime_error("native area not ready or nonfinite point");
+    AcGePoint3d localPoint(point.x,point.y,impl->native.worldZ);
+    localPoint.transformBy(impl->native.inverse);
+    return ga::direct::membership(impl->native.local.local,localPoint);
 }
 const AffineEvidence& AffineAreaQuery::evidence() const {
     if(!impl->ready) throw std::runtime_error("native area not ready");
@@ -149,6 +169,7 @@ const AffineEvidence& AffineAreaQuery::evidence() const {
 }
 double AffineAreaQuery::analyticDistance(const AcGePoint3d& point) const {
     if(!impl->ready||!finite(point)) throw std::runtime_error("native area not ready or nonfinite point");
+    impl->native.prepareDistances();
     return impl->native.analyticDistance(point);
 }
 }

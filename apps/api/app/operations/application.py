@@ -17,7 +17,7 @@ from app.operations.contracts import (
 )
 from app.operations.lifecycle import OperationLifecycle
 from app.operations.ports import OperationRepository
-from app.operations.progress import OperationCancelled
+from app.operations.progress import OperationCancelled, operation_cancellation
 from app.planting_zones.domain import attach_planting_zone_features
 from app.projects.concurrency import (
     ProjectVersionConflict,
@@ -139,10 +139,11 @@ class GeometryOperationApplication:
                                      if feature.get("properties", {}).get("source_layer")],
                     }
                 })
-            geometry = self.geometry.calculate(
-                project,
-                lambda update: self.lifecycle.report(operation_id, update, 2, 96),
-            )
+            with operation_cancellation(lambda: self.lifecycle.check_cancelled(operation_id)):
+                geometry = self.geometry.calculate(
+                    project,
+                    lambda update: self.lifecycle.report(operation_id, update, 2, 96),
+                )
             with self._operation_commit_lock:
                 self.lifecycle.check_cancelled(operation_id)
                 self.lifecycle.update(

@@ -31,7 +31,8 @@ void require(Acad::ErrorStatus status, const char* operation);
 void checkCancelled(const std::function<bool()>& cancelled);
 Input input(std::unique_ptr<AcDbCurve> curve, const std::set<std::string>& routes,
             bool clipping, bool repair = false);
-std::vector<Input> primitives(std::vector<Source>& sources, Result& result);
+std::vector<Input> primitives(std::vector<Source>& sources, Result& result,
+                              const std::function<bool()>& cancelled);
 std::vector<Connector> connect(std::vector<Input>& inputs, double gap,
                                const std::function<bool()>& cancelled);
 Graph intersectAndSplit(std::vector<Input>& inputs, Result& result,

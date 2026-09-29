@@ -136,10 +136,11 @@ void prepareFaceLayers(AcDbDatabase& host,const std::set<std::string>& requested
             // fill them; keep their original native objects and an explicit issue.
             std::set<std::size_t> nested;
             for(std::size_t i=0;i<result.faces.size();++i) for(std::size_t j=0;j<i;++j) {
+                if((j&255)==0) checkCancelled(cancelled);
                 const auto& a=result.faces[i];const auto& b=result.faces[j];
                 const auto ea=a.query->evidence(),eb=b.query->evidence();
                 if(ea.low.x>eb.high.x||eb.low.x>ea.high.x||ea.low.y>eb.high.y||eb.low.y>ea.high.y) continue;
-                const auto ab=a.query->queryPlanar(b.display.front()),ba=b.query->queryPlanar(a.display.front());
+                const auto ab=a.query->membershipPlanar(b.display.front()),ba=b.query->membershipPlanar(a.display.front());
                 if(ab.membership=="occupied"||ba.membership=="occupied") {nested.insert(i);nested.insert(j);}
             }
             for(std::size_t i=0;i<result.faces.size();++i) {

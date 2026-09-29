@@ -51,13 +51,14 @@ void Graph::add(Fragment fragment) {
     outgoing[ib].push_back({std::atan2(-db.y,-db.x),2*index+1});
 }
 namespace {
-std::set<int> bridges(Graph& graph) {
+std::set<int> bridges(Graph& graph,const std::function<bool()>& cancelled) {
     // Iterative DFS: an entire street cannot overflow the C++ call stack.
     struct Frame {int node,parentEdge;std::size_t next;};
     std::vector<int> discovery(graph.nodes.size(),-1),low(graph.nodes.size());
     std::set<int> result;
     int timer=0;
     for(int root=0;root<int(graph.nodes.size());++root) {
+        if((root&255)==0) checkCancelled(cancelled);
         if(discovery[root]>=0) continue;
         discovery[root]=low[root]=timer++;
         std::vector<Frame> stack{{root,-1,0}};
@@ -109,7 +110,7 @@ void displayEdge(Face& face,const Edge& edge,bool reverse) {
 }
 void collectFaces(Graph& graph,const std::vector<Connector>& repairs,
                   Result& result,const std::function<bool()>& cancelled) {
-    const auto dangling=bridges(graph);
+    const auto dangling=bridges(graph,cancelled);
     for(auto& list:graph.outgoing) {
         list.erase(std::remove_if(list.begin(),list.end(),[&](const auto& entry) {
             return dangling.count(entry.second/2);
@@ -123,6 +124,7 @@ void collectFaces(Graph& graph,const std::vector<Connector>& repairs,
         int next=start;
         std::vector<int> directed;
         while(!visited[next]) {
+            checkCancelled(cancelled);
             visited[next]=true; directed.push_back(next);
             const auto& edge=graph.edges[next/2];
             const auto& exits=graph.outgoing[next%2?edge.a:edge.b];
@@ -163,7 +165,9 @@ void collectFaces(Graph& graph,const std::vector<Connector>& repairs,
             }
             if(face.physicalRoutes.empty()) continue;
             face.query=std::make_unique<ga::nativeQuery::AreaGroupQuery>();
-            face.query->prepare(curves,AcGeMatrix3d::kIdentity);
+            // Cataloguing needs topology/area, not thousands of distance oracles.
+            // The exact same native distance preparation runs on first query.
+            face.query->prepare(curves,AcGeMatrix3d::kIdentity,true);
             face.display.push_back(face.display.front());
             // Endpoints associated with one graph node may differ by twice
             // the equality tolerance. Include that join displacement too.

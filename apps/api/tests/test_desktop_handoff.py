@@ -66,7 +66,7 @@ def finish(service, identifier):
     return service.get(identifier)
 
 
-@pytest.mark.parametrize("plugin_version", ["0.1.40", "0.1.43", "0.1.44"])
+@pytest.mark.parametrize("plugin_version", ["0.1.40", "0.1.43", "0.1.44", "0.1.45"])
 def test_live_query_ticket_binds_same_capture_to_project(local, monkeypatch, plugin_version):
     from app.native_query.live_client import LiveQueryClient
     from test_native_live_client import session
