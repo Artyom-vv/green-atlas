@@ -1,4 +1,5 @@
 import json
+import plistlib
 import zipfile
 from io import BytesIO
 from types import SimpleNamespace
@@ -16,7 +17,11 @@ from app.exporting.cad_contracts import (
     encode_plantings,
     validate_receipt,
 )
-from app.exporting.cad_writer import AutoCadReleaseWriter, release_config
+from app.exporting.cad_writer import (
+    AutoCadReleaseWriter,
+    _autocad_installation,
+    release_config,
+)
 from app.exporting.contracts import ReleaseCreateRequest
 from app.exporting.evidence import UNAVAILABLE_CHECKS
 from app.native_query.live_client import LiveSession
@@ -310,11 +315,47 @@ def test_release_config_uses_only_current_installed_worker_when_unconfigured(tmp
         b'<string>0.1.42</string></dict></plist>'
     )
     (installed / "Contents/MacOS/GreenAtlasBridge").write_bytes(b"worker")
+    acad = tmp_path / "AutoCAD 2027.app"
+    (acad / "Contents/Info.plist").parent.mkdir(parents=True)
+    (acad / "Contents/Info.plist").write_bytes(
+        plistlib.dumps({"CFBundleIdentifier": "com.autodesk.AutoCAD2027"})
+    )
+    core = acad / "Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"
+    core.parent.mkdir(parents=True)
+    core.write_bytes(b"core")
+    core.chmod(0o700)
+    template = acad / "Contents/Resources/UserDataCache/en-us/Template/acadiso.dwt"
+    template.parent.mkdir(parents=True)
+    template.write_bytes(b"template")
     monkeypatch.setattr("app.exporting.cad_writer.Path.home", lambda: tmp_path)
     monkeypatch.delenv("GREEN_ATLAS_CAD_RELEASE_WORKER", raising=False)
+    monkeypatch.setenv("GREEN_ATLAS_AUTOCAD_ROOT", str(acad))
     config = release_config(str(tmp_path / "projects.sqlite3"))
     assert config.worker_bundle == installed
     assert config.plugin_version == "0.1.42"
+    assert config.core_executable == core
+    assert config.bootstrap_template == template
+    assert config.architecture == "native"
+
+
+def test_release_finds_localized_autocad_template_without_rosetta(tmp_path, monkeypatch):
+    acad = tmp_path / "AutoCAD 2027.app"
+    (acad / "Contents/Info.plist").parent.mkdir(parents=True)
+    (acad / "Contents/Info.plist").write_bytes(
+        plistlib.dumps({"CFBundleIdentifier": "com.autodesk.AutoCAD2027"})
+    )
+    core = acad / "Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"
+    core.parent.mkdir(parents=True)
+    core.write_bytes(b"core")
+    core.chmod(0o700)
+    template = acad / "Contents/Resources/UserDataCache/ru-ru/Template/acadiso.dwt"
+    template.parent.mkdir(parents=True)
+    template.write_bytes(b"template")
+    monkeypatch.setenv("GREEN_ATLAS_AUTOCAD_ROOT", str(acad))
+    assert _autocad_installation() == (core, template)
+    core.unlink()
+    with pytest.raises(ValueError, match="Не найден совместимый AutoCAD 2027"):
+        _autocad_installation()
 
 
 def test_release_config_rejects_missing_installed_worker(tmp_path, monkeypatch):

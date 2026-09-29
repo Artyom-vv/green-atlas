@@ -3,6 +3,8 @@
 import json
 import os
 import plistlib
+import subprocess
+import sys
 from hashlib import sha256
 from pathlib import Path
 
@@ -13,6 +15,54 @@ from app.exporting.cad_process import write_cad_release
 from app.native_query.capture_store import NativeCaptureStore
 from app.native_query.process_contracts import NativeQueryProcessConfig
 from app.projects.contracts import Project
+
+
+def _autocad_installation() -> tuple[Path, Path]:
+    """Locate the installed editor, not the build machine's AutoCAD path."""
+    configured = os.environ.get("GREEN_ATLAS_AUTOCAD_ROOT")
+    candidates = [Path(configured)] if configured else [
+        Path("/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app"),
+        Path("/Applications/AutoCAD 2027.app"),
+        Path.home() / "Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app",
+        Path.home() / "Applications/AutoCAD 2027.app",
+    ]
+
+    def valid_installation(app: Path) -> tuple[Path, Path] | None:
+        try:
+            info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+        except (OSError, ValueError):
+            return None
+        if info.get("CFBundleIdentifier") != "com.autodesk.AutoCAD2027":
+            return None
+        core = app / "Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"
+        templates = app / "Contents/Resources/UserDataCache"
+        preferred = templates / "en-us/Template/acadiso.dwt"
+        template = next((path for path in (preferred, *sorted(templates.glob("*/Template/acadiso.dwt"))) if path.is_file()), None)
+        if core.is_file() and os.access(core, os.X_OK) and template is not None:
+            return core, template
+        return None
+
+    for app in candidates:
+        found = valid_installation(app)
+        if found is not None:
+            return found
+    if not configured and sys.platform == "darwin":
+        try:
+            result = subprocess.run(
+                ["/usr/bin/mdfind", "kMDItemCFBundleIdentifier == 'com.autodesk.AutoCAD2027'"],
+                capture_output=True, text=True, timeout=3, check=False,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    found = valid_installation(Path(line))
+                    if found is not None:
+                        return found
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    raise ValueError(
+        "Не найден совместимый AutoCAD 2027 с модулем выпуска и шаблоном acadiso.dwt. "
+        "Установите полную версию AutoCAD либо укажите GREEN_ATLAS_AUTOCAD_ROOT"
+    )
 
 
 def release_config(database_path: str) -> NativeQueryProcessConfig:
@@ -37,24 +87,17 @@ def release_config(database_path: str) -> NativeQueryProcessConfig:
     ).is_file():
         raise ValueError("Модуль выпуска AutoCAD повреждён. Переустановите Green Atlas")
     info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
-    acad = Path(
-        os.environ.get(
-            "GREEN_ATLAS_AUTOCAD_ROOT",
-            "/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app",
-        )
-    )
+    core, template = _autocad_installation()
     return NativeQueryProcessConfig(
-        core_executable=acad
-        / "Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole",
+        core_executable=core,
         worker_bundle=bundle,
         job_root=Path(database_path + ".cad-release-jobs").absolute(),
         worker_binary_sha256=sha256(
             (bundle / "Contents/MacOS/GreenAtlasBridge").read_bytes()
         ).hexdigest(),
         plugin_version=info["CFBundleShortVersionString"],
-        bootstrap_template=acad
-        / "Contents/Resources/UserDataCache/en-us/Template/acadiso.dwt",
-        architecture="x86_64",
+        bootstrap_template=template,
+        architecture="native",
         timeout_seconds=600,
     )
 

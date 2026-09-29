@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--worker", type=Path, required=True)
     parser.add_argument("--jobs", type=Path, required=True)
+    parser.add_argument("--architecture", choices=("native", "x86_64"), default="native")
     args = parser.parse_args()
     # Historical experiments predate the display-SHA binding. This diagnostic
     # tests only the writer; it never admits this archive into a user project.
@@ -25,16 +26,17 @@ def main():
     package = NativeInputPackage(args.package.resolve(), receipt["entry"], tuple(
         CadPackageFile(item["path"], item["sha256"], item["bytes"]) for item in receipt["files"]
     ))
-    acad = Path("/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app")
+    from app.exporting.cad_writer import _autocad_installation
+    core, template = _autocad_installation()
     import plistlib
     info = plistlib.loads((args.worker / "Contents/Info.plist").read_bytes())
     config = NativeQueryProcessConfig(
-        acad / "Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole",
+        core,
         args.worker.resolve(), args.jobs.resolve(),
         sha256((args.worker / "Contents/MacOS/GreenAtlasBridge").read_bytes()).hexdigest(),
         info["CFBundleShortVersionString"],
-        acad / "Contents/Resources/UserDataCache/en-us/Template/acadiso.dwt",
-        architecture="x86_64", timeout_seconds=180,
+        template,
+        architecture=args.architecture, timeout_seconds=180,
     )
     result = write_cad_release(package, (
         CadPlant(id="aa-11", kind="shrub", x=1.25, y=2.5, radius=.5),

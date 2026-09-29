@@ -27,9 +27,9 @@ mkdir -p "$installer_app/Contents/MacOS" "$installer_app/Contents/Resources"
 cp "$installer_source/Info.plist" "$installer_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $bridge_version" "$installer_app/Contents/Info.plist"
 ditto "$bridge_package" "$installer_app/Contents/Resources/GreenAtlasBridge.bundle"
-/usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 26.0' "$installer_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 14.0' "$installer_app/Contents/Info.plist"
 xcrun clang++ -std=c++17 -fobjc-arc -arch arm64 \
-  -mmacosx-version-min=26.0 -O2 -Wall -Wextra -Wno-unused-parameter \
+  -mmacosx-version-min=14.0 -O2 -Wall -Wextra -Wno-unused-parameter \
   -framework AppKit -framework Foundation \
   "$installer_source/main.mm" -o "$installer_app/Contents/MacOS/GreenAtlasInstaller"
 signing_identity="${GREEN_ATLAS_SIGNING_IDENTITY:--}"

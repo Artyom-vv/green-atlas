@@ -31,7 +31,7 @@ static BOOL isExpectedPackageChild(NSURL *package, NSURL *child, NSString *relat
 
 static BOOL supportedHost() {
 #if defined(__arm64__)
-    return [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){26, 0, 0}];
+    return [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){14, 0, 0}];
 #else
     return NO;
 #endif
@@ -54,7 +54,7 @@ static BOOL verifySignature(NSURL *package, NSError **error) {
     NSURL *desktop = desktopURL(package);
     NSDictionary *info = [NSDictionary dictionaryWithContentsOfURL:[desktop URLByAppendingPathComponent:@"Contents/Info.plist"]];
     if (![info[@"CFBundleIdentifier"] isEqual:@"ru.green-atlas.desktop"]
-        || ![info[@"LSMinimumSystemVersion"] isEqual:@"26.0"]
+        || ![info[@"LSMinimumSystemVersion"] isEqual:@"14.0"]
         || ![info[@"GASupportedArchitectures"] isEqual:@[@"arm64"]]
         || info[@"GADevelopmentProfile"] != nil
         || !isExpectedPackageChild(package, desktop, @"Contents/Applications/Green Atlas.app")) {
@@ -102,7 +102,7 @@ static BOOL safeParent(NSURL *parent, NSError **error) {
 static BOOL installPackage(NSURL *source, NSURL *parent, NSURL **backup, NSError **error) {
     NSFileManager *manager = [NSFileManager defaultManager];
     if (!supportedHost()) {
-        if (error) *error = failure(@"Эта сборка требует macOS 26 и Apple Silicon. Файлы не изменены.");
+        if (error) *error = failure(@"Эта сборка требует macOS 14 или новее и Apple Silicon. Файлы не изменены.");
         return NO;
     }
     if (!verifySignature(source, error) || !safeParent(parent, error)) return NO;
@@ -235,7 +235,7 @@ static BOOL productRunning() {
     title.font = [NSFont systemFontOfSize:23 weight:NSFontWeightSemibold];
     title.frame = NSMakeRect(28, 236, 470, 32);
     NSTextField *subtitle = [NSTextField wrappingLabelWithString:
-        @"AutoCAD 2027, macOS 26, Apple Silicon\nЛокальное приложение и плагин. Чертежи не изменяются."];
+        @"AutoCAD 2027, macOS 14 или новее, Apple Silicon\nЛокальное приложение и плагин. Чертежи не изменяются."];
     subtitle.frame = NSMakeRect(28, 165, 460, 58);
     self.status = [NSTextField wrappingLabelWithString:
         [NSString stringWithFormat:@"Версия %@. Закройте AutoCAD перед установкой.",
