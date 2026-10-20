@@ -1,11 +1,5 @@
 # Выпуск и нижние результаты
 
-Проверенный срез 14 сентября 2026: 80 профильных тестов и scoped ESLint.
-После финальной декомпозиции совместный прогон с подготовкой источников,
-запуском редактора и запросом карты дал 123 passed. В проверке TypeScript -b
-ошибок этой области нет; основная задача завершает общий прогон.
-Production/Storybook и визуальную приёмку выполняет основной агент на общей сборке.
-
 ## Владельцы
 
 - `model/useReleaseDraftForm`: живые поля React Hook Form. Сериализуемые
@@ -73,29 +67,15 @@ idempotency key и поиска последнего пакета: UI явно �
   перенос действий. Dock и его единственный scrollport остаются владельцами
   занимаемого пространства.
 
-## Удалённое оформление и проверки
+## Проверка
 
-Удалены `workspace-results.css` (52 строки), `release-panel.css` (43 строки),
-`change-review.css` (15 строк) и 58 заменённых правил из прежних общих CSS.
-Все временные re-export этих компонентов из domain-ui удалены. Основная
-страница подключена к новым владельцам. Корневой агент перенёс плавающий
-change prompt из старого change-review.css в собственную Tailwind-композицию.
+Тесты рядом с владельцами проверяют двойную отправку, потерянный ответ,
+read-recovery, смену проекта и сохранность черновика. Локальный запуск из корня:
 
-72 прежних теста сохранены; 8 новых проверяют двойную отправку, lost-response,
-ошибку после подтверждения, read-recovery, смену проекта и монотонность кэша.
-Условные JSX-узлы без альтернативы используют boolean &&; числовые счётчики
-сравниваются с нулём, чтобы не вывести лишний «0». Истинные альтернативы
-форма/файлы и список/пустое состояние сохраняют явное ветвление.
-Тесты, проверявшие CSS-классы и нативный details, используют роли и поведение
-общего Disclosure. Команды локально: `pnpm --filter @green/web exec vitest run
-src/features/project-release src/features/plan-history src/entities/plan-history
-src/entities/validation src/entities/planting/ui/PlantingSchedule.test.tsx
-src/features/plan-changes/ui/ChangeSetReviewPanel.test.tsx`.
+```sh
+pnpm --filter @green/web exec vitest run src/features/project-release src/features/plan-changes
+```
 
-Применены SRP (форма/хранение/серверный результат), композиция (поле/группа/
-поверхность), DRY (общая группировка/границы полей), функциональные вычисления
-и YAGNI (без нового конструкторa форм или API). Эффекты ограничены синхронизацией
-формы, browser checkpoint и внешнего Query-состояния; расчёты остаются функциями.
-Основания: [React — эффекты и вычисляемые значения](https://react.dev/learn/you-might-not-need-an-effect),
-[исходный контракт RHF useForm](https://github.com/react-hook-form/react-hook-form/blob/master/src/useForm.ts),
-[React Query — мутации](https://tanstack.com/query/latest/docs/framework/react/guides/mutations).
+В Windows перед командой: `. ./scripts/windows-env.ps1`.
+Результаты прежних прогонов находятся в
+[архиве](../../../../../docs/archive/pre-133/apps/web/src/features/project-release/README.md).

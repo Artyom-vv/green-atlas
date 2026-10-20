@@ -9,5 +9,5 @@
 - [Установить и запустить](submission/prototype/README.md).
 - [Презентация PDF и PPTX](submission/presentation/README.md).
 - [Демонстрация 35 секунд, ресурсы 3D и скриншоты](submission/materials/README.md).
-- [Документация](docs/obsidian/README.md).
+- [Документация](docs/README.md).
 - [Для разработчиков](docs/development.md).

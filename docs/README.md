@@ -1,20 +1,23 @@
-# Документация Green Atlas
+# Документация Green Atlas 0.1.133
 
-Основная документация находится в [docs/obsidian](obsidian/README.md).
-Она описывает продукт, модули, работу пользователя, эксплуатацию и ограничения.
-В комплект входят блок-схемы сервиса. Папку можно открыть в Obsidian.
+Текущая поставка — Windows x64. Основной путь: AutoCAD 2027 → локальный проект
+→ подготовленная геометрия → посадки → отдельный CAD-выпуск.
 
-## Для разработки
+## Для пользователя
 
-- [Запуск проекта и проверки](development.md).
-- [Контракт CAD-пайплайна](architecture/autocad-contract.md).
-- [Контракт отображения](architecture/native-render-capture-contract.md).
-- [Архитектура кода](architecture.md).
-- [API](api-contract.md).
-- [Правила модулей](module-rules.md).
-- [Дизайн-система](design-knowledge/DESIGN_SYSTEM.md).
-- [Инструменты упаковки документации](../scripts/docs/README.md).
+- [Установка и первый проект](../submission/prototype/README.md).
+- [Возможности и ограничения](current-product-boundary.md).
+- [Документация сервиса](obsidian/README.md), открывается как хранилище Obsidian.
+- [Проверки выпуска 133](<obsidian/04 Качество и показатели/Качество и показатели.md>).
 
-Аудиты, дневники разработки, экспериментальные прототипы и результаты прогонов
-хранятся локально и не входят в репозиторий. Генерируемый архив документации
-также остаётся локальным; исходные страницы и схемы доступны здесь.
+## Для разработчика
+
+- [Запуск и проверки](development.md), [архитектура](architecture.md), [API](api-contract.md).
+- [CAD-контракт](architecture/autocad-contract.md), [сцена и рендер](architecture/native-render-capture-contract.md).
+- [Windows](architecture/windows-port.md), [правила модулей](module-rules.md).
+- [Дизайн-система](design-knowledge/DESIGN_SYSTEM.md), [содержимое Git](repository-content.md).
+- [Проверка и сборка документации](../scripts/docs/README.md).
+
+[Архив прежних страниц, сборок и проверок](archive/pre-133/README.md).
+Архив содержит ранее опубликованные материалы, не инструкции для 133.
+Сырые журналы, рабочие проекты и результаты новых прогонов остаются локальными.
