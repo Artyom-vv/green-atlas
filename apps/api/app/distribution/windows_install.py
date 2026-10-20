@@ -14,11 +14,29 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from time import sleep
 
 from app.distribution.contracts import PackageManifest
 from app.distribution.preflight import MANIFEST_NAME, check_package, manifest_identity
 
 INSTALLED_NAME = "GreenAtlas.bundle"
+
+
+class BundleAccessError(ValueError):
+    """Ожидаемый отказ Windows, без частного пути пользователя в сообщении."""
+
+    def __init__(self, winerror: int) -> None:
+        self.winerror = winerror
+        super().__init__(
+            f"Windows не разрешила изменить файлы установки Green Atlas (Win32 {winerror}). "
+            "Файлы могут быть открыты другой программой или антивирусом либо доступ запрещён. "
+            "Закройте Green Atlas и AutoCAD, дождитесь завершения проверки файлов и повторите. "
+            "Установка или удаление не завершены; проекты хранятся отдельно."
+        )
+
+
+_REPLACE_RETRY_DELAYS = (0.1, 0.2, 0.4, 0.8)
+_BUNDLE_ACCESS_ERRORS = frozenset({5, 32, 33})
 
 
 @dataclass(frozen=True)
@@ -69,6 +87,31 @@ def _directory_identity(path: Path) -> dict[str, int]:
         raise ValueError("Файловая система не сообщает идентичность каталога установки")
     birth = getattr(info, "st_birthtime_ns", int(getattr(info, "st_birthtime", 0) * 1_000_000_000))
     return {"device": info.st_dev, "inode": info.st_ino, "birth_ns": birth}
+
+
+def _replace_bundle_directory(source: Path, destination: Path) -> None:
+    """Повторить только отказ атомарного переноса собственного соседнего каталога."""
+    if source.parent != destination.parent:
+        raise ValueError("Перенос комплекта допускает только соседние каталоги")
+    root_identity = _directory_identity(source.parent)
+    source_identity = _directory_identity(source)
+    for attempt in range(len(_REPLACE_RETRY_DELAYS) + 1):
+        if (
+            _directory_identity(source.parent) != root_identity
+            or _directory_identity(source) != source_identity
+            or _present(destination)
+        ):
+            raise ValueError("Каталоги установки изменились перед переносом; файлы сохранены")
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as error:
+            code = getattr(error, "winerror", None)
+            if code not in _BUNDLE_ACCESS_ERRORS:
+                raise
+            if attempt == len(_REPLACE_RETRY_DELAYS):
+                raise BundleAccessError(code) from error
+            sleep(_REPLACE_RETRY_DELAYS[attempt])
 
 
 def load_owned_bundle(path: Path) -> PackageManifest:
@@ -217,8 +260,8 @@ class BundleInstaller:
                 else:
                     if manifest_identity(load_owned_bundle(self.installed)) != old_identity:
                         raise ValueError("Прежняя установка изменилась во время обновления")
-                os.replace(self.installed, backup)
-            os.replace(stage, self.installed)
+                _replace_bundle_directory(self.installed, backup)
+            _replace_bundle_directory(stage, self.installed)
             if manifest_identity(load_owned_bundle(self.installed)) != identity:
                 raise ValueError("Опубликованный комплект отличается от staging")
             if publish_shell is not None:
@@ -278,8 +321,8 @@ class BundleInstaller:
                     raise ValueError("Текущий комплект неизвестен журналу; файлы сохранены")
                 if _present(failed):
                     raise ValueError("Имя неуспешного комплекта занято")
-                os.replace(self.installed, failed)
-            os.replace(backup, self.installed)
+                _replace_bundle_directory(self.installed, failed)
+            _replace_bundle_directory(backup, self.installed)
         elif value["old_kind"] == "owned":
             if manifest_identity(load_owned_bundle(self.installed)) != value["old_identity"]:
                 raise ValueError("Не найден прежний комплект для восстановления")
@@ -291,7 +334,7 @@ class BundleInstaller:
                 raise ValueError("Нельзя заменить чужой комплект при восстановлении")
             if _present(failed):
                 raise ValueError("Имя неуспешного комплекта занято")
-            os.replace(self.installed, failed)
+            _replace_bundle_directory(self.installed, failed)
         if _present(self.installed) and value["old_kind"] == "owned" and publish_shell:
             old = load_owned_bundle(self.installed)
             publish_shell(self.installed, old.layout.version)
@@ -347,12 +390,12 @@ class BundleInstaller:
         retained = root / ("GreenAtlas.uninstalled-" + uuid.uuid4().hex)
         if before_publish is not None:
             before_publish()
-        os.replace(self.installed, retained)
+        _replace_bundle_directory(self.installed, retained)
         try:
             if remove_shell is not None:
                 remove_shell()
         except BaseException:
-            os.replace(retained, self.installed)
+            _replace_bundle_directory(retained, self.installed)
             raise
         # Оставляем собственные байты для восстановления, вне .bundle autoload.
         return InstallReceipt("uninstall", None, str(retained), manifest_identity(manifest))

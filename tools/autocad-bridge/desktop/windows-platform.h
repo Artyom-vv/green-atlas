@@ -10,8 +10,10 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace ga::desktop::windows {
 namespace fs = std::filesystem;
@@ -21,6 +23,15 @@ std::wstring quote(std::wstring_view value);
 std::string digest(std::string_view value);
 bool directPath(const fs::path& path, bool directory = false);
 void privateDirectory(const fs::path& path);
+struct ProfilePreparationError : std::runtime_error {
+    std::string code, role;
+    DWORD win32Error;
+    ProfilePreparationError(std::string value, std::string part, DWORD error = 0)
+        : std::runtime_error(value), code(std::move(value)), role(std::move(part)), win32Error(error) {}
+};
+// Внутренний вход для изолированных native-тестов. CLI не принимает путь.
+void prepareProfileDirectories(const fs::path& profile);
+Json prepareProfile();
 std::wstring userSid();
 std::wstring ipcName();
 struct Settings {

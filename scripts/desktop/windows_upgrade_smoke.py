@@ -1,4 +1,4 @@
-"""Real released119 -> current wizard update in an owned ordinary CI account."""
+"""Real previous -> current wizard update in an owned ordinary CI account."""
 
 from __future__ import annotations
 
@@ -64,11 +64,9 @@ def project_probe(package, data, environment, *, create):
             str(ready["origin"]), str(ready["session_token"]), windows / "Web"
         )
         if create:
-            project = api(
-                "/api/projects", {"name": "Сохранённый проект до обновления119"}
-            )
+            project = api("/api/projects", {"name": "Сохранённый проект до обновления"})
             require(
-                project["name"] == "Сохранённый проект до обновления119",
+                project["name"] == "Сохранённый проект до обновления",
                 "Old EXE не создал контрольный проект",
             )
         else:
@@ -82,7 +80,7 @@ def project_probe(package, data, environment, *, create):
         shutdown = wait_clean_exit(
             child,
             timeout=20,
-            label="API119 до обновления" if create else "API после обновления",
+            label="API до обновления" if create else "API после обновления",
         )
         return project, web, shutdown
     finally:
@@ -206,12 +204,12 @@ def main(*, upgrade_control=None, project_probe_fn=project_probe):
                     f"Native Setup failed: {name}, exit={result.returncode}; owned log tail: {tail}"
                 )
 
-        install(previous, "install-previous119")
+        install(previous, "install-previous")
         old = load_owned_bundle(installed)
         require(
             old.layout.version == inputs["version"], "Установлена другая прежняя версия"
         )
-        report["stage"] = "previous119_project"
+        report["stage"] = "previous_project"
         original, report["previous_web"], report["previous_api_exit"] = (
             project_probe_fn(installed, data, environment, create=True)
         )
@@ -239,12 +237,12 @@ def main(*, upgrade_control=None, project_probe_fn=project_probe):
         )
         require(
             reopened["id"] == original["id"] and reopened["name"] == original["name"],
-            "Потерян сохранённый проект119",
+            "Потерян сохранённый проект",
         )
         require(
             reopened["source_file"] == original["source_file"]
             and reopened["plan"] == original["plan"],
-            "Изменены данные проекта119",
+            "Изменены данные проекта",
         )
         before_remove = digest(database)
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
@@ -278,6 +276,10 @@ def main(*, upgrade_control=None, project_probe_fn=project_probe):
             different_version_update_tested=True,
             old_executable_created_project=project_probe_fn is project_probe,
             new_executable_reopened_project=True,
+            retained_plan_objects=len(
+                (reopened.get("plan") or {}).get("objects") or []
+            ),
+            retained_zones=len(reopened.get("planting_zones") or []),
             update_preserved_database_bytes=True,
             uninstall_preserved_database_bytes=True,
             prepared_cad_project_migration_tested=False,

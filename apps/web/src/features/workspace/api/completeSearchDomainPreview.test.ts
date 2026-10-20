@@ -364,3 +364,256 @@ describe('automatic domain continuation', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+const hybridPhaseResponse = (
+  processed: number,
+  complete = false,
+): PatternPreview => {
+  const preview = response(0, complete ? 0 : 100);
+  Object.assign(preview.search_domains![0], {
+    method: 'hybrid',
+    final_check: 'prepared_geometry',
+    processed_objects: processed,
+    total_objects: 10602,
+  });
+  return preview;
+};
+
+describe('natural search requested and base horizon queues', () => {
+  it.each([1536, 8960])(
+    'requests the third pass when a new base queue starts at %i or lower',
+    async (currentBefore) => {
+      const first = hybridPhaseResponse(currentBefore);
+      const currentDone = hybridPhaseResponse(10602, true).search_domains![0];
+      const basePending = hybridPhaseResponse(1536);
+      basePending.search_domains!.unshift(currentDone);
+      const completed = hybridPhaseResponse(10602, true);
+      completed.accepted_count = 3;
+      const next = vi
+        .fn()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(basePending)
+        .mockResolvedValueOnce(completed);
+      const publish = vi.fn();
+
+      const result = await completeSearchDomainPreview(
+        next,
+        new AbortController().signal,
+        publish,
+      );
+      expect(next).toHaveBeenCalledTimes(3);
+      expect(publish).toHaveBeenCalledTimes(2);
+      expect(
+        publish.mock.calls[1][0].search_domains.map(
+          (domain: { processed_objects: number }) => domain.processed_objects,
+        ),
+      ).toEqual([10602, 1536]);
+      expect(publish.mock.calls[1][0].accepted_count).toBe(0);
+      expect(publish.mock.calls[1][0].change_set).toBeUndefined();
+      expect(result.accepted_count).toBe(3);
+    },
+  );
+
+  it.each([1024, 1536])(
+    'rejects a base queue that regresses or stalls at %i beside the completed current queue',
+    async (baseNext) => {
+      const currentDone = hybridPhaseResponse(10602, true).search_domains![0];
+      const first = hybridPhaseResponse(1536);
+      first.search_domains!.unshift(currentDone);
+      const second = hybridPhaseResponse(baseNext);
+      second.search_domains!.unshift(currentDone);
+      const next = vi
+        .fn()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+
+      await expect(
+        completeSearchDomainPreview(next, new AbortController().signal),
+      ).rejects.toThrow('Проверка области прервана');
+      expect(next).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(['revision', 'method'] as const)(
+    'rejects mutation of the existing %s even while a base queue is appended',
+    async (field) => {
+      const first = hybridPhaseResponse(8960);
+      const changed = hybridPhaseResponse(10602, true).search_domains![0];
+      if (field === 'revision') changed.revision = 'another-capture-or-rules';
+      else {
+        changed.method = 'native_cells';
+        changed.measured_cells = 10602;
+      }
+      const second = hybridPhaseResponse(1536);
+      second.search_domains!.unshift(changed);
+      const next = vi
+        .fn()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+
+      await expect(
+        completeSearchDomainPreview(next, new AbortController().signal),
+      ).rejects.toThrow('Проверка области прервана');
+      expect(next).toHaveBeenCalledTimes(2);
+    },
+  );
+});
+
+const keyedDomain = (key: string, count: number, complete = false) => ({
+  ...hybridPhaseResponse(count, complete).search_domains![0],
+  progress_key: key,
+  total_objects: 20000,
+});
+
+const variantResponse = (
+  ...domains: NonNullable<PatternPreview['search_domains']>
+): PatternPreview => ({ ...response(0), search_domains: domains });
+
+describe('stable domain keys across automatic variants', () => {
+  it('continues the reported tree-base insertion before a pending shrub', async () => {
+    const next = vi
+      .fn()
+      .mockResolvedValueOnce(
+        variantResponse(
+          keyedDomain('tree:0', 8960),
+          keyedDomain('shrub:0', 1536),
+        ),
+      )
+      .mockResolvedValueOnce(
+        variantResponse(
+          keyedDomain('tree:0', 11543, true),
+          keyedDomain('tree:1', 512),
+          keyedDomain('shrub:0', 3584),
+        ),
+      )
+      .mockResolvedValueOnce(
+        variantResponse(
+          keyedDomain('tree:0', 11543, true),
+          keyedDomain('shrub:0', 10602, true),
+        ),
+      );
+    await completeSearchDomainPreview(next, new AbortController().signal);
+    expect(next).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ['tree', 'tree'],
+    ['tree', 'shrub'],
+    ['shrub', 'tree'],
+    ['shrub', 'shrub'],
+  ] as const)(
+    'keeps identities when %s starts base preparation first and %s finishes first',
+    async (starts, finishes) => {
+      const variants = ['tree', 'shrub'] as const;
+      const first = variantResponse(
+        ...variants.map((kind) => keyedDomain(`${kind}:0`, 256)),
+      );
+      const second = variantResponse(
+        ...variants.flatMap((kind) =>
+          kind === starts
+            ? [
+                keyedDomain(`${kind}:0`, 1024, true),
+                keyedDomain(`${kind}:1`, 64),
+              ]
+            : [keyedDomain(`${kind}:0`, 512)],
+        ),
+      );
+      const third = variantResponse(
+        ...variants.flatMap((kind) => [
+          keyedDomain(`${kind}:0`, 1024, true),
+          keyedDomain(`${kind}:1`, kind === starts ? 128 : 32),
+        ]),
+      );
+      const fourth = variantResponse(
+        ...variants.flatMap((kind) => [
+          keyedDomain(`${kind}:0`, 1024, true),
+          ...(kind === finishes ? [] : [keyedDomain(`${kind}:1`, 256)]),
+        ]),
+      );
+      const final = variantResponse(
+        ...variants.map((kind) => keyedDomain(`${kind}:0`, 1024, true)),
+      );
+      const next = vi
+        .fn()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second)
+        .mockResolvedValueOnce(third)
+        .mockResolvedValueOnce(fourth)
+        .mockResolvedValueOnce(final);
+      expect(
+        await completeSearchDomainPreview(next, new AbortController().signal),
+      ).toBe(final);
+      expect(next).toHaveBeenCalledTimes(5);
+    },
+  );
+
+  it.each(['counter', 'revision', 'method'] as const)(
+    'still refuses keyed %s mutation after another variant inserts a queue',
+    async (field) => {
+      const first = variantResponse(
+        keyedDomain('tree:0', 768),
+        keyedDomain('shrub:0', 768),
+      );
+      const shrub = keyedDomain('shrub:0', 896);
+      if (field === 'counter') shrub.processed_objects = 512;
+      else if (field === 'revision') shrub.revision = 'changed-cad-or-rules';
+      else {
+        shrub.method = 'native_cells';
+        shrub.measured_cells = 896;
+      }
+      const second = variantResponse(
+        keyedDomain('tree:0', 1024, true),
+        keyedDomain('tree:1', 64),
+        shrub,
+      );
+      const next = vi
+        .fn()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+      await expect(
+        completeSearchDomainPreview(next, new AbortController().signal),
+      ).rejects.toThrow('Проверка области прервана');
+      expect(next).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('still refuses a genuinely stalled keyed pair of base queues', async () => {
+    const snapshot = variantResponse(
+      keyedDomain('tree:0', 1024, true),
+      keyedDomain('tree:1', 64),
+      keyedDomain('shrub:0', 1024, true),
+      keyedDomain('shrub:1', 128),
+    );
+    const next = vi.fn().mockResolvedValue(snapshot);
+    await expect(
+      completeSearchDomainPreview(next, new AbortController().signal),
+    ).rejects.toThrow('Проверка области прервана');
+    expect(next).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the old index guard for null or missing progress keys', async () => {
+    const first = variantResponse(
+      keyedDomain('tree:0', 768),
+      keyedDomain('shrub:0', 768),
+    );
+    first.search_domains!.forEach((domain) => {
+      domain.progress_key = null;
+    });
+    const second = variantResponse(
+      keyedDomain('tree:0', 1024, true),
+      keyedDomain('tree:1', 64),
+      keyedDomain('shrub:0', 896),
+    );
+    second.search_domains!.forEach((domain) => {
+      delete domain.progress_key;
+    });
+    const next = vi
+      .fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
+    await expect(
+      completeSearchDomainPreview(next, new AbortController().signal),
+    ).rejects.toThrow('Проверка области прервана');
+    expect(next).toHaveBeenCalledTimes(2);
+  });
+});

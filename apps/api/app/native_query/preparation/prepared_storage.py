@@ -21,6 +21,7 @@ from math import copysign, inf, isfinite
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import RLock, local
+from time import perf_counter
 from typing import Any, BinaryIO, overload
 
 import ijson
@@ -53,6 +54,7 @@ from app.projects.resource_scope import (
     project_resource_scope,
     register_project_resource,
 )
+from app.shared.performance import performance_span, performance_stage, record_hash
 
 PREPARED_SQLITE_FORMAT = "green-atlas.prepared-sqlite/1"
 PREPARED_SQLITE_BUILDER = "prepared-projection-wkb-rtree/1"
@@ -82,13 +84,18 @@ def _fingerprint(stream: BinaryIO) -> Fingerprint:
 
 
 def _digest(stream: BinaryIO) -> str:
-    stream.seek(0)
-    result = sha256()
-    while data := stream.read(_CHUNK):
-        check_operation_cancelled()
-        result.update(data)
-    stream.seek(0)
-    return result.hexdigest()
+    started, byte_count = perf_counter(), 0
+    try:
+        stream.seek(0)
+        result = sha256()
+        while data := stream.read(_CHUNK):
+            check_operation_cancelled()
+            result.update(data)
+            byte_count += len(data)
+        stream.seek(0)
+        return result.hexdigest()
+    finally:
+        record_hash(byte_count, perf_counter() - started)
 
 
 def _address(item: QueryObject) -> bytes:
@@ -171,6 +178,7 @@ class _Registration:
 
 
 class _Builder:
+    @performance_span("native.binary.schema_rtree")
     def __init__(self, path: Path) -> None:
         self.connection = sqlite3.connect(path)
         self.records = self.faces = 0
@@ -260,6 +268,7 @@ class _Builder:
         )
         self.faces += 1
 
+    @performance_span("native.binary.import_json_wkb")
     def consume(self, stream: BinaryIO, key: str) -> PreparedSnapshot:
         values: dict[str, Any] = {}
         events = iter(ijson.parse(stream, use_float=False))
@@ -373,6 +382,7 @@ class _Builder:
             elif record.reason or not row[2]:
                 raise ValueError("Контекст границы не имеет проверенной геометрии")
 
+    @performance_span("native.binary.finalize_index")
     def finish(
         self, header: PreparedSnapshot, source_sha256: str, payload_sha256: str
     ) -> None:
@@ -488,6 +498,7 @@ class _FaceSequence(Sequence[NativeFace]):
 
 
 class SqlitePreparedResource:
+    @performance_span("native.binary.schema_read")
     def __init__(
         self,
         store: PreparedSqliteStore,
@@ -638,6 +649,52 @@ class SqlitePreparedResource:
                 for row in rows:
                     yield _OBJECT.validate_json(row[0])
 
+    def iter_coverage_records(
+        self,
+    ) -> Iterator[tuple[PreparedObject, tuple[bytes, ...], int]]:
+        """Stream records and their WKB in ordinal order for first-pass coverage.
+
+        The single verified connection avoids a separate indexed lookup and
+        file-fingerprint checks for every source object. The source and binary
+        SHA are still checked when the read scope opens and closes.
+        """
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "SELECT r.ordinal,r.metadata,r.projection,g.wkb "
+                "FROM records r LEFT JOIN geometries g ON g.ordinal=r.ordinal "
+                "ORDER BY r.ordinal,g.part"
+            )
+            ordinal = None
+            record = None
+            projection = 0
+            encoded: list[bytes] = []
+            for row in cursor:
+                if row[0] != ordinal:
+                    if record is not None:
+                        yield record, tuple(encoded), projection
+                    check_operation_cancelled()
+                    ordinal = row[0]
+                    record = _OBJECT.validate_json(row[1])
+                    projection = row[2]
+                    encoded = []
+                if row[3] is not None:
+                    encoded.append(row[3])
+            if record is not None:
+                yield record, tuple(encoded), projection
+
+    @staticmethod
+    def coverage_projection(
+        record: PreparedObject, encoded: tuple[bytes, ...], projection: int
+    ) -> Projection:
+        if projection == -1:
+            raise ValueError("Справочный объект не содержит расчётную проекцию")
+        return Projection(
+            tuple(from_wkb(blob) for blob in encoded),
+            record.tolerance_m,
+            record.reason,
+            record.detail,
+        )
+
     def iter_face_routes(self) -> Iterator[tuple[int, tuple[str, ...]]]:
         """Покрытию нужны адреса native-области без её контура отображения.
 
@@ -778,6 +835,7 @@ class PreparedSqliteStore:
                     "Расчётный ресурс содержит незарегистрированный журнал"
                 )
 
+    @performance_span("native.binary.open")
     def open(
         self, source_path: Path, key: str, *, project_id: str | None = None
     ) -> SqlitePreparedResource:
@@ -801,11 +859,12 @@ class PreparedSqliteStore:
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         registration_path = direct_path(self.root / f"{key}.json", self.root)
         with cancellable_lock(self._lock):
-            with read_regular(source) as stream:
-                observed = _fingerprint(stream)
-                source_sha256 = _digest(stream)
-                if _fingerprint(stream) != observed:
-                    raise PreparedGeometryUnavailable("corrupt")
+            with performance_stage("native.source.verify"):
+                with read_regular(source) as stream:
+                    observed = _fingerprint(stream)
+                    source_sha256 = _digest(stream)
+                    if _fingerprint(stream) != observed:
+                        raise PreparedGeometryUnavailable("corrupt")
             try:
                 value = read_prepared_registration(
                     self.database_path, key, source_sha256
@@ -835,6 +894,7 @@ class PreparedSqliteStore:
                 self._publish_registration(registration_path, registration)
                 return resource
 
+    @performance_span("native.binary.verify_open")
     def _open_resource(
         self, source: Path, registration: _Registration, source_fingerprint: Fingerprint
     ) -> SqlitePreparedResource:
@@ -852,6 +912,7 @@ class PreparedSqliteStore:
             self, source, path, registration, source_fingerprint, observed
         )
 
+    @performance_span("native.binary.build")
     def _build(self, source: Path, key: str) -> _Registration:
         from app.native_query.preparation.prepared_stream import open_prepared_payload
 

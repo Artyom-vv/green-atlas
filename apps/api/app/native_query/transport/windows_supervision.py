@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -12,6 +13,7 @@ from app.native_query.transport.process_contracts import (
     NativeQueryProcessConfig,
 )
 from app.native_query.transport.process_control import CoreStop, checkpoint
+from app.shared.failures import DomainFailure
 
 
 class OwnedChild(Protocol):
@@ -23,6 +25,48 @@ class OwnedChild(Protocol):
     def terminate_all(self) -> None: ...
     def wait(self, timeout: float) -> int | None: ...
     def close(self) -> None: ...
+
+
+@dataclass
+class CompletedJobCleanup:
+    """Разрешение для одного задания с проверкой завершённого CAD-результата.
+
+    Это не признак успеха Core. Проверка вызывается перед очисткой и независимо
+    после неё; сигналы остаются в квитанции. Без этого разрешения supervisor строгий.
+    """
+
+    validate: Callable[[], None]
+    attempted: bool = field(default=False, init=False)
+    confirmed: bool = field(default=False, init=False)
+    tree_empty: bool | None = field(default=None, init=False)
+    signals: tuple[str, ...] = field(default=(), init=False)
+    phase: str = field(default="supervision", init=False)
+    _used: bool = field(default=False, init=False, repr=False)
+
+    def accepts_signals(self, signals: tuple[str, ...]) -> bool:
+        return (
+            self.attempted
+            and self.confirmed
+            and self.tree_empty is True
+            and signals == self.signals == ("TerminateJobObject",)
+        )
+
+    def begin(self) -> None:
+        self.confirmed = False
+        if self._used:
+            raise CoreStop("invalid_input", "Completed job cleanup policy was reused")
+        self._used = True
+
+    def verify(self) -> None:
+        try:
+            self.validate()
+        except DomainFailure:
+            raise
+        except (OSError, ValueError) as error:
+            raise CoreStop(
+                "invalid_reply",
+                "Completed Core evidence failed independent verification",
+            ) from error
 
 
 def stop_owned(child: OwnedChild, grace: float, signals: list[str]) -> None:
@@ -47,8 +91,10 @@ def supervise(
     cancelled: Callable[[], bool] | None,
     output_names: tuple[str, ...],
     output_size: Callable[[Path, tuple[str, ...]], int],
+    *,
+    completed_cleanup: CompletedJobCleanup | None = None,
 ) -> tuple[NativeProcessFailure | None, bytes, tuple[str, ...]]:
-    """Сохранять прежние лимиты и отклонять успех лидера с живым потомком."""
+    """Сохранить лимиты и явно проверить разрешённую очистку после exit 0."""
     log = bytearray()
     signals: list[str] = []
     failure = None
@@ -63,16 +109,40 @@ def supervise(
 
     try:
         try:
+            if completed_cleanup is not None:
+                completed_cleanup.begin()
             while True:
                 drain()
                 checkpoint(started, config, cancelled)
                 if output_size(job, output_names) > config.max_reply_bytes:
-                    raise CoreStop("output_limit", "Native output exceeded its byte budget")
-                if child.poll() is not None:
+                    raise CoreStop(
+                        "output_limit", "Native output exceeded its byte budget"
+                    )
+                exit_code = child.poll()
+                if exit_code is not None:
                     if child.active_processes():
-                        raise CoreStop(
-                            "process_group_alive", "Core left live owned processes"
-                        )
+                        if exit_code != 0 or completed_cleanup is None:
+                            raise CoreStop(
+                                "process_group_alive", "Core left live owned processes"
+                            )
+                        completed_cleanup.phase = "completion_precheck"
+                        completed_cleanup.verify()
+                        checkpoint(started, config, cancelled)
+                        completed_cleanup.phase = "post_exit_cleanup"
+                        completed_cleanup.attempted = True
+                        completed_cleanup.tree_empty = False
+                        stop_owned(child, config.terminate_grace_seconds, signals)
+                        completed_cleanup.tree_empty = child.active_processes() == 0
+                        if not completed_cleanup.tree_empty or child.poll() != 0:
+                            raise CoreStop(
+                                "process_group_alive",
+                                "Owned post-exit cleanup was not confirmed",
+                            )
+                        checkpoint(started, config, cancelled)
+                        completed_cleanup.phase = "completion_postcheck"
+                        completed_cleanup.verify()
+                        checkpoint(started, config, cancelled)
+                        completed_cleanup.confirmed = True
                     break
                 time.sleep(config.poll_seconds)
         except CoreStop as error:
@@ -81,11 +151,15 @@ def supervise(
         try:
             try:
                 stop_owned(child, config.terminate_grace_seconds, signals)
+                if completed_cleanup is not None:
+                    completed_cleanup.tree_empty = child.active_processes() == 0
                 while drain():
                     pass
             except CoreStop as error:
                 failure = failure or error.failure
         finally:
+            if completed_cleanup is not None:
+                completed_cleanup.signals = tuple(signals)
             try:
                 child.close()
             finally:

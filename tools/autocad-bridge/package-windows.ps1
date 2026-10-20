@@ -1,11 +1,12 @@
 #requires -Version 7.0
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'OriginalNative')]
 param(
     [Parameter(Mandatory)][string]$SourceManifest,
-    [Parameter(Mandatory)][string]$Plugin,
+    [Parameter(Mandatory, ParameterSetName = 'OriginalNative')][string]$Plugin,
     [Parameter(Mandatory)][string]$DesktopHost,
     [Parameter(Mandatory)][string]$RuntimeExecutable,
-    [Parameter(Mandatory)][string]$CadWorker,
+    [Parameter(Mandatory, ParameterSetName = 'OriginalNative')][string]$CadWorker,
+    [Parameter(Mandatory, ParameterSetName = 'AcceptedNative131')][string]$AcceptedNativePackage,
     [Parameter(Mandatory)][string]$WebDirectory,
     [Parameter(Mandatory)][string]$VcRedistDirectory,
     [string]$AutoCADRoot,
@@ -55,7 +56,8 @@ try {
     [IO.File]::WriteAllText($prereqReceipt, ($prereq | ConvertTo-Json) + "`n", [Text.UTF8Encoding]::new($false))
     . ./scripts/windows-env.ps1
     $providerArguments = if ($AutoCADRoot) { @('--autocad', $AutoCADRoot) } else { @('--objectarx-sdk', $ObjectArxSdkRoot, '--objectarx-archive-sha256', $ObjectArxArchiveSha256) }
-    $bundle = & $BuildPython scripts/desktop/windows_bundle.py assemble --source-manifest $SourceManifest --gui $Plugin --host $DesktopHost --runtime $RuntimeExecutable --worker $CadWorker --web $WebDirectory --crt $VcRedistDirectory @providerArguments --webview-installer $WebView2Installer --webview-receipt $prereqReceipt --output (Join-Path $build 'payload')
+    $nativeArguments = if ($PSCmdlet.ParameterSetName -eq 'AcceptedNative131') { @('--accepted-native-package', $AcceptedNativePackage) } else { @('--gui', $Plugin, '--worker', $CadWorker) }
+    $bundle = & $BuildPython scripts/desktop/windows_bundle.py assemble --source-manifest $SourceManifest @nativeArguments --host $DesktopHost --runtime $RuntimeExecutable --web $WebDirectory --crt $VcRedistDirectory @providerArguments --webview-installer $WebView2Installer --webview-receipt $prereqReceipt --output (Join-Path $build 'payload')
     if ($LASTEXITCODE -ne 0) { throw 'Сборка payload или preflight завершились с ошибкой.' }
     $bundle = ([string]$bundle).Trim()
     $dependency = Get-Content -LiteralPath (Join-Path $bundle 'Contents/Windows/dependency-inventory.json') -Raw | ConvertFrom-Json

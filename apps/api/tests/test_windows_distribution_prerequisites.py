@@ -221,6 +221,7 @@ def test_setup_wires_machine_confirmation_only_for_interactive_install(tmp_path,
     monkeypatch.setattr(setup, "assert_applications_closed", lambda: None)
     monkeypatch.setattr(setup, "keep_setup", lambda root: tmp_path / "Setup.exe")
     monkeypatch.setattr(setup, "load_owned_bundle", lambda source: None)
+    monkeypatch.setattr(setup, "prepare_profile", lambda: tmp_path / "payload/GreenAtlas.bundle")
     monkeypatch.setattr(setup, "write_install_receipt", lambda *args: None)
     monkeypatch.setattr(setup, "write_diagnostic", lambda *args: True)
     monkeypatch.setattr(setup, "message", lambda text, **kwargs: messages.append((text, kwargs)) or True)

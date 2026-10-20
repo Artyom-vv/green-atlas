@@ -41,6 +41,7 @@ from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 from app.regulations.placement_config import PLACEMENT_CONFIG
 from app.shared.messages import message
+from app.shared.performance import performance_span
 
 OperationFactory = Callable[[list[PatternCandidate], int], list[PlanObjectAddOperation]]
 CompiledZone = tuple[PlantingZoneAssignment, BaseGeometry, PreparedGeometry]
@@ -61,6 +62,7 @@ class GeometricSearchResult:
     trials: int
 
 
+@performance_span("search.geometric")
 def search_geometric_placement(
     project: Project,
     request: FillPatternRequest,

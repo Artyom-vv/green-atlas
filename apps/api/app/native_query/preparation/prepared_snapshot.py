@@ -11,7 +11,7 @@ from dataclasses import dataclass as plain_dataclass
 from hashlib import sha256
 from pathlib import Path
 from threading import RLock, local
-from time import monotonic
+from time import monotonic, perf_counter
 from types import MappingProxyType
 from typing import TYPE_CHECKING, BinaryIO, Literal, NoReturn
 from uuid import uuid4
@@ -76,6 +76,7 @@ from app.projects.contracts import Project
 from app.projects.resource_lifecycle import ProjectResourceLifecycle
 from app.shared.error_messages import message
 from app.shared.failures import DomainFailure, FailureReason
+from app.shared.performance import record_hash
 
 if TYPE_CHECKING:
     from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
@@ -612,12 +613,17 @@ class PreparedStore:
     @staticmethod
     def _stream_digest(stream: BinaryIO) -> str:
         """Хешировать порциями с прежней проверкой отмены операции."""
-        digest = sha256()
-        while chunk := stream.read(CHECKPOINT_IO_BYTES):
+        started, byte_count = perf_counter(), 0
+        try:
+            digest = sha256()
+            while chunk := stream.read(CHECKPOINT_IO_BYTES):
+                check_operation_cancelled()
+                digest.update(chunk)
+                byte_count += len(chunk)
             check_operation_cancelled()
-            digest.update(chunk)
-        check_operation_cancelled()
-        return digest.hexdigest()
+            return digest.hexdigest()
+        finally:
+            record_hash(byte_count, perf_counter() - started)
 
     def _content_digest(self, key: str) -> str | None:
         """Проверять байты с Windows HANDLE, запрещающим параллельную запись."""

@@ -64,6 +64,7 @@ try {
         (Join-Path $repository 'scripts/desktop/windows_product_install_smoke.py'),
         (Join-Path $repository 'scripts/desktop/windows_wizard_smoke.py'),
         (Join-Path $repository 'scripts/desktop/windows_upgrade_smoke.py'),
+        (Join-Path $repository 'scripts/desktop/windows_upgrade130_smoke.py'),
         (Join-Path $repository 'scripts/desktop/windows_upgrade124_smoke.py')
     )) { throw 'Для локального режима разрешены только известные install helpers.' }
     $output = if ([IO.Path]::IsPathRooted($OutputDirectory)) { [IO.Path]::GetFullPath($OutputDirectory) } else { [IO.Path]::GetFullPath((Join-Path $repository $OutputDirectory)) }

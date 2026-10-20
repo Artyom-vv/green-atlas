@@ -45,6 +45,7 @@ from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 from app.native_query.search.hybrid_domain import HybridSearch
 from app.operations.progress import ProgressReporter, WorkProgress
 from app.projects.contracts import Project
+from app.shared.performance import performance_span, performance_stage
 from app.validation.contracts import CalculationInputBasis
 
 MAX_CACHED_POINTS = MAX_CACHED_MEASUREMENT_POINTS
@@ -152,6 +153,7 @@ class PreparedGeometryEngine(PlacementPolicy):
     final_check = "prepared_geometry"
     sends_cad_queries = False
 
+    @performance_span("native.engine.init")
     def __init__(
         self,
         snapshot: PreparedSnapshot | SqlitePreparedResource,
@@ -234,11 +236,12 @@ class PreparedGeometryEngine(PlacementPolicy):
         """Строить индекс проверенных проекций при первом пространственном запросе."""
         with self._lock:
             if self._bounds_index_cache is None:
-                self._bounds_index_cache = (
-                    _SqliteBoundsIndex(self)
-                    if self._resource is not None
-                    else NativeBoundsIndex(self._objects, self._layers)
-                )
+                with performance_stage("native.spatial_index.init"):
+                    self._bounds_index_cache = (
+                        _SqliteBoundsIndex(self)
+                        if self._resource is not None
+                        else NativeBoundsIndex(self._objects, self._layers)
+                    )
             return self._bounds_index_cache
 
     def _bind_source_roles(self, project: Project) -> None:

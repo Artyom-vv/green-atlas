@@ -262,7 +262,10 @@ def main() -> int:
         require(home.name.startswith("ga-ci-") and roaming.is_relative_to(home) and local.is_relative_to(home),
                 "Known folders не принадлежат одноразовому CI профилю")
         installed = roaming / "Autodesk/ApplicationPlugins/GreenAtlas.bundle"
+        profile = local / "GreenAtlas"
         require(not installed.exists(), "Нужна новая учётная запись без установки")
+        require(not profile.exists() and not profile.is_symlink(),
+                "Первой установке нужен отсутствующий профиль GreenAtlas")
         # Системные компоненты WebView2 требуют полное окружение Windows, в том
         # числе SystemDrive, ProgramData и ProgramFiles. Никакого окружения runner.
         environment = profile_environment.copy()
@@ -270,10 +273,6 @@ def main() -> int:
             PATH=str(Path(os.environ["SystemRoot"]) / "System32"), TEMP=str(output.parent / "Temp"),
             TMP=str(output.parent / "Temp"), PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1")
         ui = NativeUI()
-        sentinel = local / "GreenAtlas/Workspace/ci-preserved.txt"
-        sentinel.parent.mkdir(parents=True)
-        sentinel.write_bytes(os.urandom(37))
-        preserved_sha = sha(sentinel)
         # Deliberately tiny file fixtures exercise configuration packaging, not
         # proprietary models or an actual Blender/AutoCAD rendering session.
         from app.desktop.dependencies import appearance_files
@@ -367,6 +366,8 @@ def main() -> int:
         ui.click(confirm, "Да", "Yes")
         require(cancelled.wait(timeout=20) != 0 and not installed.exists(), "Отмена опубликовала программу")
         require(not settings_file.exists(), "Отмена мастера записала настройки компонентов")
+        require(not profile.exists() and not profile.is_symlink(),
+                "Отмена до установки создала профиль GreenAtlas")
         report["cancel_before_install_passed"] = True
 
         actual = start(["/SP-", "/LOG=" + str(output / "install.log")])
@@ -407,7 +408,11 @@ def main() -> int:
         # Keep this gap explicit until the native installer pickers are exercised.
         report["wizard_browse_buttons_tested"] = False
         host = installed / "Contents/Windows/GreenAtlasDesktop.exe"
-        require(shortcut_target(roaming / "Microsoft/Windows/Start Menu/Programs/Green Atlas.lnk") == (str(host), ""), "Нет правильного меню Пуск")
+        start_menu_target, start_menu_arguments = shortcut_target(
+            roaming / "Microsoft/Windows/Start Menu/Programs/Green Atlas.lnk"
+        )
+        require((start_menu_target, start_menu_arguments) == (str(host), ""),
+                "Нет правильного меню Пуск")
         require(shortcut_target(desktop / "Green Atlas.lnk") == (str(host), ""), "Нет выбранного ярлыка на рабочем столе")
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
             uninstaller = Path(winreg.QueryValueEx(key, "NativeUninstaller")[0])
@@ -436,6 +441,34 @@ def main() -> int:
         wait_for(lambda: ui.text(app_window) == "Green Atlas — Готово", timeout=180,
                  reason="Установленный Desktop не подготовил API и WebView2")
         time.sleep(3)
+        app_memory = {"idle_rss_bytes": 0, "idle_private_bytes": 0,
+                      "peak_rss_bytes": 0, "peak_private_bytes": 0,
+                      "max_processes": 0, "samples": 0}
+
+        def sample_app_memory(*, idle=False):
+            try:
+                root = psutil.Process(app_pid)
+                processes = [root, *root.children(recursive=True)]
+            except psutil.Error:
+                return
+            rss = private = live = 0
+            for process in processes:
+                try:
+                    info = process.memory_info()
+                    rss += info.rss
+                    private += getattr(info, "private", 0)
+                    live += 1
+                except psutil.Error:
+                    continue
+            app_memory["samples"] += 1
+            app_memory["max_processes"] = max(app_memory["max_processes"], live)
+            app_memory["peak_rss_bytes"] = max(app_memory["peak_rss_bytes"], rss)
+            app_memory["peak_private_bytes"] = max(app_memory["peak_private_bytes"], private)
+            if idle:
+                app_memory["idle_rss_bytes"] = rss
+                app_memory["idle_private_bytes"] = private
+
+        sample_app_memory(idle=True)
         capture(app_window, "07-launched-app.png")
         component_script = REPO / "scripts/desktop/windows_component_ui_smoke.ps1"
         powershell = Path(environment["SYSTEMROOT"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
@@ -445,6 +478,7 @@ def main() -> int:
             captured = set()
             deadline = time.monotonic() + 480
             while component_process.poll() is None and time.monotonic() < deadline:
+                sample_app_memory()
                 step_path = output / "component-step.json"
                 if step_path.exists():
                     try:
@@ -462,18 +496,52 @@ def main() -> int:
             require(component_process.poll() is not None, "UI настроек не завершился вовремя")
         component_receipt = json.loads((output / "component-ui-receipt.json").read_text(encoding="utf-8-sig"))
         report["component_ui"] = component_receipt
+        report["app_process_tree_memory"] = app_memory
         component_error = ("UI настроек: " + component_receipt.get("error", "не выполнен")
                            if component_process.returncode != 0 or not component_receipt["passed"] else None)
         # Preserve independent update/uninstall and native wizard Browse evidence
         # even if the Desktop component-settings probe fails.
-        ui.user.PostMessageW(app_window, 0x10, 0, 0)
-        wait_for(lambda: not psutil.pid_exists(app_pid), timeout=45, reason="Собственный Desktop не завершился")
+        def close_application(hwnd: int) -> None:
+            pid = ui.pid(hwnd)
+            try:
+                root = psutil.Process(pid)
+                processes = [root, *root.children(recursive=True)]
+            except psutil.Error as error:
+                raise RuntimeError("Не найдено собственное дерево Desktop") from error
+            require(ui.user.PostMessageW(hwnd, 0x10, 0, 0), "Не отправлено закрытие Desktop")
+            wait_for(lambda: all(not process.is_running() for process in processes),
+                     timeout=45, reason="Собственные Desktop, API и WebView2 не завершились")
+
+        close_application(app_window)
         settings_sha = sha(settings_file)
         report["finish_launched_installed_application"] = True
         report["installed_api_and_webview_session_ready"] = True
-        require(sha(sentinel) == preserved_sha, "Установка изменила Workspace")
-        database = local / "GreenAtlas/Workspace/projects.sqlite3"
+        database = profile / "Workspace/projects.sqlite3"
         require(database.is_file(), "Запущенное приложение не создало свою БД")
+        report["clean_profile_first_install"] = True
+        # Ручные данные добавляем после подготовки чистого профиля установщиком
+        # и успешного запуска и закрытия API установленным Desktop.
+        sentinel = database.parent / "ci-preserved.txt"
+        with sentinel.open("xb") as stream:
+            stream.write(os.urandom(37))
+        preserved_sha = sha(sentinel)
+
+        # Проверяем обычный вход отдельно от кнопки «Готово» мастера Inno.
+        # Проверенная цель меню «Пуск» запускается без аргументов и подготовки,
+        # с обычными строгими проверками профиля установленного Desktop.
+        normal = subprocess.Popen([start_menu_target], env=environment, cwd=host.parent)
+        owned.append(normal)
+        normal_window = wait_for(launched_host, timeout=45,
+                                 reason="Обычный запуск не открыл установленный Desktop")
+        require(ui.pid(normal_window) in children(normal),
+                "Обычный запуск показал чужой Desktop")
+        wait_for(lambda: ui.text(normal_window) == "Green Atlas — Готово", timeout=180,
+                 reason="Обычный запуск не подготовил API и WebView2")
+        close_application(normal_window)
+        require(normal.wait(timeout=10) == 0, "Обычный Desktop завершился с ошибкой")
+        require(sha(sentinel) == preserved_sha, "Обычный запуск изменил Workspace sentinel")
+        require(sha(settings_file) == settings_sha, "Обычный запуск изменил пути компонентов")
+        report["normal_launch_after_finish"] = True
         database_sha = sha(database)
 
         # Тот же native EXE выполняет настоящую повторную установку.

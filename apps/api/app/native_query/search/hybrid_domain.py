@@ -34,6 +34,7 @@ from app.native_query.search.hybrid_geometry import (
 )
 from app.native_query.search.hybrid_jobs import Job
 from app.regulations.placement_config import PLACEMENT_CONFIG, PLACEMENT_RULES_REVISION
+from app.shared.performance import performance_span, performance_stage
 
 CONFIG = PLACEMENT_CONFIG.hybrid_search
 # Ревизия 2 меняет вывод роли поверхности по предмету перед «за» и «без борта».
@@ -91,6 +92,7 @@ def mask_input(engine, item, kind, radius, canopy, roots):
 
 
 class HybridSearch:
+    @performance_span("domain.init")
     def __init__(self, engine, project):
         self.projection = getattr(engine, "projection", None) or HybridGeometry(
             engine, project
@@ -197,6 +199,7 @@ class HybridSearch:
             self._mask_bytes += size
         return result, False
 
+    @performance_span("domain.batch")
     def _advance_batch(
         self,
         engine: Any,
@@ -218,7 +221,8 @@ class HybridSearch:
             tuple(value.key for value in inputs),
         )
         review_reach = review_reach_m(radius, canopy, roots)
-        constraints = self.constraint_unions.get(batch_key, review_reach)
+        with performance_stage("domain.batch.reusable_lookup", objects=len(batch)):
+            constraints = self.constraint_unions.get(batch_key, review_reach)
         if constraints is not None:
             hits = len(batch)
         else:
@@ -230,47 +234,54 @@ class HybridSearch:
                 [],
             )
             hits = 0
-            for item, value in zip(batch, inputs, strict=True):
-                mask, hit = self.mask(
-                    engine, item, kind, radius, canopy, roots, inputs=value
-                )
-                hits += hit
-                if mask.participation in {"review", "review_site"}:
-                    if mask.participation == "review_site":
-                        uncertain_sites.append(mask.geometry)
-                    else:
-                        reviews[mask.reason].append(mask.geometry)
-                    issues.append(
-                        {
-                            "routes": list(item.routes),
-                            "layer": item.layer,
-                            "reason": mask.reason,
-                            "detail": mask.detail,
-                            "localized": not mask.geometry.is_empty,
-                        }
+            with performance_stage("domain.batch.masks", objects=len(batch)):
+                for item, value in zip(batch, inputs, strict=True):
+                    mask, hit = self.mask(
+                        engine, item, kind, radius, canopy, roots, inputs=value
                     )
-                elif mask.participation == "site":
-                    sites.append(mask.geometry)
-                else:
-                    blocked.append(mask.geometry)
+                    hits += hit
+                    if mask.participation in {"review", "review_site"}:
+                        if mask.participation == "review_site":
+                            uncertain_sites.append(mask.geometry)
+                        else:
+                            reviews[mask.reason].append(mask.geometry)
+                        issues.append(
+                            {
+                                "routes": list(item.routes),
+                                "layer": item.layer,
+                                "reason": mask.reason,
+                                "detail": mask.detail,
+                                "localized": not mask.geometry.is_empty,
+                            }
+                        )
+                    elif mask.participation == "site":
+                        sites.append(mask.geometry)
+                    else:
+                        blocked.append(mask.geometry)
             # Порядок объектов и порционных объединений остаётся прежним.
-            constraints = BatchConstraints(
-                unary_union(blocked),
-                sites,
-                uncertain_sites,
-                {reason: unary_union(parts) for reason, parts in reviews.items()},
-                issues,
-            )
-            self.constraint_unions.remember(batch_key, review_reach, constraints)
-        job.blocked.append(constraints.blocked.intersection(work))
-        job.sites.extend(constraints.sites)
-        job.uncertain_sites.extend(constraints.uncertain_sites)
-        for reason, review_geometry in constraints.reviews.items():
-            job.reviews[reason].append(review_geometry.intersection(work))
-        job.issues.extend(constraints.issues)
-        job.cache_hits += hits
-        job.processed += len(batch)
+            with performance_stage("domain.batch.union", objects=len(batch)):
+                constraints = BatchConstraints(
+                    unary_union(blocked),
+                    sites,
+                    uncertain_sites,
+                    {reason: unary_union(parts) for reason, parts in reviews.items()},
+                    issues,
+                )
+            with performance_stage("domain.batch.cache_store", objects=len(batch)):
+                self.constraint_unions.remember(batch_key, review_reach, constraints)
+        with performance_stage(
+            "domain.batch.clip", objects=len(batch), cache_hits=hits
+        ):
+            job.blocked.append(constraints.blocked.intersection(work))
+            job.sites.extend(constraints.sites)
+            job.uncertain_sites.extend(constraints.uncertain_sites)
+            for reason, review_geometry in constraints.reviews.items():
+                job.reviews[reason].append(review_geometry.intersection(work))
+            job.issues.extend(constraints.issues)
+            job.cache_hits += hits
+            job.processed += len(batch)
 
+    @performance_span("domain.advance")
     def advance(self, engine, project, geometry, radius, kind, canopy, roots):
         start = monotonic()
         if any(not isfinite(v) or v < 0 for v in (radius, canopy, roots)):
@@ -306,23 +317,28 @@ class HybridSearch:
         store = engine._domain_checkpoints
         job = self.jobs.get(key)
         if job is None:
-            saved = store.load(key) if store else None
+            with performance_stage("domain.checkpoint.load"):
+                saved = store.load(key) if store else None
             if saved is not None and "result" in saved:
                 return saved["result"]
             reach = query_reach_m(radius, canopy, roots) / engine.factor
             bounds = tuple(v / engine.factor for v in work.bounds)
-            items = tuple(
-                item
-                for item in engine._bounds_index.window(bounds, reach)
-                if not (
-                    engine._layers.get(item.layer)
-                    and engine._layers[item.layer].mapping_confirmed
-                    and engine._layers[item.layer].mapped_kind in {"ignore", "lawn"}
+            with performance_stage("domain.items.select"):
+                items = tuple(
+                    item
+                    for item in engine._bounds_index.window(bounds, reach)
+                    if not (
+                        engine._layers.get(item.layer)
+                        and engine._layers[item.layer].mapping_confirmed
+                        and engine._layers[item.layer].mapped_kind in {"ignore", "lawn"}
+                    )
                 )
-            )
             job = Job(items)
             if saved is not None:
-                job.restore(saved["job"])
+                with performance_stage(
+                    "domain.checkpoint.restore", total=len(job.items)
+                ):
+                    job.restore(saved["job"])
             self.jobs[key] = job
         self.jobs.move_to_end(key)
         for previous_key, previous in list(self.jobs.items()):
@@ -333,43 +349,63 @@ class HybridSearch:
             if previous.result is None:
                 if store is None:
                     continue  # Без дискового хранения незавершённая работа должна оставаться в памяти.
-                store.save(previous_key, {"job": previous.checkpoint()})
+                with performance_stage(
+                    "domain.checkpoint.save_pending",
+                    processed=previous.processed,
+                    total=len(previous.items),
+                    cache_hits=previous.cache_hits,
+                ):
+                    store.save(previous_key, {"job": previous.checkpoint()})
             del self.jobs[previous_key]
         if job.result is not None:
             return job.result
         # Публикуем ограниченные завершённые порции. Медленная порция не объявляет
         # непроверенные объекты проверенными или подходящую площадь нулевой.
         initial = job.processed
-        while job.processed < len(job.items):
-            batch = job.items[job.processed : job.processed + CONFIG.batch_objects]
-            self._advance_batch(engine, job, work, batch, radius, kind, canopy, roots)
-            if monotonic() - start >= CONFIG.yield_seconds:
-                break
+        with performance_stage(
+            "domain.processing",
+            processed=job.processed,
+            total=len(job.items),
+            cache_hits=job.cache_hits,
+        ):
+            while job.processed < len(job.items):
+                batch = job.items[job.processed : job.processed + CONFIG.batch_objects]
+                self._advance_batch(
+                    engine, job, work, batch, radius, kind, canopy, roots
+                )
+                if monotonic() - start >= CONFIG.yield_seconds:
+                    break
         complete = job.processed == len(job.items)
-        if complete:
-            possible = work.difference(unary_union(job.blocked))
-            # Неизвестная или отсутствующая граница не доказывает положение вне территории.
-            if job.sites:
-                site = unary_union(job.sites)
-                # Как в итоговой проверке принадлежности, достаточно одной известной внешней
-                # границы. Незамкнутый посторонний контур её не отменяет.
-                uncertain_site = unary_union(job.uncertain_sites).difference(site)
-                possible = possible.intersection(site.union(uncertain_site))
-                job.reviews["site_membership"].append(uncertain_site)
+        with performance_stage(
+            "domain.finalize",
+            processed=job.processed,
+            total=len(job.items),
+            cache_hits=job.cache_hits,
+        ):
+            if complete:
+                possible = work.difference(unary_union(job.blocked))
+                # Неизвестная или отсутствующая граница не доказывает положение вне территории.
+                if job.sites:
+                    site = unary_union(job.sites)
+                    # Как в итоговой проверке принадлежности, достаточно одной известной внешней
+                    # границы. Незамкнутый посторонний контур её не отменяет.
+                    uncertain_site = unary_union(job.uncertain_sites).difference(site)
+                    possible = possible.intersection(site.union(uncertain_site))
+                    job.reviews["site_membership"].append(uncertain_site)
+                else:
+                    job.reviews["site_membership"].append(work)
+                free = possible
+                reason_areas = {}
+                for reason in sorted(job.reviews):
+                    affected = free.intersection(unary_union(job.reviews[reason]))
+                    if not affected.is_empty and affected.area > 0:
+                        reason_areas[reason] = affected.area
+                    free = free.difference(affected)
+                unknown, pending = possible.difference(free), empty_area()
+                excluded_area = max(0.0, work.area - possible.area)
             else:
-                job.reviews["site_membership"].append(work)
-            free = possible
-            reason_areas = {}
-            for reason in sorted(job.reviews):
-                affected = free.intersection(unary_union(job.reviews[reason]))
-                if not affected.is_empty and affected.area > 0:
-                    reason_areas[reason] = affected.area
-                free = free.difference(affected)
-            unknown, pending = possible.difference(free), empty_area()
-            excluded_area = max(0.0, work.area - possible.area)
-        else:
-            free, unknown, pending = empty_area(), empty_area(), work
-            reason_areas, excluded_area = {}, 0.0
+                free, unknown, pending = empty_area(), empty_area(), work
+                reason_areas, excluded_area = {}, 0.0
         job.elapsed += monotonic() - start
         result = {
             **mapping(free),
@@ -400,7 +436,13 @@ class HybridSearch:
         if complete:
             engine.assert_current(project)
             if store:
-                store.save(key, {"result": result})
+                with performance_stage(
+                    "domain.checkpoint.save_result",
+                    processed=job.processed,
+                    total=len(job.items),
+                    cache_hits=job.cache_hits,
+                ):
+                    store.save(key, {"result": result})
             job.result = result
             # Завершённая область хранит результат без промежуточных объединений.
             job.blocked.clear()

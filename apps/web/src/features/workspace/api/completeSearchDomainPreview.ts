@@ -10,6 +10,11 @@ const completedWork = (
 ) =>
   domain.method === 'hybrid' ? domain.processed_objects : domain.measured_cells;
 
+const progressKey = (
+  domain: NonNullable<PatternPreview['search_domains']>[number],
+  index: number,
+) => JSON.stringify([domain.zone_id, domain.progress_key ?? index]);
+
 type DomainPreview = Pick<PatternPreview, 'search_domains' | 'change_set'>;
 
 /** Продолжение подготовки областей для всех вариантов размещения. Неопределённая
@@ -42,18 +47,18 @@ export async function completeSearchDomainPreview<
     if (previous) {
       const prior = new Map(
         previous.search_domains?.map((domain, index) => [
-          `${domain.zone_id}:${index}`,
+          progressKey(domain, index),
           domain,
         ]),
       );
-      // Автоподбор возвращает варианты в устойчивом порядке: дерево и кустарник
-      // могут проверять один участок с одинаковой ревизией общей геометрии.
+      // Очереди текущего и базового горизонтов разных вариантов могут добавляться
+      // и завершаться независимо. Старые серверы используют прежний индекс.
       const advanced = result.search_domains?.some((domain, index) => {
-        const before = prior.get(`${domain.zone_id}:${index}`);
+        const before = prior.get(progressKey(domain, index));
         return !before || completedWork(domain) > completedWork(before);
       });
       const regressed = result.search_domains?.some((domain, index) => {
-        const before = prior.get(`${domain.zone_id}:${index}`);
+        const before = prior.get(progressKey(domain, index));
         return (
           before &&
           (domain.revision !== before.revision ||

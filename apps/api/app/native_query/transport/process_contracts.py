@@ -229,6 +229,9 @@ class NativeProcessReceipt:
     diagnostics: tuple[str, ...]
     lifecycle_verified: bool = False
     scope: str = "selected_instance_measurements_only; not a capture receipt"
+    cleanup_attempted: bool = False
+    cleanup_confirmed: bool = False
+    tree_empty: bool | None = None
 
 
 @dataclass(frozen=True)

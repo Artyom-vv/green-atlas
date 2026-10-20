@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class SearchDomain(BaseModel):
     zone_id: str
+    progress_key: str | None = Field(default=None, min_length=1, max_length=96)
     revision: str
     geometry: dict[str, Any]
     unresolved_geometry: dict[str, Any]

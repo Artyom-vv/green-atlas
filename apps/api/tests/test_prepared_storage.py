@@ -19,6 +19,7 @@ from test_native_live_provider import setup as setup
 
 from app.dxf_import.layers.contracts import LayerKind
 from app.native_query.live.live_inventory import QueryObject
+from app.native_query.measurement.prepared_provider import PreparedGeometryEngine
 from app.native_query.policy.source_participation import (
     SourceParticipation,
     SourceUse,
@@ -81,6 +82,7 @@ def test_binary_verified_identity_is_accepted_by_the_source_store(saved):
     assert store.unchanged(snapshot.key)
     assert store.verified_fingerprint(snapshot.key) == actual.source_fingerprint
     actual.assert_unchanged()
+
 
 def test_bound_prepared_and_binary_resources_are_deleted_and_late_writers_refused(
     saved, tmp_path
@@ -165,6 +167,62 @@ def test_binary_resource_preserves_metadata_projection_order_and_source(saved):
     assert actual.records[1:] == tuple(actual.records)[1:]
     with pytest.raises(IndexError):
         _ = actual.records[len(actual.records)]
+
+
+def test_streamed_coverage_projection_matches_verified_individual_lookup(saved):
+    snapshot, _, _ = saved
+    actual = resource(saved)
+    rows = list(actual.iter_coverage_records())
+    assert [record.item for record, _, _ in rows] == [
+        record.item for record in snapshot.records
+    ]
+    for record, encoded, marker in rows:
+        if marker == -1:
+            with pytest.raises(ValueError, match="Справочный объект"):
+                actual.coverage_projection(record, encoded, marker)
+            continue
+        projection = actual.coverage_projection(record, encoded, marker)
+        individual = actual.get(record.item)
+        assert (
+            projection.reason,
+            projection.detail,
+            projection.tolerance_m,
+            [geometry.wkb for geometry in projection.geometries],
+        ) == (
+            individual.reason,
+            individual.detail,
+            individual.tolerance_m,
+            [geometry.wkb for geometry in individual.geometries],
+        )
+
+
+def test_coverage_consumer_error_closes_stream_with_retained_traceback(
+    saved, setup, monkeypatch
+):
+    actual = resource(saved)
+    project = setup[2]
+    engine = PreparedGeometryEngine(actual, project)
+    connections = []
+    connect = sqlite3.connect
+
+    def tracked(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    def reject_record(_record):
+        raise RuntimeError("coverage consumer failed")
+
+    monkeypatch.setattr(sqlite3, "connect", tracked)
+    monkeypatch.setattr(engine, "_materialize_record", reject_record)
+    with pytest.raises(RuntimeError, match="coverage consumer failed") as error:
+        engine.source_coverage(project)
+    assert error.value.__traceback__ is not None
+    assert connections
+    assert getattr(actual._sessions, "active", None) is None
+    for connection in connections:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            connection.execute("SELECT 1")
 
 
 def test_confirmed_reference_keeps_ledger_without_physical_projection(setup, tmp_path):
@@ -400,6 +458,19 @@ def test_cached_projection_cannot_mask_mutated_resources(saved, target):
     os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1))
     with pytest.raises(PreparedGeometryUnavailable):
         actual.get(item)
+
+
+@pytest.mark.parametrize("target", ["source", "binary"])
+def test_streamed_coverage_rejects_mutated_resources(saved, target):
+    actual = resource(saved)
+    path = actual.source if target == "source" else actual.path
+    before = path.stat()
+    with path.open("r+b") as stream:
+        stream.seek(-1, 2)
+        stream.write(b"x")
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1))
+    with pytest.raises(PreparedGeometryUnavailable):
+        list(actual.iter_coverage_records())
 
 
 def test_derivative_corruption_rebuilds_only_from_original_source(saved):

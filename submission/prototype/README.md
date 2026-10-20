@@ -1,9 +1,9 @@
-# Прототип Green Atlas, Windows 0.1.130
+# Прототип Green Atlas, Windows 0.1.133
 
-**[Скачать установщик Windows x64](https://github.com/Artyom-vv/green-atlas/releases/download/v0.1.130-windows/GreenAtlas-0.1.130-Windows-x64-Setup-2.exe)**
+**[Скачать установщик Windows x64](https://github.com/Artyom-vv/green-atlas/releases/download/v0.1.133-windows/GreenAtlas-0.1.133-Windows-x64-Setup-2.exe)**
 
-[Выпуск и результаты проверок](https://github.com/Artyom-vv/green-atlas/releases/tag/v0.1.130-windows).
-[Версия исходников и SHA-256 установщика](Windows-0.1.130-SOURCE.json).
+[Выпуск и результаты проверок](https://github.com/Artyom-vv/green-atlas/releases/tag/v0.1.133-windows).
+[Версия исходников и SHA-256 установщика](Windows-0.1.133-SOURCE.json).
 
 ## Установка и первый проект
 
@@ -42,11 +42,14 @@ Botaniq и PBR нужны для детального оформления; Blen
 образец настроек и инструкция. Самих AutoCAD и Blender в нём нет.
 
 Проекты и расчёты хранятся локально. Для AI, адресного поиска и внешних
-картографических данных нужен интернет. Сборка предварительная: установка
-и локальные операции проверены; полный путь с настоящими AutoCAD и Blender
-на Windows-сборщике не проверялся. Подробности — на странице выпуска.
+картографических данных нужен интернет. Сборка предварительная: проверены
+установка, обновление и сохранение данных. Полный CAD-сценарий через окно
+приложения и рендер Blender на Windows пока не квалифицированы.
+Подробности — на странице выпуска.
 
 ## Остальные материалы
+
+- [Предыдущий Windows 0.1.130](https://github.com/Artyom-vv/green-atlas/releases/tag/v0.1.130-windows).
 
 - [Демка 35 секунд и скриншоты](../materials/README.md).
 - [Подробная настройка рендера](../../docs/obsidian/03%20Модули/Рендер%20сцены.md).
@@ -54,4 +57,4 @@ Botaniq и PBR нужны для детального оформления; Blen
   [Windows 0.1.42](GreenAtlas-AutoCAD-Windows-0.1.42.zip).
 - [Исторические материалы рендера](render-demo/README.md).
 
-Для текущей Windows-проверки используйте установщик 0.1.130 в начале страницы.
+Для текущей Windows-проверки используйте установщик 0.1.133 в начале страницы.

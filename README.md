@@ -1,7 +1,7 @@
 # Green Atlas
 
 Публичный срез для ЛЦТ 2026, обновлён 20 октября 2026 года. Исходники
-соответствуют Windows 0.1.130. [Установщик и инструкция](submission/prototype/README.md),
+соответствуют Windows 0.1.133. [Установщик и инструкция](submission/prototype/README.md),
 [презентация PDF/PPTX](submission/presentation/README.md),
 [демка 35 секунд, ресурсы 3D и скриншоты](submission/materials/README.md).
 

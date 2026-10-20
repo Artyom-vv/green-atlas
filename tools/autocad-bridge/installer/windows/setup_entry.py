@@ -6,14 +6,17 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import sys
 import uuid
 from dataclasses import asdict
 from pathlib import Path
+from time import monotonic, sleep
 
 from app.distribution.preflight import manifest_identity
 from app.distribution.windows_install import (
+    BundleAccessError,
     BundleInstaller,
     load_owned_bundle,
     plain_directory,
@@ -29,6 +32,7 @@ from app.distribution.windows_shell import (
     require_windows_user,
     write_diagnostic,
 )
+from app.shared.windows_process import launch_owned
 
 
 def entry_present(path: Path) -> bool:
@@ -152,6 +156,100 @@ def purge_setup_versions(installer_root: Path, *, keep: tuple[Path, ...] = ()) -
     return tuple(removed)
 
 
+def prepare_profile() -> Path:
+    """Проверить включённый native helper до создания каталогов установщика."""
+    if not getattr(sys, "frozen", False) or not hasattr(sys, "_MEIPASS"):
+        raise ValueError(
+            "Для подготовки профиля запустите собранный GreenAtlasSetup.exe"
+        )
+    local = Path(os.environ["LOCALAPPDATA"])
+    if not local.is_absolute():
+        raise ValueError("Не определён полный путь локального профиля Windows")
+    expected = os.path.normcase(os.path.abspath(local / "GreenAtlas"))
+    source = Path(sys._MEIPASS) / "payload/GreenAtlas.bundle"
+    load_owned_bundle(source)
+    executable = source / "Contents/Windows/GreenAtlasDesktop.exe"
+    output = bytearray()
+    deadline = monotonic() + 30
+    with launch_owned(
+        [str(executable), "--prepare-profile"], cwd=executable.parent
+    ) as process:
+        while True:
+            if monotonic() >= deadline:
+                raise RuntimeError(
+                    "Подготовка приватного профиля превысила время ожидания"
+                )
+            chunk = process.read_available(16385 - len(output))
+            output.extend(chunk)
+            if len(output) > 16384:
+                raise ValueError("Ответ подготовки профиля превышает допустимый размер")
+            code = process.poll()
+            if code is not None and not chunk and process.active_processes() == 0:
+                break
+            sleep(0.01)
+
+    def unique_object(pairs):
+        value = dict(pairs)
+        if len(value) != len(pairs):
+            raise ValueError("Повторён ключ подтверждения профиля")
+        return value
+
+    try:
+        receipt = json.loads(output, object_pairs_hook=unique_object)
+    except (UnicodeError, ValueError):
+        raise ValueError(
+            "Не получено подтверждение подготовки приватного профиля"
+        ) from None
+    if (
+        code != 0
+        and isinstance(receipt, dict)
+        and set(receipt) == {"schema", "prepared", "error"}
+        and receipt["schema"] == "green-atlas.desktop-profile/1"
+        and receipt["prepared"] is False
+        and isinstance(receipt["error"], dict)
+        and set(receipt["error"]) == {"code", "role", "win32_error"}
+    ):
+        error = receipt["error"]
+        if (
+            isinstance(error["code"], str)
+            and re.fullmatch(r"PROFILE_[A-Z0-9_]{1,64}", error["code"])
+            and isinstance(error["role"], str)
+            and error["role"]
+            in {
+                "profile",
+                "Workspace",
+                "Transfers",
+                "WebView2",
+                "Logs",
+                "Installer",
+                "ancestor",
+                "token",
+            }
+            and type(error["win32_error"]) is int
+            and 0 <= error["win32_error"] <= 0xFFFFFFFF
+        ):
+            raise ValueError(
+                f"Не удалось безопасно подготовить профиль Green Atlas: {error['role']}, "
+                f"{error['code']}, Win32 {error['win32_error']}. Установка остановлена"
+            )
+    if (
+        code != 0
+        or not isinstance(receipt, dict)
+        or set(receipt) != {"schema", "prepared", "profile"}
+        or receipt.get("schema") != "green-atlas.desktop-profile/1"
+        or receipt.get("prepared") is not True
+        or not isinstance(receipt.get("profile"), str)
+        or not 1 <= len(receipt["profile"]) <= 8192
+        or any(ord(character) < 32 for character in receipt["profile"])
+        or not Path(receipt["profile"]).is_absolute()
+        or os.path.normcase(os.path.abspath(receipt["profile"])) != expected
+    ):
+        raise ValueError(
+            "Не подтверждён приватный профиль текущего пользователя; установка остановлена"
+        )
+    return source
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Установка Green Atlas для текущего пользователя")
     actions = parser.add_mutually_exclusive_group()
@@ -159,6 +257,7 @@ def main() -> int:
     actions.add_argument("--rollback", action="store_true")
     actions.add_argument("--purge-app-backups", action="store_true")
     actions.add_argument("--status-json", action="store_true")
+    actions.add_argument("--prepare-profile", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--native-uninstaller", type=Path)
     parser.add_argument("--progress", action="store_true")
@@ -167,6 +266,8 @@ def main() -> int:
     parser.add_argument("--dependency-file", type=Path)
     parser.add_argument("--dependency-result", type=Path)
     args = parser.parse_args()
+    if args.prepare_profile and (args.dependency_action or args.check_closed):
+        parser.error("--prepare-profile используется отдельно от других проверок")
 
     def progress(stage: str) -> None:
         if args.progress:
@@ -177,6 +278,14 @@ def main() -> int:
 
     try:
         require_windows_user()
+        if args.prepare_profile:
+            with installation_mutex():
+                progress("checking")
+                assert_applications_closed()
+                progress("profile")
+                prepare_profile()
+            write_diagnostic('{"ok":true}\n')
+            return 0
         if args.dependency_action:
             from app.distribution.dependency_setup import wizard_action
 
@@ -204,6 +313,10 @@ def main() -> int:
         with installation_mutex():
             progress("checking")
             assert_applications_closed()
+            source = None
+            if not (args.uninstall or args.rollback or args.purge_app_backups):
+                progress("profile")
+                source = prepare_profile()
             progress("saving")
             setup = keep_setup(installer_root)
             shell = WindowsShell(roaming, setup) if maintenance is None else WindowsShell(roaming, setup, uninstaller=maintenance)
@@ -234,9 +347,7 @@ def main() -> int:
                 backup = max(candidates, key=lambda path: path.stat().st_mtime_ns)
                 receipt = engine.rollback(backup, publish_shell=publish, before_publish=assert_applications_closed)
             else:
-                extracted = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-                source = extracted / "payload/GreenAtlas.bundle"
-                load_owned_bundle(source)
+                assert source is not None
                 confirm_elevation = None if args.quiet else lambda: message(
                     "На компьютере установлена системная версия Microsoft WebView2, "
                     "которую нужно обновить. Запустить включённый установщик Microsoft "
@@ -274,12 +385,15 @@ def main() -> int:
                 message("Green Atlas готов к запуску из меню Пуск или AutoCAD. Рабочий профиль сохранён.")
         return 0
     except (OSError, ValueError, RuntimeError, KeyError) as error:
+        detail = str(error)
+        if isinstance(error, OSError) and getattr(error, "winerror", None) in {5, 32, 33}:
+            detail = str(BundleAccessError(error.winerror))
         if args.progress:
-            write_diagnostic("GA_ERROR:" + str(error).removeprefix("needs_machine_prerequisite_upgrade: ").replace("\r", " ").replace("\n", " ")[:8192] + "\n")
+            write_diagnostic("GA_ERROR:" + detail.removeprefix("needs_machine_prerequisite_upgrade: ").replace("\r", " ").replace("\n", " ")[:8192] + "\n")
         if args.quiet:
-            write_diagnostic(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False) + "\n", error=True)
+            write_diagnostic(json.dumps({"ok": False, "error": detail}, ensure_ascii=False) + "\n", error=True)
         elif os.name == "nt":
-            message(str(error).removeprefix("needs_machine_prerequisite_upgrade: "), error=True)
+            message(detail.removeprefix("needs_machine_prerequisite_upgrade: "), error=True)
         return 1
 
 

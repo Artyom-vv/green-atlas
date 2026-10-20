@@ -26,6 +26,7 @@ from app.projects.ports import ProjectSnapshotRepository
 from app.shared.error_messages import public_failure_message
 from app.shared.failures import FailureReason, ResourceNotFound
 from app.shared.messages import message
+from app.shared.operation_diagnostics import record_operation_failure
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -238,6 +239,13 @@ class OperationLifecycle:
 
     def fail(self, operation_id: str, stage: str, code: str, error: Exception) -> None:
         current = self.operations.get(operation_id)
+        diagnostic_saved = record_operation_failure(
+            operation_id,
+            code=code,
+            error=error,
+            project_id=current.project_id,
+            kind=str(current.kind),
+        )
         _LOGGER.error(
             "Operation %s failed (%s)",
             operation_id,
@@ -252,7 +260,13 @@ class OperationLifecycle:
                 stage=stage,
                 progress_mode=current.progress_mode,
                 error=OperationError(
-                    code=code, message=public_failure_message(error, "operation_failed")
+                    code=code,
+                    message=public_failure_message(
+                        error,
+                        "operation_failed"
+                        if diagnostic_saved
+                        else "operation_failed_without_log",
+                    ),
                 ),
             )
         except OperationCancelled:

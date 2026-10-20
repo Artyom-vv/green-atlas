@@ -39,6 +39,7 @@ from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 from app.regulations.placement_config import PLACEMENT_CONFIG
 from app.shared.failures import DomainFailure, FailureReason
+from app.shared.performance import performance_span
 
 CONFIG = PLACEMENT_CONFIG.candidate_search
 MIN_SEARCH_PROBES = CONFIG.minimum_probes
@@ -70,6 +71,7 @@ class CandidateSearchResult:
     full_checked_count: int = 0
 
 
+@performance_span("search.candidates")
 def search_candidates(
     project: Project,
     operations: list[PlanObjectAddOperation],

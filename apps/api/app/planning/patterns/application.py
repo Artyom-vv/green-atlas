@@ -84,6 +84,7 @@ from app.projects.read_projection import read_verified_project
 from app.regulations.network_summary import network_review_reason
 from app.shared.failures import DomainFailure, FailureReason
 from app.shared.messages import message
+from app.shared.performance import performance_span
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ class _PatternGeneration:
     free_search: bool
     horizon_family: bool = False
     family_zones: list[PlantingZoneAssignment] | None = None
+    progress_zones: list[PlantingZoneAssignment] | None = None
 
 
 @dataclass(frozen=True)
@@ -330,6 +332,18 @@ def _select_candidates(
     return _CandidateSelection(accepted_indices, allowed_by_zone, network_limitation)
 
 
+def _progress_domains(
+    zones: list[PlantingZoneAssignment], pattern_id: str
+) -> list[SearchDomain]:
+    # Идентификатор варианта сохраняется при объединении дерева и кустарника;
+    # индекс относится к его очередям, а не к общему ответу автоподбора.
+    return [
+        domain.model_copy(update={"progress_key": f"{pattern_id}:{index}"})
+        for index, zone in enumerate(zones)
+        for domain in search_domain_details([zone])
+    ]
+
+
 def _empty_preview(
     request: PatternPreviewRequest,
     pattern_id: str,
@@ -364,7 +378,7 @@ def _empty_preview(
         mask_id=request.mask_id if isinstance(request, PlacementMaskRequest) else None,
         requested_count=zones.requested_count or 0,
         generated_count=coverage.generated_count,
-        search_domains=search_domain_details(generation.zones),
+        search_domains=_progress_domains(generation.zones, pattern_id),
         search_stop_reason="domain_exhausted" if generation.free_search else None,
         accepted_count=0,
         rejected_count=min(
@@ -453,7 +467,7 @@ def _completed_preview(
         if search_result is not None
         else None,
         search_elapsed_s=search_result.elapsed_s if search_result is not None else None,
-        search_domains=search_domain_details(generation.zones),
+        search_domains=_progress_domains(generation.zones, pattern_id),
         accepted_count=len(selection.accepted_indices),
         rejected_count=rejected_count,
         capacity_shortfall=capacity_shortfall,
@@ -494,6 +508,7 @@ class PatternApplication:
         self.previews = previews
         self._horizon_witnesses = HorizonWitnesses()
 
+    @performance_span("pattern.preview")
     def preview_pattern(
         self, project_id: str, request: PatternPreviewRequest
     ) -> PatternPreview:
@@ -501,13 +516,18 @@ class PatternApplication:
         passport = self._data_passport(project)
         zones = _select_zones(project, request)
         generation = self._prepare_generation(project, request, zones)
-        domains = search_domain_details(generation.zones)
         # Группа одной семьи одинакова во всех годах. Это сохраняет те же
         # правила расстояний в том числе относительно сохранённого плана.
         pattern_id = _pattern_id(
             request.model_copy(update={"scenario_horizon_year": 0})
             if generation.horizon_family
             else request
+        )
+        domains = _progress_domains(
+            generation.progress_zones
+            if generation.progress_zones is not None
+            else generation.zones,
+            pattern_id,
         )
         if any(domain.stop_reason != "resolution" for domain in domains):
             # Незавершённая область публикует прогресс без кандидатов и операций.
@@ -696,6 +716,7 @@ class PatternApplication:
         self._horizon_witnesses.remember(project, request, completed)
         return completed
 
+    @performance_span("pattern.read_project")
     def _checked_project(
         self, project_id: str, request: PatternPreviewRequest
     ) -> Project:
@@ -722,6 +743,7 @@ class PatternApplication:
             raise PlanVersionConflict(request.base_plan_version, project.plan.version)
         return scenario_project(project, request.scenario_horizon_year)
 
+    @performance_span("pattern.passport")
     def _data_passport(self, project: Project) -> DataPassport:
         """Точные сводки того же снимка без повторной сборки всей карты."""
         counts = None
@@ -744,6 +766,7 @@ class PatternApplication:
             project, geometry=self.evaluation.geometry, display_counts=counts
         )
 
+    @performance_span("pattern.prepare_domain")
     def _prepare_generation(
         self, project: Project, request: PatternPreviewRequest, zones: _SelectedZones
     ) -> _PatternGeneration:
@@ -809,6 +832,7 @@ class PatternApplication:
             )
         )
         family_zones = None
+        progress_zones = None
         if horizon_family:
             family_zones = generation_zones
             if horizon and all(
@@ -826,7 +850,9 @@ class PatternApplication:
                     domain.stop_reason != "resolution"
                     for domain in search_domain_details(family_zones)
                 ):
-                    # Пока общая база не завершена, публикуем только её прогресс.
+                    # Завершённые текущие задачи сохраняют индексы. Новая базовая
+                    # очередь дополняет прогресс, а не откатывает прежний счётчик.
+                    progress_zones = [*generation_zones, *family_zones]
                     generation_zones = family_zones
         return _PatternGeneration(
             horizon,
@@ -836,8 +862,10 @@ class PatternApplication:
             free_search,
             horizon_family,
             family_zones,
+            progress_zones,
         )
 
+    @performance_span("pattern.generate_candidates")
     def _generate_candidates(
         self,
         project: Project,
@@ -867,6 +895,7 @@ class PatternApplication:
             alternatives=False,
         )
 
+    @performance_span("pattern.evaluate_candidates")
     def _evaluate_candidates(
         self,
         project: Project,

@@ -318,6 +318,7 @@ function StageText(const Stage: String): String;
 begin
   Result := '';
   if Stage = 'checking' then Result := 'Проверяем, что Green Atlas и AutoCAD закрыты';
+  if Stage = 'profile' then Result := 'Подготавливаем приватный профиль Green Atlas';
   if Stage = 'saving' then Result := 'Сохраняем средства обновления и восстановления';
   if Stage = 'webview' then Result := 'Проверяем и устанавливаем Microsoft WebView2';
   if Stage = 'installing' then Result := 'Устанавливаем и проверяем файлы Green Atlas';
@@ -368,10 +369,15 @@ begin
   WizardForm.ProgressGauge.Style := npbstMarquee;
   WizardForm.CancelButton.Enabled := False;
   try
-    if not RunBackend(Backend, '--quiet --progress --native-uninstaller "' + ExpandConstant('{uninstallexe}') + '"') then
-      RaiseException(BackendError);
-    if DependenciesAccepted and not RunDependencyAction('save') then
-      RaiseException('Программа установлена, но пути не сохранены. Откройте настройки компонентов в Green Atlas.');
+    if not RunBackend(Backend, '--quiet --progress --native-uninstaller "' + ExpandConstant('{uninstallexe}') + '"') then begin
+      SuppressibleMsgBox(BackendError, mbError, MB_OK, IDOK);
+      Exit;
+    end;
+    if DependenciesAccepted and not RunDependencyAction('save') then begin
+      BackendError := 'Программа установлена, но пути не сохранены. Откройте настройки компонентов в Green Atlas.';
+      SuppressibleMsgBox(BackendError, mbError, MB_OK, IDOK);
+      Exit;
+    end;
     BackendSucceeded := True;
   finally
     WizardForm.ProgressGauge.Style := npbstNormal;
@@ -397,6 +403,8 @@ begin
   else if DependenciesAccepted and not RunDependencyAction('check') then
     Result := 'Выбранные компоненты больше недоступны. Вернитесь к выбору путей.'
   else if not RunBackend(Backend, '--quiet --progress --check-closed') then
+    Result := BackendError
+  else if not RunBackend(Backend, '--quiet --progress --prepare-profile') then
     Result := BackendError;
 end;
 
@@ -430,10 +438,14 @@ var
   MarkerText: AnsiString;
 begin
   if CurUninstallStep <> usUninstall then Exit;
-  if not RunBackend(MaintenanceBackend, '--uninstall --quiet --progress') then
-    RaiseException(BackendError);
-  if not RunBackend(MaintenanceBackend, '--purge-app-backups --quiet') then
-    RaiseException(BackendError);
+  if not RunBackend(MaintenanceBackend, '--uninstall --quiet --progress') then begin
+    SuppressibleMsgBox(BackendError, mbError, MB_OK, IDOK);
+    Abort;
+  end;
+  if not RunBackend(MaintenanceBackend, '--purge-app-backups --quiet --progress') then begin
+    SuppressibleMsgBox(BackendError, mbError, MB_OK, IDOK);
+    Abort;
+  end;
   Directory := ExtractFileDir(MaintenanceBackend);
   Hash := ExtractFileName(Directory);
   Marker := Directory + '\setup-version.json';

@@ -70,6 +70,7 @@ from app.projects.concurrency import ProjectVersionConflict
 from app.projects.contracts import PreparedAvailability, Project
 from app.projects.resource_scope import project_resource_scope
 from app.shared.failures import DomainFailure, FailureReason
+from app.shared.performance import performance_span
 from app.validation.contracts import CalculationInputBasis
 
 # Крупное расчётное основание принадлежит активному проекту. Уже выполняемый
@@ -196,6 +197,7 @@ class ProjectLiveGeometry:
             self._engines.move_to_end(project.id)
             return self._engines[project.id][1]
 
+    @performance_span("native.load_local")
     def load_local(
         self, project: Project, progress: ProgressReporter | None = None
     ) -> GeometryEnginePort:
@@ -247,6 +249,7 @@ class ProjectLiveGeometry:
                 )
             return self._cache_snapshot(project, snapshot, progress)
 
+    @performance_span("native.snapshot.open")
     def _load_snapshot(
         self, project: Project, session: CaptureIdentity
     ) -> PreparedSnapshot | SqlitePreparedResource:
@@ -303,6 +306,7 @@ class ProjectLiveGeometry:
                 self._prepared.popitem(last=False)
             return engine
 
+    @performance_span("native.engine.bind")
     def _validated_snapshot_engine(
         self,
         project: Project,
@@ -551,6 +555,7 @@ class ProjectLiveGeometry:
             return None
         return engine.validation_input_basis(project)
 
+    @performance_span("native.prepared.lookup")
     def prepared_engine(self, project: Project) -> GeometryEnginePort | None:
         """Читать совпадающее сохранённое основание без открытия или запросов AutoCAD."""
         try:

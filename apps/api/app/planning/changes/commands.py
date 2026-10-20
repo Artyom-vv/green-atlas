@@ -45,6 +45,7 @@ from app.projects.contracts import Project, ProjectStatus
 from app.projects.ports import ProjectReader
 from app.shared.error_messages import public_failure_message
 from app.shared.failures import DomainFailure, FailureReason, ResourceNotFound
+from app.shared.performance import performance_span
 from app.validation.application import PlanValidation
 
 _BULK_PLACEMENT_SOURCES = frozenset({"pattern", "recommendation", "brush"})
@@ -121,6 +122,7 @@ class ChangeSetApplication:
         project = self.repository.get(project_id)
         return self.preview_on_snapshot(project, draft)
 
+    @performance_span("changes.final_preview")
     def preview_on_snapshot(
         self,
         project: Project,

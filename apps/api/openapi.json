@@ -17004,6 +17004,19 @@
             "type": "string",
             "title": "Zone Id"
           },
+          "progress_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 96,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Key"
+          },
           "revision": {
             "type": "string",
             "title": "Revision"

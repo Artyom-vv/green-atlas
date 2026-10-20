@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -42,27 +43,153 @@ struct Security {
     }
     ~Security() { if (descriptor) LocalFree(descriptor); }
 };
-bool privateAcl(const fs::path& path) {
-    PSID owner = nullptr; PACL acl = nullptr; PSECURITY_DESCRIPTOR raw = nullptr;
-    const auto status = GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT,
-        OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, nullptr, &acl, nullptr, &raw);
-    struct Local { PSECURITY_DESCRIPTOR value; ~Local() { if (value) LocalFree(value); } } memory{raw};
-    if (status != ERROR_SUCCESS || !owner || !IsValidSid(owner) || !acl || !acl->AceCount) return false;
-    const auto text = [](PSID sid) {
-        LPWSTR raw = nullptr; if (!IsValidSid(sid) || !ConvertSidToStringSidW(sid, &raw)) return std::wstring();
-        std::wstring result(raw); LocalFree(raw); return result;
-    };
+std::wstring sidText(PSID sid) {
+    LPWSTR raw = nullptr; if (!sid || !IsValidSid(sid) || !ConvertSidToStringSidW(sid, &raw)) return {};
+    std::wstring result(raw); LocalFree(raw); return result;
+}
+bool privateDescriptor(PSID owner, PACL acl) {
+    if (!owner || !IsValidSid(owner) || !acl || !acl->AceCount) return false;
     const auto user = userSid();
-    if (text(owner) != user) return false;
+    if (sidText(owner) != user) return false;
     for (DWORD index = 0; index < acl->AceCount; ++index) {
         void* rawAce = nullptr; if (!GetAce(acl, index, &rawAce) || !rawAce) return false;
         const auto* header = static_cast<ACE_HEADER*>(rawAce);
         if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
         if (header->AceType != ACCESS_ALLOWED_ACE_TYPE || header->AceSize < sizeof(ACCESS_ALLOWED_ACE)) return false;
-        const auto sid = text(&static_cast<ACCESS_ALLOWED_ACE*>(rawAce)->SidStart);
+        const auto sid = sidText(&static_cast<ACCESS_ALLOWED_ACE*>(rawAce)->SidStart);
         if (sid != user && sid != L"S-1-3-4" && sid != L"S-1-5-18" && sid != L"S-1-5-32-544") return false;
     }
     return true;
+}
+bool nonMutatingForeignAcl(PACL acl, bool parent = false) {
+    if (!acl) return false;
+    const auto user = userSid();
+    for (DWORD index = 0; index < acl->AceCount; ++index) {
+        void* raw = nullptr; if (!GetAce(acl, index, &raw) || !raw) return false;
+        const auto* header = static_cast<ACE_HEADER*>(raw);
+        if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
+        if (header->AceType != ACCESS_ALLOWED_ACE_TYPE || header->AceSize < sizeof(ACCESS_ALLOWED_ACE)) return false;
+        if (parent && (header->AceFlags & INHERIT_ONLY_ACE)) continue;
+        const auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(raw);
+        const auto sid = sidText(const_cast<DWORD*>(&ace->SidStart));
+        if (sid.empty()) return false;
+        if (sid == user || sid == L"S-1-3-4" || sid == L"S-1-5-18" || sid == L"S-1-5-32-544") continue;
+        DWORD mask = ace->Mask;
+        GENERIC_MAPPING mapping{FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_GENERIC_EXECUTE, FILE_ALL_ACCESS};
+        MapGenericMask(&mask, &mapping);
+        if (mask & ~(FILE_GENERIC_READ | FILE_GENERIC_EXECUTE)) return false;
+    }
+    return true;
+}
+bool privateAcl(const fs::path& path) {
+    PSID owner = nullptr; PACL acl = nullptr; PSECURITY_DESCRIPTOR raw = nullptr;
+    const auto status = GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT,
+        OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, nullptr, &acl, nullptr, &raw);
+    struct Local { PSECURITY_DESCRIPTOR value; ~Local() { if (value) LocalFree(value); } } memory{raw};
+    return status == ERROR_SUCCESS && privateDescriptor(owner, acl);
+}
+fs::path profilePath() {
+    PWSTR local = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)))
+        throw ProfilePreparationError("PROFILE_KNOWN_FOLDER_FAILED", "profile");
+    fs::path path;
+    try { path = fs::path(local) / L"GreenAtlas"; } catch (...) { CoTaskMemFree(local); throw; }
+    CoTaskMemFree(local); return path;
+}
+constexpr std::array<const wchar_t*, 4> profileDirectories{L"Workspace", L"Transfers", L"WebView2", L"Logs"};
+struct ProfilePin {
+    fs::path path;
+    std::string role;
+    Handle handle, writer;
+    BY_HANDLE_FILE_INFORMATION info{};
+    bool directory = false, owned = false, privateAcl = false, repairableAcl = false, parentRepairableAcl = false;
+};
+[[noreturn]] void profileFailure(const std::string& role, const char* code, DWORD error = 0) {
+    throw ProfilePreparationError(code, role, error);
+}
+bool sameFile(const BY_HANDLE_FILE_INFORMATION& first, const BY_HANDLE_FILE_INFORMATION& second) {
+    return first.dwVolumeSerialNumber == second.dwVolumeSerialNumber
+        && first.nFileIndexHigh == second.nFileIndexHigh && first.nFileIndexLow == second.nFileIndexLow;
+}
+void profileOwner(ProfilePin& entry, HANDLE handle) {
+    PSID owner = nullptr; PACL acl = nullptr; PSECURITY_DESCRIPTOR raw = nullptr;
+    const auto result = GetSecurityInfo(handle, SE_FILE_OBJECT,
+        OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, nullptr, &acl, nullptr, &raw);
+    struct Local { PSECURITY_DESCRIPTOR value; ~Local() { if (value) LocalFree(value); } } memory{raw};
+    if (result != ERROR_SUCCESS) profileFailure(entry.role, "PROFILE_SECURITY_READ_FAILED", result);
+    entry.owned = sidText(owner) == userSid(); entry.privateAcl = privateDescriptor(owner, acl);
+    entry.repairableAcl = nonMutatingForeignAcl(acl); entry.parentRepairableAcl = nonMutatingForeignAcl(acl, true);
+}
+std::unique_ptr<ProfilePin> pinProfile(const fs::path& path, std::string role,
+    bool directory, bool required = true, bool security = true) {
+    auto entry = std::make_unique<ProfilePin>(); entry->path = path; entry->role = std::move(role); entry->directory = directory;
+    entry->handle.value = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | (security ? READ_CONTROL : 0),
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (entry->handle.value == INVALID_HANDLE_VALUE) {
+        const auto error = GetLastError();
+        if (!required && (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)) return nullptr;
+        profileFailure(entry->role, "PROFILE_OPEN_FAILED", error);
+    }
+    if (!GetFileInformationByHandle(entry->handle.value, &entry->info))
+        profileFailure(entry->role, "PROFILE_INFORMATION_FAILED", GetLastError());
+    if (entry->info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+        profileFailure(entry->role, "PROFILE_REPARSE_POINT");
+    if (bool(entry->info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != directory)
+        profileFailure(entry->role, "PROFILE_WRONG_TYPE");
+    if (!directory && entry->info.nNumberOfLinks != 1)
+        profileFailure(entry->role, "PROFILE_LINKED_FILE");
+    if (security) profileOwner(*entry, entry->handle.value);
+    return entry;
+}
+std::vector<fs::path> profileChildren(const fs::path& directory, const std::string& role) {
+    std::error_code error;
+    std::vector<fs::path> children;
+    fs::directory_iterator iterator(directory, error), end;
+    if (error) profileFailure(role, "PROFILE_ENUMERATION_FAILED", static_cast<DWORD>(error.value()));
+    while (iterator != end) {
+        if (children.size() >= 4096) profileFailure(role, "PROFILE_OBJECT_LIMIT");
+        children.push_back(iterator->path()); iterator.increment(error);
+        if (error) profileFailure(role, "PROFILE_ENUMERATION_FAILED", static_cast<DWORD>(error.value()));
+    }
+    return children;
+}
+std::wstring profileName(const fs::path& path) {
+    auto name = path.filename().wstring();
+    for (auto& ch : name) if (ch >= L'A' && ch <= L'Z') ch += L'a' - L'A';
+    return name;
+}
+void openProfileWriter(ProfilePin& entry) {
+    entry.writer.value = CreateFileW(entry.path.c_str(), READ_CONTROL | WRITE_DAC | FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (entry.writer.value == INVALID_HANDLE_VALUE) profileFailure(entry.role, "PROFILE_WRITE_ACCESS_FAILED", GetLastError());
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (!GetFileInformationByHandle(entry.writer.value, &info) || !sameFile(entry.info, info)
+        || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) profileFailure(entry.role, "PROFILE_IDENTITY_CHANGED");
+    profileOwner(entry, entry.writer.value);
+    if (!entry.owned) profileFailure(entry.role, "PROFILE_OWNER_MISMATCH");
+    if (!entry.repairableAcl) profileFailure(entry.role, "PROFILE_UNSAFE_WRITE_ACL");
+}
+void setProfileAcl(ProfilePin& entry) {
+    // SetSecurityInfo распространяет наследуемые ACE на детей. Это разрешено
+    // только после проверки пустого профиля и всех собственных файлов Installer.
+    const auto user = userSid();
+    const auto flags = entry.directory ? L"OICI" : L"";
+    const auto sddl = L"D:P(A;" + std::wstring(flags) + L";FA;;;" + user
+        + L")(A;" + flags + L";FA;;;SY)(A;" + flags + L";FA;;;BA)";
+    PSECURITY_DESCRIPTOR raw = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1, &raw, nullptr))
+        profileFailure(entry.role, "PROFILE_SECURITY_BUILD_FAILED", GetLastError());
+    struct Local { PSECURITY_DESCRIPTOR value; ~Local() { if (value) LocalFree(value); } } memory{raw};
+    PACL acl = nullptr; BOOL present = FALSE, defaulted = FALSE;
+    if (!GetSecurityDescriptorDacl(raw, &present, &acl, &defaulted) || !present || !acl)
+        profileFailure(entry.role, "PROFILE_SECURITY_BUILD_FAILED", GetLastError());
+    const auto result = SetSecurityInfo(entry.writer.value, SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr, acl, nullptr);
+    if (result != ERROR_SUCCESS) profileFailure(entry.role, "PROFILE_SECURITY_WRITE_FAILED", result);
+    profileOwner(entry, entry.writer.value);
+    if (!entry.privateAcl) profileFailure(entry.role, "PROFILE_SECURITY_VERIFY_FAILED");
 }
 class Hash {
 public:
@@ -205,6 +332,104 @@ void privateDirectory(const fs::path& path) {
     // Существующее владение и ACL проверяются, а не исправляются скрыто.
     require(directPath(path, true) && privateAcl(path), "Каталог профиля содержит ссылку или открыт чужому пользователю");
 }
+void prepareProfileDirectories(const fs::path& profile) {
+    if (!profile.is_absolute()) profileFailure("profile", "PROFILE_INVALID_PATH");
+    std::vector<std::unique_ptr<ProfilePin>> parents, entries;
+    // До завершения удерживаем всех существующих предков без FILE_SHARE_DELETE.
+    // Владение и ACL предков никогда не меняются.
+    for (auto path = profile.parent_path(); !path.empty(); path = path.parent_path()) {
+        parents.push_back(pinProfile(path, "ancestor", true, true, false));
+        if (path == path.parent_path()) break;
+    }
+    auto root = pinProfile(profile, "profile", true, false);
+    if (root) {
+        entries.push_back(std::move(root));
+        for (const auto* name : profileDirectories) {
+            auto child = pinProfile(profile / name, utf8(name), true, false);
+            if (child) entries.push_back(std::move(child));
+        }
+    }
+    const bool safe = std::all_of(entries.begin(), entries.end(),
+        [](const auto& entry) { return entry->privateAcl; });
+    if (!safe) {
+        for (const auto& entry : entries)
+            if (!entry->owned) profileFailure(entry->role, "PROFILE_OWNER_MISMATCH");
+        for (const auto& entry : entries)
+            if (!entry->repairableAcl) profileFailure(entry->role, "PROFILE_UNSAFE_WRITE_ACL");
+        auto parentSecurity = pinProfile(profile.parent_path(), "ancestor", true);
+        if (!parentSecurity->parentRepairableAcl) profileFailure("ancestor", "PROFILE_UNSAFE_WRITE_ACL");
+        parents.push_back(std::move(parentSecurity));
+        // Рабочие данные исключают автоматическую правку ACL. Единственное
+        // разрешённое непустое поддерево принадлежит установщику.
+        std::set<std::wstring> names;
+        fs::path installer;
+        for (const auto& child : profileChildren(profile, "profile")) {
+            const auto name = profileName(child);
+            if (!names.insert(name).second) profileFailure("profile", "PROFILE_BOOTSTRAP_HAS_DATA");
+            if (name == L"installer") { installer = child; continue; }
+            bool fixed = false; std::string fixedRole;
+            for (const auto* expected : profileDirectories)
+                if (name == profileName(fs::path(expected))) { fixed = true; fixedRole = utf8(expected); }
+            if (!fixed) profileFailure("profile", "PROFILE_BOOTSTRAP_HAS_DATA");
+            if (!profileChildren(child, fixedRole).empty())
+                profileFailure("profile", "PROFILE_BOOTSTRAP_HAS_DATA");
+        }
+        if (!installer.empty()) {
+            entries.push_back(pinProfile(installer, "Installer", true));
+            if (!entries.back()->owned) profileFailure("Installer", "PROFILE_OWNER_MISMATCH");
+            if (!entries.back()->repairableAcl) profileFailure("Installer", "PROFILE_UNSAFE_WRITE_ACL");
+            for (size_t index = entries.size() - 1; index < entries.size(); ++index) {
+                if (!entries[index]->directory || entries[index]->role != "Installer") continue;
+                for (const auto& child : profileChildren(entries[index]->path, "Installer")) {
+                    if (entries.size() >= 4096) profileFailure("Installer", "PROFILE_OBJECT_LIMIT");
+                    const auto attributes = GetFileAttributesW(child.c_str());
+                    if (attributes == INVALID_FILE_ATTRIBUTES) profileFailure("Installer", "PROFILE_INFORMATION_FAILED", GetLastError());
+                    auto entry = pinProfile(child, "Installer", bool(attributes & FILE_ATTRIBUTE_DIRECTORY));
+                    if (!entry->owned) profileFailure("Installer", "PROFILE_OWNER_MISMATCH");
+                    if (!entry->repairableAcl) profileFailure("Installer", "PROFILE_UNSAFE_WRITE_ACL");
+                    entries.push_back(std::move(entry));
+                }
+            }
+        }
+        for (const auto& entry : entries)
+            if (!entry->owned) profileFailure(entry->role, "PROFILE_OWNER_MISMATCH");
+        // Все write-дескрипторы, идентичности и владельцы проверяются до первой
+        // правки ACL. Владение не присваивается, рекурсивного reset нет.
+        for (auto& entry : entries) openProfileWriter(*entry);
+        for (auto& entry : entries) setProfileAcl(*entry);
+    }
+    // В уже приватном профиле могут быть рабочие данные. Их дескрипторы и байты
+    // не меняем, только безопасно создаём недостающие фиксированные каталоги.
+    privateDirectory(profile);
+    for (const auto* name : profileDirectories) privateDirectory(profile / name);
+}
+Json prepareProfile() {
+    Handle token;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token.value))
+        profileFailure("token", "PROFILE_TOKEN_FAILED", GetLastError());
+    TOKEN_ELEVATION elevation{}; DWORD size = 0;
+    if (!GetTokenInformation(token.value, TokenElevation, &elevation, sizeof(elevation), &size))
+        profileFailure("token", "PROFILE_TOKEN_FAILED", GetLastError());
+    if (elevation.TokenIsElevated) profileFailure("token", "PROFILE_ELEVATED_TOKEN");
+    const auto path = profilePath();
+    std::wstring environment(32768, L'\0');
+    const auto length = GetEnvironmentVariableW(L"LOCALAPPDATA", environment.data(), static_cast<DWORD>(environment.size()));
+    if (!length || length >= environment.size()) profileFailure("profile", "PROFILE_ENV_MISMATCH");
+    environment.resize(length);
+    const auto normalized = [](fs::path value) {
+        value = value.lexically_normal(); value.make_preferred();
+        if (value != value.root_path() && value.filename().empty()) value = value.parent_path();
+        return value.wstring();
+    };
+    const auto expected = normalized(path.parent_path());
+    const fs::path observed(environment);
+    const auto actual = normalized(observed);
+    if (!observed.is_absolute() || CompareStringOrdinal(expected.c_str(), -1, actual.c_str(), -1, TRUE) != CSTR_EQUAL)
+        profileFailure("profile", "PROFILE_ENV_MISMATCH");
+    const Json receipt{{"schema", "green-atlas.desktop-profile/1"}, {"prepared", true}, {"profile", utf8(path.wstring())}};
+    if (receipt.dump().size() > 8192) profileFailure("profile", "PROFILE_PATH_TOO_LONG");
+    prepareProfileDirectories(path); return receipt;
+}
 Settings installedSettings(bool profile) {
     std::wstring buffer(32768, L'\0');
     const auto length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
@@ -216,9 +441,7 @@ Settings installedSettings(bool profile) {
     require(directPath(value.runtime) && directPath(value.web / L"index.html")
         && directPath(value.worker / L"GreenAtlasQuery.crx") && directPath(value.worker / L"worker.json"), "Поставка приложения неполна");
     if (!profile) return value;
-    PWSTR local = nullptr;
-    require(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)), "Нет LocalAppData");
-    value.profile = fs::path(local) / L"GreenAtlas"; CoTaskMemFree(local);
+    value.profile = profilePath();
     value.data = value.profile / L"Workspace"; value.tickets = value.profile / L"Transfers";
     value.browser = value.profile / L"WebView2"; value.logs = value.profile / L"Logs";
     for (const auto& path : {value.profile, value.data, value.tickets, value.browser, value.logs}) privateDirectory(path);

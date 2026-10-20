@@ -52,6 +52,7 @@ from app.planning.search.occupied_centers import unoccupied_centers
 from app.planning.search.sampling import polygon_components
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
+from app.shared.performance import performance_span
 
 OperationFactory = Callable[[list[PatternCandidate], int], list[PlanObjectAddOperation]]
 MAX_NUMERIC_WORK = 5_000_000
@@ -92,6 +93,7 @@ class _OrderedQueue:
         return 0
 
 
+@performance_span("search.horizon")
 def search_horizon_placement(
     project: Project,
     request: FillPatternRequest,

@@ -17,7 +17,10 @@ from app.exporting.cad_contracts import (
     encode_plantings,
     validate_receipt,
 )
-from app.exporting.cad_process_diagnostics import record_process
+from app.exporting.cad_process_diagnostics import (
+    record_interrupted_process,
+    record_process,
+)
 from app.native_query.transport import job_files
 from app.native_query.transport import process as worker
 from app.native_query.transport.process_contracts import (
@@ -25,6 +28,7 @@ from app.native_query.transport.process_contracts import (
     NativeInputPackage,
     NativeQueryProcessConfig,
 )
+from app.native_query.transport.windows_supervision import CompletedJobCleanup
 from app.shared.failures import DomainFailure, FailureReason
 
 
@@ -86,15 +90,21 @@ def write_cad_release(
     output.mkdir()
     child = None
     try:
-        bootstrap_size, bootstrap_sha = job_files.file_identity(config.bootstrap_template)
+        bootstrap_size, bootstrap_sha = job_files.file_identity(
+            config.bootstrap_template
+        )
         job_files.copy_independent(
             config.bootstrap_template, job / "Bootstrap.dwg", check, bootstrap_size
         )
         for item in package.files:
             source = job_files.package_file(package.root, item.path)
-            job_files.copy_independent(source, staged / item.path, check, item.size_bytes)
+            job_files.copy_independent(
+                source, staged / item.path, check, item.size_bytes
+            )
             if item.path != package.entry:
-                job_files.copy_independent(source, output / item.path, check, item.size_bytes)
+                job_files.copy_independent(
+                    source, output / item.path, check, item.size_bytes
+                )
         _verify_archive(package, staged, check)
         bundle = job_files.worker_destination(job)
         job_files.stage_worker(config.worker_bundle, bundle, check)
@@ -110,14 +120,55 @@ def write_cad_release(
             child = worker._spawn(command, job)
         except OSError as error:
             raise DomainFailure(FailureReason.CAD_RELEASE_CORE_UNAVAILABLE) from error
-        failure, log, signals = worker._supervise(
-            child,
-            job,
-            started,
-            config,
-            None,
-            ("release.json", "release.json.tmp"),
+        request_sha = sha256(request).hexdigest()
+
+        def completed_result() -> None:
+            # Worker публикует release.json после освобождения обеих баз и
+            # восстановления контекста. Проверяем весь контракт, а не имя потомка.
+            check()
+            _verify_archive(package, package.root, check)
+            _verify_archive(package, staged, check)
+            _verify_worker(bundle, config)
+            if job_files.file_identity(job / "Bootstrap.dwg") != (
+                bootstrap_size,
+                bootstrap_sha,
+            ):
+                raise DomainFailure(FailureReason.CAD_RELEASE_RESULT_INVALID)
+            if job_files.file_identity(job / "request.txt")[1] != request_sha:
+                raise DomainFailure(FailureReason.CAD_RELEASE_RESULT_INVALID)
+            _validate_completed_release(
+                job, output, package, plants, units, config, request_sha
+            )
+
+        cleanup = (
+            CompletedJobCleanup(completed_result)
+            if isinstance(child, worker.OwnedWindowsProcess)
+            else None
         )
+        options = {"completed_cleanup": cleanup} if cleanup is not None else {}
+        try:
+            failure, log, signals = worker._supervise(
+                child,
+                job,
+                started,
+                config,
+                None,
+                ("release.json", "release.json.tmp"),
+                **options,
+            )
+        except Exception as error:
+            record_interrupted_process(
+                job,
+                command,
+                process_id=child.pid,
+                exit_code=child.returncode,
+                error=error,
+                signals=cleanup.signals if cleanup is not None else (),
+                elapsed_seconds=time.monotonic() - started,
+                max_log_bytes=config.max_log_bytes,
+            )
+            raise
+        cleanup_verified = cleanup is not None and cleanup.accepts_signals(signals)
         startup_failed = record_process(
             job,
             command,
@@ -127,8 +178,9 @@ def write_cad_release(
             signals=signals,
             elapsed_seconds=time.monotonic() - started,
             log=log,
+            completed_cleanup_verified=cleanup_verified,
         )
-        if failure or child.returncode != 0 or signals:
+        if failure or child.returncode != 0 or (signals and not cleanup_verified):
             if failure is not None and failure.code == "cancelled":
                 raise worker._Stop(failure.code, failure.message)
             reason = (
@@ -142,7 +194,10 @@ def write_cad_release(
         _verify_archive(package, package.root)
         _verify_archive(package, staged)
         _verify_worker(bundle, config)
-        if job_files.file_identity(job / "Bootstrap.dwg") != (bootstrap_size, bootstrap_sha):
+        if job_files.file_identity(job / "Bootstrap.dwg") != (
+            bootstrap_size,
+            bootstrap_sha,
+        ):
             raise DomainFailure(FailureReason.CAD_RELEASE_RESULT_INVALID)
         request_sha = sha256(request).hexdigest()
         if job_files.file_identity(job / "request.txt")[1] != request_sha:
@@ -157,7 +212,7 @@ def write_cad_release(
         _verify_archive(package, package.root)
 
 
-def _accepted_release(
+def _validate_completed_release(
     job: Path,
     output: Path,
     package: NativeInputPackage,
@@ -165,9 +220,8 @@ def _accepted_release(
     units: int,
     config: NativeQueryProcessConfig,
     request_sha: str,
-) -> CadRelease:
-    # Только чтение и проверка внешнего результата после завершения своего Core.
-    # Ошибки публикации в приложение и неожиданные ошибки кода сюда не попадают.
+) -> tuple[CadWriteReceipt, Path, Path]:
+    """Проверить завершённость без сборки всего DWG-комплекта в памяти."""
     try:
         receipt_path = job_files.package_file(job, "release.json")
         if (
@@ -177,14 +231,13 @@ def _accepted_release(
             raise ValueError("Не получено завершённое подтверждение CAD-выпуска")
         receipt = CadWriteReceipt.model_validate_json(receipt_path.read_bytes())
         result_path = job_files.package_file(output, "planting-plan.dwg")
-        result_size, result_sha = job_files.file_identity(
+        _, result_sha = job_files.file_identity(
             result_path, limit=config.max_package_bytes
         )
         source_file = next(item for item in package.files if item.path == package.entry)
         validate_receipt(
             receipt, plants, units, request_sha, source_file.sha256, result_sha
         )
-        files = {"planting-plan.dwg": result_path.read_bytes()}
         for item in package.files:
             if item.path == package.entry:
                 continue
@@ -194,7 +247,31 @@ def _accepted_release(
                 item.sha256,
             ):
                 raise ValueError("Подоснова результата изменилась при выпуске")
-            files[item.path] = path.read_bytes()
+        return receipt, receipt_path, result_path
+    except (OSError, ValueError) as error:
+        raise DomainFailure(FailureReason.CAD_RELEASE_RESULT_INVALID) from error
+
+
+def _accepted_release(
+    job: Path,
+    output: Path,
+    package: NativeInputPackage,
+    plants: tuple[CadPlant, ...],
+    units: int,
+    config: NativeQueryProcessConfig,
+    request_sha: str,
+) -> CadRelease:
+    # Публикуемый набор собирается только после остановки собственного задания
+    # и независимой повторной проверки результата.
+    receipt, receipt_path, result_path = _validate_completed_release(
+        job, output, package, plants, units, config, request_sha
+    )
+    try:
+        files = {"planting-plan.dwg": result_path.read_bytes()}
+        for item in package.files:
+            if item.path != package.entry:
+                path = job_files.package_file(output, item.path)
+                files[item.path] = path.read_bytes()
         files["cad-receipt.json"] = receipt_path.read_bytes()
         return CadRelease(files=files, entry="planting-plan.dwg", receipt=receipt)
     except (OSError, ValueError) as error:

@@ -20,6 +20,7 @@ from app.projects.concurrency import ProjectVersionConflict
 from app.projects.maintenance_worker import foreground_activity
 from app.rendering.routes import router as scene_render_router
 from app.shared.error_messages import message, validation_messages
+from app.shared.performance import performance_trace
 
 app = FastAPI(
     title="Green Atlas API",
@@ -42,12 +43,42 @@ app.add_middleware(
 )
 
 
+_CALCULATION_ENDPOINTS = {
+    ("GET", "plan/growth-forecast"): "growth.forecast",
+    ("POST", "plan/placement-check"): "placement.check",
+    ("POST", "plan/change-sets/preview"): "changes.preview",
+    ("POST", "plan/automatic/preview"): "automatic.preview",
+    ("POST", "plan/patterns/preview"): "pattern.preview",
+    ("POST", "building-screen/preview"): "building_screen.preview",
+    ("POST", "plan/recommendations/preview"): "recommendation.preview",
+    ("POST", "plan/brush/preview"): "brush.preview",
+}
+
+
 @app.middleware("http")
 async def project_version_headers(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
     with foreground_activity():
-        return await _project_version_response(request, call_next)
+        parts = request.scope["path"].split("/")
+        endpoint = (
+            _CALCULATION_ENDPOINTS.get((request.method, "/".join(parts[4:])))
+            if len(parts) > 4 and parts[1:3] == ["api", "projects"]
+            else None
+        )
+        if endpoint is None:
+            return await _project_version_response(request, call_next)
+        with performance_trace(endpoint, project_id=parts[3]) as trace:
+            response = await _project_version_response(request, call_next)
+            trace.set_outcome(
+                "cancelled"
+                if response.status_code == 499
+                else "error"
+                if response.status_code >= 400
+                else "ok",
+                status_code=response.status_code,
+            )
+            return response
 
 
 async def _project_version_response(

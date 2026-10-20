@@ -5651,6 +5651,8 @@ export interface components {
         SearchDomain: {
             /** Zone Id */
             zone_id: string;
+            /** Progress Key */
+            progress_key?: string | null;
             /** Revision */
             revision: string;
             /** Geometry */

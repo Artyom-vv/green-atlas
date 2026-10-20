@@ -558,12 +558,14 @@ def test_предпросмотр_сохраняет_полные_координ
 
     # Горизонт проверяем отдельно; эталон защищает координаты, порядок измерений
     # и причины решений при рабочем корневом габарите на горизонте 20 лет.
+    # Идентичность очередей progress_key отдельно защищена phase-progress тестами;
+    # поле отчётности не меняет прежний эталон расчётных данных.
     def previous_contract(value: object) -> object:
         if isinstance(value, dict):
             return {
                 key: previous_contract(item)
                 for key, item in value.items()
-                if key != "planning_horizon_year"
+                if key not in {"planning_horizon_year", "progress_key"}
                 and not (key == "search_full_checked_count" and item is None)
             }
         if isinstance(value, list):
@@ -572,6 +574,11 @@ def test_предпросмотр_сохраняет_полные_координ
 
     if "preview" in payload["result"]:
         assert payload["result"]["preview"]["planning_horizon_year"] == 20
+    if case == "progress":
+        preview = payload["result"]["preview"]
+        assert [domain["progress_key"] for domain in preview["search_domains"]] == [
+            f"{preview['pattern_id']}:0"
+        ]
     normalized_payload = previous_contract(payload)
     encoded = json.dumps(
         normalized_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")

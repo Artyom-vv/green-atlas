@@ -12,6 +12,7 @@ from pathlib import Path
 
 import psutil
 import pytest
+from completed_windows_job_fixture import spawn_completed
 
 from app.native_query.contracts import PROTOCOL, NativeObjectQuery
 from app.native_query.transport import job_files, process
@@ -361,3 +362,74 @@ def test_catalogue_is_immutable_and_rejects_ambiguous_names(tmp_path):
     assert package.sha256 == replace(package, files=tuple(reversed(package.files))).sha256
     with pytest.raises(ValueError):
         replace(config, timeout_seconds=float("nan"))
+
+
+def test_windows_verified_query_cleans_owned_descendant_and_keeps_signals(
+    tmp_path, monkeypatch
+):
+    package, query, config = setup_job(tmp_path)
+    monkeypatch.setattr(process, "_spawn", spawn_completed)
+    result = run_native_query(package, query, config)
+    assert result.failure is None and result.reply is not None
+    assert result.receipt.cleanup_attempted and result.receipt.cleanup_confirmed
+    assert result.receipt.tree_empty is True
+    assert result.receipt.signals == ("TerminateJobObject",)
+    assert result.receipt.lifecycle_verified
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "malformed",
+        "identity",
+        "version",
+        "dbmod",
+        "missing_cleanup",
+        "wrong_cleanup",
+        "false_cleanup",
+        "numeric_cleanup",
+        "temporary_reply",
+        "request_mutation",
+        "staged_mutation",
+        "bootstrap_mutation",
+        "exit7",
+    ],
+)
+def test_windows_owned_cleanup_does_not_bypass_query_failures(
+    tmp_path, monkeypatch, mode
+):
+    package, query, config = setup_job(tmp_path, mode)
+    monkeypatch.setattr(process, "_spawn", spawn_completed)
+    result = run_native_query(package, query, config)
+    assert result.failure is not None and result.reply is None
+    assert not result.receipt.cleanup_confirmed
+    assert result.receipt.signals == ("TerminateJobObject",)
+
+
+@pytest.mark.parametrize(
+    "mutated",
+    [
+        "native.json",
+        "lifecycle.json",
+        "request.txt",
+        "package/entry.dwg",
+        "Bootstrap.dwg",
+    ],
+)
+def test_windows_query_rechecks_artifacts_after_cleanup(tmp_path, monkeypatch, mutated):
+    package, query, config = setup_job(tmp_path)
+    monkeypatch.setattr(
+        process,
+        "_spawn",
+        lambda command, job: spawn_completed(
+            command,
+            job,
+            on_stop=lambda path: (path / mutated).write_bytes(
+                b"changed during cleanup"
+            ),
+        ),
+    )
+    result = run_native_query(package, query, config)
+    assert result.failure is not None and result.reply is None
+    assert result.receipt.cleanup_attempted and not result.receipt.cleanup_confirmed
+    assert result.receipt.tree_empty is True

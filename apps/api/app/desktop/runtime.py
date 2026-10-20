@@ -17,6 +17,8 @@ import uvicorn
 
 from app.desktop.lease import WorkspaceLease
 from app.desktop.web import create_desktop_web
+from app.shared.operation_diagnostics import configure_operation_diagnostics
+from app.shared.performance import configure_performance_log
 
 
 def configure_local_storage(directory: Path) -> Path:
@@ -89,6 +91,7 @@ def main() -> int:
         listener = bind_loopback_listener(args.listen_port)
         owned.callback(listener.close)
         data_root = configure_local_storage(args.data_dir)
+        configure_performance_log(data_root)
         # Desktop использует OpenAI или предложение для точного пакетного входа;
         # локальный сеанс Codex разработчика не становится скрытой зависимостью.
         os.environ.setdefault("GREEN_ATLAS_LAYER_MODEL_PROVIDER", "auto")
@@ -103,6 +106,7 @@ def main() -> int:
             parser.error("Built desktop UI is missing from the application package")
         lease = WorkspaceLease(data_root)
         owned.callback(lease.close)
+        configure_operation_diagnostics(data_root)
         # Аварийный обычный выход и завершение сервера используют одного владельца.
         atexit.register(owned.close)
         owned.callback(atexit.unregister, owned.close)

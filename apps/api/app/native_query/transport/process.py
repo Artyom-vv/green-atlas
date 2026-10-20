@@ -39,7 +39,11 @@ from app.native_query.transport.process_control import (
     checkpoint as _checkpoint,
 )
 from app.native_query.transport.protocol import decode_reply, encode_request
-from app.native_query.transport.windows_supervision import stop_owned, supervise
+from app.native_query.transport.windows_supervision import (
+    CompletedJobCleanup,
+    stop_owned,
+    supervise,
+)
 from app.shared.child_dll_search import child_dll_search
 from app.shared.windows_process import OwnedWindowsProcess, launch_owned
 
@@ -53,9 +57,7 @@ def _windows_platform() -> bool:
 def _write_script(job: Path, name: str, command: CoreCommand) -> Path:
     script = job / name
     binary = (
-        "QueryWorker/GreenAtlasQuery.crx"
-        if _windows_platform()
-        else "QueryWorker.dbx"
+        "QueryWorker/GreenAtlasQuery.crx" if _windows_platform() else "QueryWorker.dbx"
     )
     trusted = (
         '(strcat (getvar "DWGPREFIX") ";" (getvar "DWGPREFIX") "QueryWorker")'
@@ -207,10 +209,19 @@ def _supervise(
         "faces.json",
         "faces.json.tmp",
     ),
+    *,
+    completed_cleanup: CompletedJobCleanup | None = None,
 ) -> tuple[NativeProcessFailure | None, bytes, tuple[str, ...]]:
     if isinstance(child, OwnedWindowsProcess):
         return supervise(
-            child, job, started, config, cancelled, output_names, _output_size
+            child,
+            job,
+            started,
+            config,
+            cancelled,
+            output_names,
+            _output_size,
+            completed_cleanup=completed_cleanup,
         )
     log = bytearray()
     signals: list[str] = []
@@ -285,6 +296,75 @@ def _diagnostic(job: Path, limit: int) -> tuple[bytes, bool]:
     return data, truncated
 
 
+def _validate_completed_query(
+    package: NativeInputPackage,
+    source_root: Path,
+    staged: Path,
+    bundle: Path,
+    job: Path,
+    query: NativeObjectQuery,
+    request: bytes,
+    bootstrap: tuple[int, str],
+    face_request: bytes | None,
+    config: NativeQueryProcessConfig,
+    check: Callable[[], None],
+) -> None:
+    """Проверять завершённый запрос независимо до и после очистки своего job."""
+    check()
+    job_files.verify_package(package, source_root, check)
+    job_files.verify_package(package, staged, check)
+    job_files.verify_worker(config.worker_bundle, config)
+    job_files.verify_worker(bundle, config)
+    if job_files.file_identity(job / "Bootstrap.dwg") != bootstrap:
+        raise ValueError("Bootstrap database was saved or changed")
+    request_hash = sha256(request).hexdigest()
+    if job_files.file_identity(job / "request.txt", limit=config.max_request_bytes) != (
+        len(request),
+        request_hash,
+    ):
+        raise ValueError("Native request changed during execution")
+    entry = (str(staged / package.entry) + "\n").encode("utf-8")
+    if job_files.file_identity(job / "package-entry.txt", limit=len(entry)) != (
+        len(entry),
+        sha256(entry).hexdigest(),
+    ):
+        raise ValueError("Native package entry changed during execution")
+    if face_request is not None and job_files.file_identity(
+        job / "face-request.txt", limit=96 * 1024**2
+    ) != (len(face_request), sha256(face_request).hexdigest()):
+        raise ValueError("Captured face input changed during query")
+    for name in ("native.json.tmp", "lifecycle.json.tmp"):
+        try:
+            (job / name).lstat()
+        except FileNotFoundError:
+            continue
+        raise ValueError("Native result was not atomically published")
+
+    def read(name: str, limit: int) -> bytes:
+        with job_files.open_regular(job_files.package_file(job, name)) as stream:
+            result = stream.read(limit + 1)
+        if len(result) > limit:
+            raise ValueError("Completed native result exceeds its byte budget")
+        return result
+
+    reply_bytes = read("native.json", config.max_reply_bytes)
+    decoded = decode_reply(reply_bytes, query, request_bytes=request)
+    if (
+        decoded.plugin_version != config.plugin_version
+        or decoded.database_modified_flags != 0
+    ):
+        raise ValueError("Native reply worker or unmodified-database identity mismatch")
+    lifecycle = json.loads(read("lifecycle.json", MAX_LIFECYCLE_RECEIPT_BYTES))
+    if not matches_lifecycle_receipt(
+        lifecycle,
+        request_sha256=request_hash,
+        source_sha256=query.source_sha256,
+        reply_sha256=sha256(reply_bytes).hexdigest(),
+    ):
+        raise ValueError("Native lifecycle receipt does not match the completed query")
+    check()
+
+
 def run_native_query(
     package: NativeInputPackage,
     query: NativeObjectQuery,
@@ -309,6 +389,7 @@ def run_native_query(
     source_before = source_after = staged_before = staged_after = truncated = False
     bootstrap_identity = None
     lifecycle_verified = False
+    cleanup: CompletedJobCleanup | None = None
     diagnostics: list[str] = []
     source_root = package.root
 
@@ -320,7 +401,11 @@ def run_native_query(
         if os.name not in {"posix", "nt"}:
             raise ValueError("Unsupported Core execution platform")
         if _windows_platform():
-            for input_directory in (package.root, config.worker_bundle, config.job_root):
+            for input_directory in (
+                package.root,
+                config.worker_bundle,
+                config.job_root,
+            ):
                 job_files.validate_directory(input_directory)
             source_root = package.root.absolute()
             bundle = config.worker_bundle.absolute()
@@ -409,6 +494,21 @@ def run_native_query(
             child = _spawn(command, job)
         except OSError as error:
             raise _Stop("launch_failed", str(error)) from error
+        cleanup = CompletedJobCleanup(
+            lambda: _validate_completed_query(
+                package,
+                source_root,
+                staged,
+                bundle_copy,
+                job,
+                query,
+                request_bytes,
+                bootstrap_identity,
+                face_request,
+                config,
+                check,
+            )
+        )
         failure, log, signals = _supervise(
             child,
             job,
@@ -416,10 +516,16 @@ def run_native_query(
             config,
             cancelled,
             ("native.json", "native.json.tmp", "faces.json", "faces.json.tmp"),
+            completed_cleanup=cleanup,
         )
         if failure is None and child.returncode != 0:
             failure = NativeProcessFailure(
                 "process_exit", f"Core exited with {child.returncode}"
+            )
+        if failure is None and signals and not cleanup.accepts_signals(signals):
+            failure = NativeProcessFailure(
+                "process_group_alive",
+                "Core termination lacks verified completion cleanup",
             )
     except _Stop as error:
         failure = error.failure
@@ -428,6 +534,8 @@ def run_native_query(
             "io_failure" if child else "invalid_input", str(error)[:1024]
         )
     finally:
+        if cleanup is not None and cleanup.signals:
+            signals = cleanup.signals
         if child is not None and child.poll() is None:
             stopped = list(signals)
             try:
@@ -538,6 +646,9 @@ def run_native_query(
         decoded,
         tuple(diagnostics),
         lifecycle_verified=lifecycle_verified,
+        cleanup_attempted=cleanup.attempted if cleanup is not None else False,
+        cleanup_confirmed=cleanup.confirmed if cleanup is not None else False,
+        tree_empty=cleanup.tree_empty if cleanup is not None else None,
     )
     return NativeQueryProcessResult(
         receipt, decoded if failure is None else None, failure

@@ -578,6 +578,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     else if (argc == 3 && std::wstring_view(argv[1]) == L"--ticket-id") { ticketArgument = true; ticket = utf8(argv[2]); }
     else if (argc != 1) { LocalFree(argv); return 2; }
     LocalFree(argv);
+    if (mode == "--prepare-profile") {
+        try { printJson(prepareProfile()); return 0; }
+        catch (const ProfilePreparationError& error) {
+            printJson({{"schema", "green-atlas.desktop-profile/1"}, {"prepared", false},
+                {"error", {{"code", error.code}, {"role", error.role}, {"win32_error", error.win32Error}}}});
+        } catch (...) {
+            printJson({{"schema", "green-atlas.desktop-profile/1"}, {"prepared", false},
+                {"error", {{"code", "PROFILE_PREPARE_FAILED"}, {"role", "profile"}, {"win32_error", 0}}}});
+        }
+        return 1;
+    }
     if (mode == "--self-test") { const bool passed = selfTest(); printJson({{"schema", "green-atlas.desktop-self-test/1"}, {"passed", passed}, {"real_windows", true}, {"webview_launched", false}}); return passed ? 0 : 1; }
     if (mode == "--build-info") { auto value = buildInfo(); try { installedSettings(false); value["layout_verified"] = true; } catch (...) { value["layout_verified"] = false; } printJson(value); return 0; }
     if (mode == "--status-json") {

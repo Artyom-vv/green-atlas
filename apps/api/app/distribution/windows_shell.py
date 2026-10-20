@@ -82,13 +82,27 @@ def message(text: str, *, confirm: bool = False, error: bool = False) -> bool:
 def write_diagnostic(text: str, *, error: bool = False) -> bool:
     """Передать UTF-8 JSON в унаследованный pipe даже у windowed frozen Setup."""
     stream = sys.stderr if error else sys.stdout
-    if stream is not None:
+    payload = text.encode("utf-8", errors="backslashreplace")
+    binary = getattr(stream, "buffer", None)
+    if binary is not None:
+        try:
+            offset = 0
+            while offset < len(payload):
+                written = binary.write(payload[offset:])
+                if not isinstance(written, int) or not 0 < written <= len(payload) - offset:
+                    return False
+                offset += written
+            binary.flush()
+            return True
+        except (OSError, ValueError):
+            return False
+    if stream is not None and os.name != "nt":
         try:
             stream.write(text)
             stream.flush()
             return True
         except (OSError, ValueError):
-            pass
+            return False
     if os.name != "nt":
         return False
     from ctypes import wintypes
@@ -102,7 +116,6 @@ def write_diagnostic(text: str, *, error: bool = False) -> bool:
     if not handle or handle == ctypes.c_void_p(-1).value:
         # Двойной щелчок по GUI setup обычно не имеет console/pipe; консоль не создаём.
         return False
-    payload = text.encode("utf-8")
     data = ctypes.create_string_buffer(payload)
     offset = 0
     while offset < len(payload):
