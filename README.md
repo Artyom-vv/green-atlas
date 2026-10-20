@@ -3,7 +3,7 @@
 Публичный срез для ЛЦТ 2026, обновлён 20 октября 2026 года. Исходники
 соответствуют Windows 0.1.130. [Установщик и инструкция](submission/prototype/README.md),
 [презентация PDF/PPTX](submission/presentation/README.md),
-[скриншоты сервиса](submission/materials/README.md).
+[демка 35 секунд, ресурсы 3D и скриншоты](submission/materials/README.md).
 
 Локальное приложение для проектирования озеленения по CAD-подоснове.
 
