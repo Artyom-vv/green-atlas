@@ -6,6 +6,7 @@
 
 ## Для разработки
 
+- [Запуск проекта и проверки](development.md).
 - [Контракт CAD-пайплайна](architecture/autocad-contract.md).
 - [Контракт отображения](architecture/native-render-capture-contract.md).
 - [Архитектура кода](architecture.md).
