@@ -24,5 +24,14 @@
     "full_installed_CAD_scenario_qualified": false,
     "real_Blender_on_Windows_tested": false,
     "native_components_recompiled": false
-  }
+  },
+  "known_issues": [
+    {
+      "id": "3d-model-load-failure",
+      "status": "reported_not_independently_reproduced",
+      "component": "3d_preview",
+      "description": "3D scene failed to open with a model-loading error for selected plants. Exact error wording, cause and affected scope are not yet confirmed.",
+      "reported_at": "2026-10-20"
+    }
+  ]
 }
