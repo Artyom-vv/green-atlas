@@ -1,0 +1,28 @@
+{
+  "schema": "green-atlas.public-release-source/1",
+  "version": "0.1.134",
+  "published_at": "2026-10-20",
+  "status": "candidate",
+  "newest_candidate": true,
+  "recommended_baseline": "0.1.133",
+  "original_product_commit": "18f30582439ffbda2c6857e22a300a97463e5ef5",
+  "original_source_seal_sha256": "4e44a40a08f22437fe77922c7cd906aa7cf3e020b280934c27bed19edcb2f2fc",
+  "installer": {
+    "name": "GreenAtlas-0.1.134-Windows-x64-Setup.exe",
+    "bytes": 299147457,
+    "sha256": "0b729c28f8fbe8ed20f6406a9080ba21fe09e1700ea299d526e578765efb1b65",
+    "url": "https://github.com/Artyom-vv/green-atlas/releases/download/v0.1.134-windows-candidate/GreenAtlas-0.1.134-Windows-x64-Setup.exe"
+  },
+  "source_snapshot": {
+    "included_in_main": false,
+    "main_product_baseline": "0.1.133",
+    "note": "Additional installer only; no 134 product source changes merged into main"
+  },
+  "qualification": {
+    "candidate": true,
+    "limited_windows_smoke_reported": true,
+    "full_installed_CAD_scenario_qualified": false,
+    "real_Blender_on_Windows_tested": false,
+    "native_components_recompiled": false
+  }
+}

@@ -1,6 +1,20 @@
 # Установка Green Atlas
 
-**[Скачать Green Atlas 0.1.133 для Windows x64](https://github.com/Artyom-vv/green-atlas/releases/download/v0.1.133-windows/GreenAtlas-0.1.133-Windows-x64-Setup-2.exe)**
+## Выбор версии
+
+| Версия Windows x64 | Статус | Скачать |
+|---|---|---|
+| **0.1.133** | Рекомендуемая, больше проверок; без части новых исправлений | [Установщик](https://github.com/Artyom-vv/green-atlas/releases/download/v0.1.133-windows/GreenAtlas-0.1.133-Windows-x64-Setup-2.exe) |
+| **0.1.134** | Новейший кандидат, ограниченно проверен; возможна нестабильность | [Установщик](https://github.com/Artyom-vv/green-atlas/releases/download/v0.1.134-windows-candidate/GreenAtlas-0.1.134-Windows-x64-Setup.exe) |
+
+134 ускоряет повторное чтение и подготовку CAD при посадке и предпросмотре,
+обновление карты после масок; исправляет адреса Web-ресурсов.
+Проверены установка, повторный запуск, обновление и удаление с сохранением данных.
+Полный сценарий AutoCAD и Blender не проверен. 133 также остаётся предварительным
+выпуском; рекомендация означает больший объём проверок, а не отсутствие ошибок.
+
+[Изменения и проверки 134](https://github.com/Artyom-vv/green-atlas/releases/tag/v0.1.134-windows-candidate),
+[контрольная сумма 134](Windows-0.1.134-SOURCE.json).
 
 ## Поддерживаемая конфигурация
 
