@@ -1,76 +1,123 @@
 import { useState, type FC } from 'react';
+import { Button, ControlProvider } from '@green/ui';
+import { ArrowLeft } from 'lucide-react';
 import { AppHeader } from '@/shared/ui/AppHeader';
-import { FlowDocument, ProjectSteps } from '@/widgets/project-flow';
+import { ProjectLocationButton } from '@/features/project-location';
 import { PreparationStatus } from './PreparationStatus';
 import { PreparationActions } from './PreparationActions';
 import { SourceLayerForm } from './SourceLayerForm';
+import { SourceRecognitionIndicator } from './SourceRecognitionIndicator';
+import { OperationProgress } from '@/entities/operation/ui/OperationProgress';
+import { operationActive } from '@/entities/operation/model/operationPresentation';
+import { PREPARATION_MESSAGES } from '@/entities/source-data/config/sourceMessages';
 import { PreparationStatusPropsFor } from './PreparationStatus.props';
 import { PreparationActionsPropsFor } from './PreparationActions.props';
 import { SourceLayerFormPropsFor } from './SourceLayerForm.props';
 import type { SourcePreparationViewProps } from './SourcePreparationView.props';
+
 export const SourcePreparationView: FC<SourcePreparationViewProps> = (
   props,
 ) => {
-  const [reviewRequest, setReviewRequest] = useState<{ section: string; sequence: number }>();
-  const {
-    projectName,
-    reviewOnly,
-    onImport,
-    onPlan,
-    mapReady,
-    cadPreview,
-    sourceReviewMessage,
-  } = props;
+  const [reviewRequest, setReviewRequest] = useState<{
+    section: string;
+    sequence: number;
+  }>();
+  const requestReview = (section: string) =>
+    setReviewRequest((previous) => ({
+      section,
+      sequence: (previous?.sequence ?? 0) + 1,
+    }));
   return (
-    <div className="flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden">
-      <AppHeader projectName={projectName} />
-      <main
-        className={
-          reviewOnly
-            ? 'mx-auto flex min-h-0 w-full max-w-280 flex-1'
-            : 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] min-[1100px]:grid-cols-[200px_minmax(0,1fr)] min-[1200px]:grid-cols-[240px_minmax(0,1fr)]'
-        }
-      >
-        {!reviewOnly && (
-          <div className="hidden min-h-0 min-[1100px]:contents">
-            <ProjectSteps active={2} projectName={projectName} />
-          </div>
-        )}
-        <FlowDocument
-          layout="panels"
-          title={
-            cadPreview
-              ? 'Предварительная карта'
-              : reviewOnly
-                ? 'План только для просмотра'
-                : 'Проверьте слои'
+    <ControlProvider size="default">
+      <div className="flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden">
+        <AppHeader
+          projectName={props.projectName}
+          variant="preparation"
+          leading={
+            props.mapReady ? (
+              <Button
+                variant="ghost"
+                startIcon={<ArrowLeft />}
+                onClick={props.onPlan}
+              >
+                К плану
+              </Button>
+            ) : undefined
           }
-          description={
-            reviewOnly
-              ? (sourceReviewMessage ??
-                'В отдельном DXF нет всех данных для продолжения проекта. Они сохраняются в полном ZIP-пакете выпуска.')
-              : 'Проверьте территорию и назначения слоёв'
+          endActions={
+            <>
+              {props.projectQuery.data?.id && (
+                <ProjectLocationButton projectId={props.projectQuery.data.id} />
+              )}
+              <SourceRecognitionIndicator
+                {...props}
+                onReview={() => requestReview('03')}
+              />
+            </>
           }
-          footer={
-            <PreparationActions
-              {...PreparationActionsPropsFor(props)}
-              onImport={onImport}
-              onPlan={onPlan}
-              mapReady={mapReady}
-              onNeedsReview={(section) => setReviewRequest((previous) => ({
-                section, sequence: (previous?.sequence ?? 0) + 1,
-              }))}
-            />
-          }
-        >
-          <div className="flex flex-col">
-            <div className="px-4 empty:hidden sm:px-6">
-              <PreparationStatus {...PreparationStatusPropsFor(props)} />
-            </div>
-            <SourceLayerForm {...SourceLayerFormPropsFor(props)} reviewRequest={reviewRequest} />
-          </div>
-        </FlowDocument>
-      </main>
-    </div>
+        />
+        <main className="flex min-h-0 flex-1">
+          <SourceLayerForm
+            {...SourceLayerFormPropsFor(props)}
+            initialSection={props.initialSection}
+            reviewRequest={reviewRequest}
+            intro={props.reviewOnly ? props.sourceReviewMessage : undefined}
+            status={<PreparationStatus {...PreparationStatusPropsFor(props)} />}
+            footer={
+              props.operation &&
+              operationActive(props.operation) &&
+              !props.statusUnknown ? (
+                <OperationProgress
+                  presentation="footer"
+                  operation={props.operation}
+                  title={
+                    props.operation.kind === 'prepare_cad_capture'
+                      ? PREPARATION_MESSAGES.preparingDrawing
+                      : PREPARATION_MESSAGES.preparingMap
+                  }
+                  stageLabel={
+                    props.previousSourceOperation
+                      ? PREPARATION_MESSAGES.previousDrawing
+                      : undefined
+                  }
+                  actionBusy={
+                    props.cancelOperation.isPending ||
+                    props.saveMutation.isPending
+                  }
+                  onCancel={() =>
+                    props.cancelOperation.mutate(props.operation!.id!)
+                  }
+                />
+              ) : (
+                <PreparationActions
+                  {...PreparationActionsPropsFor(props)}
+                  status={
+                    props.operation && !operationActive(props.operation) ? (
+                      <OperationProgress
+                        presentation="footer"
+                        operation={props.operation}
+                        title={
+                          props.operation.kind === 'prepare_cad_capture'
+                            ? PREPARATION_MESSAGES.preparingDrawing
+                            : PREPARATION_MESSAGES.preparingMap
+                        }
+                        actionBusy={props.saveMutation.isPending}
+                        onDownloadSource={() => {
+                          window.location.href = props.downloadSource();
+                        }}
+                      />
+                    ) : undefined
+                  }
+                  onImport={props.onImport}
+                  onPlan={props.onPlan}
+                  mapReady={props.mapReady}
+                  onNeedsReview={requestReview}
+                />
+              )
+            }
+          />
+        </main>
+      </div>
+    </ControlProvider>
   );
 };

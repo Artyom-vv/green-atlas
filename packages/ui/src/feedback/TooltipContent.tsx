@@ -12,7 +12,7 @@ export const TooltipContent: FC<TooltipContentProps> = ({ id, children }) => (
       <BaseTooltip.Popup
         id={id}
         role="tooltip"
-        className="rounded-control max-w-64 bg-neutral-800 px-2 py-1 text-xs leading-4 text-white shadow-lg"
+        className="rounded-control max-w-64 bg-neutral-800 px-2 py-1 text-xs leading-4 wrap-anywhere text-white shadow-lg"
       >
         {children}
       </BaseTooltip.Popup>

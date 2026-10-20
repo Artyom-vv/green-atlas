@@ -4,6 +4,11 @@
 #include "bridge_config.h"
 #include "live_query_session.h"
 #include "file_io.h"
+#ifdef _WIN32
+#include "local_platform.h"
+#include "filesystem_utf8.h"
+#endif
+#include "operation_control.h"
 #include "aced.h"
 #include "adslib.h"
 #include "acdocman.h"
@@ -12,9 +17,11 @@
 
 #include <stdexcept>
 #include <filesystem>
+#ifndef _WIN32
 #include <sys/stat.h>
 #include <unistd.h>
 #include <uuid/uuid.h>
+#endif
 
 namespace {
 bool preparing = false;
@@ -65,11 +72,19 @@ void gaOpenInService() {
             throw std::runtime_error("Не удалось проверить состояние исходного чертежа.");
         const bool modified = modification.resval.rint != 0;
         if (!gaDelivery::confirmPreparation(modified)) return;
-        gaDelivery::stage("Считываем открытый чертёж средствами AutoCAD…");
+        ga::bridge::ScopedOperationControl progress({
+            [] { return acedUsrBrk() != 0; }, gaDelivery::progress});
+        gaDelivery::stage("Считываем открытый чертёж средствами AutoCAD");
         checkCancel();
         const std::string directory = gaDelivery::createStaging();
         if (directory.empty()) throw std::runtime_error("Не удалось создать папку передачи.");
         const std::string capture = directory + "/Drawing.autocad.json";
+#ifdef _WIN32
+        const auto token = ga::platform::randomToken();
+        const auto queue = ga::platform::liveQueueDirectory();
+        if(!ga::platform::ensurePrivateDirectory(queue))
+            throw std::runtime_error("Недопустимый каталог расчётного сеанса");
+#else
         uuid_t uuid; uuid_generate_random(uuid);
         char formatted[37]; uuid_unparse_lower(uuid,formatted);
         std::string token; for(char ch:std::string(formatted)) if(ch!='-') token+=ch;
@@ -80,23 +95,56 @@ void gaOpenInService() {
         if(lstat(queue.c_str(),&queueInfo)!=0||!S_ISDIR(queueInfo.st_mode)
             ||queueInfo.st_uid!=getuid()||(queueInfo.st_mode&077))
             throw std::runtime_error("Недопустимый каталог расчётного сеанса");
+#endif
         const auto snapshot=queue+"/map-"+token+".json";
-        const auto liveSession=ga::liveQuery::openSession(token,snapshot);
+        std::string transferFacts;
+        const auto liveSession=ga::liveQuery::openSession(token,snapshot,&transferFacts);
+        #ifdef _WIN32
+        std::filesystem::copy_file(ga::bridge::nativePath(snapshot),ga::bridge::nativePath(capture),
+            std::filesystem::copy_options::none);
+#else
         std::filesystem::copy_file(snapshot,capture,std::filesystem::copy_options::none);
+#endif
         if(ga::bridge::sha256File(capture)!=ga::bridge::sha256File(snapshot))
             throw std::runtime_error("Снимок изменился во время передачи");
         checkSourceState(document, live, "проверка геометрии");
-        gaDelivery::endStage();
-        const auto issues = gaDelivery::liveProbeIssues(directory);
-        if (!issues.empty() && !gaDelivery::confirmLivePartial(issues)) return;
+        checkCancel();
+        gaDelivery::stage("Сохраняем чертёж и загруженные подосновы проекта");
+        ga::liveQuery::archiveSession(token, directory + "/Native");
+#ifdef _WIN32
+        std::filesystem::copy_file(ga::bridge::nativePath(snapshot + ".inventory.json"),
+            ga::bridge::nativePath(capture + ".inventory.json"), std::filesystem::copy_options::none);
+#else
+        std::filesystem::copy_file(snapshot + ".inventory.json",
+            capture + ".inventory.json", std::filesystem::copy_options::none);
+#endif
+        checkSourceState(document, live, "архивирование чертежа");
+        checkCancel();
+        gaDelivery::stage("Проверяем данные и замечания к исходнику");
+        const auto issues = gaDelivery::liveProbeIssues(directory, transferFacts);
+        checkSourceState(document, live, "проверка данных передачи");
+        checkCancel();
+        if (!issues.empty()) {
+            gaDelivery::endStage();
+            if (!gaDelivery::confirmLivePartial(issues)) return;
+            checkSourceState(document, live, "подтверждение замечаний");
+            checkCancel();
+        }
+        gaDelivery::stage("Проверяем файлы и передаём проект в Green Atlas");
         const auto version = acdbHostApplicationServices()->releaseMarketVersion();
         const std::string ticket = gaDelivery::writeLiveTicket(
             directory, ga::bridge::kPluginVersion,
-            version ? AcString(version).utf8Str() : "2027", liveSession);
+            version ? AcString(version).utf8Str() : "2027", liveSession, transferFacts);
         if (ticket.empty()) throw std::runtime_error("Не удалось проверить файлы передачи.");
-        if (!gaDelivery::launchConnector(ticket))
-            throw std::runtime_error("Не удалось открыть приложение передачи. Переустановите полный пакет Green Atlas.");
-        acutPrintf(_T("\nGreen Atlas: геометрия открытого чертежа передана в локальное приложение."));
+        checkSourceState(document, live, "передача проекта");
+        checkCancel();
+        std::string launchFailure;
+        if (!gaDelivery::launchConnector(ticket, &launchFailure))
+            throw std::runtime_error(launchFailure.empty()
+                ? "Не удалось открыть приложение передачи. Файлы сохранены в списке передач AutoCAD."
+                : launchFailure);
+        gaDelivery::endStage();
+        acutPrintf(_T("\nGreen Atlas: файлы передачи готовы, запрос на открытие отправлен"));
     } catch (const std::exception& failure) {
         gaDelivery::endStage();
         gaDelivery::error(failure.what());

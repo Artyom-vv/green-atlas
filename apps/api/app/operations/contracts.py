@@ -1,3 +1,7 @@
+"""Виды, состояния, ошибки и результаты фоновых операций проекта с текущим прогрессом
+выполнения.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -13,6 +17,7 @@ from app.cad_intake.preview_contracts import CadPreviewRecord
 
 
 class OperationKind(StrEnum):
+    PREPARE_CAD_CAPTURE = "prepare_cad_capture"
     CALCULATE_GEOMETRY = "calculate_geometry"
     INSPECT_CAD_PACKAGE = "inspect_cad_package"
     PREPARE_CAD_PREVIEW = "prepare_cad_preview"

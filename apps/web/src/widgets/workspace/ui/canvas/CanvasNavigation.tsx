@@ -1,27 +1,38 @@
-import { MapControlGroup } from '@/widgets/map/ui/MapControlGroup';
-import { IconButton } from '@green/ui';
-import { Crosshair, Maximize2, Minus, Plus } from 'lucide-react';
+import {
+  CanvasControlGroup,
+  CanvasControlSlot,
+} from '@/shared/ui/CanvasControls';
+import { Divider, IconButton } from '@green/ui';
+import { Crosshair, LandPlot, Maximize2, Minus, Plus } from 'lucide-react';
 import type { FC } from 'react';
 import type { WorkspaceReadyModel } from '../../model/useWorkspaceModel';
 
 export interface CanvasNavigationProps extends Pick<
   WorkspaceReadyModel,
-  'mapViewport' | 'project' | 'sceneOpen'
+  | 'focusZones'
+  | 'mapViewport'
+  | 'project'
+  | 'sceneOpen'
+  | 'selectedPatternZones'
 > {}
 export const CanvasNavigationPropsFor = (props: CanvasNavigationProps) => ({
   mapViewport: props.mapViewport,
   project: props.project,
   sceneOpen: props.sceneOpen,
+  focusZones: props.focusZones,
+  selectedPatternZones: props.selectedPatternZones,
 });
 export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   mapViewport,
   project,
   sceneOpen,
+  focusZones,
+  selectedPatternZones,
 }) => (
   <>
     {!sceneOpen && (
-      <div className="absolute right-4 bottom-11 z-40 flex flex-col gap-2">
-        <MapControlGroup orientation="vertical" label="Масштаб карты">
+      <CanvasControlSlot position="bottomRight">
+        <CanvasControlGroup orientation="vertical" label="Масштаб карты">
           <IconButton
             icon={Plus}
             label="Увеличить"
@@ -34,24 +45,31 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
             variant="ghost"
             onClick={() => mapViewport.current?.zoomOut()}
           />
+          <Divider />
           <IconButton
             icon={Maximize2}
             label="Показать весь чертёж"
             variant="ghost"
             onClick={() => mapViewport.current?.fit()}
           />
-        </MapControlGroup>
-        {project.plan && (
-          <MapControlGroup orientation="vertical" label="План озеленения">
+          {selectedPatternZones.length > 0 && (
+            <IconButton
+              icon={LandPlot}
+              label={`Показать выбранные участки (${selectedPatternZones.length})`}
+              variant="ghost"
+              onClick={() => focusZones(selectedPatternZones)}
+            />
+          )}
+          {project.plan && (
             <IconButton
               icon={Crosshair}
               label="Показать посадки"
               variant="ghost"
               onClick={() => mapViewport.current?.fitPlan()}
             />
-          </MapControlGroup>
-        )}
-      </div>
+          )}
+        </CanvasControlGroup>
+      </CanvasControlSlot>
     )}
   </>
 );

@@ -1,0 +1,10 @@
+{
+  "schema": "green-atlas.windows-ci-inputs/1",
+  "webview2": {
+    "version": "1.0.4191.47",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4191.47/microsoft.web.webview2.1.0.4191.47.nupkg",
+    "sha256": "f492bbf547d0da329553b6727435b677579b1e9f91cc9e4a1ad029366d5f23d0"
+  },
+  "python": "3.13.15",
+  "uv": "0.13.1"
+}

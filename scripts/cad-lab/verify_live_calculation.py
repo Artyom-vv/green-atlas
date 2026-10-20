@@ -19,7 +19,7 @@ def main():
     os.environ['GREEN_ATLAS_DB_PATH'] = args.qa_db
     from app.composition import get_application, close_runtime
     from app.projects.contracts import Project
-    from app.dxf_import.layer_contracts import LayerMapping
+    from app.dxf_import.layers.contracts import LayerMapping
 
     response = httpx.get(args.url, params={'include_geometry': 'true'}, timeout=120)
     response.raise_for_status()

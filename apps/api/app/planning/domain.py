@@ -1,8 +1,14 @@
+"""Расстояния между посадками по габаритам и прогнозу роста с индексом соседей и
+конфликтом версии плана.
+"""
+
 from collections import defaultdict
 from math import ceil, floor, hypot
 
 from app.planning.contracts import PlanObject
+from app.planning.config import DEFAULT_PLANNING_HORIZON_YEAR
 from app.regulations.placement_config import PLACEMENT_CONFIG
+from app.species.forecast import forecast_at
 
 
 class PlanVersionConflict(Exception):
@@ -14,22 +20,31 @@ class PlanVersionConflict(Exception):
         )
 
 
-def planning_radius(object_: PlanObject) -> float:
-    """Largest known crown radius at the configured planning horizon."""
+def planning_radius(
+    object_: PlanObject, planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR
+) -> float:
+    """Возвращает наибольший известный радиус кроны на заданном горизонте планирования."""
 
-    forecast = next(
-        (item for item in object_.canopy_forecast if item.horizon_year == PLACEMENT_CONFIG.layout.growth_horizon_year),
-        None,
-    )
+    forecast = forecast_at(object_.canopy_forecast, planning_horizon_year)
     return max(object_.radius, forecast.radius_max_m if forecast else 0.0)
 
 
-def required_spacing(first: PlanObject, second: PlanObject) -> float:
-    """Minimum centre-to-centre distance based on the plants' growth envelopes."""
-    first_radius = planning_radius(first)
-    second_radius = planning_radius(second)
+def required_spacing(
+    first: PlanObject,
+    second: PlanObject,
+    planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR,
+) -> float:
+    """Определяет минимальное расстояние между центрами по прогнозным габаритам
+    растений.
+    """
+    first_radius = planning_radius(first, planning_horizon_year)
+    second_radius = planning_radius(second, planning_horizon_year)
     same_group = bool(set(first.group_ids) & set(second.group_ids))
-    policy = first.spacing_policy if same_group and first.spacing_policy == second.spacing_policy else "open"
+    policy = (
+        first.spacing_policy
+        if same_group and first.spacing_policy == second.spacing_policy
+        else "open"
+    )
     layout = PLACEMENT_CONFIG.layout
     if first.kind == "tree" and second.kind == "tree":
         if policy == "canopy":
@@ -42,19 +57,33 @@ def required_spacing(first: PlanObject, second: PlanObject) -> float:
     return layout.mixed.distance(first_radius + second_radius)
 
 
-def respects_plant_spacing(candidate: PlanObject, objects: list[PlanObject], ignore_id: str | None = None) -> bool:
+def respects_plant_spacing(
+    candidate: PlanObject,
+    objects: list[PlanObject],
+    ignore_id: str | None = None,
+    *,
+    planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR,
+) -> bool:
     return all(
         existing.id == ignore_id
-        or hypot(candidate.x - existing.x, candidate.y - existing.y) >= required_spacing(candidate, existing)
+        or hypot(candidate.x - existing.x, candidate.y - existing.y)
+        >= required_spacing(candidate, existing, planning_horizon_year)
         for existing in objects
     )
 
 
 class PlantSpacingIndex:
-    """Uniform spatial index for validation without a quadratic pass."""
+    """Индекс соседей по общему горизонту плана без квадратичного прохода."""
 
-    def __init__(self, objects: list[PlanObject] | None = None, cell_size: float = 8.0) -> None:
+    def __init__(
+        self,
+        objects: list[PlanObject] | None = None,
+        cell_size: float = 8.0,
+        *,
+        planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR,
+    ) -> None:
         self.cell_size = cell_size
+        self.planning_horizon_year = planning_horizon_year
         self.cells: dict[tuple[int, int], list[PlanObject]] = defaultdict(list)
         self.max_radius = 0.0
         for object_ in objects or []:
@@ -65,10 +94,12 @@ class PlantSpacingIndex:
 
     def nearby(self, candidate: PlanObject) -> list[PlanObject]:
         cell_x, cell_y = self._key(candidate)
-        # Custom planting radii can be much larger than a default crown. A
-        # fixed 3×3 window silently misses collisions across several 8 m
-        # cells, so derive the search span from the widest possible rule.
-        max_distance = PLACEMENT_CONFIG.layout.maximum_spacing(planning_radius(candidate) + self.max_radius)
+        # Пользовательский радиус может значительно превосходить обычную крону.
+        # Фиксированное окно 3×3 пропускало столкновения через несколько ячеек 8 м;
+        # размер поиска определяется наибольшим возможным правилом.
+        max_distance = PLACEMENT_CONFIG.layout.maximum_spacing(
+            planning_radius(candidate, self.planning_horizon_year) + self.max_radius
+        )
         cell_radius = max(1, ceil(max_distance / self.cell_size))
         return [
             object_
@@ -78,8 +109,15 @@ class PlantSpacingIndex:
         ]
 
     def respects(self, candidate: PlanObject, ignore_id: str | None = None) -> bool:
-        return respects_plant_spacing(candidate, self.nearby(candidate), ignore_id=ignore_id)
+        return respects_plant_spacing(
+            candidate,
+            self.nearby(candidate),
+            ignore_id=ignore_id,
+            planning_horizon_year=self.planning_horizon_year,
+        )
 
     def add(self, object_: PlanObject) -> None:
         self.cells[self._key(object_)].append(object_)
-        self.max_radius = max(self.max_radius, planning_radius(object_))
+        self.max_radius = max(
+            self.max_radius, planning_radius(object_, self.planning_horizon_year)
+        )

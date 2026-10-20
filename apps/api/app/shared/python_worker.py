@@ -1,21 +1,29 @@
-"""Launch existing isolated workers from Python or the bundled desktop runtime."""
+"""Запуск существующих изолированных Python-работников из интерпретатора или собранного
+desktop runtime.
+"""
 
 from __future__ import annotations
 
 import runpy
 import sys
+from collections.abc import Sequence
 
 WORKER_MODULES = frozenset(
     {
-        "app.cad_delivery.compile_worker",
-        "app.cad_intake.worker",
-        "app.cad_intake.prepare_worker",
-        "app.cad_intake.preview_worker",
-        "app.cad_import.inspection",
-        "app.cad_import.aoi_worker",
-        "app.dxf_import.live_worker",
+        "app.cad_import.legacy.inspection",
+        "app.dxf_import.native.live_worker",
     }
 )
+
+
+def is_bundled_worker_command(command: Sequence[str]) -> bool:
+    """Библиотеки комплекта наследует только разрешённый worker своего executable."""
+    return (
+        len(command) >= 3
+        and command[0] == sys.executable
+        and command[1] == "--worker"
+        and command[2] in WORKER_MODULES
+    )
 
 
 def worker_command(module: str, *arguments: str) -> list[str]:
@@ -26,7 +34,9 @@ def worker_command(module: str, *arguments: str) -> list[str]:
 
 
 def dispatch_worker(arguments: list[str]) -> bool:
-    """Called before API/GUI startup; never dynamically execute arbitrary modules."""
+    """Запускает разрешённый обработчик до API/GUI без динамического вызова произвольных
+    модулей.
+    """
     if not arguments or arguments[0] != "--worker":
         return False
     if len(arguments) < 2 or arguments[1] not in WORKER_MODULES:

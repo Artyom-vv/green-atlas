@@ -1,3 +1,9 @@
+"""Порт постоянного журнала операций с условным сохранением и восстановлением
+незавершённых запусков.
+"""
+
+from collections.abc import Iterator
+from threading import Event
 from typing import Protocol
 
 from app.operations.contracts import OperationKind, ProjectOperation
@@ -14,3 +20,7 @@ class OperationRepository(Protocol):
         self, project_id: str, kind: OperationKind
     ) -> ProjectOperation | None: ...
     def recover_incomplete(self) -> list[ProjectOperation]: ...
+    def watch(
+        self, operation_id: str, *, stop: Event
+    ) -> Iterator[ProjectOperation | None]: ...
+    def cancel_watch(self, stop: Event) -> None: ...

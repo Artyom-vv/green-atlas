@@ -1,4 +1,6 @@
-"""python -m app.cad_import convert FILE --converter EXE --cache DIR."""
+"""Служебный CLI прежней CAD-конвертации: проверяет копию и сохраняет отчёт, не заменяя
+вход через AutoCAD.
+"""
 
 import argparse
 import io
@@ -8,10 +10,10 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-from app.cad_import.conversion import LibreDwgConverter
-from app.cad_import.dxf_inspection import DxfInspector
-from app.cad_import.package import PackageInspector, write_package
-from app.cad_import.package_contracts import ReferenceOverride
+from app.cad_import.archive.package import PackageInspector, write_package
+from app.cad_import.archive.package_contracts import ReferenceOverride
+from app.cad_import.legacy.conversion import LibreDwgConverter
+from app.cad_import.legacy.dxf_inspection import DxfInspector
 
 
 def main() -> int:
@@ -34,7 +36,9 @@ def main() -> int:
     package.add_argument("root", type=Path)
     package.add_argument("--entry", type=Path, required=True)
     package.add_argument("--output", type=Path, required=True)
-    package.add_argument("--converter", type=Path, help="Optional DWG converter; native DXF needs none")
+    package.add_argument(
+        "--converter", type=Path, help="Optional DWG converter; native DXF needs none"
+    )
     package.add_argument("--cache", type=Path, required=True)
     package.add_argument(
         "--xref-map",
@@ -53,11 +57,12 @@ def main() -> int:
             )
             manifest = PackageInspector(
                 DxfInspector(args.cache),
-                converter_factory=(lambda: LibreDwgConverter(args.converter, args.cache))
-                if args.converter is not None else None,
-            ).inspect(
-                args.root, args.entry, overrides
-            )
+                converter_factory=(
+                    lambda: LibreDwgConverter(args.converter, args.cache)
+                )
+                if args.converter is not None
+                else None,
+            ).inspect(args.root, args.entry, overrides)
             write_package(manifest, args.output)
             print(
                 json.dumps(

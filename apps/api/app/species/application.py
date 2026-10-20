@@ -1,7 +1,13 @@
+"""Чтение каталогов видов и предварительный подбор для выбранных посадок и зон без
+изменения плана.
+"""
+
 from shapely.geometry import shape
 from shapely.ops import unary_union
 
 from app.projects.ports import ProjectReader
+from app.projects.read_projection import read_verified_project
+from app.shared.failures import DomainFailure, FailureReason, ResourceNotFound
 from app.species.assortment_inventory import AssortmentInventory, assortment_inventory
 from app.species.catalog import list_species
 from app.species.contracts import SpeciesRevision, SpeciesShortlistItem
@@ -14,7 +20,7 @@ class SpeciesApplication:
     @staticmethod
     def species_catalog(kind: str | None = None) -> list[SpeciesRevision]:
         if kind not in {None, "tree", "shrub"}:
-            raise ValueError("Неизвестный тип посадки")
+            raise DomainFailure(FailureReason.PLANT_KIND_UNKNOWN)
         return list_species(kind)
 
     @staticmethod
@@ -28,26 +34,31 @@ class SpeciesApplication:
         zone_ids: list[str] | None = None,
         kind: str | None = None,
     ) -> list[SpeciesShortlistItem]:
-        project = self.repository.get(project_id)
+        # Подбор использует сохранённые посадки, участки и площади. Координаты
+        # CAD-объектов не участвуют; целостность их ссылок проверяет проекция.
+        project = read_verified_project(self.repository, project_id)
         if project.plan is None:
-            raise ValueError("План ещё не создан")
+            raise DomainFailure(FailureReason.PLAN_MISSING)
         if object_ids:
             requested = set(object_ids)
             selected = [item for item in project.plan.objects if item.id in requested]
             if len(selected) != len(requested):
-                raise KeyError("Одна из выбранных посадок не найдена")
+                raise ResourceNotFound(FailureReason.SELECTED_PLANTING_MISSING)
             kinds = {item.kind for item in selected}
             if len(kinds) != 1:
-                raise ValueError("Для подбора породы выберите посадки одного типа")
+                raise DomainFailure(FailureReason.SPECIES_SELECTION_KIND_MIXED)
             kind = next(iter(kinds))
             scope_reason = "Соответствует типу выбранных посадочных мест"
         else:
             requested_zones = set(zone_ids or [])
             known_zones = {zone.id: zone for zone in project.planting_zones}
             if not requested_zones or requested_zones - set(known_zones):
-                raise ValueError("Один из выбранных участков больше не существует")
+                raise DomainFailure(
+                    FailureReason.ZONE_MISSING,
+                    {"zone_ids": sorted(requested_zones - set(known_zones))},
+                )
             if kind not in {None, "tree", "shrub"}:
-                raise ValueError("Укажите тип растительности")
+                raise DomainFailure(FailureReason.PLANT_KIND_REQUIRED)
             scope_reason = (
                 f"Предварительный выбор для {len(requested_zones)} выбранных участков"
             )
@@ -74,9 +85,9 @@ class SpeciesApplication:
             mature_diameter = revision.mature_crown_diameter_max_m
             capacity: int | None = None
             if estimated_safe_area_m2 is not None:
-                # This is an explainable capacity cue, not a placement result:
-                # the preview still validates every concrete position against
-                # hard objects and statutory offsets.
+                # Это объяснимый ориентир ёмкости, а не результат размещения. Предпросмотр
+                # всё равно проверяет каждую позицию по физическим объектам
+                # и нормативным отступам.
                 footprint = max(1.0, mature_diameter**2)
                 capacity = max(0, int(estimated_safe_area_m2 / footprint))
                 reasons.append(

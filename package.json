@@ -7,6 +7,8 @@
     "dev:web": "pnpm --filter @green/web dev",
     "build": "pnpm --filter @green/ui build && pnpm --filter @green/web build",
     "test": "pnpm --filter @green/api-client test && pnpm --filter @green/ui test && pnpm --filter @green/web test",
+    "test:stability:web": "pnpm --filter @green/web exec vitest run --bail=1 --testTimeout=5000 --hookTimeout=5000 src/pages/SetupPage.test.tsx src/pages/SetupPage.recognition.test.tsx src/features/source-preparation/model/usePreparationCompletion.test.tsx src/features/source-preparation/model/usePreparationOperationObservation.test.tsx src/features/source-preparation/model/usePreparationCommit.test.ts src/features/plan-changes/model/usePlanChangeCommit.test.tsx src/features/growth-scenario/model/useGrowthScenario.test.tsx src/features/planting-zones/model/useZoneCommands.test.tsx src/features/placement/single/model/useSinglePlacement.test.ts src/widgets/workbench/model/ideWorkspaceLayout.test.ts src/features/placement/inspection/ui/PlacementScenarioPicker.test.tsx src/features/placement/inspection/model/useCandidateInspection.test.tsx",
+    "test:stability:native": "bash tools/autocad-bridge/build-desktop-macos.sh --self-tests",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm --filter @green/web lint",
     "storybook": "pnpm --filter @green/ui storybook",

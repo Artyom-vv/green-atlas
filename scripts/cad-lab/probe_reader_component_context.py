@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import time
 
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 
 
 if __name__ == "__main__":

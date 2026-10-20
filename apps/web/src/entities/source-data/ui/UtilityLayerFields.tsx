@@ -1,11 +1,13 @@
 import type { LayerMapping } from '@green/api-client';
-import { Button, Disclosure, TextInput, Select } from '@green/ui';
+import { Button, Checkbox, Disclosure, TextInput, Select } from '@green/ui';
 import { EMPTY_UTILITY_CONTEXT } from '../model/layerKinds';
 
 type Context = NonNullable<LayerMapping['utility_context']>;
 interface Props {
   mapping: LayerMapping;
   onChange: (next: LayerMapping) => void;
+  embedded?: boolean;
+  readOnly?: boolean;
 }
 const NETWORK_TYPES = {
   unknown: 'Не выбран',
@@ -30,7 +32,13 @@ const INSTALLATIONS = {
   aboveground: 'Надземная',
 } as const;
 
-export function UtilityLayerFields({ mapping, onChange }: Props) {
+/** Embedded fields share the row's one disclosure; legacy callers keep their own disclosure. */
+export function UtilityLayerFields({
+  mapping,
+  onChange,
+  embedded = false,
+  readOnly = false,
+}: Props) {
   const context = mapping.utility_context ?? EMPTY_UTILITY_CONTEXT;
   const update = (patch: Partial<Context>) =>
     onChange({
@@ -41,7 +49,7 @@ export function UtilityLayerFields({ mapping, onChange }: Props) {
           : mapping.category,
       utility_context: { ...context, ...patch, review_status: 'unconfirmed' },
     });
-  const complete =
+  const complete = Boolean(
     context.network_type &&
     context.network_type !== 'unknown' &&
     context.geometry_reference &&
@@ -49,22 +57,23 @@ export function UtilityLayerFields({ mapping, onChange }: Props) {
     context.installation &&
     context.installation !== 'unknown' &&
     context.source_reference?.trim() &&
-    context.confirmed_by?.trim();
-  return (
-    <Disclosure
-      variant="plain"
-      title={
-        context.review_status === 'confirmed'
-          ? 'Параметры сети подтверждены'
-          : 'Дополнительные сведения'
-      }
-    >
-      <div className="space-y-2 text-xs">
-        <div className="text-neutral-600">Расчёт доступен без заполнения</div>
-        <label className="block">
-          Тип сети
+    context.confirmed_by?.trim(),
+  );
+  const content = (
+    <div className="min-w-0 space-y-4 text-sm">
+      {embedded && (
+        <h3 className="m-0 text-sm font-medium">Параметры инженерной сети</h3>
+      )}
+      <p className="m-0 text-xs text-neutral-500">
+        Расчёт доступен без заполнения
+      </p>
+      <div className="grid min-w-0 gap-4 @xl:grid-cols-2">
+        <label className="grid min-w-0 gap-2">
+          <span className="text-xs text-neutral-600">Тип сети</span>
           <Select
             aria-label="Тип сети"
+            controlSize="default"
+            disabled={readOnly}
             value={context.network_type ?? 'unknown'}
             onChange={(e) =>
               update({
@@ -79,10 +88,12 @@ export function UtilityLayerFields({ mapping, onChange }: Props) {
             ))}
           </Select>
         </label>
-        <label className="block">
-          Прокладка
+        <label className="grid min-w-0 gap-2">
+          <span className="text-xs text-neutral-600">Прокладка</span>
           <Select
             aria-label="Прокладка"
+            controlSize="default"
+            disabled={readOnly}
             value={context.installation ?? 'unknown'}
             onChange={(e) =>
               update({
@@ -97,10 +108,12 @@ export function UtilityLayerFields({ mapping, onChange }: Props) {
             ))}
           </Select>
         </label>
-        <label className="block">
-          Что обозначает линия
+        <label className="grid min-w-0 gap-2">
+          <span className="text-xs text-neutral-600">Что обозначает линия</span>
           <Select
             aria-label="Что обозначает линия"
+            controlSize="default"
+            disabled={readOnly}
             value={context.geometry_reference ?? 'unknown'}
             onChange={(e) =>
               update({
@@ -116,37 +129,75 @@ export function UtilityLayerFields({ mapping, onChange }: Props) {
             ))}
           </Select>
         </label>
-        <label className="block">
-          Источник сведений
+        <label className="grid min-w-0 gap-2">
+          <span className="text-xs text-neutral-600">Источник сведений</span>
           <TextInput
+            controlSize="default"
+            readOnly={readOnly}
             value={context.source_reference ?? ''}
             maxLength={500}
             onChange={(e) => update({ source_reference: e.target.value })}
           />
         </label>
-        <label className="block">
-          Кто подтвердил
+        <label className="grid min-w-0 gap-2">
+          <span className="text-xs text-neutral-600">Кто подтвердил</span>
           <TextInput
+            controlSize="default"
+            readOnly={readOnly}
             value={context.confirmed_by ?? ''}
             maxLength={160}
             onChange={(e) => update({ confirmed_by: e.target.value })}
           />
         </label>
-        {context.review_status !== 'confirmed' && (
-          <Button
-            controlSize="compact"
-            disabled={!complete}
-            onClick={() =>
-              onChange({
-                ...mapping,
-                utility_context: { ...context, review_status: 'confirmed' },
-              })
-            }
-          >
-            Подтвердить параметры
-          </Button>
-        )}
       </div>
+      {embedded
+        ? complete && (
+            <Checkbox
+              label="Подтверждаю параметры сети по указанному источнику"
+              controlSize="default"
+              disabled={readOnly}
+              checked={context.review_status === 'confirmed'}
+              onChange={(event) =>
+                onChange({
+                  ...mapping,
+                  utility_context: {
+                    ...context,
+                    review_status: event.target.checked
+                      ? 'confirmed'
+                      : 'unconfirmed',
+                  },
+                })
+              }
+            />
+          )
+        : !readOnly &&
+          context.review_status !== 'confirmed' && (
+            <Button
+              controlSize="compact"
+              disabled={!complete}
+              onClick={() =>
+                onChange({
+                  ...mapping,
+                  utility_context: { ...context, review_status: 'confirmed' },
+                })
+              }
+            >
+              Подтвердить параметры
+            </Button>
+          )}
+    </div>
+  );
+  if (embedded) return content;
+  return (
+    <Disclosure
+      variant="plain"
+      title={
+        context.review_status === 'confirmed'
+          ? 'Параметры сети подтверждены'
+          : 'Дополнительные сведения'
+      }
+    >
+      {content}
     </Disclosure>
   );
 }

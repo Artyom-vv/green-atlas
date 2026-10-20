@@ -1,49 +1,36 @@
-import { useAssistantMapBridge } from './useAssistantMapBridge';
-import { useCandidateInspection } from '@/features/placement/model/useCandidateInspection';
-import { useWorkspaceCadSource } from './useWorkspaceCadSource';
+import { useWorkspacePlacementDraft } from './useWorkspacePlacementDraft';
+import { useCandidateInspection } from '@/features/placement/inspection/model/useCandidateInspection';
+import { useWorkspaceCadSource } from './viewport/useWorkspaceCadSource';
 import { useWorkspaceRefresh } from '@/features/workspace/api/useWorkspaceRefresh';
-import { useWorkspaceNavigation } from './useWorkspaceNavigation';
+import { useWorkspaceNavigation } from './navigation/useWorkspaceNavigation';
+import { workspacePersistenceState } from '@/features/workspace/model/workspacePersistenceState';
+import { acknowledgeProjectWrite } from '@/entities/project/model/acknowledgedRead';
+import { projectPreparationNotice } from '@/entities/project/model/projectResume';
 import { useMoveValidation } from '@/features/plan-changes/model/useMoveValidation';
-import { previewPlanChanges } from '@/features/plan-changes/api/previewPlanChanges';
 import {
   workspaceProjectQuery,
   workspaceHistoryQuery,
   workspaceSpeciesQuery,
-  workspaceSceneQuery,
   workspaceZonePreviewQuery,
 } from '@/features/workspace/api/workspaceQueries';
 import {
-  buildingTargetsQuery,
   selectionSpeciesQuery,
   zoneSpeciesQuery,
   placementMasksQueryOptions,
 } from '@/features/workspace/api/placementQueries';
-import {
-  previewWorkspacePattern,
-  previewWorkspaceBrush,
-  previewWorkspaceRecommendation,
-  previewWorkspaceAutomatic,
-} from '@/features/workspace/api/workspacePreviews';
 import type {
   EditorPanel as WorkspacePanel,
   EditorRightTab as IdeRightTab,
 } from '@/entities/editor';
 import { useEditorSession } from '@/entities/editor';
-import type { PlanViewState } from '@/entities/editor/model/planViewState';
 import { type GrowthHorizon } from '@/entities/planting-forecast';
-import { zoneChangeFrame } from '@/entities/planting-zone/model/zoneChangeSummary';
-import { groupTransformDraft } from '@/entities/planting/model/groupTransform';
-import { placementPreviewFrame } from '@/entities/planting/model/placementPreviewFrame';
-import { metadataOnlyObjectIds } from '@/entities/planting/model/planPresentation';
-import { useProjectAssistant } from '@/features/assistant';
+import { useGrowthScenario } from '@/features/growth-scenario/model/useGrowthScenario';
 import {
-  toRowSketchSettings,
-  usePatternForm,
-  useSinglePlacement,
-  type PatternFormValues,
-} from '@/features/placement';
-import { toLiveBrushSettings } from '@/features/placement/model/brushForm';
-import { useBrushForm } from '@/features/placement/model/useBrushForm';
+  currentGrowthIssues,
+  objectsWithIssues,
+} from '@/features/growth-scenario/model/growthScenario';
+import { groupTransformDraft } from '@/entities/planting/model/groupTransform';
+import { useSinglePlacement } from '@/features/placement';
 import {
   useDeleteSelection,
   usePlanChangeCommit,
@@ -56,7 +43,6 @@ import type {
   ZoneReviewDraft,
 } from '@/features/planting-zones/model/zoneDrawing';
 import { useProjectRelease } from '@/features/project-release/model/useProjectRelease';
-import { useRecommendationForm } from '@/features/recommendation';
 import { useStartWorkspace } from '@/features/start-workspace/model/useStartWorkspace';
 import { resolveInspectorView } from '@/features/workspace/inspectorView';
 import { manualWorkspaceWork } from '@/features/workspace/manualWorkspaceWork';
@@ -65,9 +51,6 @@ import {
   zoneCollection,
   zoneExtent,
 } from '@/features/workspace/zoneSelection';
-import { useLatestPreview } from '@/shared/async/useLatestPreview';
-import { featureAvailability } from '@/shared/config/featureAvailability';
-import { initialWorkspaceExtent } from './initialWorkspaceExtent';
 import { useViewportGeometry } from '@/widgets/map/api/useViewportGeometry';
 import {
   type MapAreaTarget,
@@ -75,77 +58,49 @@ import {
   type MapViewportHandle,
 } from '@/widgets/map/model/mapContracts';
 import { type MapTool } from '@/widgets/map/ui/MapToolbar';
-import type { SceneReviewHandle } from '@/widgets/scene/ui/SceneReview';
-import type { BuildingScreenRequest } from '@green/api-client';
-import {
-  type BrushPreview,
-  type AutomaticPlacementPreview,
-  type AutomaticPlacementRequest,
-  type BrushPreviewRequest,
-  type BrushStroke,
-  type ChangeSetPreview,
-  type Layer,
-  type PatternPreview,
-  type PatternPreviewRequest,
-  type PlanChangeSetDraft,
-  type PlanObject,
-  type PlantingZoneAssignment,
-  type RecommendationPreview,
-  type RecommendationRequest,
-} from '@green/api-client';
-import { useQuery } from '@tanstack/react-query';
+import { type PlantingZoneAssignment } from '@green/api-client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { sourceIdentity } from '@/features/source-preparation/model/sourcePreparation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { ideTabForTool } from './workspacePresentation';
-import { useWorkspaceKeyboard } from './useWorkspaceKeyboard';
+import {
+  ideTabForTool,
+  useWorkspacePresentation,
+} from './presentation/workspacePresentation';
+import { useWorkspaceKeyboard } from './navigation/useWorkspaceKeyboard';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
+import { usePlanComparison } from './viewport/usePlanComparison';
+import { useWorkspaceSceneSession } from './viewport/useWorkspaceSceneSession';
 import {
   WORKSPACE_TOOL_NAMES,
   workspaceToolHint,
-} from './workspaceToolPresentation';
+} from './presentation/workspaceToolPresentation';
 type WorkspaceDestination = Extract<
   WorkspacePanel,
   'zones' | 'plantings' | 'issues'
 >;
-const EMPTY_PLAN_OBJECTS: PlanObject[] = [];
-const EMPTY_LAYERS: Layer[] = [];
 export function useWorkspaceModel(projectId: string) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const projectQuery = useQuery(workspaceProjectQuery(projectId));
   const project = projectQuery.data;
+  const preparationIssue = projectPreparationNotice(project);
+  const projectReadPending =
+    projectQuery.isFetching ||
+    projectQuery.isError ||
+    Boolean(preparationIssue);
   const cad = useWorkspaceCadSource(project);
   const mapViewport = useRef<MapViewportHandle>(null);
-  const sceneReview = useRef<SceneReviewHandle>(null);
-  const sceneViewStateRef = useRef<PlanViewState | undefined>(undefined);
 
   const mapEditInFlightRef = useRef(false);
   const initializedProjectRef = useRef<string | undefined>(undefined);
   const [pendingTool, setPendingTool] = useState<MapTool>();
   const [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
-  const assistant = useProjectAssistant();
-  const setAssistantOpen = assistant.setOpen;
-  const stopAssistant = assistant.stop;
-  const assistantPending = assistant.pending;
-  const autonomousPreview =
-    assistant.assistantMode === 'autonomous'
-      ? assistant.autonomousPreview
-      : undefined;
-  const assistantZonePreview =
-    autonomousPreview?.kind === 'planting_zones'
-      ? autonomousPreview.preview
-      : undefined;
-  const assistantPreview =
-    assistant.assistantMode === 'autonomous'
-      ? autonomousPreview?.kind === 'planting_zones'
-        ? undefined
-        : autonomousPreview?.preview
-      : assistant.proposal?.stale
-        ? undefined
-        : assistant.proposal?.preview;
   const editor = useEditorSession((state) => state);
+  const comparisonActive =
+    editor.planComparison !== 'editing' &&
+    Boolean(project?.plan && project.map_ready);
   const {
     tool,
     selectedIds,
@@ -167,14 +122,10 @@ export function useWorkspaceModel(projectId: string) {
     setVisibility,
   } = editor;
   const setMapTool = editor.setTool;
+  const setPlanComparison = editor.setPlanComparison;
   const changeIdeRightTab = (next: IdeRightTab) => {
-    const availableTab =
-      next === 'assistant' && !featureAvailability.assistant
-        ? ideTabForTool(tool, placementOwnsContext)
-        : next;
-    setIdeRightTab(availableTab);
     setRightOpen(true);
-    assistant.setOpen(availableTab === 'assistant');
+    setIdeRightTab(next);
   };
   const [mapHoverTarget, setMapHoverTarget] = useState<MapHoverTarget>();
   const [mapInspectTarget, setMapInspectTarget] = useState<MapHoverTarget>();
@@ -184,60 +135,61 @@ export function useWorkspaceModel(projectId: string) {
   const [zonePendingDelete, setZonePendingDelete] =
     useState<PlantingZoneAssignment>();
   const [releaseOpen, setReleaseOpen] = useState(false);
-  const [rowAxis, setRowAxis] = useState<{
-    type: 'LineString';
-    coordinates: number[][];
-  }>();
   const [reviewOpen, setReviewOpen] = useState(false);
   const [dismissedOperationError, setDismissedOperationError] =
     useState<unknown>();
-  const [rowInputMode, setRowInputMode] = useState<'pick' | 'draw' | 'ready'>(
-    'pick',
-  );
-  const [rowDrawingPoints, setRowDrawingPoints] = useState(0);
-  const rowForm = usePatternForm();
-  const fillForm = usePatternForm();
-  const recommendationForm = useRecommendationForm();
-  const recommendationValues = useWatch({
-    control: recommendationForm.control,
+  const placement = useWorkspacePlacementDraft({
+    projectId,
+    project,
+    tool,
+    mapViewport,
+    onSuggestionAccepted: () => {
+      setActiveLayerId(undefined);
+      setPanel(null);
+      setRightOpen(true);
+    },
+    onChangesAccepted: () => {
+      setReviewOpen(true);
+      editor.setTool('select');
+      setActiveLayerId(undefined);
+      setPanel(null);
+      setRightOpen(true);
+    },
   });
-  const rowValues = useWatch({
-    control: rowForm.control,
-    compute: (values: PatternFormValues) => values,
-  });
-  const fillValues = useWatch({
-    control: fillForm.control,
-    compute: (values: PatternFormValues) => values,
-  });
-  const patternForm = tool === 'pattern_row' ? rowForm : fillForm;
-  const patternValues = tool === 'pattern_row' ? rowValues : fillValues;
-  const rowSettings = toRowSketchSettings(rowValues);
-  const [rowAxisSource, setRowAxisSource] = useState<{
-    type: 'dxf' | 'manual';
-    label: string;
-  }>();
-  const [selectedPatternZoneIds, setSelectedPatternZoneIds] = useState<
-    string[]
-  >([]);
-  const [recommendationOpen, setRecommendationOpen] = useState(false);
-  const [buildingScreenActive, setBuildingScreenActive] = useState(false);
-  const [brushStrokes, setBrushStrokes] = useState<BrushStroke[]>([]);
-  const [brushWidth, setBrushWidth] = useState(12);
-  const [brushOperation, setBrushOperation] = useState<'add' | 'subtract'>(
-    'add',
-  );
-  const brushForm = useBrushForm();
-  const brushSettings = useWatch({
-    control: brushForm.control,
-    compute: toLiveBrushSettings,
-  });
-  const [brushDrawing, setBrushDrawing] = useState(false);
-  const [speciesAssignmentOpen, setSpeciesAssignmentOpen] = useState(false);
-  const [speciesCatalogBrowsing, setSpeciesCatalogBrowsing] = useState(true);
+  const {
+    rowAxis,
+    setRowAxis,
+    rowInputMode,
+    setRowInputMode,
+    rowDrawingPoints,
+    setRowAxisSource,
+    selectedPatternZoneIds,
+    setSelectedPatternZoneIds,
+    recommendationOpen,
+    setRecommendationOpen,
+    brushStrokes,
+    setBrushStrokes,
+    brushDrawing,
+    speciesAssignmentOpen,
+    setSpeciesAssignmentOpen,
+    setPatternSettingsOpen,
+    singleTreeSpecies,
+    singleShrubSpecies,
+    previewPattern,
+    previewRecommendation,
+    previewAutomatic,
+    previewBrush,
+    previewChanges,
+    patternPreview,
+    recommendationPreview,
+    automaticPreview,
+    brushPreview,
+    changePreview,
+    resetPlacementPreviews,
+  } = placement;
   const [pendingZone, setPendingZone] = useState<ZoneReviewDraft>();
   const [zoneReviewOpen, setZoneReviewOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [patternSettingsOpen, setPatternSettingsOpen] = useState(false);
   const returnFromZoneDrawing = useCallback(
     (context: ZoneDrawingContext) => {
       if (context.purpose === 'manage') {
@@ -250,7 +202,7 @@ export function useWorkspaceModel(projectId: string) {
       setPatternSettingsOpen(true);
       setRightOpen(true);
     },
-    [setMapTool, setPanel, setRightOpen],
+    [setMapTool, setPanel, setPatternSettingsOpen, setRightOpen],
   );
   const {
     session: zoneDrawingSession,
@@ -304,231 +256,63 @@ export function useWorkspaceModel(projectId: string) {
     setZoneReviewOpen(false);
     returnFromZoneDrawing(pendingZone);
   };
-  const [singleTreeSpecies, setSingleTreeSpecies] = useState<string>();
-  const [singleShrubSpecies, setSingleShrubSpecies] = useState<string>();
-  const projectBasis = [
-    projectId,
-    project?.plan?.version,
-    project?.geometry_version,
-    project?.state_version,
-  ];
-  const previewPattern = useLatestPreview<
-    PatternPreviewRequest,
-    PatternPreview
-  >({
-    scopeKey: JSON.stringify([
-      ...projectBasis,
-      tool,
-      patternValues,
-      rowAxis,
-      selectedPatternZoneIds,
-    ]),
-    execute: (request, signal, publish) =>
-      previewWorkspacePattern(projectId, request, signal, publish),
-    onAccepted: (result) => {
-      setPatternSettingsOpen(true);
-      const frame = placementPreviewFrame(result.change_set?.additions ?? []);
-      if (frame) mapViewport.current?.fitGeometry(frame);
-    },
-  });
-  const previewRecommendation = useLatestPreview<
-    RecommendationRequest | BuildingScreenRequest,
-    RecommendationPreview
-  >({
-    scopeKey: JSON.stringify([
-      ...projectBasis,
-      selectedPatternZoneIds,
-      recommendationValues,
-    ]),
-    execute: (request, signal) =>
-      previewWorkspaceRecommendation(projectId, request, signal),
-    onAccepted: (result) => {
-      setPatternSettingsOpen(true);
-      const frame = placementPreviewFrame(result.change_set?.additions ?? []);
-      if (frame) mapViewport.current?.fitGeometry(frame);
-      setActiveLayerId(undefined);
-      setPanel(null);
-      setRightOpen(true);
-    },
-  });
-  const previewAutomatic = useLatestPreview<
-    AutomaticPlacementRequest,
-    AutomaticPlacementPreview
-  >({
-    scopeKey: JSON.stringify(projectBasis),
-    execute: (request, signal) =>
-      previewWorkspaceAutomatic(projectId, request, signal),
-    onAccepted: (result) => {
-      const frame = placementPreviewFrame(result.change_set?.additions ?? []);
-      if (frame) mapViewport.current?.fitGeometry(frame);
-      setActiveLayerId(undefined);
-      setPanel(null);
-      setRightOpen(true);
-    },
-  });
-  const previewBrush = useLatestPreview<BrushPreviewRequest, BrushPreview>({
-    scopeKey: JSON.stringify([
-      ...projectBasis,
-      tool,
-      selectedPatternZoneIds,
-      brushSettings,
-      brushWidth,
-      brushOperation,
-      brushStrokes,
-    ]),
-    execute: (request, signal) =>
-      previewWorkspaceBrush(projectId, request, signal),
-  });
-  const previewChanges = useLatestPreview<PlanChangeSetDraft, ChangeSetPreview>(
-    {
-      scopeKey: JSON.stringify(projectBasis),
-      execute: (draft, signal) => previewPlanChanges(projectId, draft, signal),
-      onAccepted: () => {
-        setReviewOpen(true);
-        editor.setTool('select');
-        setActiveLayerId(undefined);
-        setPanel(null);
-        setRightOpen(true);
-      },
-    },
-  );
-  const manualPreview = previewChanges.data;
-  const previewDraft = manualPreview
-    ? { previewId: manualPreview.id, draft: previewChanges.variables }
-    : undefined;
-  const invalidatePattern = previewPattern.invalidate;
-  const subscribePattern = patternForm.subscribe;
-  useEffect(
-    () =>
-      subscribePattern({
-        formState: { values: true },
-        callback: invalidatePattern,
-      }),
-    [subscribePattern, invalidatePattern],
-  );
-  const invalidateBrush = previewBrush.invalidate;
-  const invalidateRecommendation = previewRecommendation.invalidate;
-  const subscribeRecommendation = recommendationForm.subscribe;
-  useEffect(
-    () =>
-      subscribeRecommendation({
-        formState: { values: true },
-        callback: invalidateRecommendation,
-      }),
-    [subscribeRecommendation, invalidateRecommendation],
-  );
-  const subscribeBrush = brushForm.subscribe;
-  useEffect(
-    () =>
-      subscribeBrush({
-        formState: { values: true },
-        callback: invalidateBrush,
-      }),
-    [subscribeBrush, invalidateBrush],
-  );
-  const patternPreview = previewPattern.data;
   const candidateInspection = useCandidateInspection({
-    project, preview: patternPreview, zoneIds: selectedPatternZoneIds,
-    request: previewPattern.variables,
+    project,
+    preview: patternPreview,
+    zoneIds: selectedPatternZoneIds,
     onFocus: ([x, y]) => {
       if (sceneOpen) changeMapMode('2d');
-      mapViewport.current?.fitGeometry({ type: 'Polygon', coordinates: [[
-        [x - 15, y - 15], [x + 15, y - 15], [x + 15, y + 15], [x - 15, y + 15], [x - 15, y - 15],
-      ]] });
+      mapViewport.current?.fitGeometry({
+        type: 'Polygon',
+        coordinates: [
+          [
+            [x - 15, y - 15],
+            [x + 15, y - 15],
+            [x + 15, y + 15],
+            [x - 15, y + 15],
+            [x - 15, y - 15],
+          ],
+        ],
+      });
     },
-    onApply: (result) => { applyChanges.mutate(result); },
+    onApply: (result) => {
+      applyChanges.mutate(result);
+    },
   });
-  const recommendationPreview = previewRecommendation.data;
-  const automaticPreview = previewAutomatic.data;
-  const brushPreview = previewBrush.data;
-  const changePreview =
-    patternPreview?.change_set ??
-    recommendationPreview?.change_set ??
-    automaticPreview?.change_set ??
-    brushPreview?.change_set ??
-    manualPreview;
-  const growthHorizon = assistant.horizon ?? 0;
-  const updateAssistantHorizon = assistant.setHorizon;
-  const setGrowthHorizon = useCallback(
-    (value: GrowthHorizon) => updateAssistantHorizon(value ?? 0),
-    [updateAssistantHorizon],
+  const growthHorizon = editor.growthHorizon;
+  const [growthScenarioOpen, setGrowthScenarioOpen] = useState(
+    () => editor.growthHorizon > 0,
   );
-  const syncAssistantSelection = assistant.setSelectedIds;
-  useEffect(() => {
-    syncAssistantSelection(selectedIds);
-  }, [selectedIds, syncAssistantSelection]);
-  const syncAssistantZones = assistant.setSelectedZoneIds;
-  useEffect(() => {
-    syncAssistantZones(selectedPatternZoneIds);
-  }, [selectedPatternZoneIds, syncAssistantZones]);
-  useEffect(() => {
-    if (!assistantPreview) return;
-    setSceneOpen(false);
-    const frame = placementPreviewFrame([
-      ...(assistantPreview.additions ?? []),
-      ...(assistantPreview.updates ?? []),
-    ]);
-    if (frame) mapViewport.current?.fitGeometry(frame);
-    else if (assistantPreview.deletion_ids?.length)
-      mapViewport.current?.fitObjects(assistantPreview.deletion_ids);
-  }, [assistantPreview]);
-  useEffect(() => {
-    if (!assistantZonePreview) return;
-    setSceneOpen(false);
-    const frame = zoneChangeFrame(assistantZonePreview);
-    if (frame) mapViewport.current?.fitGeometry(frame);
-  }, [assistantZonePreview]);
-  const [sceneOpen, setSceneOpen] = useState(false);
+  const updateGrowthHorizon = editor.setGrowthHorizon;
+  const setGrowthHorizon = useCallback(
+    (value: GrowthHorizon) => {
+      setGrowthScenarioOpen(true);
+      updateGrowthHorizon(value ?? 0);
+    },
+    [updateGrowthHorizon],
+  );
   const [pendingScene, setPendingScene] = useState(false);
   const [mapRenderMode, setMapRenderMode] = useState<'design' | 'cad'>(
     'design',
   );
   const [mapPanActive, setMapPanActive] = useState(false);
-  const [sceneMounted, setSceneMounted] = useState(false);
-  const sceneHorizon = growthHorizon ?? 0;
+  const prepareSceneEntry = useCallback(() => {
+    setPlanComparison('editing');
+    discardZoneDrawing();
+    setMapTool('select');
+    setPanel(null);
+    setRecommendationOpen(false);
+    setActiveLayerId(undefined);
+    setMapPanActive(false);
+  }, [
+    discardZoneDrawing,
+    setPlanComparison,
+    setActiveLayerId,
+    setMapTool,
+    setPanel,
+    setRecommendationOpen,
+  ]);
   const setSceneHorizon = setGrowthHorizon;
-  const [sceneRequestHorizon, setSceneRequestHorizon] = useState(0);
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setSceneRequestHorizon(sceneHorizon),
-      160,
-    );
-    return () => window.clearTimeout(timer);
-  }, [sceneHorizon]);
-  const [sceneInitialViewState, setSceneInitialViewState] =
-    useState<PlanViewState>();
-  const changeMapMode = useCallback(
-    (mode: '2d' | '3d') => {
-      if (mode === '3d') {
-        discardZoneDrawing();
-        setMapTool('select');
-        setPanel(null);
-        setRecommendationOpen(false);
-        setActiveLayerId(undefined);
-        setMapPanActive(false);
-        const state = mapViewport.current?.getViewState();
-        if (state) {
-          sceneViewStateRef.current = state;
-          setSceneInitialViewState(state);
-        }
-        setSceneMounted(true);
-        setSceneOpen(true);
-        return;
-      }
-      const state =
-        sceneReview.current?.getViewState() ?? sceneViewStateRef.current;
-      if (state) {
-        // Keep the latest 3D camera authoritative for both the map we are
-        // returning to and the next 3D activation. Previously only a ref was
-        // updated, so reopening 3D re-imported the stale entry camera.
-        sceneViewStateRef.current = state;
-        setSceneInitialViewState(state);
-        mapViewport.current?.applyViewState(state);
-      }
-      setSceneOpen(false);
-    },
-    [discardZoneDrawing, setActiveLayerId, setMapTool, setPanel],
-  );
   useEffect(() => setMapInspectTarget(undefined), [tool]);
   const releaseState = useProjectRelease(projectId, {
     plan: project?.plan ?? undefined,
@@ -536,30 +320,49 @@ export function useWorkspaceModel(projectId: string) {
     initialHorizon: growthHorizon,
   });
   const { release, createRelease } = releaseState;
-  const layers = project?.layers ?? EMPTY_LAYERS;
-  const planObjects = project?.plan?.objects ?? EMPTY_PLAN_OBJECTS;
-  const sourceWarnings = project?.source_file?.warnings ?? [];
-  const projectHasPlan = Boolean(project?.plan);
-  useEffect(() => {
-    const request = assistant.focusRequest;
-    if (!request?.objectIds.length) return;
-    const known = new Set(planObjects.map((object) => object.id));
-    // Wait for the refreshed plan source. Fitting earlier would silently do
-    // nothing because the newly added features are not installed in the map.
-    if (!request.objectIds.every((id) => known.has(id))) return;
-    mapViewport.current?.fitObjects(request.objectIds);
-  }, [assistant.focusRequest, planObjects]);
-  const sourcePreview = Boolean(
-    project &&
-    (!project.map_ready || project.import_status?.editability === 'read_only'),
+  const forecast = useGrowthScenario(
+    project,
+    growthHorizon,
+    growthScenarioOpen && !comparisonActive,
   );
-  const planLocked = project?.import_status?.editability === 'read_only';
+  const forecastActive = growthScenarioOpen && !comparisonActive;
+  const presentation = useWorkspacePresentation(
+    project,
+    editor,
+    selectedPatternZoneIds,
+    forecast.currentIssues,
+  );
+  const {
+    planObjects,
+    projectHasPlan,
+    sourcePreview,
+    planLocked,
+    activeLayer,
+    plantingZoneIds,
+    selectedObjects,
+    selectedLocked,
+  } = presentation;
+  const mapScenarioIssues = useMemo(
+    () =>
+      forecastActive && forecast.data
+        ? currentGrowthIssues(presentation.issues, forecast.data.issues)
+        : presentation.issues,
+    [forecastActive, forecast.data, presentation.issues],
+  );
+  const mapScenarioObjects = useMemo(
+    () =>
+      forecastActive && forecast.data
+        ? objectsWithIssues(planObjects, mapScenarioIssues)
+        : planObjects,
+    [forecastActive, forecast.data, planObjects, mapScenarioIssues],
+  );
   const historyQuery = useQuery(
     workspaceHistoryQuery(projectId, projectHasPlan && !planLocked),
   );
   const speciesQuery = useQuery(workspaceSpeciesQuery());
   const {
     query: mapGeometryQuery,
+    pending: mapGeometryPending,
     delivery: mapGeometryDelivery,
     metadata: mapGeometryMetadata,
     onExtentChange: handleMapExtent,
@@ -569,16 +372,37 @@ export function useWorkspaceModel(projectId: string) {
     sourceKey: sourceIdentity(project),
     enabled: cad.vectorGeometryEnabled,
   });
-  useAssistantMapBridge({
+  const [geometryFrame, setGeometryFrame] = useState<{
+    geometry: Record<string, unknown> | undefined;
+    ready: boolean;
+  }>();
+  const onGeometryRenderState = useCallback(
+    (geometry: Record<string, unknown> | undefined, ready: boolean) =>
+      setGeometryFrame({ geometry, ready }),
+    [],
+  );
+  const currentGeometry = mapGeometryDelivery?.feature_collection;
+  const geometryDrawing = Boolean(
+    currentGeometry &&
+    (geometryFrame?.geometry !== currentGeometry || !geometryFrame?.ready),
+  );
+  const {
+    changeMapMode,
+    sceneHorizon,
+    sceneInitialViewState,
+    sceneMounted,
+    sceneOpen,
+    sceneQuery,
+    sceneRequestHorizon,
+    sceneReview,
+    sceneViewStateRef,
+  } = useWorkspaceSceneSession({
     projectId,
     project,
-    sceneOpen,
-    mapViewportRef: mapViewport,
-    registerMapControl: assistant.registerMapControl,
+    horizon: growthHorizon,
+    mapViewport,
+    onBeforeOpen: prepareSceneEntry,
   });
-  const sceneQuery = useQuery(
-    workspaceSceneQuery(projectId, project, sceneRequestHorizon, sceneOpen),
-  );
   const refresh = useWorkspaceRefresh(projectId);
   useEffect(() => {
     if (!project || initializedProjectRef.current === project.id) return;
@@ -590,103 +414,21 @@ export function useWorkspaceModel(projectId: string) {
     );
     setPanel(project.plan ? null : 'zones');
     // Initial framing is owned by MapViewport, after its sources are ready.
-  }, [project, setPanel]);
+  }, [project, setPanel, setSelectedPatternZoneIds]);
 
-  const initialExtent = useMemo(
-    () =>
-      initialWorkspaceExtent(
-        project?.source_file?.bounds,
-        layers,
-        Boolean(sourcePreview),
-      ),
-    [project?.source_file?.bounds, layers, sourcePreview],
+  const selectPatternZones = useCallback(
+    (ids: string[]) => {
+      setSelectedPatternZoneIds([...new Set(ids)]);
+      setMapAreaTarget(undefined);
+    },
+    [setSelectedPatternZoneIds],
   );
-  const activeLayer = useMemo(
-    () => layers.find((layer) => layer.id === activeLayerId),
-    [activeLayerId, layers],
-  );
-  const hiddenLayerNames = useMemo(
-    () =>
-      layers
-        .filter((layer) => visibility[layer.id] === false)
-        .map((layer) => layer.source_name),
-    [layers, visibility],
-  );
-  const selectedId = selectedIds.length === 1 ? selectedIds[0] : undefined;
-  const selectedObject = useMemo(
-    () => planObjects.find((item) => item.id === selectedId),
-    [planObjects, selectedId],
-  );
-  const selectedPatternZones = useMemo(
-    () =>
-      (project?.planting_zones ?? []).filter(
-        (zone) => zone.id && selectedPatternZoneIds.includes(zone.id),
-      ),
-    [project?.planting_zones, selectedPatternZoneIds],
-  );
-  const buildingTargets = useQuery(
-    buildingTargetsQuery(
-      projectId,
-      selectedPatternZoneIds,
-      project?.state_version,
-      recommendationOpen &&
-        buildingScreenActive &&
-        selectedPatternZoneIds.length > 0,
-    ),
-  );
-  const screenGeometry =
-    recommendationOpen && buildingScreenActive
-      ? buildingTargets.data?.geometry
-      : undefined;
-  const focusGeometry = useMemo(
-    () => screenGeometry ?? zoneCollection(selectedPatternZones),
-    [screenGeometry, selectedPatternZones],
-  );
-  useEffect(() => {
-    if (screenGeometry && !recommendationPreview)
-      mapViewport.current?.fitGeometry(screenGeometry);
-  }, [screenGeometry, recommendationPreview]);
-  useEffect(() => {
-    if (!recommendationOpen) setBuildingScreenActive(false);
-  }, [recommendationOpen]);
-  const brushZones = useMemo(
-    () =>
-      (project?.planting_zones ?? []).filter(
-        (zone) => zone.id && selectedPatternZoneIds.includes(zone.id),
-      ),
-    [project?.planting_zones, selectedPatternZoneIds],
-  );
-  const plantingZoneIds = useMemo(
-    () =>
-      (project?.planting_zones ?? []).flatMap((zone) =>
-        zone.id ? [zone.id] : [],
-      ),
-    [project?.planting_zones],
-  );
-  const selectPatternZones = useCallback((ids: string[]) => {
-    setSelectedPatternZoneIds([...new Set(ids)]);
-    setMapAreaTarget(undefined);
-  }, []);
   const focusZones = (zones: PlantingZoneAssignment[]) => {
     const extent = zoneExtent(zones);
     if (sceneOpen && extent) sceneReview.current?.fitExtent(extent);
     else if (zones.length)
       mapViewport.current?.fitGeometry(zoneCollection(zones));
   };
-  const plantingZoneUsage = useMemo(
-    () =>
-      planObjects.reduce<Record<string, number>>((usage, object) => {
-        if (object.planting_zone_id)
-          usage[object.planting_zone_id] =
-            (usage[object.planting_zone_id] ?? 0) + 1;
-        return usage;
-      }, {}),
-    [planObjects],
-  );
-  const selectedObjects = useMemo(() => {
-    const ids = new Set(selectedIds);
-    return planObjects.filter((item) => item.id && ids.has(item.id));
-  }, [planObjects, selectedIds]);
   const {
     check: previewSelectionMoveLive,
     clear: clearMoveValidation,
@@ -699,7 +441,6 @@ export function useWorkspaceModel(projectId: string) {
     objects: selectedObjects,
     active: !planLocked && (tool === 'move' || tool === 'select'),
   });
-  const selectedLocked = selectedObjects.some((object) => object.locked);
 
   const speciesShortlistQuery = useQuery(
     selectionSpeciesQuery(
@@ -737,11 +478,6 @@ export function useWorkspaceModel(projectId: string) {
         (speciesQuery.data ?? []).map((item) => [item.id, item.common_name]),
       ),
     [speciesQuery.data],
-  );
-  const issues = project?.plan?.issues ?? [];
-  const metadataOnlyIds = useMemo(
-    () => metadataOnlyObjectIds(project?.plan?.issues ?? []),
-    [project?.plan?.issues],
   );
   const openRightPanel = useCallback(() => {
     setRightOpen(true);
@@ -839,11 +575,15 @@ export function useWorkspaceModel(projectId: string) {
   const { savePlacementZone, saveManagedZones } = zoneCommands;
   const applyChanges = usePlanChangeCommit({
     projectId,
+    stateVersion: project?.state_version,
     preview: changePreview,
     refresh: () => refresh({ strict: true }),
     onCommitted: (result, accepted) => {
       setReviewOpen(false);
-      if (accepted.id === patternPreview?.change_set?.id || accepted.id === candidateInspection.trial?.id) {
+      if (
+        accepted.id === patternPreview?.change_set?.id ||
+        accepted.id === candidateInspection.trial?.id
+      ) {
         previewPattern.reset();
         setRowAxis(undefined);
         setRowAxisSource(undefined);
@@ -899,14 +639,10 @@ export function useWorkspaceModel(projectId: string) {
     undoChange.isPending ||
     redoChange.isPending;
   const externalEditorBusy =
+    projectReadPending ||
     applyChanges.needsRefresh ||
     otherBusy ||
-    createRelease.isPending ||
-    Boolean(assistantPreview || assistantZonePreview) ||
-    Boolean(assistant.proposal) ||
-    assistant.pending === 'preparing' ||
-    assistant.pending === 'applying' ||
-    assistant.pending === 'undoing';
+    createRelease.isPending;
   const singlePlacement = useSinglePlacement({
     projectId,
     planVersion: project?.plan?.version,
@@ -916,6 +652,7 @@ export function useWorkspaceModel(projectId: string) {
       projectHasPlan &&
       !sourcePreview &&
       !sceneOpen &&
+      !comparisonActive &&
       !planLocked &&
       (tool === 'add_tree' || tool === 'add_shrub'),
     kind:
@@ -924,6 +661,10 @@ export function useWorkspaceModel(projectId: string) {
       tool === 'add_tree' ? singleTreeSpecies : singleShrubSpecies,
     sizeClass: 'standard',
     disabled: externalEditorBusy,
+    onAcknowledged: (plan) =>
+      acknowledgeProjectWrite(queryClient, projectId, {
+        planVersion: plan.version,
+      }),
     onApplied: () => refresh({ strict: true }),
     onRefresh: () => refresh({ strict: true }),
   });
@@ -935,6 +676,7 @@ export function useWorkspaceModel(projectId: string) {
   const busy = otherBusy || singlePlacement.placing;
   const editorBusy =
     externalEditorBusy ||
+    comparisonActive ||
     singlePlacement.placing ||
     singlePlacement.needsRefresh ||
     singlePlacement.refreshing;
@@ -947,19 +689,9 @@ export function useWorkspaceModel(projectId: string) {
       status: placementCheck?.status ?? 'unknown',
     } as const;
   }, [cursor, placementCheck, tool]);
-  const savingPlan =
+  const writeOrRecoveryPending =
     applyChanges.isPending ||
     singlePlacement.placing ||
-    saveManagedZones.isPending ||
-    savePlacementZone.isPending ||
-    createManualPlan.isPending ||
-    deleteObjects.isPending ||
-    undoChange.isPending ||
-    redoChange.isPending;
-  const assistantWritePending =
-    assistant.pending === 'applying' || assistant.pending === 'undoing';
-  const writeOrRecoveryPending =
-    savingPlan ||
     createManualPlan.blocked ||
     historyCommands.blocked ||
     zoneCommands.blocked ||
@@ -967,38 +699,99 @@ export function useWorkspaceModel(projectId: string) {
     applyChanges.needsRefresh ||
     singlePlacement.needsRefresh ||
     singlePlacement.refreshing ||
-    createRelease.isPending ||
-    assistantWritePending;
-  const manualWork = manualWorkspaceWork({
+    createRelease.isPending;
+  const manualDraft = manualWorkspaceWork({
     tool,
-    placementPanelOpen: patternSettingsOpen,
-    hasPlan: projectHasPlan,
-    hasPreview: Boolean(
-      changePreview || patternPreview || recommendationPreview || brushPreview,
+    hasPlan: projectHasPlan || createManualPlan.writeOutcome === 'confirmed',
+    hasPreview: [
+      changePreview,
+      patternPreview?.change_set,
+      recommendationPreview?.change_set,
+      brushPreview?.change_set,
+    ].some((preview) =>
+      Boolean(preview && preview.id !== applyChanges.committedPreviewId),
     ),
-    hasPendingZone: Boolean(pendingZone),
+    hasPendingZone:
+      Boolean(pendingZone) &&
+      !(
+        zoneCommands.kind === 'placement' &&
+        zoneCommands.writeOutcome === 'confirmed'
+      ),
     initialZoneDrafts: draftZones.length,
-    brushStrokes: brushStrokes.length,
+    brushStrokes:
+      applyChanges.committedPreviewId &&
+      brushPreview?.change_set?.id === applyChanges.committedPreviewId
+        ? 0
+        : brushStrokes.length,
     brushDrawing,
-    hasRowAxis: Boolean(rowAxis),
+    hasRowAxis:
+      Boolean(rowAxis) &&
+      (!applyChanges.committedPreviewId ||
+        patternPreview?.change_set?.id !== applyChanges.committedPreviewId),
     rowDrawingPoints,
     placementAreaDrawing,
     zoneDrawing: Boolean(zoneDrawingMode),
-    mutationPending: busy,
+    mutationPending: false,
     brushPreviewPending: previewBrush.isPending,
-    createPlanPending: createManualPlan.isPending,
-    releasePending: createRelease.isPending,
-    recoveryPending: writeOrRecoveryPending,
+    createPlanPending: false,
+    releasePending: false,
   });
-  const navigationPending = manualWork.pending || assistantWritePending;
-  const hasUnsavedWork =
-    !planLocked && (manualWork.hasDraft || Boolean(assistant.proposal));
+  const previewPending =
+    previewBrush.isPending ||
+    (singlePlacement.placing && singlePlacement.writeOutcome === 'idle');
+  const planPersistence = workspacePersistenceState({
+    hasDraft: !planLocked && manualDraft.hasDraft,
+    previewPending,
+    writes: [
+      applyChanges,
+      singlePlacement,
+      zoneCommands,
+      createManualPlan,
+      deleteObjects,
+      historyCommands,
+    ].map(({ writeOutcome, readRecovery }) => ({
+      outcome: writeOutcome,
+      readRecovery,
+    })),
+  });
+  // Release protects navigation too, but it does not save or alter the plan.
+  const persistence = workspacePersistenceState({
+    hasDraft: planPersistence.hasDraft,
+    previewPending,
+    writes: [
+      {
+        outcome: planPersistence.writeOutcome,
+        readRecovery: planPersistence.readRecovery,
+      },
+      {
+        outcome: releaseState.writeOutcome,
+        readRecovery: releaseState.readRecovery,
+      },
+    ],
+  });
+  const savingPlan = planPersistence.writeOutcome === 'writing';
+  const navigationPending = persistence.pending;
+  const hasUnsavedWork = persistence.hasDraft;
+  const planComparison = usePlanComparison({
+    mode: editor.planComparison,
+    setMode: setPlanComparison,
+    available: projectHasPlan && Boolean(project?.map_ready) && !sceneOpen,
+    blocked:
+      projectReadPending ||
+      writeOrRecoveryPending ||
+      busy ||
+      brushDrawing ||
+      placementAreaDrawing ||
+      Boolean(zoneDrawingMode) ||
+      rowDrawingPoints > 0,
+  });
   const navigationBlocker = useWorkspaceNavigation({
     projectId,
-    blocksLeaving: manualWork.blocksLeaving,
+    blocksLeaving: persistence.blocksLeaving,
     hasUnsavedWork,
-    assistantWritePending,
-    hasAssistantProposal: Boolean(assistant.proposal),
+    writeOutcome: persistence.writeOutcome,
+    readRecovery: persistence.readRecovery,
+    editingBlocked: persistence.editingBlocked || projectReadPending,
   });
 
   const reloadAfterConflict = useCallback(async () => {
@@ -1008,11 +801,7 @@ export function useWorkspaceModel(projectId: string) {
     savePlacementZone.reset();
     saveManagedZones.reset();
     singlePlacement.clear();
-    previewChanges.reset();
-    previewPattern.reset();
-    previewRecommendation.reset();
-    previewAutomatic.reset();
-    previewBrush.reset();
+    resetPlacementPreviews();
     applyChanges.reset();
     deleteObjects.reset();
     undoChange.reset();
@@ -1022,14 +811,7 @@ export function useWorkspaceModel(projectId: string) {
 
     setRowAxis(undefined);
     setRowAxisSource(undefined);
-    previewPattern.reset();
     discardZoneDrawing();
-    setRecommendationOpen(false);
-    previewRecommendation.reset();
-    previewAutomatic.reset();
-    setBrushStrokes([]);
-    previewBrush.reset();
-    setSpeciesAssignmentOpen(false);
     editor.reset();
   }, [
     singlePlacement,
@@ -1039,13 +821,11 @@ export function useWorkspaceModel(projectId: string) {
     deleteObjects,
     discardZoneDrawing,
     editor,
-    previewBrush,
-    previewChanges,
-    previewPattern,
-    previewRecommendation,
-    previewAutomatic,
     redoChange,
     refresh,
+    setRowAxis,
+    setRowAxisSource,
+    resetPlacementPreviews,
     saveManagedZones,
     savePlacementZone,
     undoChange,
@@ -1058,10 +838,6 @@ export function useWorkspaceModel(projectId: string) {
         setMapPanActive((value) => !value);
         return;
       }
-      if (!['select', 'select_box', 'select_lasso'].includes(nextTool)) {
-        if (assistantPending === 'thinking') stopAssistant();
-        setAssistantOpen(false);
-      }
       setMapPanActive(false);
       if (nextTool === 'pattern_fill') setPatternSettingsOpen(true);
 
@@ -1073,12 +849,7 @@ export function useWorkspaceModel(projectId: string) {
         setIdeRightTab(ideTabForTool(nextTool));
         return;
       }
-      if (
-        changePreview ||
-        assistant.proposal ||
-        brushStrokes.length ||
-        rowAxis
-      ) {
+      if (changePreview || brushStrokes.length || rowAxis) {
         setPendingTool(nextTool);
         return;
       }
@@ -1115,18 +886,7 @@ export function useWorkspaceModel(projectId: string) {
         discardZoneDrawing();
         setPanel(null);
       }
-      previewPattern.cancel();
-      previewRecommendation.cancel();
-      previewAutomatic.cancel();
-      previewBrush.cancel();
-      previewPattern.reset();
-      setRecommendationOpen(false);
-      previewRecommendation.reset();
-      previewAutomatic.reset();
-      setBrushStrokes([]);
-      previewBrush.reset();
-      setSpeciesAssignmentOpen(false);
-      previewChanges.reset();
+      resetPlacementPreviews();
       if (nextTool === 'pattern_row') setRowInputMode('pick');
       if (nextTool !== 'pattern_row') {
         setRowAxis(undefined);
@@ -1161,21 +921,19 @@ export function useWorkspaceModel(projectId: string) {
       discardZoneDrawing,
       tool,
       changePreview,
-      assistant.proposal,
       brushStrokes.length,
       rowAxis,
       planLocked,
       sourcePreview,
       projectHasPlan,
-      previewPattern,
-      previewRecommendation,
-      previewAutomatic,
-      previewBrush,
-      previewChanges,
+      setPatternSettingsOpen,
+      setRowAxis,
+      setRowAxisSource,
+      setRowInputMode,
+      setSelectedPatternZoneIds,
+      setSpeciesAssignmentOpen,
+      resetPlacementPreviews,
       editor,
-      assistantPending,
-      stopAssistant,
-      setAssistantOpen,
       setActiveLayerId,
       setPanel,
       openRightPanel,
@@ -1304,6 +1062,14 @@ export function useWorkspaceModel(projectId: string) {
     }
   };
   useWorkspaceKeyboard({
+    onSelectAll:
+      !hasUnsavedWork && !editorBusy && !planComparison.active && projectHasPlan
+        ? () =>
+            selectFromExplorer(
+              planObjects.flatMap((object) => (object.id ? [object.id] : [])),
+              false,
+            )
+        : undefined,
     blocked: Boolean(
       writeOrRecoveryPending ||
       releaseOpen ||
@@ -1313,6 +1079,10 @@ export function useWorkspaceModel(projectId: string) {
       navigationBlocker.state === 'blocked',
     ),
     onEscape: () => {
+      if (planComparison.active) {
+        planComparison.change('editing');
+        return;
+      }
       if (zoneDrawingSession) {
         cancelZoneDrawing();
         return;
@@ -1320,6 +1090,10 @@ export function useWorkspaceModel(projectId: string) {
       if (mapInspectTarget) {
         setMapInspectTarget(undefined);
         setMapHoverTarget(undefined);
+        return;
+      }
+      if (selectedIds.length && tool === 'select' && !changePreview) {
+        editor.clearSelection();
         return;
       }
       if (sceneOpen) {
@@ -1340,21 +1114,9 @@ export function useWorkspaceModel(projectId: string) {
         if (selectedIds.length) editor.clearSelection();
         return;
       }
-      previewPattern.cancel();
-      previewChanges.reset();
-      previewRecommendation.cancel();
-      previewAutomatic.cancel();
-      previewBrush.cancel();
-      previewPattern.reset();
-      setRecommendationOpen(false);
-      previewRecommendation.reset();
-      previewAutomatic.reset();
-      setBrushStrokes([]);
-      previewBrush.reset();
+      resetPlacementPreviews();
       setRowAxis(undefined);
       setRowAxisSource(undefined);
-      setSpeciesAssignmentOpen(false);
-      previewChanges.reset();
       editor.setTool('select');
     },
     onReview:
@@ -1383,31 +1145,29 @@ export function useWorkspaceModel(projectId: string) {
         ? () => redoChange.mutate()
         : undefined,
   });
-  const operationError =
-    [
-      createManualPlan,
-      savePlacementZone,
-      saveManagedZones,
-      previewChanges,
-      previewPattern,
-      previewRecommendation,
-      previewAutomatic,
-      previewBrush,
-      applyChanges,
-      deleteObjects,
-      undoChange,
-      redoChange,
-    ]
-      .filter(
-        (mutation) =>
-          mutation.error &&
-          !(
-            mutation.error instanceof Error &&
-            mutation.error.name === 'AbortError'
-          ),
-      )
-      .sort((a, b) => b.submittedAt - a.submittedAt)[0]?.error ??
-    mapGeometryQuery.error;
+  const operationError = [
+    createManualPlan,
+    savePlacementZone,
+    saveManagedZones,
+    previewChanges,
+    previewPattern,
+    previewRecommendation,
+    previewAutomatic,
+    previewBrush,
+    applyChanges,
+    deleteObjects,
+    undoChange,
+    redoChange,
+  ]
+    .filter(
+      (mutation) =>
+        mutation.error &&
+        !(
+          mutation.error instanceof Error &&
+          mutation.error.name === 'AbortError'
+        ),
+    )
+    .sort((a, b) => b.submittedAt - a.submittedAt)[0]?.error;
   const showMapStatus = Boolean(
     (placementCheck && (tool === 'add_tree' || tool === 'add_shrub')) ||
     (moveLiveCheck && (tool === 'move' || tool === 'select')) ||
@@ -1442,29 +1202,16 @@ export function useWorkspaceModel(projectId: string) {
     hasRowAxis: Boolean(rowAxis),
   });
   return {
+    ...presentation,
+    ...placement,
     activateTool,
-    activeLayer,
     activeLayerId,
     activeToolHint,
     addMapArea,
     applyChanges,
-    automaticPreview,
-    assistant,
-    assistantPreview,
-    assistantZonePreview,
-    brushDrawing,
-    brushForm,
-    brushOperation,
-    brushPreview,
-    brushSettings,
-    brushStrokes,
-    brushWidth,
-    brushZones,
-    buildingTargets,
     busy,
     changeIdeRightTab,
     changeMapMode,
-    changePreview,
     closeRightPanel,
     createManualPlan,
     createRelease,
@@ -1475,32 +1222,56 @@ export function useWorkspaceModel(projectId: string) {
     editor,
     editorBusy,
     externalEditorBusy,
-    focusGeometry,
     focusZones,
     growthHorizon,
+    growthScenario: {
+      ...forecast,
+      open: forecastActive,
+      toggle: () => {
+        if (growthScenarioOpen) updateGrowthHorizon(0);
+        setGrowthScenarioOpen(!growthScenarioOpen);
+      },
+      close: () => {
+        updateGrowthHorizon(0);
+        setGrowthScenarioOpen(false);
+      },
+      focus: (issue: import('@green/api-client').ValidationIssue) => {
+        const ids = issue.related_object_ids?.length
+          ? issue.related_object_ids
+          : issue.object_id
+            ? [issue.object_id]
+            : [];
+        selectFromExplorer(ids, true);
+      },
+    },
+    mapScenarioIssues,
+    mapScenarioObjects,
     handleCoordinate,
     handleMapArea,
     handleMapExtent,
     handleMapStackSelect,
     handlePointerCoordinate,
     hasUnsavedWork,
-    hiddenLayerNames,
     historyCommands,
     historyQuery,
     ideRightTab,
-    initialExtent,
     inspectorView,
-    issues,
-    layers,
     leaveWorkspace,
     leftOpen,
     libraryOpen,
-    manualWork,
     mapAreaTarget,
     mapGeometryMetadata: cad.vectorGeometryEnabled
       ? mapGeometryMetadata
       : undefined,
     cadBaseReady: cad.baseReady,
+    mapLoading: cad.pending || mapGeometryPending || geometryDrawing,
+    mapLoadingLabel:
+      cad.pending || !mapGeometryDelivery
+        ? 'Открываем чертёж'
+        : mapGeometryPending
+          ? 'Обновляем карту'
+          : 'Отрисовка карты',
+    onGeometryRenderState,
     mapGeometryQuery,
     mapGeometryDelivery,
     cadSource: cad.source,
@@ -1511,7 +1282,6 @@ export function useWorkspaceModel(projectId: string) {
     mapPanActive,
     mapRenderMode,
     mapViewport,
-    metadataOnlyIds,
     moveLiveCheck,
     navigate,
     navigateWorkspace,
@@ -1521,37 +1291,23 @@ export function useWorkspaceModel(projectId: string) {
     openRightPanel,
     operationError,
     panel,
-    patternForm,
-    patternPreview,
     candidateInspection,
-    patternSettingsOpen,
     pendingScene,
     pendingTool,
     pendingZone,
+    persistence,
+    preparationIssue,
     placementAreaDrawing,
     placementCheck,
     placementMasksQuery,
     placementPreview,
-    planLocked,
-    planObjects,
-    plantingZoneIds,
-    plantingZoneUsage,
-    previewBrush,
-    previewChanges,
-    previewDraft,
-    previewPattern,
-    previewRecommendation,
-    previewAutomatic,
+    planComparison,
     previewSelectionLock,
     previewSelectionMoveLive,
     previewSpeciesAssignment,
     project,
-    projectHasPlan,
     projectId,
     projectQuery,
-    recommendationForm,
-    recommendationOpen,
-    recommendationPreview,
     redoChange,
     release,
     releaseOpen,
@@ -1562,14 +1318,10 @@ export function useWorkspaceModel(projectId: string) {
     reviewOpen,
     reviewZones,
     rightOpen,
-    rowAxis,
-    rowAxisSource,
-    rowDrawingPoints,
-    rowInputMode,
-    rowSettings,
     saveManagedZones,
     savePlacementZone,
     savingPlan,
+    planPersistence,
     sceneHorizon,
     sceneInitialViewState,
     sceneMounted,
@@ -1581,17 +1333,7 @@ export function useWorkspaceModel(projectId: string) {
     selectFromExplorer,
     selectPatternZones,
     selectedIds,
-    selectedLocked,
-    selectedObject,
-    selectedObjects,
-    selectedPatternZoneIds,
-    selectedPatternZones,
     setActiveLayerId,
-    setBrushDrawing,
-    setBrushOperation,
-    setBrushStrokes,
-    setBrushWidth,
-    setBuildingScreenActive,
     setDeleteSelectionOpen,
     setDismissedOperationError,
     setDraftZones,
@@ -1605,27 +1347,16 @@ export function useWorkspaceModel(projectId: string) {
     setMapPanActive,
     setMapRenderMode,
     setPanel,
-    setPatternSettingsOpen,
     setPendingScene,
     setPendingTool,
     setPendingZone,
     beginPlacementZoneDrawing,
-    setRecommendationOpen,
     setReleaseOpen,
     setResultsOpen,
     setResultsTab,
     setReviewOpen,
     setRightOpen,
-    setRowAxis,
-    setRowAxisSource,
-    setRowDrawingPoints,
-    setRowInputMode,
     setSceneHorizon,
-    setSelectedPatternZoneIds,
-    setSingleShrubSpecies,
-    setSingleTreeSpecies,
-    setSpeciesAssignmentOpen,
-    setSpeciesCatalogBrowsing,
     setVisibility,
     beginZoneDrawing,
     redrawZone,
@@ -1637,13 +1368,7 @@ export function useWorkspaceModel(projectId: string) {
     setZoneReviewOpen,
     showMapStatus,
     singlePlacement,
-    singleShrubSpecies,
-    singleTreeSpecies,
-    sourcePreview,
-    sourceWarnings,
     sourceImportStatus: project?.import_status,
-    speciesAssignmentOpen,
-    speciesCatalogBrowsing,
     speciesNames,
     speciesQuery,
     speciesShortlistQuery,

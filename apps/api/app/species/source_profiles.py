@@ -1,4 +1,6 @@
-"""Published dimensions and qualitative growth labels, separate from our curve."""
+"""Опубликованные размеры и качественные темпы роста видов отдельно от собственной
+сценарной кривой прогноза.
+"""
 
 from functools import lru_cache
 from pathlib import Path
@@ -7,7 +9,11 @@ from typing import Literal
 from pydantic import BaseModel, Field, TypeAdapter, model_validator
 
 METRES_PER_FOOT = 0.3048
-SOURCE_GROWTH_LABELS = {"Slow": "slow", "Medium": "moderate", "Rapid": "fast"}
+SOURCE_GROWTH_LABELS: dict[str, Literal["slow", "moderate", "fast"]] = {
+    "Slow": "slow",
+    "Medium": "moderate",
+    "Rapid": "fast",
+}
 
 
 class SourceSpeciesProfile(BaseModel):

@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 import { CadAppearance } from './CadAppearance';
+import { MAP_DESIGN_PALETTE } from '../../../model/mapDesignPalette';
 
 const sdkRequire = createRequire(
   createRequire(import.meta.url).resolve('dxf-viewer'),
@@ -32,6 +33,28 @@ function fixture() {
 }
 
 describe('CAD project appearance', () => {
+  it('keeps existing vegetation above lawn regardless of source order and restores CAD order', () => {
+    const f = fixture();
+    // Vegetation was authored first; lawn last would obscure it at equal order.
+    const kinds = ['existing_green', 'building', 'road', 'lawn'] as const;
+    f.objects.forEach((object, index) => {
+      object.userData.dxfLayer = kinds[index];
+      object.userData.dxfAppearanceClass = 'fill';
+    });
+    const sourceOrder = f.objects.map((object) => object.renderOrder);
+    f.appearance.apply(
+      'design',
+      Object.fromEntries(kinds.map((kind) => [kind, kind])),
+    );
+    const [vegetation, building, road, lawn] = f.objects;
+    expect(lawn.renderOrder).toBeLessThan(building.renderOrder);
+    expect(lawn.renderOrder).toBeLessThan(road.renderOrder);
+    expect(vegetation.renderOrder).toBeGreaterThan(building.renderOrder);
+    expect(vegetation.material.uniforms.opacity.value).toBe(1);
+    f.appearance.apply('cad', {});
+    expect(f.objects.map((object) => object.renderOrder)).toEqual(sourceOrder);
+    f.appearance.dispose();
+  });
   it('separates fills from opaque text while restoring exact source materials and order', () => {
     const f = fixture();
     const before = f.objects.map((object) => ({
@@ -46,7 +69,9 @@ describe('CAD project appearance', () => {
       (object) => object.material,
     );
     expect(fill.uniforms.opacity.value).toBe(1);
-    expect(fill.uniforms.color.value.getHexString()).toBe('f0e8da');
+    expect(fill.uniforms.color.value.getHexString()).toBe(
+      MAP_DESIGN_PALETTE.road[0].slice(1),
+    );
     expect(line.uniforms.opacity.value).toBe(1);
     expect(text.uniforms.opacity.value).toBe(1);
     expect(line).toBe(repeated);
@@ -54,7 +79,9 @@ describe('CAD project appearance', () => {
     expect(f.objects.map((object) => object.renderOrder)).toEqual([
       -2, -1, 0, -1,
     ]);
-    expect(line.uniforms.color.value.getHexString()).toBe('aa9475');
+    expect(line.uniforms.color.value.getHexString()).toBe(
+      MAP_DESIGN_PALETTE.road[1].slice(1),
+    );
     expect(text.uniforms.color.value.getHexString()).toBe('596675');
     expect(f.material.uniforms.color.value.getHexString()).toBe('ab1234');
     const disposal = [fill, line, text].map((material) =>
@@ -82,7 +109,7 @@ describe('CAD project appearance', () => {
     f.appearance.apply('design', { Road: 'utility' });
     expect(previous).toHaveBeenCalledOnce();
     expect(f.objects[1].material.uniforms.color.value.getHexString()).toBe(
-      '718da8',
+      MAP_DESIGN_PALETTE.utility[1].slice(1),
     );
     const derived = vi.spyOn(f.objects[1].material, 'dispose');
     const original = vi.spyOn(f.material, 'dispose');

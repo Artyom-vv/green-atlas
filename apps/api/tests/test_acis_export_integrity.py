@@ -8,9 +8,9 @@ import ezdxf
 import pytest
 from ezdxf import xref
 
-from app.cad_import.cache import file_sha256
+from app.cad_import.archive.cache import file_sha256
 from app.cad_import.contracts import CadConversionError
-from app.cad_import.package_contracts import ReferenceOverride
+from app.cad_import.archive.package_contracts import ReferenceOverride
 from app.exporting.adapters import DxfRoundTripWriter
 from app.planning.contracts import Plan
 from app.projects.contracts import Project

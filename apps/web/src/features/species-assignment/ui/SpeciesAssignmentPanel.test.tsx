@@ -158,9 +158,7 @@ describe('SpeciesAssignmentPanel', () => {
     ).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('status')).toHaveTextContent('Найдено 1');
     fireEvent.change(restoredSearch, { target: { value: 'нет такой породы' } });
-    expect(
-      screen.getByText('Растения не найдены'),
-    ).toBeVisible();
+    expect(screen.getByText('Растения не найдены')).toBeVisible();
     expect(screen.getByText('Липа мелколистная')).toBeVisible();
     fireEvent.change(restoredSearch, { target: { value: 'липа' } });
     fireEvent.click(
@@ -199,9 +197,7 @@ describe('SpeciesAssignmentPanel', () => {
     expect(within(evidence).getByText('Требует проверки')).toBeVisible();
     expect(within(evidence).getByText(shortlist[0].reasons[0])).toBeVisible();
     expect(
-      within(evidence).getByText(
-        'Размещение и отступы проверим на следующем шаге.',
-      ),
+      screen.getByRole('button', { name: 'Проверить замену' }),
     ).toBeVisible();
     expect(
       screen.getByRole('button', { name: 'Размеры взрослого растения' }),
@@ -238,6 +234,10 @@ describe('SpeciesAssignmentPanel', () => {
     expect(screen.getByText('Подходит по типу')).toBeVisible();
     expect(screen.queryByText('Требует проверки')).not.toBeInTheDocument();
     expect(
+      screen.queryByText('Соответствует типу выбранных посадочных мест'),
+    ).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Подходит по типу' }));
+    expect(
       screen.getByText('Соответствует типу выбранных посадочных мест'),
     ).toBeVisible();
   });
@@ -257,12 +257,8 @@ describe('SpeciesAssignmentPanel', () => {
       'Загружаем подборку для выбранных посадок',
     );
     rerender(<SpeciesAssignmentPanel {...props} shortlist={[]} />);
-    expect(
-      screen.getByText('Нет растений для выбора'),
-    ).toBeVisible();
-    expect(
-      screen.queryByText('Растения не найдены'),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText('Нет растений для выбора')).toBeVisible();
+    expect(screen.queryByText('Растения не найдены')).not.toBeInTheDocument();
   });
 
   it('preserves preview, locked-object and loading guards while keeping the chosen material', () => {

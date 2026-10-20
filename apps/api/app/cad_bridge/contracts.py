@@ -1,3 +1,7 @@
+"""Модели снимка AutoCAD: происхождение, геометрия, точность и адресный учёт
+восстановленных и пропущенных объектов.
+"""
+
 from __future__ import annotations
 
 from collections import Counter
@@ -5,6 +9,10 @@ from pathlib import PurePosixPath, PureWindowsPath
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class CadSnapshotAdmissionError(ValueError):
+    """The native evidence is incomplete or internally inconsistent."""
 
 
 class SourceIdentity(BaseModel):
@@ -125,8 +133,8 @@ class RegionGeometry(BaseModel):
     native_perimeter_units: float = Field(ge=0, allow_inf_nan=False)
     achieved_tolerance_m: float = Field(ge=0, allow_inf_nan=False)
     content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    # None for an authored REGION/HATCH. A generated AutoCAD region preserves
-    # every original curve identity while those paths remain independently visible.
+    # У авторского REGION/HATCH значение отсутствует. Производная область AutoCAD
+    # сохраняет идентичность всех исходных кривых, которые остаются видимыми отдельно.
     derived_from: list[SourceIdentity] | None = None
 
     @model_validator(mode="after")
@@ -168,7 +176,10 @@ class NativeAreaProposal(BaseModel):
         path = "/".join([*self.source.instance_chain, self.source.handle])
         if self.id != f"area-proposal/{path}":
             raise ValueError("area proposal id must encode its source instance")
-        if self.preview.identity != self.source or self.preview.derived_from is not None:
+        if (
+            self.preview.identity != self.source
+            or self.preview.derived_from is not None
+        ):
             raise ValueError("area proposal preview must belong to its one source path")
         if self.preview.id != f"{self.id}/region":
             raise ValueError("area proposal preview has an unrelated id")
@@ -234,6 +245,9 @@ class CadSnapshotProvenance(BaseModel):
     schema_: Literal["green-atlas.autocad-snapshot/1"] = Field(alias="schema")
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    # Производный каталог не является частью CAD-снимка. Его ожидаемый SHA
+    # сохраняется вместе с проектом и не читается из самого каталога.
+    face_inputs_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     autocad_version: str = Field(min_length=1)
     plugin_version: str = Field(min_length=1)
     target: Literal["macos-arm64", "macos-x86_64", "windows-x86_64"]
@@ -255,7 +269,7 @@ class CadSnapshot(BaseModel):
     live_references: list[LiveCadReference] | None = None
     coverage: list[CoverageRecord]
     geometry: list[CadGeometry]
-    # Absent in older captures; None preserves their signed payload exactly.
+    # Поле отсутствует в старых захватах; None сохраняет их подписанную нагрузку без изменения.
     area_proposals: list[NativeAreaProposal] | None = None
     summary: SnapshotSummary
 
@@ -266,15 +280,17 @@ class CadSnapshot(BaseModel):
         def identity_key(identity: SourceIdentity) -> tuple[str, tuple[str, ...]]:
             return identity.handle, tuple(identity.instance_chain)
 
-        coverage_keys = [identity_key(item.identity) for item in self.coverage]
-        if len(coverage_keys) != len(set(coverage_keys)):
+        coverage_by_key = {identity_key(item.identity): item for item in self.coverage}
+        if len(coverage_by_key) != len(self.coverage):
             raise ValueError("duplicate source instance in coverage")
         geometry_by_id = {item.id: item for item in self.geometry}
         if len(geometry_by_id) != len(self.geometry):
             raise ValueError("duplicate geometry id")
-        referenced: list[str] = []
-        coverage_by_key = {identity_key(item.identity): item for item in self.coverage}
-        dependencies_by_id = {item.id: item for item in (self.dependencies or [])}
+        referenced: set[str] = set()
+        repeated_geometry = False
+        dependencies_by_id: dict[str, CadSnapshotDependency | LiveCadReference] = {
+            item.id: item for item in (self.dependencies or [])
+        }
         if self.live_references:
             if self.source.live_capture is None or self.dependencies:
                 raise ValueError("live references require a live document source")
@@ -283,7 +299,7 @@ class CadSnapshot(BaseModel):
                 raise ValueError("duplicate live CAD reference id")
         elif len(dependencies_by_id) != len(self.dependencies or []):
             raise ValueError("duplicate CAD dependency id")
-        referenced_dependencies: list[str] = []
+        referenced_dependencies: set[str] = set()
         for item in self.coverage:
             for geometry_id in item.geometry_ids:
                 geometry = geometry_by_id.get(geometry_id)
@@ -293,16 +309,17 @@ class CadSnapshot(BaseModel):
                     )
                 if identity_key(geometry.identity) != identity_key(item.identity):
                     raise ValueError(f"geometry provenance mismatch: {geometry_id}")
-                referenced.append(geometry_id)
+                repeated_geometry |= geometry_id in referenced
+                referenced.add(geometry_id)
             for dependency_id in item.dependency_ids or []:
                 if dependency_id not in dependencies_by_id:
                     raise ValueError(
                         f"coverage references missing dependency: {dependency_id}"
                     )
-                referenced_dependencies.append(dependency_id)
-        if len(referenced) != len(set(referenced)):
+                referenced_dependencies.add(dependency_id)
+        if repeated_geometry:
             raise ValueError("geometry referenced by multiple source instances")
-        if set(referenced) != set(geometry_by_id):
+        if referenced != geometry_by_id.keys():
             raise ValueError("unreferenced geometry in snapshot")
         derived_members: set[tuple[str, tuple[str, ...]]] = set()
         for geometry in self.geometry:
@@ -343,9 +360,9 @@ class CadSnapshot(BaseModel):
             ):
                 raise ValueError("area proposal lacks a unique native source path")
             paths = [
-                geometry_by_id[item_id]
+                geometry
                 for item_id in source_coverage.geometry_ids
-                if isinstance(geometry_by_id.get(item_id), PathGeometry)
+                if isinstance(geometry := geometry_by_id.get(item_id), PathGeometry)
             ]
             if (
                 len(paths) != 1
@@ -355,7 +372,7 @@ class CadSnapshot(BaseModel):
                 raise ValueError("area proposal does not match its open source path")
             proposal_keys.add(key)
             proposal_ids.add(proposal.id)
-        if set(referenced_dependencies) != set(dependencies_by_id):
+        if referenced_dependencies != dependencies_by_id.keys():
             raise ValueError("unreferenced CAD dependency in snapshot")
 
         counts = Counter(item.status for item in self.coverage)

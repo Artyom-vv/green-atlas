@@ -153,9 +153,11 @@ export const WorkspaceDialogs: FC<WorkspaceDialogsProps> = (model) => {
         error={operationError}
         onClose={() => setDismissedOperationError(operationError)}
         onReload={reloadAfterConflict}
-        onPrepare={model.project.source_review
-          ? () => model.leaveWorkspace(`/projects/${model.project.id}/setup`)
-          : undefined}
+        onPrepare={
+          model.project.source_review
+            ? () => model.leaveWorkspace(`/projects/${model.project.id}/setup`)
+            : undefined
+        }
       />
       <WorkspaceReleaseDialog {...WorkspaceReleaseDialogPropsFor(model)} />
       <LeaveWorkspaceDialog

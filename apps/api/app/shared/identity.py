@@ -1,4 +1,4 @@
-"""Default time and identity adapters, injected at application composition."""
+"""Адаптеры времени UTC и случайной идентичности, внедряемые при сборке приложения."""
 
 from datetime import UTC, datetime
 from uuid import uuid4

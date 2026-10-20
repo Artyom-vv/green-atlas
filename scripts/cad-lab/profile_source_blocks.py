@@ -6,7 +6,7 @@ import ezdxf
 
 root=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(root/'apps/api'))
-from app.dxf_import.adapters import _estimated_insert_component_count, MAX_EXPANDED_MINSERT_INSTANCES
+from app.dxf_import.legacy.reader import _estimated_insert_component_count, MAX_EXPANDED_MINSERT_INSTANCES
 
 doc=ezdxf.readfile(sys.argv[1])
 rows=[]

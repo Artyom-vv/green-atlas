@@ -1,4 +1,6 @@
-"""Pure CAD projection with explicit height provenance and coverage."""
+"""Чистая проекция CAD-контекста в сцену с явным происхождением высот и покрытием
+исходных данных.
+"""
 
 from dataclasses import dataclass
 from math import isfinite
@@ -29,7 +31,7 @@ class SceneContext:
 
 
 def _translate_geojson(geometry: dict, origin_x: float, origin_y: float) -> dict:
-    """Translate GeoJSON coordinates into the same local frame as plantings."""
+    """Переводит координаты GeoJSON в локальную систему координат посадок."""
 
     def translate(value: Any) -> Any:
         if isinstance(value, (list, tuple)):
@@ -46,11 +48,11 @@ def _translate_geojson(geometry: dict, origin_x: float, origin_y: float) -> dict
 def _context_height(
     properties: dict,
 ) -> tuple[float | None, EvidenceStatus | None, HeightSource | None]:
-    """Read only height evidence normalised by the DXF adapter.
+    """Читает только свидетельства высоты, нормализованные адаптером DXF.
 
-    Deliberately do not recognise generic keys such as ``height``: imported
-    GIS/DXF payloads frequently use them for text or symbol sizes.  The two
-    accepted keys have explicit metre semantics and retain their provenance.
+    Общие ключи вроде height не распознаются: импортированные GIS/DXF часто
+    используют их для размеров текста или символов. Два разрешённых ключа явно
+    выражают метры и сохраняют происхождение данных.
     """
 
     source_layer = str(properties.get("source_layer", "")).upper()
@@ -89,9 +91,8 @@ def _context_base_elevation_source(properties: dict) -> BaseElevationSource | No
     if _context_base_elevation(properties) is None:
         return None
     source_layer = str(properties.get("source_layer", "")).upper()
-    # Only the enriched fixture layers are explicitly tied to the DEM
-    # declared in document metadata. A generic OSM_* layer may carry a DXF
-    # elevation from any author/source and must not be relabelled Copernicus.
+    # Только обогащённые слои примера явно связаны с DEM из метаданных.
+    # Высота общего слоя OSM_* может иметь другое происхождение и не обозначается Copernicus.
     if source_layer in {
         "GREEN_ATLAS_BUILDING_OSM_HEIGHT",
         "GREEN_ATLAS_BUILDING_OSM_LEVELS",
@@ -117,10 +118,8 @@ def scene_context(project: Project, origin_x: float, origin_y: float) -> SceneCo
     building_height_sources: set[str] = set()
     if context_snapshot is not None:
         for primitive in context_snapshot.vertical_primitives:
-            # Planar DXF entities already expose elevation/extrusion on
-            # their scene context feature. Repeating each one as a point
-            # primitive turns dense municipal drawings into megabytes of
-            # duplicate payload without adding renderable geometry.
+            # Плоские DXF-сущности уже передают высоту и extrusion в контексте сцены.
+            # Повторение каждой точечным примитивом раздувает нагрузку без новой геометрии.
             if primitive.primitive_type == "point" and primitive.source_entity_type in {
                 "LWPOLYLINE",
                 "CIRCLE",
@@ -157,14 +156,11 @@ def scene_context(project: Project, origin_x: float, origin_y: float) -> SceneCo
                     vertical_datum_offset_m=primitive.vertical_datum_offset_m,
                 )
             )
-        # Keep every relevant feature from the requested source extent.
-        # The browser batches linework and surfaces by semantic kind, so
-        # an arbitrary entity-count cutoff only produced a visibly torn
-        # city model without reducing draw calls. No missing terrain,
-        # utility depth or building height is inferred here.
-        # The scene is the same source map as 2D, not a crop of populated
-        # plant groups. A specialist must also inspect empty work areas
-        # and pan to another part of the drawing before planting there.
+        # Сохраняем все подходящие объекты выбранной области. Браузер объединяет их
+        # по смысловым видам; произвольный лимит количества рвал модель города
+        # без уменьшения числа отрисовок. Рельеф, глубины и высоты не выдумываются.
+        # Сцена использует ту же исходную карту, что и 2D, включая пустые рабочие зоны.
+        # Специалист может осмотреть другую часть чертежа до размещения посадок.
         for index, feature in enumerate(
             context_snapshot.feature_collection.get("features", [])
         ):
@@ -176,9 +172,22 @@ def scene_context(project: Project, origin_x: float, origin_y: float) -> SceneCo
                 geometry = shape(feature["geometry"])
                 if geometry.is_empty:
                     continue
-                geometry = geometry.simplify(
-                    CONTEXT_SIMPLIFY_TOLERANCE_M, preserve_topology=True
-                )
+                # Per-feature simplification preserves one polygon's topology,
+                # not its shared edges with adjacent pavement. Different ring
+                # starts/vertices turn the same arc into different chords and
+                # open visible seams. Keep accepted surface rings (including
+                # holes) and their linear boundaries unchanged in both the raw
+                # 3D scene and the render packet. Only independent linework may
+                # use the display tolerance; this adds no precision evidence.
+                if kind not in {
+                    "road",
+                    "lawn",
+                    "water",
+                    "building",
+                }:
+                    geometry = geometry.simplify(
+                        CONTEXT_SIMPLIFY_TOLERANCE_M, preserve_topology=True
+                    )
                 translated = mapping(geometry)
             except Exception:
                 continue

@@ -6,8 +6,9 @@ import pytest
 from ezdxf.lldxf.tagwriter import TagCollector
 from ezdxf.sections.acdsdata import AcDsDataSection, new_acis_record
 
-from app.dxf_import import acis_lookup, adapters
-from app.dxf_import.acis_lookup import indexed_acis_lookup
+from app.dxf_import.legacy.entities import acis_lookup
+from app.dxf_import.legacy import reader as adapters
+from app.dxf_import.legacy.entities.acis_lookup import indexed_acis_lookup
 
 
 def record_tags(section):

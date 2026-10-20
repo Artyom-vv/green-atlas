@@ -1,5 +1,5 @@
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
-import type { BrushToolPanelProps } from '@/features/placement/ui/BrushToolPanel';
+import type { BrushToolPanelProps } from '@/features/placement/brush/ui/BrushToolPanel';
 
 export interface BrushBindingOptions extends Pick<
   WorkspaceReadyModel,

@@ -3,13 +3,13 @@ from pathlib import Path
 import ezdxf
 import pytest
 
-from app.cad_import.cache import file_sha256
+from app.cad_import.archive.cache import file_sha256
+from app.cad_import.archive.package import PackageInspector
+from app.cad_import.archive.package_contracts import ReferenceOverride
 from app.cad_import.contracts import CadConversionError
-from app.cad_import.conversion import LibreDwgConverter
-from app.cad_import.inspection import inspect_drawing
-from app.cad_import.package import PackageInspector
-from app.cad_import.package_contracts import ReferenceOverride
-from app.cad_import.references import PackagePaths, path_key
+from app.cad_import.legacy.conversion import LibreDwgConverter
+from app.cad_import.legacy.inspection import inspect_drawing
+from app.cad_import.references.resolve import PackagePaths, path_key
 
 
 def dxf(path: Path, references: dict[str, str] | None = None) -> Path:

@@ -8,6 +8,7 @@ namespace ga::faces {
 // World-coordinate clones only. Authored entities are never modified.
 inline constexpr double kRepairGapMetres = 0.02;
 inline constexpr const char* kPolicy = "native-planar-faces/1";
+inline constexpr const char* kTopologyPolicy = "native-planar-faces/2";
 struct Source {
     std::string route, layer;
     std::unique_ptr<AcDbCurve> curve;

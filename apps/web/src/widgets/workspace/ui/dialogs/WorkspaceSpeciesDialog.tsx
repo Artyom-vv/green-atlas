@@ -37,7 +37,6 @@ export const WorkspaceSpeciesDialog: FC<WorkspaceSpeciesDialogProps> = ({
   selectedObjects,
   speciesAssignmentOpen,
   reviewOpen,
-  speciesCatalogBrowsing,
   setSpeciesAssignmentOpen,
   setSpeciesCatalogBrowsing,
   editor,
@@ -50,8 +49,10 @@ export const WorkspaceSpeciesDialog: FC<WorkspaceSpeciesDialogProps> = ({
     <Dialog
       open={speciesAssignmentOpen && !reviewOpen}
       title="Назначить породу"
-      size={speciesCatalogBrowsing ? 'wide' : 'form'}
-      stableHeight
+      size="wide"
+      bodyInset="none"
+      controlSize="compact"
+      stableHeight="compact"
       keepMounted
       onClose={() => setSpeciesAssignmentOpen(false)}
     >

@@ -1,0 +1,22 @@
+[Unit]
+Description=Green Atlas Luna restricted SOCKS egress via GetLuxe
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=green-atlas-luna
+Group=green-atlas-luna
+ExecStart=/usr/bin/ssh -N -T -i /etc/green-atlas-luna-tunnel/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/green-atlas-luna-tunnel/known_hosts -o GlobalKnownHostsFile=/dev/null -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=10 -L 127.0.0.1:11080:149.104.110.148:1080 ga-egress@95.163.227.44
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

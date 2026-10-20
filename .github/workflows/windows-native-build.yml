@@ -1,0 +1,103 @@
+name: Windows ObjectARX 2027 compile and link
+
+on:
+  push:
+    branches: [codex/windows-launch-boundary]
+    paths:
+      - .github/workflows/windows-native-build.yml
+      - tools/autocad-bridge/ci-windows-native.ps1
+  workflow_dispatch:
+    inputs:
+      sdk_url:
+        description: Official Autodesk HTTPS URL of the approved Windows ObjectARX 2027 ZIP or SFX archive
+        required: true
+        type: string
+      sdk_sha256:
+        description: Independently checked SHA256 of that exact archive
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    # Первый push регистрирует workflow; скачивание SDK требует явных входов.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Download and unpack approved SDK without executing it
+        env:
+          OBJECTARX_SDK_URL: ${{ inputs.sdk_url }}
+          OBJECTARX_SDK_SHA256: ${{ inputs.sdk_sha256 }}
+        run: |
+          . ./scripts/windows-env.ps1
+          $ErrorActionPreference = 'Stop'
+          $uri = [uri]$env:OBJECTARX_SDK_URL
+          if (-not $uri.IsAbsoluteUri -or $uri.Scheme -ne 'https' -or $uri.UserInfo -or $uri.Fragment -or
+              $uri.DnsSafeHost -notmatch '(^|\.)autodesk\.(com|net)$') {
+            throw 'SDK URL must be HTTPS on an official Autodesk domain, without credentials or fragment.'
+          }
+          $expected = $env:OBJECTARX_SDK_SHA256
+          if ($expected -notmatch '^[0-9A-Fa-f]{64}$') { throw 'SDK SHA256 must contain 64 hex characters.' }
+          $bootstrap = Join-Path $env:GITHUB_WORKSPACE '.runtime/autocad-bridge/ci-native-bootstrap'
+          New-Item -ItemType Directory -Path $bootstrap -Force | Out-Null
+          $tools = Join-Path $env:GITHUB_WORKSPACE '.runtime/tools/objectarx-native'
+          New-Item -ItemType Directory -Path $tools -Force | Out-Null
+          $archive = Join-Path $tools 'sdk-archive.bin'
+          # Разрешён прямой URL: конечный адрес перенаправления не становится доверенным автоматически.
+          . ./scripts/windows-env.ps1
+          Invoke-WebRequest -Uri $uri -OutFile $archive -MaximumRedirection 0
+          $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne $expected.ToLowerInvariant()) { throw 'ObjectARX SDK archive SHA256 mismatch.' }
+          [ordered]@{
+            schema='green-atlas.native-sdk-download/1'; url=$uri.GetLeftPart([UriPartial]::Path)
+            sha256=$sha; bytes=(Get-Item -LiteralPath $archive).Length; sdk_executed=$false
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $bootstrap 'sdk-download.json') -Encoding utf8
+          $sevenzip = (Get-Command 7z.exe -ErrorAction Stop).Source
+          $unpacked = Join-Path $tools 'unpacked'
+          . ./scripts/windows-env.ps1
+          & $sevenzip x -y ('-o' + $unpacked) -- $archive *> (Join-Path $bootstrap 'sdk-extraction.log')
+          if ($LASTEXITCODE -ne 0) { throw '7-Zip could not unpack the verified SDK; the SDK executable was not run.' }
+          $items = @(Get-ChildItem -LiteralPath $unpacked -Recurse -Force)
+          if (@($items | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) { throw 'Unpacked SDK contains reparse points.' }
+          $roots = @($items | Where-Object {
+            -not $_.PSIsContainer -and $_.Name -eq 'AcRxDefault.def' -and $_.Directory.Name -eq 'inc'
+          } | ForEach-Object { $_.Directory.Parent.FullName } | Where-Object {
+            (Test-Path -LiteralPath (Join-Path $_ 'inc-x64') -PathType Container) -and
+            (Test-Path -LiteralPath (Join-Path $_ 'lib-x64') -PathType Container) -and
+            (Test-Path -LiteralPath (Join-Path $_ 'utils/brep/inc') -PathType Container)
+          } | Sort-Object -Unique)
+          if ($roots.Count -ne 1) { throw 'Expected exactly one Windows ObjectARX SDK root with inc/inc-x64/lib-x64/BRep.' }
+          # В следующий шаг передаётся только полученный путь checkout без перевода строки.
+          if ($roots[0] -match '[\r\n]') { throw 'SDK path contains a newline.' }
+          'GREEN_ATLAS_NATIVE_SDK_ROOT=' + $roots[0] | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Compile and link Core CRX and GUI ARX with MSVC x64
+        env:
+          OBJECTARX_SDK_SHA256: ${{ inputs.sdk_sha256 }}
+        run: |
+          . ./scripts/windows-env.ps1
+          & ./tools/autocad-bridge/ci-windows-native.ps1 -SdkRoot $env:GREEN_ATLAS_NATIVE_SDK_ROOT -SdkPackageSha256 $env:OBJECTARX_SDK_SHA256
+      - name: Preserve only own candidates, logs and receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-native-${{ github.sha }}
+          path: |
+            .runtime/autocad-bridge/ci-native/artifact/
+            .runtime/autocad-bridge/ci-native-bootstrap/*.json
+            .runtime/autocad-bridge/ci-native-bootstrap/*.log
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: warn

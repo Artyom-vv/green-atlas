@@ -64,10 +64,23 @@ function open(readOnly = false) {
 
 describe('NativeAreaReview', () => {
   it('does not demand individual confirmation when native assembly is automatic', () => {
-    render(<NativeAreaReview projectId="project" sourceSha256={preview.source_sha256}
-      proposals={[proposal]} readOnly={false} busy={false} automatic onDecision={vi.fn()} />);
-    expect(screen.getByRole('button', {name: 'Ручная корректировка замыканий'})).toBeInTheDocument();
-    expect(screen.queryByRole('button', {name: /на проверке/})).not.toBeInTheDocument();
+    render(
+      <NativeAreaReview
+        projectId="project"
+        sourceSha256={preview.source_sha256}
+        proposals={[proposal]}
+        readOnly={false}
+        busy={false}
+        automatic
+        onDecision={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Ручная корректировка замыканий' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /на проверке/ }),
+    ).not.toBeInTheDocument();
   });
   afterEach(() => {
     cleanup();
@@ -184,6 +197,11 @@ describe('NativeAreaReview', () => {
     expect(
       screen.getByRole('button', { name: 'Отклонить замыкание' }),
     ).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Закрыть' })).toHaveLength(2);
+    for (const close of screen.getAllByRole('button', { name: 'Закрыть' }))
+      expect(close).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeVisible();
     fireEvent.click(screen.getAllByRole('button', { name: 'Закрыть' })[0]);
     expect(screen.getByRole('dialog')).toBeVisible();
     expect(screen.getByRole('img')).toBeVisible();

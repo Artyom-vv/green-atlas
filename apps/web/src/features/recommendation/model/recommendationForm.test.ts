@@ -3,7 +3,6 @@ import {
   buildBuildingScreenDraft,
   buildRecommendationDraft,
   createRecommendationFormDefaults,
-  resolvePlanningTask,
 } from './recommendationForm';
 
 describe('recommendation form adapters', () => {
@@ -11,7 +10,6 @@ describe('recommendation form adapters', () => {
     const values = createRecommendationFormDefaults({
       profile: 'shade',
       maxSites: 25,
-      task: 'Описание',
       screenSide: 'roads',
       screenLimit: 8,
     });
@@ -28,40 +26,6 @@ describe('recommendation form adapters', () => {
       screen_side: 'roads',
       max_sites: 8,
       zone_ids: ['west', 'east'],
-    });
-  });
-  it('preserves unsupported requirements and questions instead of constructing a partial request', () => {
-    expect(
-      resolvePlanningTask(
-        {
-          arrangement: 'area',
-          profile: 'shade',
-          max_sites: 20,
-          unsupported: ['Липы'],
-          questions: [],
-        },
-        false,
-      ),
-    ).toEqual({
-      kind: 'feedback',
-      requiresComposition: true,
-      messages: ['Эти требования пока нужно настроить вручную:', 'Липы'],
-    });
-    expect(
-      resolvePlanningTask(
-        {
-          arrangement: 'area',
-          profile: null,
-          max_sites: null,
-          unsupported: [],
-          questions: ['Сколько посадок?'],
-        },
-        false,
-      ),
-    ).toEqual({
-      kind: 'feedback',
-      requiresComposition: false,
-      messages: ['Сколько посадок?'],
     });
   });
 });

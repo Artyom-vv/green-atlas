@@ -35,6 +35,7 @@ export function useViewportGeometry({
   const requestRef = useRef<BufferedMapRequest | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [request, setRequest] = useState<BufferedMapRequest>();
+  const [scheduled, setScheduled] = useState<BufferedMapRequest>();
   const active = request?.projectId === projectId ? request : undefined;
   useEffect(() => {
     if (!enabled)
@@ -82,6 +83,8 @@ export function useViewportGeometry({
         ? previous
         : undefined,
     staleTime: VIEWPORT_REQUEST_POLICY.cacheMs,
+    // Предыдущее окно остаётся placeholder до ответа, история окон не удерживается.
+    gcTime: 0,
   });
   const metadata = (
     query.data?.feature_collection as
@@ -113,6 +116,7 @@ export function useViewportGeometry({
         return;
       const next = bufferedMapRequest(projectId, extent, resolution);
       requestRef.current = next;
+      setScheduled(next);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         timer.current = undefined;
@@ -127,6 +131,12 @@ export function useViewportGeometry({
   );
   return {
     query,
+    pending: Boolean(
+      enabled &&
+      ((scheduled?.projectId === projectId && scheduled !== active) ||
+        query.isFetching ||
+        (!query.error && (query.isPlaceholderData || !query.data))),
+    ),
     metadata: enabled ? metadata : undefined,
     delivery: enabled ? query.data : undefined,
     onExtentChange,

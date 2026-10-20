@@ -12,6 +12,7 @@
 #include "native_query_command.h"
 #include "live_query_session.h"
 #include "live_query_transport.h"
+#include "runtime_modules.h"
 
 namespace ga::bridge {
 
@@ -19,7 +20,10 @@ namespace {
 constexpr const ACHAR* kCommandGroup = _T("GREEN_ATLAS");
 }
 
-void initialize() {
+void initialize(void* appId) {
+#ifdef _WIN32
+    gaDelivery::installContextMenu(gaQueueOpenInService, appId);
+#endif
     acedRegCmds->addCommand(kCommandGroup, _T("GALIVESESSION"), _T("GALIVESESSION"),
                            ACRX_CMD_MODAL, ga::liveQuery::requestCommand);
     acedRegCmds->addCommand(kCommandGroup, _T("GADEMOLOOP"), _T("GADEMOLOOP"),
@@ -50,6 +54,9 @@ void unload() {
     acedRemoveOnIdleWinMsg(ga::liveQuery::pollRequests);
     ga::liveQuery::closeSession();
     gaDelivery::removeMenu();
+#ifdef _WIN32
+    gaDelivery::removeContextMenu();
+#endif
     acedRemoveOnIdleWinMsg(processMcpRequestsOnIdle);
     publishMcpStatus(false);
     acedRegCmds->removeGroup(kCommandGroup);
@@ -59,16 +66,16 @@ void unload() {
 extern "C" AcRx::AppRetCode acrxEntryPoint(AcRx::AppMsgCode message, void* appId) {
     switch (message) {
     case AcRx::kInitAppMsg:
-        acrxLoadModule(_T("AcGeomentObj.dbx"), 0);
-        acrxDynamicLinker->loadModule(_T("AcBr.dbx"), 1);
+        acrxLoadModule(ga::bridge::kGeometryModule, 0);
+        acrxDynamicLinker->loadModule(ga::bridge::kBrepModule, 1);
         acrxDynamicLinker->unlockApplication(appId);
         acrxDynamicLinker->registerAppMDIAware(appId);
-        ga::bridge::initialize();
+        ga::bridge::initialize(appId);
         break;
     case AcRx::kUnloadAppMsg:
         ga::bridge::unload();
-        acrxDynamicLinker->unloadModule(_T("AcBr.dbx"));
-        acrxUnloadModule(_T("AcGeomentObj.dbx"));
+        acrxDynamicLinker->unloadModule(ga::bridge::kBrepModule);
+        acrxUnloadModule(ga::bridge::kGeometryModule);
         break;
     default:
         break;

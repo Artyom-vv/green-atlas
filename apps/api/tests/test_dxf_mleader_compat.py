@@ -7,8 +7,8 @@ from ezdxf.lldxf.tagwriter import TagCollector
 from ezdxf.math import Vec2, Vec3
 from ezdxf.render.mleader import ConnectionSide
 
-from app.dxf_import.adapters import EzdxfReader
-from app.dxf_import.mleader_compat import prepare_multileader_transforms
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.dxf_import.legacy.entities.mleader_compat import prepare_multileader_transforms
 
 
 def annotation_block(*, dogleg_length=0.0):

@@ -1,15 +1,12 @@
-import type { PatternPreview } from '@green/api-client';
-
-// Connection watchdog, not a budget for the whole calculation. A normal pass
-// yields after 5 seconds between native batches; an individual CAD call has a
-// 90-second server timeout. Allow time for that call and the final placement step.
+// Ограничение ожидания одного ответа, а не всего расчёта. Партия возвращает
+// промежуточный результат; отдельному CAD-запросу нужен запас на завершение.
 export const PATTERN_PASS_RESPONSE_TIMEOUT_MS = 180_000;
 
-export function patternPreviewPass(
-  next: (signal: AbortSignal) => Promise<PatternPreview>,
+export function patternPreviewPass<Preview>(
+  next: (signal: AbortSignal) => Promise<Preview>,
   signal: AbortSignal,
   timeoutMs: number,
-): Promise<PatternPreview> {
+): Promise<Preview> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
@@ -19,7 +16,10 @@ export function patternPreviewPass(
     };
     const abort = () => stop(signal.reason);
     const timer = setTimeout(
-      () => stop(new Error('Ответ по текущей партии не получен — повторите расчёт')),
+      () =>
+        stop(
+          new Error('Ответ по текущей партии не получен — повторите расчёт'),
+        ),
       timeoutMs,
     );
     const cleanup = () => {
@@ -27,8 +27,8 @@ export function patternPreviewPass(
       signal.removeEventListener('abort', abort);
     };
     signal.addEventListener('abort', abort, { once: true });
-    // Both rejection paths remain observed even if a transport ignores abort.
-    // A late response cannot publish progress or start another pass.
+    // Поздний ответ отменённого транспорта не публикует прогресс и не запускает
+    // следующую партию; оба пути отказа остаются обработанными.
     void Promise.resolve()
       .then(() => {
         controller.signal.throwIfAborted();

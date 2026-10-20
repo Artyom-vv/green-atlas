@@ -6,11 +6,21 @@ const range = (min: number, max: number) =>
   `${min.toLocaleString('ru', { maximumFractionDigits: 1 })}–${max.toLocaleString('ru', { maximumFractionDigits: 1 })} м`;
 
 /** Comparison data stays visible before opening a plant's detailed evidence. */
-export function SpeciesSummary({ species }: { species: SpeciesRevision }) {
+export function SpeciesSummary({
+  species,
+  compact = false,
+}: {
+  species: SpeciesRevision;
+  compact?: boolean;
+}) {
   return (
     <span className="flex min-w-0 items-start gap-3">
       {speciesPhotos[species.species_id] && (
-        <SpeciesPhoto key={species.id} species={species} size="compact" />
+        <SpeciesPhoto
+          key={species.id}
+          species={species}
+          size={compact ? 'picker' : 'compact'}
+        />
       )}
       <span className="grid min-w-0 flex-1 gap-1">
         <strong className="text-sm leading-5 font-medium">

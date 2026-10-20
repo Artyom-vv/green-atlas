@@ -8,8 +8,8 @@ from contextlib import closing
 from pathlib import Path
 
 from app.composition import create_runtime
-from app.native_query.pilot_display import validate_pilot_working_zones
-from app.native_query.pilot_provider import NativePilotGeometryEngine
+from app.native_query.display.pilot_display import validate_pilot_working_zones
+from app.native_query.measurement.pilot_provider import NativePilotGeometryEngine
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.planting_zones.domain import validate_planting_zones
 

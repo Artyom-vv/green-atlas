@@ -1,4 +1,6 @@
-"""Agreed first-stage resource budget; ordinary upload limits are unchanged."""
+"""Ресурсный бюджет проверки и подготовки сохранённого CAD-комплекта; он не ослабляет
+допуск исходных данных.
+"""
 
 from app.cad_import.policy import ConversionPolicy
 

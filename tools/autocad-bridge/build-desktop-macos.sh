@@ -1,16 +1,62 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
-runtime_root="${1:?Pass the built GreenAtlasRuntime directory}"
-test -f "$runtime_root/GreenAtlasRuntime"
+case "${1:-}" in
+  --self-tests) runtime_root='' ;;
+  *) runtime_root="${1:?Pass the built GreenAtlasRuntime directory}"
+     test -f "$runtime_root/GreenAtlasRuntime" ;;
+esac
 output_root="$repo_root/.runtime/autocad-bridge/desktop-app"
 mkdir -p "$output_root"
 stage="$(mktemp -d "$output_root/build-XXXXXXXX")"
 # Exercise the native shell's handoff contract, not just the API route tests.
 # A live import may already be saved when an incompatible shell rejects /setup.
 xcrun clang++ -std=c++17 -fobjc-arc -framework Foundation \
-  "$repo_root/tools/autocad-bridge/desktop/test_project_route.mm" -o "$stage/test-project-route"
+  "$repo_root/tools/autocad-bridge/desktop/test_project_route.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/contracts.cpp" -o "$stage/test-project-route"
 "$stage/test-project-route"
+xcrun clang++ -std=c++17 "$repo_root/tools/autocad-bridge/desktop/test_contracts.cpp" \
+  "$repo_root/tools/autocad-bridge/desktop/contracts.cpp" -o "$stage/test-desktop-contracts"
+"$stage/test-desktop-contracts"
+xcrun clang++ -std=c++17 -fobjc-arc -framework Foundation -framework WebKit \
+  "$repo_root/tools/autocad-bridge/desktop/test_mac_leave_guard.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-leave-guard.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/contracts.cpp" -o "$stage/test-mac-leave-guard"
+"$stage/test-mac-leave-guard"
+xcrun clang++ -std=c++17 -fobjc-arc -framework AppKit -framework WebKit \
+  "$repo_root/tools/autocad-bridge/desktop/test_mac_download_response.mm" \
+  -o "$stage/test-mac-download-response"
+"$stage/test-mac-download-response"
+xcrun clang++ -std=c++17 -fobjc-arc -framework Foundation \
+  "$repo_root/tools/autocad-bridge/desktop/test_handoff_failure.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/handoff-failure.mm" -o "$stage/test-handoff-failure"
+"$stage/test-handoff-failure"
+xcrun clang++ -std=c++17 -fobjc-arc -framework Foundation \
+  "$repo_root/tools/autocad-bridge/desktop/test_handoff_observation.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/handoff-observation.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/handoff-failure.mm" \
+  -o "$stage/test-handoff-observation"
+"$stage/test-handoff-observation"
+xcrun clang++ -std=c++17 -fobjc-arc -framework AppKit -framework WebKit \
+  "$repo_root/tools/autocad-bridge/desktop/test_mac_handoff_resume.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-leave-guard.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-status-panel.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/handoff-failure.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/handoff-observation.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-runtime-lifecycle.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-qualification.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/contracts.cpp" \
+  -o "$stage/test-mac-handoff-resume"
+"$stage/test-mac-handoff-resume"
+xcrun clang++ -std=c++17 -fobjc-arc -framework Foundation \
+  "$repo_root/tools/autocad-bridge/desktop/test_mac_qualification.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-qualification.mm" \
+  -o "$stage/test-mac-qualification"
+"$stage/test-mac-qualification"
+if [[ "${1:-}" == '--self-tests' ]]; then
+  echo "Native desktop self-tests passed: $stage"
+  exit 0
+fi
 app="$stage/Green Atlas.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$repo_root/tools/autocad-bridge/desktop/Info.plist" "$app/Contents/Info.plist"
@@ -26,7 +72,15 @@ cd "$repo_root/apps/web"
 VITE_API_URL='' node node_modules/vite/bin/vite.js build --outDir "$app/Contents/Resources/Web"
 xcrun clang++ -std=c++17 -fobjc-arc -arch arm64 -mmacosx-version-min=14.0 -O2 \
   -Wall -Wextra -Wno-unused-parameter -framework AppKit -framework WebKit \
-  "$repo_root/tools/autocad-bridge/desktop/mac-main.mm" -o "$app/Contents/MacOS/GreenAtlasDesktop"
+  "$repo_root/tools/autocad-bridge/desktop/mac-main.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-leave-guard.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-handoff-recovery.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-status-panel.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/handoff-failure.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/handoff-observation.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-runtime-lifecycle.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/mac-qualification.mm" \
+  "$repo_root/tools/autocad-bridge/desktop/contracts.cpp" -o "$app/Contents/MacOS/GreenAtlasDesktop"
 codesign --force --options runtime --sign "${GREEN_ATLAS_SIGNING_IDENTITY:--}" "$app"
 codesign --verify --deep --strict "$app"
 echo "$app"

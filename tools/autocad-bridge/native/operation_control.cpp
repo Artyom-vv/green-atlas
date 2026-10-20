@@ -20,6 +20,8 @@ bool operationCancelled() {
     return current.cancelled && current.cancelled();
 }
 
+OperationControl currentOperationControl() { return current; }
+
 void reportOperationProgress(const std::string& phase, std::size_t processedEntities) {
     if (current.progress) current.progress(phase, processedEntities);
 }

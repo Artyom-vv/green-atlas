@@ -1,4 +1,6 @@
-"""Domain outcomes that require an explicit target choice before planning."""
+"""Предметный отказ, требующий явного выбора существующей цели перед построением
+предложения посадок.
+"""
 
 
 class ExistingTargetSelectionRequired(ValueError):

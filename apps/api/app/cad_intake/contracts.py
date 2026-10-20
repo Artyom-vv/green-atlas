@@ -1,10 +1,14 @@
+"""Запросы и паспорта сохранённых CAD-комплектов: относительные пути, выбранные чертежи,
+XREF и хеши.
+"""
+
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.cad_import.archive.package_contracts import ReferenceOverride
 from app.cad_import.contracts import DrawingInspection
-from app.cad_import.package_contracts import ReferenceOverride
 
 
 def relative_path(value: str) -> str:
@@ -54,39 +58,6 @@ class CadIntakeRequest(BaseModel):
         if len(paths) != len(set(paths)):
             raise ValueError("Каждый самостоятельный DXF выбирается один раз")
         return self
-
-
-class CadRoot(BaseModel):
-    id: str
-    label: str
-
-
-class CadDirectoryEntry(BaseModel):
-    path: str
-    name: str
-    kind: Literal["directory", "drawing"]
-    bytes: int | None = None
-
-
-class CadDirectory(BaseModel):
-    root_id: str
-    path: str
-    entries: list[CadDirectoryEntry]
-    truncated: bool = False
-
-
-class CadFingerprint(BaseModel):
-    root_id: str
-    path: str
-    sha256: str
-    bytes: int
-
-
-class CadUploadPackage(BaseModel):
-    root_id: str = Field(pattern=r"^upload-[a-f0-9]{32}$")
-    entries: list[CadFingerprint] = Field(min_length=1, max_length=64)
-    snapshots: list[CadFingerprint] = Field(default_factory=list, max_length=64)
-    total_bytes: int = Field(gt=0)
 
 
 class CadDrawingPassport(BaseModel):

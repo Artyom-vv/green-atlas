@@ -11,8 +11,8 @@ from pathlib import Path
 from time import monotonic
 
 from app.composition import create_runtime
-from app.planning.change_contracts import PlanChangeSetApplyRequest
-from app.planning.pattern_contracts import FillPatternRequest
+from app.planning.changes.contracts import PlanChangeSetApplyRequest
+from app.planning.patterns.contracts import FillPatternRequest
 
 CONTROLS = (
     ("building", 15994.606306, -5245.249309),

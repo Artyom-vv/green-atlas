@@ -1,4 +1,4 @@
-"""Small source inspection independent of the stored Project geometry."""
+"""Компактные сведения о сохранённом исходнике без загрузки геометрии проекта."""
 
 from dataclasses import dataclass
 

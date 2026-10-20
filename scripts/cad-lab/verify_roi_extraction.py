@@ -12,7 +12,7 @@ from shapely.geometry import LineString, shape
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'apps/api'))
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.geometry.geojson_size import coordinate_count
 
 LAB = ROOT / '.runtime/cad-roi-20260916'

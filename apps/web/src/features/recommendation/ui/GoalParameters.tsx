@@ -5,19 +5,12 @@ import type { RecommendationFormValues } from '../model/recommendationForm';
 
 export interface GoalParametersProps {
   disabled?: boolean;
-  interpreted: boolean;
 }
-export const GoalParameters: FC<GoalParametersProps> = ({
-  disabled,
-  interpreted,
-}) => {
+export const GoalParameters: FC<GoalParametersProps> = ({ disabled }) => {
   const { control, register } = useFormContext<RecommendationFormValues>();
   const { field } = useController({ name: 'maxSites', control });
   return (
     <div className="grid min-w-0 gap-3">
-      {interpreted && (
-        <h3 className="m-0 text-sm font-semibold">Проверьте параметры</h3>
-      )}
       <FieldGrid minWidth={140}>
         <Field label="Приоритет">
           <Select

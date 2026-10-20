@@ -1,0 +1,84 @@
+name: Windows pattern payload diagnostic
+
+on:
+  push:
+    branches: [codex/windows-pattern-diagnostic]
+    paths: [.github/workflows/windows-pattern-diagnostic.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  payload:
+    if: github.repository == 'Artyom-vv/green-atlas-dev'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Prepare locked dependencies
+        run: |
+          . ./scripts/windows-env.ps1
+          $inputs = Get-Content tools/autocad-bridge/windows-ci-inputs.json -Raw | ConvertFrom-Json
+          $python = (Get-Command python).Source
+          & $python -m pip install --disable-pip-version-check ('uv==' + $inputs.uv)
+          if ($LASTEXITCODE -ne 0) { throw 'uv installation failed' }
+          . ./scripts/windows-env.ps1
+          $env:UV_PYTHON_DOWNLOADS = 'never'
+          & $python -m uv sync --project apps/api --locked --group dev --python $python
+          if ($LASTEXITCODE -ne 0) { throw 'Locked dependencies failed' }
+      - name: Export own deterministic geometry fixtures
+        timeout-minutes: 3
+        run: |
+          . ./scripts/windows-env.ps1
+          $env:PYTHONUTF8 = '1'
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'apps/api'
+          $probe = @'
+          import base64, dataclasses, hashlib, json, os, pathlib, platform, runpy, subprocess, sys
+          import pytest, shapely
+          root = pathlib.Path.cwd()
+          source = root / 'apps/api/tests/test_placement_allocation.py'
+          namespace = runpy.run_path(str(source))
+          with pytest.MonkeyPatch.context() as patch:
+              payload = namespace['pattern_baseline']('building_contour', patch)
+          def contract(value):
+              if isinstance(value, dict):
+                  return {key: contract(item) for key, item in value.items() if key != 'planning_horizon_year'}
+              if isinstance(value, list):
+                  return [contract(item) for item in value]
+              return value
+          def emit(case, value, source):
+              encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+              if len(encoded) > 262144:
+                  raise ValueError('Diagnostic fixture exceeded its transport bound')
+              metadata = {'schema': 'green-atlas.pattern-platform-diagnostic/1', 'case': case, 'source_commit': os.environ['GITHUB_SHA'], 'app_tree': subprocess.check_output(['git', 'rev-parse', 'HEAD:apps/api/app'], text=True).strip(), 'test_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'platform': sys.platform, 'machine': platform.machine(), 'python': platform.python_version(), 'compiler': platform.python_compiler(), 'shapely': shapely.__version__, 'geos': shapely.geos_version_string, 'bytes': len(encoded), 'sha256': hashlib.sha256(encoded).hexdigest(), 'autocad_executed': False, 'user_data_used': False}
+              print('GA_PATTERN_PLATFORM_BEGIN ' + json.dumps(metadata), flush=True)
+              wire = base64.b64encode(encoded).decode('ascii')
+              for offset in range(0, len(wire), 4096):
+                  print('GA_PATTERN_PLATFORM_DATA ' + wire[offset:offset + 4096], flush=True)
+              print('GA_PATTERN_PLATFORM_END', flush=True)
+          emit('building_contour', contract(payload), source)
+          sys.path.insert(0, str(root / 'apps/api/tests'))
+          source = root / 'apps/api/tests/test_dxf_pipeline.py'
+          namespace = runpy.run_path(str(source))
+          for site, partial in ((True, False), (True, True), (False, False)):
+              project = namespace['calculation_control'](site=site, partial=partial)
+              before = project.model_dump(mode='json')
+              updates = []
+              result = namespace['ShapelyGeometryEngine']().calculate(project, updates.append)
+              if project.model_dump(mode='json') != before:
+                  raise ValueError('Diagnostic calculation mutated its synthetic source')
+              emit(f'calculation-{int(site)}-{int(partial)}', {'snapshot': result.model_dump(mode='json'), 'callbacks': [dataclasses.asdict(item) for item in updates]}, source)
+          '@
+          . ./scripts/windows-env.ps1
+          & ./apps/api/.venv/Scripts/python.exe -c $probe
+          if ($LASTEXITCODE -ne 0) { throw 'Pattern fixture diagnostic failed' }

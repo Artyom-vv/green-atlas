@@ -42,16 +42,3 @@ export const placementMasksQueryOptions = (
     enabled,
     staleTime: MASKS_STALE_MS,
   });
-
-export const buildingTargetsQuery = (
-  projectId: string,
-  zoneIds: string[],
-  stateVersion: number | undefined,
-  enabled: boolean,
-) =>
-  queryOptions({
-    queryKey: ['building-screen-targets', projectId, zoneIds, stateVersion],
-    queryFn: ({ signal }) =>
-      api.getBuildingScreenTargets(projectId, zoneIds, signal),
-    enabled,
-  });

@@ -1,15 +1,19 @@
+import * as sdk from '../sdk.generated';
 import { normalizeScene } from '../adapters/scene';
-import type { WireSchema } from '../contracts/wire';
-import { request } from '../transport/request';
 
 export const sceneApi = {
+  getSceneView: sdk.getSceneView,
+  prepareSceneRender: sdk.prepareSceneRender,
+  getSceneRenderPreparation: sdk.getSceneRenderPreparation,
+  createSceneRender: sdk.createSceneRender,
+  getSceneRender: sdk.getSceneRender,
+  cancelSceneRender: sdk.cancelSceneRender,
   getPlanScene: (
     projectId: string,
     horizonYear: number,
     signal?: AbortSignal,
   ) =>
-    request<WireSchema<'SceneSnapshot'>>(
-      `/api/projects/${projectId}/plan/scene?horizon_year=${horizonYear}`,
-      { signal },
-    ).then(normalizeScene),
+    sdk
+      .getPlanScene(projectId, { horizon_year: horizonYear }, { signal })
+      .then(normalizeScene),
 };

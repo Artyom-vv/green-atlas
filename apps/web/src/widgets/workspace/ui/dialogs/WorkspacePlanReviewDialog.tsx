@@ -38,8 +38,6 @@ export const WorkspacePlanReviewDialog: FC<WorkspacePlanReviewDialogProps> = ({
   changePreview,
   reviewOpen,
   applyChanges,
-  patternPreview,
-  recommendationPreview,
   setReviewOpen,
   previewChanges,
   previewPattern,
@@ -54,11 +52,6 @@ export const WorkspacePlanReviewDialog: FC<WorkspacePlanReviewDialogProps> = ({
       preview={changePreview}
       applying={applyChanges.isPending}
       error={applyChanges.error ? message(applyChanges.error) : undefined}
-      unverifiedData={
-        patternPreview?.unverified_data ??
-        recommendationPreview?.data_gaps ??
-        []
-      }
       onInspect={() => {
         if (!applyChanges.isPending) setReviewOpen(false);
       }}

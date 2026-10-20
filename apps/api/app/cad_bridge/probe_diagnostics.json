@@ -1,0 +1,16 @@
+{
+  "count_missing": "native summary misses XREF reference count",
+  "ledger_without_references": "native probe declares XREF dependencies without XREF references",
+  "producer_unqualified": "native probe cannot prove the exact XREF dependency files",
+  "ledger_missing": "native probe has no XREF dependency ledger",
+  "count_mismatch": "native XREF dependency count differs from its ledger",
+  "record_invalid": "native XREF dependency is invalid",
+  "metadata_incomplete": "native XREF dependency metadata is incomplete",
+  "record_duplicate": "duplicate native XREF dependency record",
+  "root_required": "package root is required to verify native XREF dependencies",
+  "root_unavailable": "CAD package root is unavailable",
+  "symlink": "native XREF dependency cannot be a symlink",
+  "file_unavailable": "native XREF dependency file is unavailable",
+  "outside_package": "native XREF dependency is outside the admitted CAD package",
+  "file_mismatch": "native XREF dependency differs from the file AutoCAD reported"
+}

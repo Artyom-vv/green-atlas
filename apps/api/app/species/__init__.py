@@ -1,1 +1,3 @@
-"""Versioned planting species and bounded biological forecasts."""
+"""Версионированные виды посадок и ограниченные биологические прогнозы с сохранёнными
+основаниями.
+"""

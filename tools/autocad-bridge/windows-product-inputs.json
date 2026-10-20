@@ -1,0 +1,28 @@
+{
+  "schema": "green-atlas.windows-product-inputs/1",
+  "objectarx": {
+    "version": "2027",
+    "url": "https://damassets.autodesk.net/content/dam/autodesk/files/esd/objectarx/2027/objectarx-for-autocad-2027-win-64bit.exe",
+    "sha256": "cf4c54b1b440c4e40d418e730f306f18185d026d917dc3c864e60973a981e072"
+  },
+  "webview_runtime": {
+    "version": "155.0.4283.45",
+    "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/7c7c0e6f-8cb5-406a-8e51-df0c62011e55/MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+    "sha256": "2a6add76c37bfa872eb8c2b22d45b3216b8e2a1f193e0774006340ff62ac5fa0",
+    "source": "https://github.com/microsoft/winget-pkgs/blob/master/manifests/m/Microsoft/EdgeWebView2Runtime/155.0.4283.45/Microsoft.EdgeWebView2Runtime.installer.yaml"
+  },
+  "inno_setup": {
+    "version": "6.7.3",
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
+    "sha256": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
+  },
+  "upgrade_control": {
+    "repository": "Artyom-vv/green-atlas-dev",
+    "tag": "v0.1.119-windows-setup2-gaopen-fix",
+    "asset": "GreenAtlas-0.1.119-Windows-x64-Setup-2.exe",
+    "version": "0.1.119",
+    "sha256": "7fcb0f02cef4ef3157166e0455587ae0a4542eccd5b06bc02666b127f61333eb"
+  },
+  "node_major": "24",
+  "pnpm": "11.9.0"
+}

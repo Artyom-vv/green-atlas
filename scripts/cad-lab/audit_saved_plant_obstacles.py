@@ -15,7 +15,7 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
-from app.geometry.domain import PositionChecker
+from app.geometry.checking.domain import PositionChecker
 from app.projects.contracts import Project
 from shapely import STRtree
 from shapely.geometry import LineString, Point, Polygon, shape

@@ -16,21 +16,27 @@ export const ReleaseForecastField: FC<ReleaseForecastFieldProps> = ({
   const { control, setValue } = useFormContext<ReleaseFormValues>();
   const sceneHorizon = useWatch({ control, name: 'sceneHorizon' });
   return (
-    <section aria-label="Прогноз в пакете" className="grid gap-2">
-      <div className="flex items-center justify-between gap-4">
+    <section
+      aria-label="Прогноз в пакете"
+      className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2"
+    >
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
         <span>Прогноз в пакете</span>
         <output className="text-neutral-600 tabular-nums">
           {horizonLabel(sceneHorizon)}
         </output>
       </div>
-      <GrowthHorizonSlider
-        ariaLabel="Горизонт прогноза в пакете"
-        value={sceneHorizon}
-        onChange={(value) => {
-          setValue('sceneHorizon', value ?? 0, { shouldDirty: true });
-          onGrowthHorizon(value);
-        }}
-      />
+      <div className="w-48 max-w-full">
+        <GrowthHorizonSlider
+          scale="inline"
+          ariaLabel="Горизонт прогноза в пакете"
+          value={sceneHorizon}
+          onChange={(value) => {
+            setValue('sceneHorizon', value ?? 0, { shouldDirty: true });
+            onGrowthHorizon(value);
+          }}
+        />
+      </div>
     </section>
   );
 };

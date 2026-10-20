@@ -1,0 +1,136 @@
+name: Windows MSVC and runtime checks
+
+on:
+  push:
+    branches: [codex/windows-launch-boundary, codex/windows-optimized-121]
+    paths:
+      - .github/workflows/windows-build.yml
+      - tools/autocad-bridge/**
+      - scripts/windows-env.ps1
+      - apps/api/app/**
+      - apps/api/tests/**
+      - apps/api/tests/test_child_dll_search.py
+      - apps/api/tests/test_blender_runtime.py
+      - apps/api/tests/test_external_launch_consumers.py
+      - apps/api/tests/test_render_preview_assets.py
+      - apps/api/tests/test_scene_rendering.py
+      - apps/api/pyproject.toml
+      - apps/api/uv.lock
+      - scripts/desktop/windows_bundle.py
+      - scripts/desktop/test_windows_product_version.py
+  workflow_dispatch:
+    inputs:
+      runtime_scope:
+        description: 'Source storage/geometry checks only, or full runtime qualification'
+        type: choice
+        options: [full, optimized, focused, storage-trace]
+        default: full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}-${{ inputs.runtime_scope || 'full' }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.runtime_scope == 'full' }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Download pinned WebView2 SDK and build host
+        run: |
+          . ./scripts/windows-env.ps1
+          $inputs = Get-Content tools/autocad-bridge/windows-ci-inputs.json -Raw | ConvertFrom-Json
+          if ($inputs.schema -ne 'green-atlas.windows-ci-inputs/1') { throw 'Unknown CI inputs' }
+          $root = Join-Path $env:GITHUB_WORKSPACE '.runtime/tools/webview2'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $package = Join-Path $root 'webview2.nupkg'
+          Invoke-WebRequest -Uri $inputs.webview2.url -OutFile $package
+          if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ne $inputs.webview2.sha256) {
+            throw 'WebView2 SDK SHA256 mismatch'
+          }
+          $sdk = Join-Path $root 'sdk'
+          [IO.Compression.ZipFile]::ExtractToDirectory($package, $sdk)
+          . ./scripts/windows-env.ps1
+          & ./tools/autocad-bridge/ci-windows-host.ps1 -WebView2SdkRoot $sdk -WebView2PackageSha256 $inputs.webview2.sha256
+      - name: Preserve compiler logs and candidate binaries
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-host-${{ github.sha }}
+          path: .runtime/autocad-bridge/ci-host/
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: warn
+
+  runtime:
+    name: runtime (${{ matrix.source_shard }})
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        source_shard: ${{ fromJSON(inputs.runtime_scope == 'storage-trace' && '[20]' || inputs.runtime_scope == 'focused' && '[0,4,8,12,16,20]' || inputs.runtime_scope == 'optimized' && '[1,2,3,4]' || '[0]') }}
+    timeout-minutes: ${{ inputs.runtime_scope && inputs.runtime_scope != 'full' && 15 || 35 }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Prepare locked API and build dependencies
+        run: |
+          . ./scripts/windows-env.ps1
+          $inputs = Get-Content tools/autocad-bridge/windows-ci-inputs.json -Raw | ConvertFrom-Json
+          $python = (Get-Command python).Source
+          & $python -m pip install --disable-pip-version-check ('uv==' + $inputs.uv)
+          if ($LASTEXITCODE -ne 0) { throw 'uv installation failed' }
+          $env:UV_PYTHON_DOWNLOADS = 'never'
+          . ./scripts/windows-env.ps1
+          & $python -m uv sync --project apps/api --locked --group dev --python $python
+          if ($LASTEXITCODE -ne 0) { throw 'Locked API dependencies failed' }
+          . ./scripts/windows-env.ps1
+          & $python -m uv pip install --python apps/api/.venv/Scripts/python.exe -r tools/autocad-bridge/desktop/build-requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen build dependencies failed' }
+      - name: Run selected Windows runtime checks
+        timeout-minutes: ${{ inputs.runtime_scope && inputs.runtime_scope != 'full' && 8 || 30 }}
+        run: |
+          . ./scripts/windows-env.ps1
+          $python = Join-Path $env:GITHUB_WORKSPACE 'apps/api/.venv/Scripts/python.exe'
+          if ('${{ inputs.runtime_scope }}' -eq 'optimized') {
+            & ./tools/autocad-bridge/ci-windows-runtime.ps1 -BuildPython $python -OnlyOptimizedStorage -SourceShard ${{ matrix.source_shard }}
+          } elseif ('${{ inputs.runtime_scope }}' -eq 'focused') {
+            & ./tools/autocad-bridge/ci-windows-runtime.ps1 -BuildPython $python -OnlyOptimizedStorage -SourceCheckIndex ${{ matrix.source_shard }}
+          } elseif ('${{ inputs.runtime_scope }}' -eq 'storage-trace') {
+            & ./tools/autocad-bridge/ci-windows-runtime.ps1 -BuildPython $python -OnlyOptimizedStorage -SourceCheckIndex 20 -TraceSourceTests
+          } else {
+            & ./tools/autocad-bridge/ci-windows-runtime.ps1 -BuildPython $python -BuildFrozenApi
+          }
+      - name: Preserve runtime and Setup check receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-runtime-${{ github.sha }}-${{ matrix.source_shard }}
+          path: |
+            .runtime/autocad-bridge/ci-runtime/runtime-ci-receipt.json
+            .runtime/autocad-bridge/ci-runtime/optimized-source-ci-receipt.json
+            .runtime/autocad-bridge/ci-runtime/*.xml
+            .runtime/autocad-bridge/ci-runtime/*.log
+            .runtime/autocad-bridge/ci-runtime/frozen-api/*.json
+            .runtime/autocad-bridge/runtime-windows/build-*/compile.log
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: warn

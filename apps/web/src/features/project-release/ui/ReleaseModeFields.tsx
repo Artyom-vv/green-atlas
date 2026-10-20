@@ -34,11 +34,11 @@ export const ReleaseModeFields: FC<ReleaseModeFieldsProps> = ({ disabled }) => {
           Финальный
         </Button>
       </div>
-      <p className="m-0 text-xs text-neutral-600">
-        {mode === 'draft'
-          ? 'Для обмена и доработки. Замечания войдут в пакет.'
-          : 'Для выпуска после проверки плана и оснований.'}
-      </p>
+      {mode === 'draft' && (
+        <p className="m-0 text-xs text-neutral-600">
+          Замечания включаются в пакет
+        </p>
+      )}
     </FieldGroup>
   );
 };

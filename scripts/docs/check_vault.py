@@ -3,18 +3,38 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 WIKI_LINK = re.compile(r"!?\[\[([^\]]+)\]\]")
-MARKDOWN_LINK = re.compile(r"!?\[[^\]\n]*\]\(<?([^\n)>]+)>?\)")
+MARKDOWN_LINK = re.compile(r"(!?)\[[^\]\n]*\]\(<?([^\n)>]+)>?\)")
 FENCE = re.compile(r"^```.*?^```\s*$", re.MULTILINE | re.DOTALL)
 SESSION_REFERENCE = re.compile(
     r"/Users/|/private/tmp/|127\.0\.0\.1|localhost:\d+|"
     r"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b"
 )
+PUBLIC_SOURCE_ID = re.compile(r"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b")
+
+
+def public_citation(target: str) -> bool:
+    """Ссылка на источник не нужна для чтения локальных страниц и изображений."""
+    try:
+        url = urlsplit(unquote(target.strip()))
+        host = (url.hostname or "").rstrip(".")
+        if url.scheme not in {"http", "https"} or not host or url.username or url.password:
+            return False
+        if host == "localhost" or host.endswith((".localhost", ".local")):
+            return False
+        try:
+            return ipaddress.ip_address(host).is_global
+        except ValueError:
+            # Короткие/восьмеричные IPv4 и однословные имена могут вести на LAN.
+            return "." in host and not host.rsplit(".", 1)[-1].isdecimal()
+    except ValueError:
+        return False
 
 
 def check(vault: Path) -> dict[str, int]:
@@ -24,13 +44,15 @@ def check(vault: Path) -> dict[str, int]:
     errors: list[str] = []
     checked_links = 0
 
-    def resolve(page: Path, target: str, wiki: bool) -> None:
+    def resolve(page: Path, target: str, wiki: bool, embedded: bool = False) -> None:
         nonlocal checked_links
         href = target.split("|", 1)[0] if wiki else target
         href = unquote(href.strip()).split("#", 1)[0]
         if not href:
             return
         if urlsplit(href).scheme:
+            if not wiki and not embedded and public_citation(href):
+                return
             errors.append(f"{page.relative_to(vault)}: external dependency {href}")
             return
         checked_links += 1
@@ -51,13 +73,21 @@ def check(vault: Path) -> dict[str, int]:
             errors.append(f"{page.relative_to(vault)}: metadata missing")
         if len(re.findall(r"^```", content, re.MULTILINE)) % 2:
             errors.append(f"{page.relative_to(vault)}: unclosed code fence")
-        if SESSION_REFERENCE.search(content):
+        # UUID публичного источника не является ID локального проекта/сессии.
+        session_content = MARKDOWN_LINK.sub(
+            lambda match: match.group(0).replace(
+                match.group(2), PUBLIC_SOURCE_ID.sub("", unquote(match.group(2)))
+            )
+            if not match.group(1) and public_citation(match.group(2)) else match.group(0),
+            content,
+        )
+        if SESSION_REFERENCE.search(session_content):
             errors.append(f"{page.relative_to(vault)}: machine/session-specific reference")
         content = FENCE.sub("", content)
         for match in WIKI_LINK.finditer(content):
             resolve(page, match.group(1), True)
         for match in MARKDOWN_LINK.finditer(content):
-            resolve(page, match.group(1), False)
+            resolve(page, match.group(2), False, bool(match.group(1)))
 
     for asset in assets:
         tree = ET.parse(asset)

@@ -4,3 +4,12 @@ import type { ChangeSetPreview } from '@green/api-client';
 export function commitPlanChange(projectId: string, preview: ChangeSetPreview) {
   return api.applyPlanChanges(projectId, preview);
 }
+
+export const readPlanChangeReceipt = (
+  projectId: string,
+  preview: ChangeSetPreview,
+  baseStateVersion: number,
+) => api.getPlanChangeReceipt(projectId, preview, baseStateVersion);
+
+export const readCommittedProject = (projectId: string) =>
+  api.getProjectRead(projectId, false);

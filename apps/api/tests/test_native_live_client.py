@@ -10,13 +10,15 @@ from uuid import uuid4
 import pytest
 
 from app.native_query.contracts import NativeObjectQuery, NativeTarget
-from app.native_query.live_client import (
+from app.native_query.live.live_client import (
     LIVE_PROTOCOL,
     LiveQueryClient,
     LiveQueryError,
     LiveSession,
 )
 from app.operations.progress import OperationCancelled, operation_cancellation
+
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX live-query transport")
 
 
 def session(tmp_path, **overrides):

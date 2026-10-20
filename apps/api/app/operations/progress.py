@@ -1,7 +1,12 @@
+"""Прогресс текущей стадии и совместная отмена длительных операций, включая ожидание
+блокировки и обход элементов.
+"""
+
+from _thread import LockType, RLock
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from time import monotonic
 from typing import TypeVar
 
@@ -35,8 +40,8 @@ def check_operation_cancelled() -> None:
 
 
 @contextmanager
-def operation_cancellation(check: Callable[[], None]):
-    """Propagate cancellation through blocking adapters without global state."""
+def operation_cancellation(check: Callable[[], None]) -> Iterator[None]:
+    """Передаёт отмену блокирующим адаптерам через контекст текущей операции."""
     token = _cancellation_check.set(check)
     try:
         yield
@@ -45,26 +50,35 @@ def operation_cancellation(check: Callable[[], None]):
 
 
 @contextmanager
-def cancellable_lock(lock):
-    """A queued operation can be cancelled while another preparation owns a lock."""
+def cancellable_lock(
+    lock: LockType | RLock, *, check: Callable[[], None] | None = None
+) -> Iterator[None]:
+    """Позволяет отменить ожидание блокировки, пока её держит другая подготовка."""
+    check = check or check_operation_cancelled
     while True:
-        check_operation_cancelled()
+        check()
         if lock.acquire(timeout=0.1):
             break
     try:
-        check_operation_cancelled()
+        check()
         yield
     finally:
         lock.release()
 
+
 T = TypeVar("T")
-PROGRESS_REPORT_INTERVAL_S = 0.25  # Bound journal writes, not work or accuracy.
+PROGRESS_REPORT_INTERVAL_S = (
+    0.25  # Ограничиваем частоту записей журнала, а не работу или точность результата.
+)
 
 
 def progress_items(
-    items: Iterable[T], reporter: ProgressReporter | None, stage: str, total: int,
+    items: Iterable[T],
+    reporter: ProgressReporter | None,
+    stage: str,
+    total: int,
 ) -> Iterator[T]:
-    """Report completed objects in this stage, not a guessed overall percentage."""
+    """Сообщает число обработанных объектов этапа без выдуманного общего процента."""
     if reporter is None:
         yield from items
         return
@@ -74,7 +88,9 @@ def progress_items(
         yield item
         now = monotonic()
         if processed == total or now - last_report >= PROGRESS_REPORT_INTERVAL_S:
-            reporter(WorkProgress(stage, processed=processed, total=total, unit="объектов"))
+            reporter(
+                WorkProgress(stage, processed=processed, total=total, unit="объектов")
+            )
             last_report = now
 
 

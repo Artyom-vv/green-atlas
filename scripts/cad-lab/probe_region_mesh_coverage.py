@@ -12,7 +12,7 @@ import time
 import ezdxf
 from ezdxf.acis import api, sab, sat
 
-from app.dxf_import.acis_lookup import indexed_acis_lookup
+from app.dxf_import.legacy.entities.acis_lookup import indexed_acis_lookup
 
 
 def probe(source: Path) -> dict:

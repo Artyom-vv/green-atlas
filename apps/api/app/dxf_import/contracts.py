@@ -1,3 +1,7 @@
+"""Результат импорта и статус исходника: происхождение, режим редактирования и явные
+решения по native-областям.
+"""
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -7,11 +11,12 @@ from pydantic import BaseModel, Field
 
 from app.cad_bridge.contracts import CadSnapshotProvenance, SourceIdentity
 from app.cad_intake.prepare_contracts import PreparedSourceProvenance
-from app.dxf_import.layer_contracts import Layer
-from app.dxf_import.object_review_contracts import SourceAreaGroup, SourceObjectDecision
-from app.dxf_import.preview_contracts import CadPreviewProvenance
+from app.dxf_import.layers.contracts import Layer
+from app.dxf_import.review.contracts import SourceAreaGroup, SourceObjectDecision
+from app.dxf_import.source.preview_contracts import CadPreviewProvenance
 from app.geometry.contracts import CoordinateReference, GeometrySnapshot
-from app.native_query.live_client import LiveSession
+from app.native_query.live.live_client import LiveSession
+from app.native_query.preparation.face_contracts import TopologyRecipe
 
 
 class ImportMode(StrEnum):
@@ -53,8 +58,8 @@ class NativeAreaProposalReview(BaseModel):
     proposal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     closure_gap_m: float = Field(gt=0, allow_inf_nan=False)
     area_m2: float = Field(gt=0, allow_inf_nan=False)
-    # Only the importer knows whether this path was counted in the original
-    # building-area gap. Keep that fact so accept/reject can restore counts.
+    # Только importer знает, учитывался ли путь как пропуск внутренней области здания.
+    # Сохраняем этот факт для точного восстановления счётчиков при принятии или отказе.
     area_gap_entity_type: str | None = None
     decision: Literal["pending", "accepted", "rejected"] = "pending"
 
@@ -85,9 +90,10 @@ class SourceFile(BaseModel):
     object_decisions: list[SourceObjectDecision] = Field(default_factory=list)
     area_groups: list[SourceAreaGroup] = Field(default_factory=list)
     native_session: LiveSession | None = None
+    preparation_recipe: TopologyRecipe | None = None
     rejected_native_face_keys: list[str] = Field(default_factory=list)
-    # Explicit operator decision for this immutable source. Not a claim that
-    # missing objects were recovered, and never copied to a replacement source.
+    # Явное решение оператора относится к этому неизменяемому исходнику. Оно не
+    # подтверждает восстановление пропусков и не переносится на заменяющий исходник.
     accept_partial_geometry: bool = False
 
 

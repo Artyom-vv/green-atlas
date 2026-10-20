@@ -2,7 +2,6 @@ import type { MapTool } from '@/entities/editor';
 
 export type ManualWorkspaceInput = {
   tool: MapTool;
-  placementPanelOpen: boolean;
   hasPlan: boolean;
   hasPreview: boolean;
   hasPendingZone: boolean;
@@ -21,7 +20,7 @@ export type ManualWorkspaceInput = {
   recoveryPending?: boolean;
 };
 
-/** Only manual work owns these guards; assistant results must remain reopenable. */
+/** An unfinished draft or active operation owns the workspace's leaving guard. */
 export function manualWorkspaceWork(input: ManualWorkspaceInput) {
   const hasDraft =
     input.hasPreview ||
@@ -44,9 +43,5 @@ export function manualWorkspaceWork(input: ManualWorkspaceInput) {
     hasDraft,
     pending,
     blocksLeaving: hasDraft || pending,
-    blocksAssistant:
-      hasDraft ||
-      pending ||
-      (input.tool === 'pattern_fill' && input.placementPanelOpen),
   };
 }

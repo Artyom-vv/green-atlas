@@ -5,6 +5,8 @@
 #include "cad_utils.h"
 #include "AcString.h"
 #include "dbcurve.h"
+#include "dbhatch.h"
+#include "bridge_config.h"
 #include <algorithm>
 #include <map>
 #include <stdexcept>
@@ -18,7 +20,10 @@ std::set<std::string> linearRoutes;
 std::vector<std::string> issues;
 ga::bridge::DrawingGeometry captured;
 std::set<std::string> preparedLayers;
+std::set<std::string> preparedCompanions;
+bool typedTopology = false;
 std::map<std::string,std::string> routeLayers;
+std::map<std::string,std::string> archiveRoutes;
 std::string q(const std::string& s) {return "\""+ga::bridge::jsonEscape(s)+"\"";}
 std::string routeOf(const ga::bridge::EntityCoverage& row) {
     std::string result;for(const auto& parent:row.instanceChain) result+=parent+"/";
@@ -36,6 +41,34 @@ std::unique_ptr<AcDbCurve> clone(const AcDbCurve& curve) {
     if(!copy) throw std::runtime_error("native face source clone failed");
     return std::unique_ptr<AcDbCurve>(copy);
 }
+std::vector<std::unique_ptr<AcDbCurve>> areaBoundaryEdges(const ga::xref::Instance& instance) {
+    // AutoCAD извлекает границы на временных объектах; исходный HATCH/REGION не меняется.
+    if(!AcDbRegion::cast(instance.entity)&&!AcDbHatch::cast(instance.entity))
+        throw std::runtime_error("face companion has no supported native boundary");
+    std::unique_ptr<AcDbEntity> source(AcDbEntity::cast(instance.entity->clone()));
+    if(!source) throw std::runtime_error("native boundary source clone failed");
+    ga::direct::Prepared local;
+    auto* region=ga::direct::prepareLocalArea(source.get(),local);
+    AcDbEntity* transformed=nullptr;
+    require(region->getTransformedCopy(instance.transform,transformed),"native boundary world clone");
+    std::unique_ptr<AcDbEntity> world(transformed);
+    auto* worldRegion=AcDbRegion::cast(world.get());
+    if(!worldRegion) throw std::runtime_error("native boundary transformed region unavailable");
+    AcDbVoidPtrArray parts;
+    const auto status=worldRegion->explode(parts);
+    std::vector<std::unique_ptr<AcDbEntity>> owned;
+    for(void* raw:parts) owned.emplace_back(static_cast<AcDbEntity*>(raw));
+    require(status,"native boundary region explode");
+    if(owned.empty()||owned.size()>ga::bridge::kMaximumTopologyElementsPerEntity)
+        throw std::runtime_error("native boundary edge count invalid");
+    std::vector<std::unique_ptr<AcDbCurve>> edges;
+    for(auto& entity:owned) {
+        auto* curve=AcDbCurve::cast(entity.get());
+        if(!curve) throw std::runtime_error("native boundary explode returned noncurve");
+        entity.release();edges.emplace_back(curve);
+    }
+    return edges;
+}
 bool overlap(const AcDbExtents& a,const AcDbExtents& b,double gap) {
     return a.minPoint().x<=b.maxPoint().x+gap&&a.maxPoint().x>=b.minPoint().x-gap
         &&a.minPoint().y<=b.maxPoint().y+gap&&a.maxPoint().y>=b.minPoint().y-gap;
@@ -48,9 +81,13 @@ void strings(std::ostream& out,const std::set<std::string>& values) {
 void clearCatalog() {
     catalog.clear();linearRoutes.clear();issues.clear();owner=nullptr;
     captured={};preparedLayers.clear();routeLayers.clear();
+    preparedCompanions.clear();typedTopology=false;
+    archiveRoutes.clear();
 }
-void rememberFaceSources(AcDbDatabase& host,const ga::bridge::DrawingGeometry& drawing) {
+void rememberFaceSources(AcDbDatabase& host,const ga::bridge::DrawingGeometry& drawing,
+                         const std::map<std::string,std::string>& aliases) {
     clearCatalog();owner=&host;
+    archiveRoutes=aliases;
     captured.coverage=drawing.coverage;
     for(const auto& row:drawing.coverage) routeLayers[routeOf(row)]=row.layer;
     for(const auto& region:drawing.regions) if(region.resolved&&region.sourceHandles.empty()) {
@@ -61,17 +98,28 @@ void rememberFaceSources(AcDbDatabase& host,const ga::bridge::DrawingGeometry& d
     }
 }
 void prepareFaceLayers(AcDbDatabase& host,const std::set<std::string>& requested,
-                    const std::function<bool()>& cancelled) {
+                    const std::function<bool()>& cancelled,
+                    const std::set<std::string>* companionLayers) {
     if(owner!=&host) throw std::runtime_error("native faces require a checked capture");
+    if(companionLayers) {
+        for(const auto& layer:*companionLayers)
+            if(requested.count(layer)) throw std::runtime_error("face companion is also a physical layer");
+        if((typedTopology||!preparedLayers.empty())&&(!typedTopology||preparedCompanions!=*companionLayers))
+            throw std::runtime_error("face companions changed without a fresh preparation");
+    } else if(typedTopology) throw std::runtime_error("face topology policy changed without a fresh preparation");
     std::set<std::string> layers;
     std::set_difference(requested.begin(),requested.end(),preparedLayers.begin(),preparedLayers.end(),std::inserter(layers,layers.end()));
-    if(layers.empty()) return;
+    if(layers.empty()&&!companionLayers) return;
     struct Rollback {
         std::size_t entries=catalog.size(), notices=issues.size();
         std::set<std::string> lines=linearRoutes;
+        std::set<std::string> companions=preparedCompanions;
+        bool typed=typedTopology;
         bool committed=false;
-        ~Rollback() {if(!committed) {catalog.resize(entries);issues.resize(notices);linearRoutes=std::move(lines);}}
+        ~Rollback() {if(!committed) {catalog.resize(entries);issues.resize(notices);linearRoutes=std::move(lines);
+            preparedCompanions=std::move(companions);typedTopology=typed;}}
     } rollback;
+    if(companionLayers) {typedTopology=true;preparedCompanions=*companionLayers;}
     const auto& drawing=captured;
     const double metres=ga::bridge::unitToMetres(host.insunits());
     if(!std::isfinite(metres)||metres<=0) {
@@ -81,18 +129,33 @@ void prepareFaceLayers(AcDbDatabase& host,const std::set<std::string>& requested
     std::map<Scope,std::vector<Source>> scopes;
     std::map<std::string,std::vector<Source>> boundaries;
     std::set<std::string> authoredAreas;
+    const auto clipping=[&](const std::string& name) {
+        return companionLayers?companionLayers->count(name)!=0:clipLayer(name);
+    };
     for(const auto& region:drawing.regions) if(region.resolved&&region.sourceHandles.empty()) {
         std::string route;for(const auto& parent:region.instanceChain) route+=parent+"/";
         authoredAreas.insert(route+region.measurement.handle);
     }
     for(const auto& row:drawing.coverage) {
         checkCancelled(cancelled);
-        if(row.status=="context"||(!layers.count(row.layer)&&!clipLayer(row.layer))) continue;
+        if(row.status=="context"||(!layers.count(row.layer)&&!clipping(row.layer))) continue;
         const auto route=routeOf(row);
         try {
-            ga::xref::Instance instance;ga::xref::resolve(host,route,instance);
+            const auto alias=archiveRoutes.find(route);
+            if(!archiveRoutes.empty()&&alias==archiveRoutes.end())
+                throw std::runtime_error("captured face source has no archive identity");
+            ga::xref::Instance instance;
+            ga::xref::resolve(host,alias==archiveRoutes.end()?route:alias->second,instance);
             auto* curve=AcDbCurve::cast(instance.entity);
-            if(!curve) continue;
+            if(!curve) {
+                if(companionLayers&&clipping(row.layer)) {
+                    const auto slash=route.find_last_of('/');
+                    const auto parent=slash==std::string::npos?"":route.substr(0,slash);
+                    auto edges=areaBoundaryEdges(instance);
+                    for(auto& edge:edges) boundaries[parent].push_back({route,row.layer,std::move(edge),true});
+                }
+                continue;
+            }
             AcDbEntity* transformed=nullptr;
             require(curve->getTransformedCopy(instance.transform,transformed),"native face world clone");
             std::unique_ptr<AcDbEntity> entity(transformed);
@@ -100,7 +163,7 @@ void prepareFaceLayers(AcDbDatabase& host,const std::set<std::string>& requested
             if(!world) throw std::runtime_error("native transformed curve unavailable");
             const auto slash=route.find_last_of('/');
             const auto parent=slash==std::string::npos?"":route.substr(0,slash);
-            if(clipLayer(row.layer)) {
+            if(clipping(row.layer)) {
                 boundaries[parent].push_back({route,row.layer,clone(*world),true});
             }
             if(!layers.count(row.layer)) continue;
@@ -126,7 +189,7 @@ void prepareFaceLayers(AcDbDatabase& host,const std::set<std::string>& requested
                     if(hasBounds) extent.addExt(b);else {extent=b;hasBounds=true;}
                 }
             }
-            if(hasBounds&&!clipLayer(scope.second)) for(const auto& boundary:boundaries[scope.first]) {
+            if(hasBounds&&!clipping(scope.second)) for(const auto& boundary:boundaries[scope.first]) {
                 AcDbExtents b;
                 if(boundary.curve->getGeomExtents(b)==Acad::eOk&&overlap(extent,b,kRepairGapMetres/metres))
                     sources.push_back({boundary.route,boundary.layer,clone(*boundary.curve),true});
@@ -145,6 +208,17 @@ void prepareFaceLayers(AcDbDatabase& host,const std::set<std::string>& requested
             }
             for(std::size_t i=0;i<result.faces.size();++i) {
                 auto& face=result.faces[i];
+                if(companionLayers) {
+                    // Совпадающее ребро хранит все источники, но физическая роль
+                    // принадлежит только объектам текущего расчётного слоя.
+                    for(auto route=face.physicalRoutes.begin();route!=face.physicalRoutes.end();) {
+                        if(routeLayers.at(*route)!=scope.second) route=face.physicalRoutes.erase(route);
+                        else ++route;
+                    }
+                    if(face.physicalRoutes.empty()) {
+                        issues.push_back(scope.second+": native face has no physical source");continue;
+                    }
+                }
                 if(nested.count(i)) {issues.push_back(*face.physicalRoutes.begin()+": nested native faces require hole review");continue;}
                 const auto anchor=*face.physicalRoutes.begin();
                 catalog.push_back({scope.second,anchor,std::move(face)});
@@ -161,7 +235,9 @@ void prepareFaceLayers(AcDbDatabase& host,const std::set<std::string>& requested
 void emitCatalog(std::ostream& out,const std::set<std::string>& layers) {
     std::set<std::string> selectedLines;
     for(const auto& route:linearRoutes) if(layers.count(routeLayers.at(route))) selectedLines.insert(route);
-    out<<",\"face_policy\":"<<q(kPolicy)<<",\"linear_routes\":";strings(out,selectedLines);
+    out<<",\"face_policy\":"<<q(typedTopology?kTopologyPolicy:kPolicy);
+    if(typedTopology) {out<<",\"companion_layers\":";strings(out,preparedCompanions);}
+    out<<",\"linear_routes\":";strings(out,selectedLines);
     out<<",\"face_issues\":[";
     for(std::size_t i=0;i<issues.size();++i) out<<(i?",":"")<<q(issues[i]);
     out<<"],\"faces\":[";
@@ -184,6 +260,12 @@ void emitCatalog(std::ostream& out,const std::set<std::string>& layers) {
         out<<"]}";
     }
     out<<']';
+}
+std::string archiveFaceAnchor(const std::string& route) {
+    if(archiveRoutes.empty()) return route;
+    const auto found=archiveRoutes.find(route);
+    if(found==archiveRoutes.end()) throw std::runtime_error("native face archive anchor absent");
+    return found->second;
 }
 ga::direct::Answer queryFace(AcDbDatabase& host,unsigned id,
                             const std::string& anchor,const AcGePoint3d& point) {

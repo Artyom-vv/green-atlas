@@ -4,11 +4,11 @@ import pytest
 from test_native_live_provider import confirmed_utility, rectangle
 from test_native_live_provider import setup as native_setup
 
-from app.dxf_import.layer_contracts import LayerKind
-from app.geometry.utility_contracts import UtilityContext
-from app.native_query.domain_cells import Cell, certify_cell
-from app.native_query.utility_requirements import UtilityReviewReason as Reason
-from app.native_query.utility_requirements import utility_requirement
+from app.dxf_import.layers.contracts import LayerKind
+from app.geometry.networks.utility_contracts import UtilityContext
+from app.native_query.search.domain_cells import Cell, certify_cell
+from app.native_query.policy.utility_requirements import UtilityReviewReason as Reason
+from app.native_query.policy.utility_requirements import utility_requirement
 
 setup = native_setup
 

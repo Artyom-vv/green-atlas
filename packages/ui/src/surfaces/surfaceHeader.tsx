@@ -12,7 +12,7 @@ export function defaultHeader({ title, description, actions }: HeaderMeta) {
     return null;
   return (
     <SurfaceHeader>
-      <div className="min-w-0">
+      <div className="min-w-0 px-2">
         {title !== undefined && (
           <h2 className="m-0 text-sm leading-[18px] font-semibold">{title}</h2>
         )}

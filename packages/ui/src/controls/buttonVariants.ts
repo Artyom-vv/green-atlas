@@ -22,9 +22,9 @@ export const buttonVariants = tv({
       },
     },
     size: {
-      compact: { root: [controlSizes.compact, 'py-1.5'] },
-      default: { root: [controlSizes.default, 'py-2'] },
-      large: { root: [controlSizes.large, 'py-2.5'] },
+      compact: { root: [controlSizes.compact, 'py-1.5 leading-4'] },
+      default: { root: [controlSizes.default, 'py-2 leading-4'] },
+      large: { root: [controlSizes.large, 'py-2.5 leading-4'] },
     },
     iconOnly: { true: { root: 'size-(--control-height) p-0' } },
     active: {

@@ -1,1 +1,1 @@
-export const DOCK_STRIP_HEIGHT = 40;
+export const DOCK_STRIP_HEIGHT = 48;

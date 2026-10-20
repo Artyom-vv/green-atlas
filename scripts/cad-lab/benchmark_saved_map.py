@@ -10,7 +10,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from app.geometry.query_adapters import IndexedGeometryQuery
+from app.geometry.viewport.query_adapters import IndexedGeometryQuery
 from app.projects.contracts import Project
 
 

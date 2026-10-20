@@ -58,7 +58,7 @@ export const ReleaseDownloads: FC<ReleaseDownloadsProps> = ({
         {artifacts.some((artifact) => artifact.kind === 'cad') && (
           <p className="m-0 text-xs text-neutral-600">
             Распакуйте CAD-пакет и откройте planting-plan.dwg. Подосновы должны
-            оставаться рядом с чертежом.
+            оставаться рядом с чертежом
           </p>
         )}
         <section className="grid gap-1" aria-label="Файлы выпуска">

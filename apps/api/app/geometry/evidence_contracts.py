@@ -1,4 +1,6 @@
-"""Read-only, object-addressed explanations; never a placement permission."""
+"""Адресные объяснения расчётных свидетельств для чтения без выдачи самостоятельного
+разрешения на посадку.
+"""
 
 from typing import Literal
 

@@ -1,3 +1,7 @@
+"""Порты CAD/DXF-выпуска и атомарной публикации артефактов без произвольной мутации
+проекта.
+"""
+
 from typing import Protocol
 
 from app.exporting.cad_contracts import CadRelease

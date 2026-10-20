@@ -7,12 +7,13 @@ export const isWorkBoundaryName = (layer: Layer) =>
   /границ.*(?:работ|проектир|благоустр)/i.test(localLayerName(layer));
 
 export function recommendedWorkBoundary(layers: Layer[]): Layer | undefined {
-  const candidates = layers.filter((layer) =>
-    isWorkBoundaryName(layer) &&
-    layer.boundary_candidate?.status === 'usable' &&
-    layer.boundary_candidate.component_count === 1 &&
-    (layer.boundary_candidate.inset_1_5m_area_m2 ?? 0) > 0 &&
-    layer.geometry_complete,
+  const candidates = layers.filter(
+    (layer) =>
+      isWorkBoundaryName(layer) &&
+      layer.boundary_candidate?.status === 'usable' &&
+      layer.boundary_candidate.component_count === 1 &&
+      (layer.boundary_candidate.inset_1_5m_area_m2 ?? 0) > 0 &&
+      layer.geometry_complete,
   );
   return candidates.length === 1 ? candidates[0] : undefined;
 }

@@ -1,15 +1,19 @@
-// Calls the production face builder on controls and a same-capture source set.
+// Проверяет производственный сборщик CAD-областей на контрольных кривых и захвате.
 #include "rxregsvc.h"
 #include "core_rxmfcapi.h"
 #include "aced.h"
 #include "adslib.h"
 #include "AcString.h"
 #include "planar_faces.h"
+#include "native_face_catalog.h"
 #include "xref_instance_access.h"
 #include "file_io.h"
 #include "dbents.h"
 #include "dbpl.h"
 #include "dbhatch.h"
+#include "dbsymutl.h"
+#include "dbsymtb.h"
+#include "dbtable.h"
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -22,8 +26,280 @@ void expect(bool ok,const char* message){if(!ok)throw std::runtime_error(message
 void add(std::vector<ga::faces::Source>& sources,std::string route,double x1,double y1,double x2,double y2,bool clipping=false) {
     sources.push_back({route,clipping?"cut":"physical",std::make_unique<AcDbLine>(AcGePoint3d(x1,y1,0),AcGePoint3d(x2,y2,0)),clipping});
 }
+void shortArcControl(double scale,const AcGePoint3d& center) {
+    // Дуга с хордой образуют настоящую область, даже когда угол меньше шага отображения.
+    constexpr double sweep=.025;
+    const double radius=.04*scale;
+    auto arc=std::make_unique<AcDbArc>(center,AcGeVector3d::kZAxis,radius,0,sweep);
+    AcGePoint3d start,end;
+    expect(arc->getStartPoint(start)==Acad::eOk&&arc->getEndPoint(end)==Acad::eOk,"short arc endpoints");
+    std::vector<ga::faces::Source> sources;
+    sources.push_back({"arc","physical",std::move(arc),false});
+    sources.push_back({"chord","physical",std::make_unique<AcDbLine>(end,start),false});
+    auto result=ga::faces::assemble(std::move(sources),scale);
+    expect(result.issues.empty()&&result.faces.size()==1,"short arc native face retained");
+    auto& face=result.faces.front();
+    const double expectedArea=radius*radius*(sweep-std::sin(sweep))/2;
+    expect(std::abs(face.query->evidence().localArea-expectedArea)<1e-12*scale*scale,"short arc exact native area");
+    expect(face.display.size()>=4&&face.display.front()==face.display.back(),"short arc display has a closed polygon");
+    const auto origin=face.display.front();
+    double twiceArea=0;
+    for(std::size_t i=1;i<face.display.size();++i) {
+        const auto a=face.display[i-1]-origin,b=face.display[i]-origin;
+        twiceArea+=a.x*b.y-b.x*a.y;
+    }
+    expect(twiceArea>0,"short arc display retains a nondegenerate interior");
+    const double expectedSagitta=2*radius*std::pow(std::sin(sweep/8),2);
+    expect(face.samplingToleranceUnits>=expectedSagitta
+        &&face.samplingToleranceUnits<=expectedSagitta+3e-8,"short arc display reports sampling and join error");
+    expect(face.routes==std::set<std::string>({"arc","chord"})&&face.physicalRoutes==face.routes
+        &&face.repairs.empty(),"short arc physical provenance unchanged");
+    expect(face.query->evidence().edgeCount==0,"short arc display does not prepare distance queries");
+}
+unsigned instanceControls() {
+    // Отдельная база в памяти: отражение и неравномерный масштаб без изменения CAD пользователя.
+    AcDbDatabase database(true,true);
+    AcDbBlockTable* table=nullptr;
+    expect(database.getBlockTable(table,AcDb::kForWrite)==Acad::eOk,"instance control block table");
+    const auto record=[&](const ACHAR* name) {
+        auto* value=new AcDbBlockTableRecord;
+        value->setName(name);
+        AcDbObjectId id;
+        expect(table->add(id,value)==Acad::eOk,"instance control block record");
+        value->close();return id;
+    };
+    const auto inner=record(L"GA_INSTANCE_INNER"),outer=record(L"GA_INSTANCE_OUTER");
+    table->close();
+    const auto append=[&](AcDbObjectId owner,AcDbEntity* entity) {
+        AcDbBlockTableRecord* value=nullptr;
+        expect(acdbOpenObject(value,owner,AcDb::kForWrite)==Acad::eOk,"instance control owner");
+        AcDbObjectId id;
+        expect(value->appendAcDbEntity(id,entity)==Acad::eOk,"instance control entity");
+        entity->close();value->close();return id;
+    };
+    const auto leaf=append(inner,new AcDbCircle({2,3,0},AcGeVector3d::kZAxis,1));
+    auto* nested=new AcDbBlockReference({4,5,0},inner);
+    expect(nested->setScaleFactors({2,-3,1})==Acad::eOk,"instance control reflected scale");
+    expect(nested->setRotation(std::acos(-1.)/2)==Acad::eOk,"instance control rotation");
+    const auto child=append(outer,nested);
+    auto* root=new AcDbBlockReference({10,20,0},outer);
+    expect(root->setScaleFactors({3,2,1})==Acad::eOk,"instance control nonuniform scale");
+    const auto parent=append(acdbSymUtil()->blockModelSpaceId(&database),root);
+    const auto handle=[](AcDbObjectId id) {
+        ACHAR text[32]{};id.nonForwardedHandle().getIntoAsciiBuffer(text);return std::string(AcString(text).utf8Str());
+    };
+    const auto route=handle(parent)+"/"+handle(child)+"/"+handle(leaf);
+    ga::xref::Instance instance;ga::xref::resolve(database,route,instance);
+    expect(instance.entity->objectId()==leaf&&instance.parents.length()==2,"instance control exact ownership");
+    AcGePoint3d point(2,3,0);point.transformBy(instance.transform);
+    expect(point.distanceTo({49,38,0})<1e-8,"instance control native matrix order and reflection");
+    expect(instance.compoundMatrixDelta<1e-8,"instance control native matrix agreement");
+    const auto rejected=[&](const std::string& wrong) {
+        try {ga::xref::Instance result;ga::xref::resolve(database,wrong,result);return false;}
+        catch(const std::exception&) {return true;}
+    };
+    expect(rejected(handle(parent)+"/"+handle(leaf)),"instance control rejects missing parent");
+    expect(rejected(handle(leaf)),"instance control rejects foreign owner");
+    expect(rejected(route+"/"),"instance control rejects malformed route");
+    auto* annotation=new AcDbTable;
+    expect(annotation->setSize(2,2)==Acad::eOk,"annotation control table size");
+    expect(annotation->setRowHeight(1)==Acad::eOk,"annotation control row height");
+    expect(annotation->setColumnWidth(2)==Acad::eOk,"annotation control column width");
+    const auto annotationId=append(acdbSymUtil()->blockModelSpaceId(&database),annotation);
+    AcDbTable* preparedTable=nullptr;
+    expect(acdbOpenObject(preparedTable,annotationId,AcDb::kForWrite)==Acad::eOk,"annotation control native table");
+    expect(preparedTable->recomputeTableBlock()==Acad::eOk,"annotation control native layout");
+    const auto annotationBlock=preparedTable->blockTableRecord();preparedTable->close();
+    AcDbBlockTableRecord* layout=nullptr;
+    expect(acdbOpenObject(layout,annotationBlock,AcDb::kForRead)==Acad::eOk,"annotation control layout record");
+    AcDbBlockTableRecordIterator* children=nullptr;
+    expect(layout->newIterator(children)==Acad::eOk&&!children->done(),"annotation control actual child");
+    AcDbObjectId annotationLeaf;
+    expect(children->getEntityId(annotationLeaf)==Acad::eOk,"annotation control child id");
+    delete children;layout->close();
+    const auto annotationContext=[&](const std::string& value) {
+        try {ga::xref::Instance result;ga::xref::resolve(database,value,result);return false;}
+        catch(const ga::xref::NonCalculationContext&) {return true;}
+        catch(const std::exception&) {return false;}
+    };
+    expect(annotationContext(handle(annotationId)+"/"+handle(annotationLeaf)),"annotation control excludes owned table child");
+    const auto foreign=handle(annotationId)+"/"+handle(leaf);
+    expect(rejected(foreign)&&!annotationContext(foreign),"annotation control foreign leaf remains failure");
+    return 6;
+}
+enum class CompanionShape { Curve, Region, Hatch };
+std::unique_ptr<AcDbEntity> boundaryStrip(CompanionShape shape,bool coincident=false) {
+    if(shape==CompanionShape::Curve) return coincident
+        ?std::make_unique<AcDbLine>(AcGePoint3d(0,10,0),AcGePoint3d(0,0,0))
+        :std::make_unique<AcDbLine>(AcGePoint3d(10,0,0),AcGePoint3d(0,0,0));
+    const std::vector<AcGePoint2d> points=coincident
+        ?std::vector<AcGePoint2d>{{-1,0},{0,0},{0,10},{-1,10}}
+        :std::vector<AcGePoint2d>{{0,-1},{10,-1},{10,0},{0,0}};
+    if(shape==CompanionShape::Hatch) {
+        auto hatch=std::make_unique<AcDbHatch>();
+        expect(hatch->setPattern(AcDbHatch::kPreDefined,L"SOLID")==Acad::eOk,"companion fixture hatch pattern");
+        AcGePoint2dArray vertices;AcGeDoubleArray bulges;
+        for(const auto& point:points) {vertices.append(point);bulges.append(0);}
+        expect(hatch->appendLoop(AcDbHatch::kExternal|AcDbHatch::kPolyline,vertices,bulges)==Acad::eOk,
+            "companion fixture hatch loop");
+        expect(hatch->evaluateHatch()==Acad::eOk,"companion fixture hatch evaluation");
+        return hatch;
+    }
+    AcDbPolyline outline;
+    for(unsigned i=0;i<points.size();++i) expect(outline.addVertexAt(i,points[i])==Acad::eOk,"companion fixture region vertex");
+    outline.setClosed(true);
+    expect(outline.isClosed(),"companion fixture region outline");
+    AcArray<AcDbEntity*> curves;curves.append(&outline);
+    AcArray<AcDbRegion*> regions;
+    const auto status=AcDbRegion::createFromCurves(curves,regions);
+    std::vector<std::unique_ptr<AcDbRegion>> owned;
+    for(auto* region:regions) owned.emplace_back(region);
+    expect(status==Acad::eOk&&owned.size()==1,"companion fixture region creation");
+    return std::move(owned.front());
+}
+unsigned topologyCompanionControls(CompanionShape shape) {
+    // Три физических стороны и одна граница другого слоя, без правки CAD пользователя.
+    AcDbDatabase database(true,true);
+    expect(database.setInsunits(AcDb::kUnitsMeters)==Acad::eOk,"companion fixture units");
+    AcDbLayerTable* layers=nullptr;
+    expect(database.getLayerTable(layers,AcDb::kForWrite)==Acad::eOk,"companion fixture layers");
+    const auto layer=[&](const ACHAR* name) {
+        auto* value=new AcDbLayerTableRecord;
+        expect(value->setName(name)==Acad::eOk,"companion fixture layer name");
+        AcDbObjectId id;
+        expect(layers->add(id,value)==Acad::eOk,"companion fixture layer");
+        value->close();return id;
+    };
+    const auto physicalLayer=layer(L"PHYSICAL"),boundaryLayer=layer(L"BOUNDARY");
+    layers->close();
+    AcDbBlockTableRecord* model=nullptr;
+    expect(acdbOpenObject(model,acdbSymUtil()->blockModelSpaceId(&database),AcDb::kForWrite)==Acad::eOk,
+        "companion fixture model space");
+    ga::bridge::DrawingGeometry drawing;
+    std::set<std::string> physicalRoutes;
+    const auto append=[&](std::unique_ptr<AcDbEntity> entity,bool boundary) {
+        expect(entity->setLayer(boundary?boundaryLayer:physicalLayer)==Acad::eOk,"companion fixture curve layer");
+        AcDbObjectId id;
+        expect(model->appendAcDbEntity(id,entity.get())==Acad::eOk,"companion fixture entity");
+        ACHAR handle[32]{};id.nonForwardedHandle().getIntoAsciiBuffer(handle);
+        const std::string route=AcString(handle).utf8Str();
+        ga::bridge::EntityCoverage row;
+        row.handle=route;row.entityType=AcString(entity->isA()->name()).utf8Str();row.status="native";
+        row.sourceLayer=row.layer=boundary?"BOUNDARY":"PHYSICAL";
+        drawing.coverage.push_back(std::move(row));
+        if(!boundary) physicalRoutes.insert(route);
+        entity.release()->close();return route;
+    };
+    append(std::make_unique<AcDbLine>(AcGePoint3d(0,0,0),AcGePoint3d(0,10,0)),false);
+    append(std::make_unique<AcDbLine>(AcGePoint3d(0,10,0),AcGePoint3d(10,10,0)),false);
+    append(std::make_unique<AcDbLine>(AcGePoint3d(10,10,0),AcGePoint3d(10,0,0)),false);
+    const auto boundary=append(boundaryStrip(shape),true);
+    model->close();
+    const std::set<std::string> physical{"PHYSICAL"},companions{"BOUNDARY"},empty;
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,physical,{},&companions);
+    const auto anchor=*physicalRoutes.begin();
+    const auto answer=ga::faces::queryFace(database,1,anchor,{5,5,0});
+    expect(answer.membership=="occupied","typed companion closes physical outline");
+    auto region=ga::faces::copyFaceRegion(database,1,anchor);
+    double area=0;expect(region&&region->getArea(area)==Acad::eOk&&std::abs(area-100)<1e-8,
+        "typed companion exact native area");
+    std::ostringstream serialized;ga::faces::emitCatalog(serialized,physical);
+    const auto catalogue=serialized.str();
+    expect(catalogue.find("\"face_policy\":\"native-planar-faces/2\"")!=std::string::npos
+        &&catalogue.find("\"companion_layers\":[\"BOUNDARY\"]")!=std::string::npos
+        &&catalogue.find(q(boundary))!=std::string::npos,"typed companion provenance retained");
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,physical,{},&empty);
+    std::ostringstream without;ga::faces::emitCatalog(without,physical);
+    expect(without.str().find("\"faces\":[]")!=std::string::npos,"unrequested cross-layer curve is not used");
+    const std::set<std::string> absent{"ABSENT"};
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,physical,{},&absent);
+    std::ostringstream missing;ga::faces::emitCatalog(missing,physical);
+    expect(missing.str().find("\"faces\":[]")!=std::string::npos,"absent companion does not invent an area");
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,empty,{},&companions);
+    std::ostringstream initial;ga::faces::emitCatalog(initial,empty);
+    expect(initial.str().find("\"faces\":[]")!=std::string::npos
+        &&initial.str().find("\"face_policy\":\"native-planar-faces/2\"")!=std::string::npos
+        &&initial.str().find("\"companion_layers\":[\"BOUNDARY\"]")!=std::string::npos,
+        "capture before physical classification retains typed recipe without areas");
+    auto unreadable=drawing;
+    for(auto& row:unreadable.coverage) if(row.layer=="BOUNDARY") row.handle="FFFFFFFF";
+    ga::faces::rememberFaceSources(database,unreadable);
+    ga::faces::prepareFaceLayers(database,physical,{},&companions);
+    std::ostringstream incomplete;ga::faces::emitCatalog(incomplete,physical);
+    expect(incomplete.str().find("\"faces\":[]")!=std::string::npos
+        &&incomplete.str().find("FFFFFFFF: ")!=std::string::npos,
+        "unreadable companion retains an addressed issue without discarding the project");
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,physical);
+    std::ostringstream legacy;ga::faces::emitCatalog(legacy,physical);
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,physical,{},nullptr);
+    std::ostringstream legacyExplicit;ga::faces::emitCatalog(legacyExplicit,physical);
+    expect(legacy.str()==legacyExplicit.str()
+        &&legacy.str().find("\"face_policy\":\"native-planar-faces/1\"")!=std::string::npos
+        &&legacy.str().find("companion_layers")==std::string::npos,
+        "default and explicit legacy policy retain the same catalogue bytes");
+    expect(acdbOpenObject(model,acdbSymUtil()->blockModelSpaceId(&database),AcDb::kForWrite)==Acad::eOk,
+        "coincident companion root owner");
+    const auto coincident=append(boundaryStrip(shape,true),true);
+    model->close();
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,physical,{},&companions);
+    std::ostringstream merged;ga::faces::emitCatalog(merged,physical);
+    std::string expectedPhysical="\"physical_routes\":[";
+    bool firstPhysical=true;
+    for(const auto& route:physicalRoutes) {
+        expectedPhysical+=(firstPhysical?"":",")+q(route);firstPhysical=false;
+    }
+    expectedPhysical+=']';
+    expect(merged.str().find(expectedPhysical)!=std::string::npos
+        &&merged.str().find(q(coincident))!=std::string::npos
+        &&ga::faces::queryFace(database,1,anchor,{5,5,0}).membership=="occupied",
+        "coincident companion retains provenance without acquiring a physical role");
+    AcDbBlockTable* blocks=nullptr;
+    expect(database.getBlockTable(blocks,AcDb::kForWrite)==Acad::eOk,"foreign companion block table");
+    auto* block=new AcDbBlockTableRecord;
+    block->setName(L"GA_FOREIGN_COMPANION");
+    AcDbObjectId blockId;
+    expect(blocks->add(blockId,block)==Acad::eOk,"foreign companion block");
+    block->close();blocks->close();
+    expect(acdbOpenObject(model,blockId,AcDb::kForWrite)==Acad::eOk,"foreign companion owner");
+    append(boundaryStrip(shape),true);
+    model->close();
+    expect(acdbOpenObject(model,acdbSymUtil()->blockModelSpaceId(&database),AcDb::kForWrite)==Acad::eOk,
+        "foreign companion root owner");
+    auto* parent=new AcDbBlockReference(AcGePoint3d::kOrigin,blockId);
+    AcDbObjectId parentId;
+    expect(model->appendAcDbEntity(parentId,parent)==Acad::eOk,"foreign companion instance");
+    ACHAR parentHandle[32]{};parentId.nonForwardedHandle().getIntoAsciiBuffer(parentHandle);
+    parent->close();model->close();
+    drawing.coverage.back().instanceChain.push_back(AcString(parentHandle).utf8Str());
+    drawing.coverage.erase(std::remove_if(drawing.coverage.begin(),drawing.coverage.end(),
+        [&](const auto& row) {return row.handle==boundary;}),drawing.coverage.end());
+    ga::faces::rememberFaceSources(database,drawing);
+    ga::faces::prepareFaceLayers(database,physical,{},&companions);
+    std::ostringstream separated;ga::faces::emitCatalog(separated,physical);
+    expect(separated.str().find("\"faces\":[]")!=std::string::npos
+        &&separated.str().find("\"face_issues\":[]")!=std::string::npos,
+        "a readable boundary from another instance does not close the physical outline");
+    ga::faces::clearCatalog();
+    std::vector<ga::faces::Source> mostlyBoundary;
+    add(mostlyBoundary,"1",0,0,0,10);
+    add(mostlyBoundary,"2",0,10,10,10,true);
+    add(mostlyBoundary,"3",10,10,10,0,true);
+    add(mostlyBoundary,"4",10,0,0,0,true);
+    expect(ga::faces::assemble(std::move(mostlyBoundary),1).faces.empty(),
+        "boundary majority cannot fill whole territory");
+    return 9;
+}
 unsigned selftest() {
-    unsigned count=0;
+    unsigned count=instanceControls();
+    for(const auto shape:{CompanionShape::Curve,CompanionShape::Region,CompanionShape::Hatch})
+        count+=topologyCompanionControls(shape);
     for(const double scale:{1.,1000.}) {
         for(const double gap:{0.,.01,.03}) {
             std::vector<ga::faces::Source> sources;
@@ -78,6 +354,12 @@ unsigned selftest() {
                 &&std::abs(a.distance-b.distance)<1e-7,"eager/lazy native curved distances agree");
         }
         ++count;
+    }
+    for(const double scale:{1.,1000.}) {
+        for(const auto center:{AcGePoint3d::kOrigin,AcGePoint3d(17761*scale,14955*scale,0)}) {
+            shortArcControl(scale,center);
+            ++count;
+        }
     }
     return count;
 }

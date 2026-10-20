@@ -1,4 +1,6 @@
-"""Per-user secrets live outside projects, source control and application bundles."""
+"""Пользовательские настройки и секреты распознавания хранятся вне проектов, репозитория
+и пакета приложения.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from app.layer_recognition.budget import RecognitionUnavailable
+from app.shared.failures import FailureReason
 
 
 def settings_directory() -> Path:
@@ -28,9 +31,9 @@ class ApiSettings:
         default_factory=lambda: settings_directory() / "budget.sqlite3"
     )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.key or not isinstance(self.key, str):
-            raise RecognitionUnavailable("Не настроен ключ OpenAI")
+            raise RecognitionUnavailable(FailureReason.RECOGNITION_OPENAI_KEY_MISSING)
         if self.proxy:
             try:
                 parsed = urlsplit(self.proxy)
@@ -43,7 +46,7 @@ class ApiSettings:
                 valid = False
             if not valid:
                 raise RecognitionUnavailable(
-                    "Неверная настройка SOCKS-прокси распознавания"
+                    FailureReason.RECOGNITION_OPENAI_PROXY_INVALID
                 )
 
 
@@ -59,7 +62,7 @@ def load_api_settings() -> ApiSettings | None:
                 raise ValueError("format")
         except (OSError, ValueError):
             raise RecognitionUnavailable(
-                "Не удалось прочитать защищённую настройку OpenAI"
+                FailureReason.RECOGNITION_OPENAI_SETTINGS_UNREADABLE
             ) from None
     key = os.environ.get("OPENAI_API_KEY") or data.get("api_key")
     if not key:

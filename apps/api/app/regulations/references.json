@@ -1,0 +1,141 @@
+{
+  "registry_revision": "moscow-greening-registry@2026-09-15.2",
+  "network_rule_pack": "lct-sp42-2016-table9.1@2026-09-15.2",
+  "network_source_url": "https://mchs.gov.ru/uploads/document/2025-04-18/eadacffc977fa556831d67be57ed83cb.pdf",
+  "current_sp42_source_url": "https://protect.gost.ru/sp/details/f6917ab4-63d8-4ecb-9794-0b4990ba3b99",
+  "reviewed_pp743_source_url": "https://www.mos.ru/upload/documents/files/7389/Postanovlenie743-PP.pdf",
+  "procedural_record_ids": [
+    "pp616-compensation-process",
+    "pp1160-permit-service"
+  ],
+  "registry_records": [
+    {
+      "id": "pp743-3.6.3-building",
+      "document_code": "ПП-743",
+      "document_title": "Правила создания, содержания и охраны зелёных насаждений города Москвы",
+      "clause": "таблица 3.6.1",
+      "revision": "с изменениями, действующими с 2026-07-01",
+      "coverage": "implemented",
+      "machine_checkable": true,
+      "machine_checkable_scope": "Пространственный отступ по распознанному контуру",
+      "scope": "Минимальный отступ дерева или кустарника от наружной стены здания при распознанном контуре",
+      "source_url": "https://www.mos.ru/authority/documents/doc/550220/",
+      "release_gate_machine_checkable": false
+    },
+    {
+      "id": "pp743-3.6.3-road-edge",
+      "document_code": "ПП-743",
+      "document_title": "Правила создания, содержания и охраны зелёных насаждений города Москвы",
+      "clause": "таблица 3.6.1",
+      "revision": "с изменениями, действующими с 2026-07-01",
+      "coverage": "implemented",
+      "machine_checkable": true,
+      "machine_checkable_scope": "Пространственный отступ по распознанному контуру",
+      "scope": "Минимальный отступ дерева или кустарника от края проезжей части при распознанном контуре",
+      "source_url": "https://www.mos.ru/authority/documents/doc/550220/",
+      "release_gate_machine_checkable": false
+    },
+    {
+      "id": "pp743-3.6.3-note-1",
+      "document_code": "ПП-743",
+      "document_title": "Правила создания, содержания и охраны зелёных насаждений города Москвы",
+      "clause": "примечание к таблице 3.6.1",
+      "revision": "с изменениями, действующими с 2026-07-01",
+      "coverage": "partial",
+      "machine_checkable": false,
+      "machine_checkable_scope": null,
+      "scope": "Дополнительный проектный отступ для древесных пород с широкой кроной требует решения специалиста",
+      "source_url": "https://www.mos.ru/authority/documents/doc/550220/",
+      "release_gate_machine_checkable": false
+    },
+    {
+      "id": "pp616-compensation-process",
+      "document_code": "ПП-616",
+      "document_title": "Порядок компенсационного озеленения в городе Москве",
+      "clause": null,
+      "revision": "с изменениями, действующими с 2026-07-01",
+      "coverage": "partial",
+      "machine_checkable": false,
+      "machine_checkable_scope": "Шлюз финального выпуска требует явного статуса применимости, основания и ответственного",
+      "scope": "Процессное основание проекта; полный расчёт компенсационного озеленения остаётся вне автоматической проверки",
+      "source_url": "https://www.mos.ru/upload/documents/files/4822/PostanovleniePravitelstvaMoskviot29072003g616PP.pdf",
+      "release_gate_machine_checkable": true
+    },
+    {
+      "id": "pp1160-permit-service",
+      "document_code": "ПП-1160",
+      "document_title": "Административный регламент выдачи порубочного билета и разрешения на пересадку",
+      "clause": null,
+      "revision": "2026-04-24",
+      "coverage": "partial",
+      "machine_checkable": false,
+      "machine_checkable_scope": "Шлюз финального выпуска требует явного статуса процедуры, основания и ответственного",
+      "scope": "Состав и прохождение административной услуги; выпуск Green Atlas не является решением по услуге",
+      "source_url": "https://vestnikmoscow.mos.ru/wp-content/uploads/2026/04/zhurnal-vestnik-moskvy-%E2%84%96-24-1.pdf",
+      "release_gate_machine_checkable": true
+    }
+  ],
+  "network_record_template": {
+    "document_code": "СП 42.13330.2016 / 743-ПП",
+    "document_title": "Базовый отступ: {label}",
+    "clause": "§9.6, таблица 9.1, примечание 1 / §3.6.3, таблица 3.6.1",
+    "revision": "lct-sp42-2016-table9.1@2026-09-15.2",
+    "coverage": "partial",
+    "machine_checkable": true,
+    "machine_checkable_scope": "Подтверждённая подземная сеть с площадным физическим контуром; базовая строка без уменьшений и без неизвестного увеличения для кроны >5 м",
+    "scope": "Профиль требований ЛЦТ со ссылкой на СП2016; не охранная зона сети и не полное соответствие текущей редакции",
+    "source_url": "https://mchs.gov.ru/uploads/document/2025-04-18/eadacffc977fa556831d67be57ed83cb.pdf",
+    "release_gate_machine_checkable": false,
+    "id": "sp42-9.6-network-{network_type}"
+  },
+  "requirement_profile": {
+    "id": "lct-2026-requested@2026-09-15.2",
+    "region": "moscow",
+    "current_compliance": "not_established",
+    "network_rule_pack": "lct-sp42-2016-table9.1@2026-09-15.2",
+    "references": [
+      {
+        "document_code": "СП 42.13330.2016",
+        "role": "requested",
+        "review_status": "current_basis_unresolved",
+        "source_url": null,
+        "replaces": null,
+        "effective_from": null,
+        "note": "Датированная ссылка ТЗ сохранена. Проверены базовые строки подземных сетей таблицы 9.1 с учётом изменений 1–4; специальные условия и полная актуальная применимость не установлены."
+      },
+      {
+        "document_code": "СП 42.13330.2026",
+        "role": "observed_replacement",
+        "review_status": "replacement_verified",
+        "source_url": "https://protect.gost.ru/sp/details/f6917ab4-63d8-4ecb-9794-0b4990ba3b99",
+        "replaces": "СП 42.13330.2016",
+        "effective_from": "2026-07-12",
+        "note": "Замена подтверждена реестром Росстандарта; сопоставление применимых требований с ТЗ не завершено."
+      },
+      {
+        "document_code": "743-ПП от 10.09.2002",
+        "role": "requested",
+        "review_status": "current_basis_unresolved",
+        "source_url": "https://www.mos.ru/upload/documents/files/7389/Postanovlenie743-PP.pdf",
+        "replaces": null,
+        "effective_from": null,
+        "note": "Проверен текст редакции 04.02.2025. Существующие проверки двух базовых отступов не доказывают полное соответствие текущей редакции."
+      },
+      {
+        "document_code": "623-ПП от 06.08.2002 / МГСН 1.02-02",
+        "role": "requested",
+        "review_status": "current_basis_unresolved",
+        "source_url": "https://www.mos.ru/upload/documents/files/4323/623-PP.rtf",
+        "replaces": null,
+        "effective_from": null,
+        "note": "Связанные реквизиты одного нормативного основания; не два независимых набора отступов."
+      }
+    ]
+  },
+  "release_scope": {
+    "spatial_draft": "implemented",
+    "pp_743": "catalogue context only; specialist review required",
+    "pp_616": "release decision gate implemented; full compensation procedure remains specialist-reviewed",
+    "pp_1160": "release decision gate implemented; permit service outcome remains external"
+  }
+}

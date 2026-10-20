@@ -1,3 +1,4 @@
+/** Раскрываемый раздел интерфейса: заголовок, действия и сохраняемое содержимое. */
 import { ChevronDown, CircleHelp } from 'lucide-react';
 import { useId, useState, type FC, type ReactNode } from 'react';
 import type { VariantProps } from 'tailwind-variants';
@@ -19,6 +20,12 @@ export interface DisclosureProps {
   startIcon?: ReactNode;
   className?: string;
   contentClassName?: string;
+  /** The embedded content owns its gutter instead of adding section padding. */
+  contentVariant?: 'default' | 'flush';
+  /** Удерживает заголовок раздела у верхней границы родительской области прокрутки. */
+  stickyHeader?: boolean;
+  /** Compact inset controls, optionally with actions after the chevron. */
+  headerVariant?: 'default' | 'inset' | 'trailing-actions';
 }
 
 export const Disclosure: FC<DisclosureProps> = ({
@@ -35,26 +42,33 @@ export const Disclosure: FC<DisclosureProps> = ({
   startIcon,
   className,
   contentClassName,
+  contentVariant = 'default',
+  stickyHeader = false,
+  headerVariant = 'default',
 }) => {
   const [localExpanded, setExpanded] = useState(defaultOpen);
   const expanded = open ?? localExpanded;
   const contentId = useId();
   const size = useControlSize(controlSize);
-  const styles = disclosure({ variant });
+  const hasActions = actions != null;
+  const styles = disclosure({
+    variant,
+    contentVariant,
+    stickyHeader,
+    hasActions,
+    headerVariant,
+  });
   return (
     <section
       className={styles.root({ className })}
       aria-label={label}
       data-expanded={expanded || undefined}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className={styles.header()}>
         <button
           type="button"
           className={styles.trigger({
-            className: cx(
-              controlSizes[size],
-              actions != null && 'w-auto min-w-0 flex-1',
-            ),
+            className: cx(variant !== 'section' && controlSizes[size]),
           })}
           data-size={size}
           aria-expanded={expanded}
@@ -69,7 +83,7 @@ export const Disclosure: FC<DisclosureProps> = ({
             <span className="min-w-0 flex-1 wrap-anywhere">
               <span className="block">{title}</span>
               {description != null && (
-                <span className="mt-1 block text-xs leading-5 font-normal text-neutral-600">
+                <span className="mt-1 block text-xs leading-4 font-normal text-neutral-600">
                   {description}
                 </span>
               )}
@@ -78,13 +92,26 @@ export const Disclosure: FC<DisclosureProps> = ({
           <Icon
             icon={<ChevronDown />}
             className={cx(
-              'text-neutral-500 transition-transform',
+              'transition-transform',
+              hasActions &&
+                (headerVariant === 'trailing-actions'
+                  ? 'col-start-2'
+                  : 'col-start-3'),
               expanded && 'rotate-180',
             )}
           />
         </button>
-        {actions != null && (
-          <div className="flex shrink-0 items-center gap-1">{actions}</div>
+        {hasActions && (
+          <div
+            className={cx(
+              'relative z-1 row-start-1 flex shrink-0 items-center gap-1',
+              headerVariant === 'trailing-actions'
+                ? 'col-start-3'
+                : 'col-start-2',
+            )}
+          >
+            {actions}
+          </div>
         )}
       </div>
       <div

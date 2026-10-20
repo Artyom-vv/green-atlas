@@ -5,8 +5,8 @@ from test_hybrid_search import feature, populate
 from test_native_live_provider import setup as setup
 
 from app.data_passport import build_data_passport
-from app.dxf_import.layer_contracts import LayerKind
-from app.native_query.live_inventory import InventoryObject
+from app.dxf_import.layers.contracts import LayerKind
+from app.native_query.live.live_inventory import InventoryObject
 
 
 def test_passport_uses_current_areas_instead_of_old_import_flags(setup):
@@ -102,8 +102,8 @@ def test_stale_capture_invalidates_cached_coverage(setup):
 
 @pytest.mark.parametrize('category', ['geodetic_marker', 'pole'])
 def test_symbol_endpoint_cycles_keep_source_curves_and_existing_areas(setup, category):
-    from app.dxf_import.layer_categories import LayerCategory
-    from app.native_query.live_inventory import InventoryGroup
+    from app.dxf_import.layers.categories import LayerCategory
+    from app.native_query.live.live_inventory import InventoryGroup
 
     engine, client, project = setup
     populate(project)

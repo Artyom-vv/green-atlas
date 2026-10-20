@@ -1,4 +1,6 @@
-"""Full prepared DXF admission, distinct from an AOI preview."""
+"""Контракты сохранённой подготовки CAD: выбранные снимки, решения о пропусках и
+происхождение полной подосновы.
+"""
 
 from typing import Literal
 
@@ -42,7 +44,9 @@ class CadOpeningReview(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    skipped_references: list[CadSkippedReference] = Field(default_factory=list, max_length=4096)
+    skipped_references: list[CadSkippedReference] = Field(
+        default_factory=list, max_length=4096
+    )
     skipped_drawings: list[str] = Field(default_factory=list, max_length=63)
     accept_partial_geometry: bool = False
 
@@ -54,7 +58,9 @@ class CadOpeningReview(BaseModel):
     @model_validator(mode="after")
     def unique_decisions(self) -> "CadOpeningReview":
         keys = [(item.owner, item.block) for item in self.skipped_references]
-        if len(keys) != len(set(keys)) or len(self.skipped_drawings) != len(set(self.skipped_drawings)):
+        if len(keys) != len(set(keys)) or len(self.skipped_drawings) != len(
+            set(self.skipped_drawings)
+        ):
             raise ValueError("Решение по каждому файлу или ссылке принимается один раз")
         return self
 

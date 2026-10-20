@@ -54,6 +54,7 @@ const WorkspaceLibraryContent: FC<WorkspaceLibraryDialogProps> = ({
         <Dialog
           open
           title="Посадки проекта"
+          controlSize="compact"
           size="wide"
           stableHeight
           onClose={() => setLibraryOpen(false)}

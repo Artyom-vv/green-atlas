@@ -1,4 +1,6 @@
-"""Count vertices without flattening source or display coordinate arrays."""
+"""Подсчёт вершин GeoJSON без разворачивания исходных и отображаемых координат в
+дополнительные массивы.
+"""
 
 from numbers import Real
 from typing import Any

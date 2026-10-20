@@ -13,7 +13,7 @@ import ezdxf
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps/api"))
 
-from app.dxf_import.encoding import decode_text_dxf
+from app.dxf_import.legacy.encoding import decode_text_dxf
 from app.exporting.adapters import DxfRoundTripWriter
 from app.planning.contracts import Plan, PlanObject
 from app.projects.contracts import Project

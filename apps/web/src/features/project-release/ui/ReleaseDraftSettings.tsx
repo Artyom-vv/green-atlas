@@ -11,15 +11,20 @@ export function ReleaseDraftSettings({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 text-neutral-600">
-      <span role="status">
+      <span role="status" className={storageAvailable ? 'sr-only' : undefined}>
         {loading
           ? 'Собираем пакет…'
           : storageAvailable
             ? 'Настройки сохранены в этой вкладке'
             : 'Настройки сохранены до закрытия страницы'}
       </span>
-      <Button variant="ghost" disabled={loading} onClick={onClear}>
-        Сбросить настройки
+      <Button
+        aria-label="Сбросить настройки"
+        variant="ghost"
+        disabled={loading}
+        onClick={onClear}
+      >
+        Сбросить
       </Button>
     </div>
   );

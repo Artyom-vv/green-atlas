@@ -3,13 +3,13 @@ import Polygon from 'ol/geom/Polygon';
 import Circle from 'ol/geom/Circle';
 import MultiPolygon from 'ol/geom/MultiPolygon';
 import { describe, expect, it } from 'vitest';
-import { contextualConstraintHits } from '@/widgets/map/adapters/openlayers/hitTargets';
-import { featureDistanceToCoordinate } from '@/widgets/map/adapters/openlayers/hitTargets';
-import { mapAreaTargetFromFeature } from '@/widgets/map/adapters/openlayers/hitTargets';
-import { mapHitStack } from '@/widgets/map/adapters/openlayers/hitTargets';
-import { plantingZoneIsShadowedByDraft } from '@/widgets/map/adapters/openlayers/hitTargets';
-import { previewHoverTargetFromFeature } from '@/widgets/map/adapters/openlayers/hitTargets';
-import { resolveHoverFeature } from '@/widgets/map/adapters/openlayers/hitTargets';
+import { contextualConstraintHits } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
+import { featureDistanceToCoordinate } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
+import { mapAreaTargetFromFeature } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
+import { mapHitStack } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
+import { plantingZoneIsShadowedByDraft } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
+import { previewHoverTargetFromFeature } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
+import { resolveHoverFeature } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
 
 const square = (size = 10) =>
   new Polygon([

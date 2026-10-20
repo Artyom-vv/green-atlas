@@ -1,5 +1,6 @@
 #include "cad_release.h"
 #include "file_io.h"
+#include "filesystem_utf8.h"
 #include "session_capture_internal.h"
 #include "dbapserv.h"
 #include "dbsymutl.h"
@@ -84,7 +85,7 @@ std::string registerApp(AcDbDatabase& db) {
     record.release()->close(); return name;
 }
 void load(AcDbDatabase& db, const fs::path& path) {
-    checked(db.readDwgFile(AcString(path.string().c_str()).kwszPtr(),
+    checked(db.readDwgFile(AcString(ga::bridge::utf8Path(path).c_str()).kwszPtr(),
         AcDbDatabase::kForReadAndAllShare, true), "open captured DWG");
     checked(db.closeInput(true), "close DWG input");
     acdbHostApplicationServices()->setWorkingDatabase(&db);
@@ -107,14 +108,14 @@ void verifyPlant(AcDbDatabase& db, const std::string& handle, const Plant& plant
 void releasePackageCommand() {
     try {
         auto* bootstrap = acdbHostApplicationServices()->workingDatabase();
-        const auto root = fs::canonical(filename(*bootstrap)).parent_path();
-        if (root.filename().string().rfind("ga-cad-release-", 0) != 0)
+        const auto root = fs::canonical(ga::bridge::nativePath(filename(*bootstrap))).parent_path();
+        if (ga::bridge::utf8Path(root.filename()).rfind("ga-cad-release-", 0) != 0)
             throw std::runtime_error("private release job required");
         const auto request = root / "request.txt", source = root / "package/host.dwg";
         const auto target = root / "result/planting-plan.dwg";
         if (fs::exists(target) || fs::exists(root / "release.json")) throw std::runtime_error("release output exists");
-        const auto requestHash = ga::bridge::sha256File(request.string());
-        const auto sourceHash = ga::bridge::sha256File(source.string());
+        const auto requestHash = ga::bridge::sha256File(ga::bridge::utf8Path(request));
+        const auto sourceHash = ga::bridge::sha256File(ga::bridge::utf8Path(source));
         unsigned units = 0; const auto plants = readPlants(request, units);
         std::vector<std::string> handles; std::vector<ga::capture::Instance> before, after;
         std::string trees, shrubs, app;
@@ -142,7 +143,7 @@ void releasePackageCommand() {
                     checked(status, "planting identity"); handles.push_back(ga::capture::handle(id));
                 }
                 model.reset();
-                checked(db.saveAs(AcString(target.string().c_str()).kwszPtr(), false, AcDb::kDHL_CURRENT), "save planting result");
+                checked(db.saveAs(AcString(ga::bridge::utf8Path(target).c_str()).kwszPtr(), false, AcDb::kDHL_CURRENT), "save planting result");
             }
             {
                 AcDbDatabase db(false, true); WorkingScope context; load(db, target);
@@ -154,20 +155,22 @@ void releasePackageCommand() {
                 for (const auto& item : after) found.emplace(item.route, &item);
                 for (const auto& item : before) {
                     const auto match = found.find(item.route);
-                    if (match == found.end() || match->second->type != item.type || match->second->layer != item.layer ||
+                    if (match == found.end() || match->second->type != item.type ||
+                        match->second->authoredLayer != item.authoredLayer ||
+                        match->second->effectiveLayer != item.effectiveLayer ||
                         match->second->unavailable != item.unavailable || !match->second->transform.isEqualTo(item.transform))
                         throw std::runtime_error("source instance changed on result reopen");
                 }
             }
             fields.restore();
         }
-        if (sourceHash != ga::bridge::sha256File(source.string()) || requestHash != ga::bridge::sha256File(request.string()) ||
+        if (sourceHash != ga::bridge::sha256File(ga::bridge::utf8Path(source)) || requestHash != ga::bridge::sha256File(ga::bridge::utf8Path(request)) ||
             acdbHostApplicationServices()->workingDatabase() != bootstrap)
             throw std::runtime_error("release input/context changed");
         std::ostringstream out; out << std::setprecision(17)
             << "{\"schema\":\"green-atlas.cad-release/1\",\"request_sha256\":" << quote(requestHash)
             << ",\"source_sha256\":" << quote(sourceHash) << ",\"result_sha256\":"
-            << quote(ga::bridge::sha256File(target.string())) << ",\"source_instances\":" << before.size()
+            << quote(ga::bridge::sha256File(ga::bridge::utf8Path(target))) << ",\"source_instances\":" << before.size()
             << ",\"result_instances\":" << after.size() << ",\"units_code\":" << units
             << ",\"reopened\":true,\"plantings\":[";
         for (std::size_t i = 0; i < plants.size(); ++i) {
@@ -177,7 +180,7 @@ void releasePackageCommand() {
                 << ",\"radius\":" << plant.radius << '}';
         }
         out << "]}";
-        if (!ga::bridge::writeAtomicText((root / "release.json").string(), out.str())) throw std::runtime_error("release publication failed");
+        if (!ga::bridge::writeAtomicText(ga::bridge::utf8Path((root / "release.json")), out.str())) throw std::runtime_error("release publication failed");
     } catch (const std::exception& error) {
         acutPrintf(L"\nGreen Atlas release failed: %s", AcString(error.what()).kwszPtr());
     }

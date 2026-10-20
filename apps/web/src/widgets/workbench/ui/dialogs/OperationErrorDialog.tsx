@@ -70,7 +70,13 @@ export const OperationErrorDialog: FC<OperationErrorDialogProps> = ({
             Вернуться к работе
           </Button>
           {onPrepare && !isProjectConflict(error) && (
-            <Button variant="primary" onClick={() => { close(); onPrepare(); }}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                close();
+                onPrepare();
+              }}
+            >
               Подготовить расчёт
             </Button>
           )}

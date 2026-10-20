@@ -1,8 +1,10 @@
+/** Исходные данные: расчётные роли слоёв и отдельных объектов чертежа */
 import type {
   Layer,
   LayerKind,
   LayerMapping,
   LayerCategory,
+  SourceObjectDecisionRequest,
 } from '@green/api-client';
 
 export const LAYER_KIND_LABELS = {
@@ -21,6 +23,38 @@ export const LAYER_KIND_OPTIONS = Object.entries(LAYER_KIND_LABELS).map(
   ([value, label]) => ({ value: value as LayerKind, label }),
 );
 
+const SOURCE_OBJECT_KIND_LABELS = {
+  building: LAYER_KIND_LABELS.building,
+  road: LAYER_KIND_LABELS.road,
+  restricted: LAYER_KIND_LABELS.restricted,
+  lawn: LAYER_KIND_LABELS.lawn,
+  water: LAYER_KIND_LABELS.water,
+  existing_green: LAYER_KIND_LABELS.existing_green,
+} satisfies Record<NonNullable<SourceObjectDecisionRequest['kind']>, string>;
+
+export const SOURCE_OBJECT_KIND_OPTIONS = Object.entries(
+  SOURCE_OBJECT_KIND_LABELS,
+).map(([value, label]) => ({
+  value: value as NonNullable<SourceObjectDecisionRequest['kind']>,
+  label,
+}));
+
+/** Канонические кривые захвата AutoCAD допускают линейную проверку */
+export const SOURCE_LINEAR_ENTITY_TYPES: ReadonlySet<string> = new Set([
+  'LINE',
+  'ARC',
+  'LWPOLYLINE',
+  'POLYLINE',
+  'CIRCLE',
+  'ELLIPSE',
+  'SPLINE',
+]);
+
+export function sourceObjectKindFromValue(value: string) {
+  return SOURCE_OBJECT_KIND_OPTIONS.find((option) => option.value === value)
+    ?.value;
+}
+
 export function toLayerMapping(layer: Layer): LayerMapping {
   const mapping: LayerMapping = {
     layer_id: layer.id,
@@ -28,8 +62,12 @@ export function toLayerMapping(layer: Layer): LayerMapping {
     visible: layer.visible,
   };
   if (layer.category) mapping.category = layer.category;
-  if (layer.mapping_confirmed != null || layer.mapping_review_required)
-    mapping.confirmed = Boolean(layer.mapping_confirmed);
+  mapping.confirmed =
+    layer.mapping_confirmed === undefined
+      ? layer.mapping_review_required
+        ? false
+        : null
+      : layer.mapping_confirmed;
   if (layer.utility_context) mapping.utility_context = layer.utility_context;
   if (layer.utility_axis_bindings?.length)
     mapping.utility_axis_bindings = layer.utility_axis_bindings;
@@ -85,20 +123,35 @@ export function isUnclassifiedMapping(mapping: LayerMapping): boolean {
   return mapping.kind === 'ignore' && mapping.confirmed === false;
 }
 
+/** Намерение подготовки не подтверждает физическое назначение или полноту слоя */
+export function isBoundaryTopologyIntent(mapping: LayerMapping): boolean {
+  return (
+    mapping.category === 'surface_boundary' &&
+    mapping.kind === 'ignore' &&
+    mapping.confirmed !== true
+  );
+}
+
+export function requiresLayerRoleReview(mapping: LayerMapping): boolean {
+  return mapping.confirmed === false && !isBoundaryTopologyIntent(mapping);
+}
+
 /** Change the territory as one mapping operation, preserving other layer decisions. */
 export function selectPlanningBoundary(
   mappings: Record<string, LayerMapping>,
   selectedId: string,
 ): Record<string, LayerMapping> {
   if (selectedId && !mappings[selectedId]) return mappings;
-  return Object.fromEntries(Object.entries(mappings).map(([id, mapping]) => [
-    id,
-    id === selectedId
-      ? changeLayerRole(mapping, 'site_border', 'project_boundary')
-      : mapping.kind === 'site_border'
-        ? changeLayerRole(mapping, 'ignore', 'boundary_decoration')
-        : mapping,
-  ]));
+  return Object.fromEntries(
+    Object.entries(mappings).map(([id, mapping]) => [
+      id,
+      id === selectedId
+        ? changeLayerRole(mapping, 'site_border', 'project_boundary')
+        : mapping.kind === 'site_border'
+          ? changeLayerRole(mapping, 'ignore', 'boundary_decoration')
+          : mapping,
+    ]),
+  );
 }
 
 export function layerKindFromValue(value: string): LayerKind | undefined {

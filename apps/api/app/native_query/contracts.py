@@ -1,4 +1,6 @@
-"""Selected-instance measurements, not a full obstacle inventory or planting verdict."""
+"""Native-измерения выбранных экземпляров; ответ не является полным перечнем препятствий
+или решением о посадке.
+"""
 
 from typing import Annotated, Literal
 
@@ -29,7 +31,11 @@ class NativeTarget(NativeDto):
         if self.additional_routes:
             members = (self.route, *self.additional_routes)
             parents = {route.rpartition("/")[0] for route in members}
-            if self.capability != "area" or len(set(members)) != len(members) or len(parents) != 1:
+            if (
+                self.capability != "area"
+                or len(set(members)) != len(members)
+                or len(parents) != 1
+            ):
                 raise ValueError("Native group requires unique curves in one instance")
         return self
 
@@ -47,9 +53,14 @@ class NativeObjectQuery(NativeDto):
     def bounded_unique_batch(self) -> "NativeObjectQuery":
         if len(self.targets) * len(self.points) > MAX_MEASUREMENTS:
             raise ValueError("Native measurement batch exceeds limit")
-        if len({(target.route, target.face_id) for target in self.targets}) != len(self.targets):
+        if len({(target.route, target.face_id) for target in self.targets}) != len(
+            self.targets
+        ):
             raise ValueError("Duplicate native instance target")
-        if sum(1 + len(target.additional_routes) for target in self.targets) > MAX_QUERY_MEMBERS:
+        if (
+            sum(1 + len(target.additional_routes) for target in self.targets)
+            > MAX_QUERY_MEMBERS
+        ):
             raise ValueError("Native group total member limit")
         return self
 

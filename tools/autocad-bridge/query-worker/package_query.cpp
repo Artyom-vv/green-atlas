@@ -1,6 +1,9 @@
 #include "package_query.h"
+#include "package_faces.h"
+#include "native_face_catalog.h"
 #include "native_query_command.h"
 #include "file_io.h"
+#include "filesystem_utf8.h"
 #include "dbapserv.h"
 #include "dbmain.h"
 #include "DbField.h"
@@ -47,11 +50,11 @@ fs::path databaseFile(AcDbDatabase* database) {
     if(!database) throw std::runtime_error("missing bootstrap database");
     checked(database->getFilename(name), "bootstrap filename");
     if(!name) throw std::runtime_error("missing bootstrap filename");
-    return fs::canonical(AcString(name).utf8Str());
+    return fs::canonical(ga::bridge::nativePath(AcString(name).utf8Str()));
 }
 }
 
-void queryPackageCommand() {
+void packageCommand(bool faces) {
     try {
         auto* services = acdbHostApplicationServices();
         auto* previous = services->workingDatabase();
@@ -64,16 +67,16 @@ void queryPackageCommand() {
         if(!std::getline(input, entry) || entry.empty() || entry.size() > 4096
             || std::getline(input, extra))
             throw std::runtime_error("invalid UTF-8 package entry");
-        const auto drawing = fs::canonical(entry);
+        const auto drawing = fs::canonical(ga::bridge::nativePath(entry));
         const auto relative = drawing.lexically_relative(root / "package");
         if(bootstrap.filename() != "Bootstrap.dwg"
-            || root.filename().string().rfind("ga-native-query-", 0) != 0
+            || ga::bridge::utf8Path(root.filename()).rfind("ga-native-query-", 0) != 0
             || relative.empty() || *relative.begin() == ".."
             || (drawing.extension() != ".dwg" && drawing.extension() != ".DWG"))
             throw std::runtime_error("private captured DWG package required");
         const auto request = root / "request.txt";
-        const auto requestHash = ga::bridge::sha256File(request.string());
-        const auto sourceHash = ga::bridge::sha256File(drawing.string());
+        const auto requestHash = ga::bridge::sha256File(ga::bridge::utf8Path(request));
+        const auto sourceHash = ga::bridge::sha256File(ga::bridge::utf8Path(drawing));
         if(requestHash.empty() || sourceHash.empty() || fs::exists(root / "lifecycle.json"))
             throw std::runtime_error("invalid package query files");
         FieldEvaluationScope fields;
@@ -82,19 +85,28 @@ void queryPackageCommand() {
             // Restore the context BEFORE destroying its database, including
             // failures. Field evaluation stays disabled until after deletion.
             WorkingDatabaseScope context{services, previous};
-            checked(database.readDwgFile(AcString(drawing.string().c_str()).kwszPtr(),
+            struct ClearFaces {~ClearFaces(){ga::faces::clearCatalog();}} clearFaces;
+            checked(database.readDwgFile(AcString(ga::bridge::utf8Path(drawing).c_str()).kwszPtr(),
                 AcDbDatabase::kForReadAndAllShare, true), "read captured DWG");
             checked(database.closeInput(true), "close captured input");
             services->setWorkingDatabase(&database);
             checked(acdbResolveCurrentXRefs(&database, false, false), "resolve captured XREFs");
-            ga::nativeQuery::queryObjectsFile(request.string());
+            if(faces) prepareArchivedFaces(database,ga::bridge::utf8Path(request));
+            else {
+                const auto faceRequest=root/"face-request.txt";
+                const auto faceHash=fs::exists(faceRequest)?ga::bridge::sha256File(ga::bridge::utf8Path(faceRequest)):"";
+                if(!faceHash.empty()) prepareArchivedFaces(database,ga::bridge::utf8Path(faceRequest),true);
+                ga::nativeQuery::queryObjectsFile(ga::bridge::utf8Path(request));
+                if(!faceHash.empty()&&faceHash!=ga::bridge::sha256File(ga::bridge::utf8Path(faceRequest)))
+                    throw std::runtime_error("captured face input changed during query");
+            }
         }
         fields.restore();
         if(services->workingDatabase() != previous
-            || requestHash != ga::bridge::sha256File(request.string())
-            || sourceHash != ga::bridge::sha256File(drawing.string()))
+            || requestHash != ga::bridge::sha256File(ga::bridge::utf8Path(request))
+            || sourceHash != ga::bridge::sha256File(ga::bridge::utf8Path(drawing)))
             throw std::runtime_error("package lifecycle identity changed");
-        const auto replyHash = ga::bridge::sha256File((root / "native.json").string());
+        const auto replyHash = ga::bridge::sha256File(ga::bridge::utf8Path((root / "native.json")));
         if(replyHash.empty()) throw std::runtime_error("missing package reply");
         // This receipt is published after cleanup, not merely after queries.
         // The supervisor still requires exit 0 and verifies package bytes.
@@ -102,10 +114,12 @@ void queryPackageCommand() {
             "\"request_sha256\":\"" + requestHash + "\",\"source_sha256\":\"" + sourceHash
             + "\",\"reply_sha256\":\"" + replyHash + "\",\"database_destroyed\":true,"
             "\"working_database_restored\":true,\"field_evaluation_restored\":true}";
-        if(!ga::bridge::writeAtomicText((root / "lifecycle.json").string(), receipt))
+        if(!ga::bridge::writeAtomicText(ga::bridge::utf8Path((root / "lifecycle.json")), receipt))
             throw std::runtime_error("lifecycle publication failed");
     } catch(const std::exception& error) {
         acutPrintf(L"\nGreen Atlas: package query failed: %s", AcString(error.what()).kwszPtr());
     }
 }
+void queryPackageCommand() {packageCommand(false);}
+void prepareFacesPackageCommand() {packageCommand(true);}
 }

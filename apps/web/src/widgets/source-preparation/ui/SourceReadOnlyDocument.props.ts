@@ -1,13 +1,11 @@
 import type { SourcePreparationState } from '../model/sourcePreparation';
 export interface SourceReadOnlyDocumentProps extends Pick<
   SourcePreparationState,
-  | 'dataPassportQuery'
   | 'layers'
   | 'mappings'
   | 'setMappings'
   | 'sourceWarnings'
   | 'downloadSource'
-  | 'startSourceEditing'
   | 'reviewOnly'
   | 'layerRecognition'
   | 'allSavedLayersConfirmed'
@@ -16,11 +14,11 @@ export interface SourceReadOnlyDocumentProps extends Pick<
   | 'projectQuery'
 > {
   onPlan: () => void;
+  startSourceEditing: (section?: '02' | '03' | '04') => void;
 }
 export const SourceReadOnlyDocumentPropsFor = (
   state: Pick<
     SourcePreparationState,
-    | 'dataPassportQuery'
     | 'layers'
     | 'mappings'
     | 'setMappings'
@@ -35,7 +33,6 @@ export const SourceReadOnlyDocumentPropsFor = (
     | 'projectQuery'
   >,
 ) => ({
-  dataPassportQuery: state.dataPassportQuery,
   layers: state.layers,
   mappings: state.mappings,
   setMappings: state.setMappings,

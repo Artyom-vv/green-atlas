@@ -5,6 +5,7 @@ export {
 export type { GrowthHorizon, ForecastSource } from './ui/GrowthHorizonControl';
 export {
   forecastAt,
+  growthHorizonLabel,
   normalizeGrowthHorizon,
   GROWTH_HORIZON_MIN,
   GROWTH_HORIZON_MAX,

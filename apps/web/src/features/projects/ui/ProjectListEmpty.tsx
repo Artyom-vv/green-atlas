@@ -9,10 +9,11 @@ export const ProjectListEmpty: FC<ProjectListEmptyProps> = ({ onCreate }) => (
     <Icon icon={<FolderOpen />} size={24} />
     <Text variant="heading">Проектов пока нет</Text>
     <Text tone="muted" className="mb-2 max-w-95">
-      Загрузите DXF, чтобы подготовить первый план озеленения.
+      Передайте открытый чертёж из AutoCAD, чтобы подготовить первый план
+      озеленения.
     </Text>
     <Button variant="primary" startIcon={<FilePlus2 />} onClick={onCreate}>
-      Загрузить DXF
+      Новый проект
     </Button>
   </div>
 );

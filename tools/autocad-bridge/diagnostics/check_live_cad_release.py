@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.composition import create_runtime
-from app.native_query.live_client import LiveQueryClient
+from app.native_query.live.live_client import LiveQueryClient
 from app.planning.contracts import Plan
 
 

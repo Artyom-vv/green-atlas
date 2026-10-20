@@ -2,13 +2,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from app.cad_import.cache import file_sha256
+from app.cad_import.archive.cache import file_sha256
 from app.cad_import.contracts import CadConversion, ConverterIdentity, DrawingInspection
-from app.cad_import.package_contracts import PackageDrawing, SourcePackage
-from app.cad_intake.asset_application import CadAssetApplication
-from app.cad_intake.config import AllowedCadRoot, CadIntakeConfig
+from app.cad_import.archive.package_contracts import PackageDrawing, SourcePackage
+from app.cad_intake.assets.application import CadAssetApplication
+from app.cad_intake.inspection.config import AllowedCadRoot, CadIntakeConfig
 from app.cad_intake.contracts import CadIntakeRecord, CadIntakeRequest
-from app.cad_intake.passport import make_passport
+from app.cad_intake.assets.passport import make_passport
 from app.composition import Runtime, create_runtime
 from app.operations.contracts import OperationKind, OperationStatus, ProjectOperation
 from app.projects.contracts import Project

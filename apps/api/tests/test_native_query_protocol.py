@@ -7,7 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.native_query.contracts import PROTOCOL, NativeObjectQuery
-from app.native_query.protocol import decode_reply, encode_request
+from app.native_query.transport.protocol import decode_reply, encode_request
+
+OUTPUT_PATH = Path(__file__).resolve().parent / "native-result.json"
 
 
 @pytest.fixture
@@ -23,7 +25,7 @@ def query():
 
 @pytest.fixture
 def reply(query):
-    request = encode_request(query, Path("/tmp/native-result.json"))
+    request = encode_request(query, OUTPUT_PATH)
     return {
         "schema": PROTOCOL,
         "scope": "selected_instance_measurements_only",
@@ -49,12 +51,12 @@ def reply(query):
 def decode(query, reply):
     return decode_reply(
         json.dumps(reply).encode(), query,
-        request_bytes=encode_request(query, Path("/tmp/native-result.json")),
+        request_bytes=encode_request(query, OUTPUT_PATH),
     )
 
 
 def test_native_measurement_identity_and_exact_points(query, reply):
-    encoded = encode_request(query, Path("/tmp/native-result.json"))
+    encoded = encode_request(query, OUTPUT_PATH)
     point_row = encoded.decode().splitlines()[-1]
     assert tuple(map(float, point_row.split())) == query.points[0]
     result = decode(query, reply)
@@ -130,7 +132,7 @@ def test_group_roundtrip_retains_every_member(query, reply):
     data = query.model_dump()
     data["targets"][0]["additional_routes"] = ["6E16/ACE2", "6E16/E201"]
     group = NativeObjectQuery.model_validate(data)
-    encoded = encode_request(group, Path("/tmp/native-result.json"))
+    encoded = encode_request(group, OUTPUT_PATH)
     assert "6E16/7BF area 2\n6E16/ACE2\n6E16/E201\n" in encoded.decode()
     reply["request_sha256"] = sha256(encoded).hexdigest()
     with pytest.raises(ValueError, match="member inventory"):

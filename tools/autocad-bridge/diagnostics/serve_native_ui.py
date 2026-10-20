@@ -16,12 +16,12 @@ from uuid import uuid4
 import uvicorn
 from app import composition
 from app.composition import create_runtime
-from app.dxf_import.layer_contracts import Layer, LayerKind
-from app.native_query.pilot_display import (
+from app.dxf_import.layers.contracts import Layer, LayerKind
+from app.native_query.display.pilot_display import (
     synchronize_pilot_display,
     validate_pilot_working_zones,
 )
-from app.native_query.pilot_provider import NativePilotGeometryEngine
+from app.native_query.measurement.pilot_provider import NativePilotGeometryEngine
 from app.planning.contracts import Plan
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.adapters import SqliteProjectRepository

@@ -1,43 +1,50 @@
-import { useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ProjectSummary } from '@green/api-client';
-import { listProjects, removeProject } from '../api/projectList';
+/** Библиотека: серверный каталог в Query, временный выбор принадлежит экрану. */
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listProjects } from '../api/projectList';
+import { useProjectDeletion } from './useProjectDeletion';
 
 const PROJECT_LIST_STALE_TIME = 10_000;
 
 export function useProjects() {
-  const queryClient = useQueryClient();
-  const [deleteCandidate, setDeleteCandidate] = useState<ProjectSummary>();
-  const deleting = useRef(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const query = useQuery({
     queryKey: ['projects'],
-    queryFn: listProjects,
+    queryFn: ({ signal }) => listProjects(signal),
     staleTime: PROJECT_LIST_STALE_TIME,
+    networkMode: 'always',
+    retry: false,
   });
-  const deletion = useMutation({
-    mutationFn: (project: ProjectSummary) => removeProject(project.id),
-    onSuccess: async (_, project) => {
-      setDeleteCandidate((current) =>
-        current?.id === project.id ? undefined : current,
-      );
-      queryClient.setQueryData<ProjectSummary[]>(['projects'], (current) =>
-        current?.filter((item) => item.id !== project.id),
-      );
-      await queryClient.invalidateQueries({ queryKey: ['projects'] });
-    },
-    onSettled: () => {
-      deleting.current = false;
-    },
+  const deletion = useProjectDeletion(async () => {
+    const result = await query.refetch({ throwOnError: true });
+    if (!Array.isArray(result.data))
+      throw new Error('Не удалось прочитать библиотеку');
+    return result.data;
   });
-  const chooseDeletion = (project?: ProjectSummary) => {
-    if (deleting.current) return;
-    deletion.reset();
-    setDeleteCandidate(project);
+  const projects = query.data ?? [];
+  const selectedProjects = projects.filter((project) =>
+    selectedIds.has(project.id),
+  );
+  const toggleSelection = (id: string) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelectedIds(
+      selectedProjects.length === projects.length
+        ? new Set()
+        : new Set(projects.map((project) => project.id)),
+    );
+  const clearSelection = () => setSelectedIds(new Set());
+  return {
+    query,
+    selectedProjects,
+    toggleSelection,
+    toggleAll,
+    clearSelection,
+    ...deletion,
   };
-  const confirmDeletion = () => {
-    if (deleting.current || !deleteCandidate) return;
-    deleting.current = true;
-    deletion.mutate(deleteCandidate);
-  };
-  return { query, deletion, deleteCandidate, chooseDeletion, confirmDeletion };
 }

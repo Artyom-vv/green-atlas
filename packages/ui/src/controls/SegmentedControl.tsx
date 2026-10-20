@@ -24,6 +24,7 @@ export interface SegmentedControlProps<Value extends string> {
   onChange: (value: Value) => void;
   controlSize?: ControlSize;
   className?: string;
+  optionClassName?: string;
 }
 
 /** The compound control owns one outer height, including its border and inset. */
@@ -34,6 +35,7 @@ export function SegmentedControl<Value extends string>({
   onChange,
   controlSize,
   className,
+  optionClassName,
 }: SegmentedControlProps<Value>) {
   const size = useControlSize(controlSize);
   const segment = buttonVariants({ variant: 'ghost', size });
@@ -49,8 +51,10 @@ export function SegmentedControl<Value extends string>({
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
           className={segment.root({
-            className:
+            className: [
               'h-full min-h-0 flex-1 px-2 py-0 aria-pressed:bg-blue-100 aria-pressed:text-blue-700',
+              optionClassName,
+            ],
           })}
         >
           <span className={segment.label()}>{option.label}</span>

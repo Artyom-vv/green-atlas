@@ -4,8 +4,8 @@ import LineString from 'ol/geom/LineString';
 import Point from 'ol/geom/Point';
 import Polygon from 'ol/geom/Polygon';
 import VectorSource from 'ol/source/Vector';
-import { axisCoordinatesFromFeature } from '@/widgets/map/adapters/openlayers/rowAxis';
-import { nearestLineFeature } from '@/widgets/map/adapters/openlayers/rowAxis';
+import { axisCoordinatesFromFeature } from '@/widgets/map/adapters/openlayers/interactions/rowAxis';
+import { nearestLineFeature } from '@/widgets/map/adapters/openlayers/interactions/rowAxis';
 
 describe('nearestLineFeature', () => {
   it('queries only the local spatial-index extent on a dense source', () => {

@@ -15,7 +15,6 @@ export const WORKBENCH_SLOTS = [
   'resourcesNavigation',
   'inspector',
   'tool',
-  'assistant',
   'checks',
   'schedule',
   'history',

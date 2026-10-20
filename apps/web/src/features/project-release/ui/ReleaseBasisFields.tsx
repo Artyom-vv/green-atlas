@@ -12,7 +12,7 @@ export const ReleaseBasisFields: FC = () => {
   const { register } = useFormContext<ReleaseFormValues>();
   return (
     <FieldGroup
-      legend="Основания финального выпуска"
+      legend="Основания выпуска"
       aria-label="Основания финального выпуска"
     >
       <FieldGrid
@@ -37,7 +37,7 @@ export const ReleaseBasisFields: FC = () => {
             aria-label="Основание решения по ПП-616"
             maxLength={releaseFieldLimits.reference}
             {...register('basis.pp616_reference')}
-            placeholder="Документ или причина неприменимости"
+            placeholder="Документ или основание"
           />
         </Field>
       </FieldGrid>
@@ -63,7 +63,7 @@ export const ReleaseBasisFields: FC = () => {
             aria-label="Основание решения по ПП-1160"
             maxLength={releaseFieldLimits.reference}
             {...register('basis.pp1160_reference')}
-            placeholder="Билет, разрешение или причина"
+            placeholder="Документ или основание"
           />
         </Field>
       </FieldGrid>

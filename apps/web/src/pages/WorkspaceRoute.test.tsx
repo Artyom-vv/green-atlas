@@ -1,12 +1,9 @@
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import type { ReactNode } from 'react';
 import { expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 
-vi.mock('@/features/assistant', () => ({
-  ProjectAssistantProvider: ({ children }: { children: ReactNode }) => children,
-}));
 vi.mock('./WorkspacePage', () => ({
   WorkspacePage: () => <main>Рабочий редактор</main>,
 }));
@@ -16,10 +13,12 @@ function Location() {
 
 it('opens an existing IDE bookmark in the canonical workspace without a second editor implementation', async () => {
   render(
-    <MemoryRouter initialEntries={['/projects/example/workspace/ide']}>
-      <App />
-      <Location />
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={['/projects/example/workspace/ide']}>
+        <App />
+        <Location />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
   expect(await screen.findByText('Рабочий редактор')).toBeInTheDocument();
   expect(screen.getByLabelText('Текущий адрес')).toHaveTextContent(

@@ -5,7 +5,7 @@ diagnostic layer only to measure calculation impact; it is not a product
 provenance format or an approved repair of the DWG.
 """
 
-from app.dxf_import.layer_contracts import LayerKind
+from app.dxf_import.layers.contracts import LayerKind
 from app.projects.contracts import Project
 from shapely.geometry import mapping
 from shapely.geometry.base import BaseGeometry

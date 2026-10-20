@@ -1,3 +1,6 @@
+import hashlib
+import json
+from dataclasses import asdict
 from math import hypot
 from random import Random
 
@@ -6,15 +9,32 @@ from shapely.affinity import rotate
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
 
-from app.planning.patterns import _poisson_candidates
-from app.planning.sampling import sparse_area_sampler
+from app.planning.patterns.generators import _poisson_candidates
+from app.planning.search import sampling
+from app.planning.search.sampling import poisson_candidates, sparse_area_sampler
+
+
+@pytest.mark.parametrize("geometry", [Point(), Polygon()])
+@pytest.mark.parametrize("alternatives", [False, True])
+def test_empty_area_returns_without_starting_random_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+    geometry: BaseGeometry,
+    alternatives: bool,
+) -> None:
+    def unexpected_random(seed: str) -> Random:
+        raise AssertionError(f"Empty area started random sampling: {seed}")
+
+    original = geometry.wkb
+    monkeypatch.setattr(sampling, "Random", unexpected_random)
+    assert poisson_candidates(geometry, 8, 16, 47, alternatives=alternatives) == []
+    assert geometry.wkb == original
 
 
 @pytest.mark.parametrize("sparse", [False, True])
-def test_sdk_preparation_preserves_entire_seeded_result(monkeypatch, sparse):
+def test_sdk_preparation_preserves_entire_seeded_result(
+    monkeypatch: pytest.MonkeyPatch, sparse: bool
+) -> None:
     from shapely import from_wkb
-
-    from app.planning import patterns
 
     polygon = Polygon(
         Point(0, 0).buffer(100, quad_segs=256).exterior.coords,
@@ -25,9 +45,9 @@ def test_sdk_preparation_preserves_entire_seeded_result(monkeypatch, sparse):
     )
     original = geometry.wkb
     with monkeypatch.context() as patch:
-        patch.setattr(patterns, "prepare", lambda _: None)
-        expected = patterns._poisson_candidates(from_wkb(original), 8, 96, 47)
-    assert patterns._poisson_candidates(geometry, 8, 96, 47) == expected
+        patch.setattr(sampling, "prepare", lambda _: None)
+        expected = poisson_candidates(from_wkb(original), 8, 96, 47)
+    assert poisson_candidates(geometry, 8, 96, 47) == expected
     assert geometry.wkb == original
 
 
@@ -64,6 +84,35 @@ def test_compact_geometry_keeps_previous_seed_coordinates() -> None:
         (39.081862, 20.384534),
         (93.73296, 85.303757),
     ]
+    # The refactor must preserve the entire ordered result, including points
+    # after the prefix where spacing rejections affect later random draws.
+    encoded = json.dumps(
+        [asdict(candidate) for candidate in candidates],
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    assert hashlib.sha256(encoded).hexdigest() == (
+        "b964892a178b01a62a4e15d862f6316cc7f77b13e583e6a70722492bf06f1a23"
+    )
+
+
+def test_alternative_probes_cover_pockets_without_reserving_space() -> None:
+    large = box(1000, 1000, 1100, 1100)
+    small = box(0, 0, 10, 10)
+    geometry = MultiPolygon([small, large])
+    probes = poisson_candidates(geometry, 1000, 16, 47, alternatives=True)
+    assert len(probes) == 16
+    assert [(point.x, point.y) for point in probes[:2]] == [
+        (large.representative_point().x, large.representative_point().y),
+        (small.representative_point().x, small.representative_point().y),
+    ]
+    assert all(geometry.covers(Point(point.x, point.y)) for point in probes)
+    assert any(
+        hypot(first.x - second.x, first.y - second.y) < 1000
+        for index, first in enumerate(probes)
+        for second in probes[index + 1 :]
+    )
+    assert _poisson_candidates is poisson_candidates
 
 
 def test_sampler_switch_depends_on_expected_hits_in_attempt_budget() -> None:

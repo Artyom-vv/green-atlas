@@ -1,5 +1,4 @@
 import { WorkbenchContribution } from '@/shared/layout/workbenchSlots';
-import { featureAvailability } from '@/shared/config/featureAvailability';
 import { cx } from '@green/ui';
 import { useEffect, useId, useState, type CSSProperties, type FC } from 'react';
 import { useIdeWorkspaceLayout } from '../model/useIdeWorkspaceLayout';
@@ -19,7 +18,6 @@ export const WorkbenchLayout: FC<IDEWorkspaceShellProps> = (props) => {
     resources,
     inspector,
     tool,
-    assistant,
     results,
     footer,
     className = '',
@@ -29,18 +27,14 @@ export const WorkbenchLayout: FC<IDEWorkspaceShellProps> = (props) => {
     useState<IdeWorkspaceRightTab>(props.initialRightTab ?? 'inspector');
   const [internalResultsTab, setInternalResultsTab] =
     useState<IdeWorkspaceResultsTab>('checks');
-  const requestedRightTab = props.rightTab ?? internalRightTab;
-  const rightTab =
-    requestedRightTab === 'assistant' && !featureAvailability.assistant
-      ? 'tool'
-      : requestedRightTab;
+  const rightTab = props.rightTab ?? internalRightTab;
   const resultsTab = props.resultsTab ?? internalResultsTab;
   const uid = useId();
   const { prioritizeRight } = layout;
   useEffect(() => {
     prioritizeRight();
   }, [rightTab, prioritizeRight]);
-  const rightContent = { inspector, tool, assistant };
+  const rightContent = { inspector, tool };
   const chooseRight = (tab: IdeWorkspaceRightTab) => {
     if (props.rightTab === undefined) {
       setInternalRightTab(tab);
@@ -117,6 +111,7 @@ export const WorkbenchLayout: FC<IDEWorkspaceShellProps> = (props) => {
             onReset={() => layout.resetSize('resultsHeight')}
             resultsTab={resultsTab}
             chooseResults={chooseResults}
+            actions={props.resultsActions?.[resultsTab]}
           />
         </section>
 

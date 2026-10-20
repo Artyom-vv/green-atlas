@@ -7,7 +7,7 @@ interface EntryDetailsProps {
   passport: DataPassport;
 }
 const STATUS_LABELS: Record<DataPassportEntry['status'], string> = {
-  verified: 'Распознано',
+  verified: 'Учтено',
   partial: 'Неполные данные',
   missing: 'Нет данных',
   excluded: 'Исключено',
@@ -16,27 +16,31 @@ export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
   <Disclosure
     variant="section"
     title={
-      <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-4 gap-y-1">
+      <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm leading-5">
+        <span className="grid min-w-0 flex-1">
           <span className="font-medium">{entry.label}</span>
-          <span className="text-xs font-normal text-neutral-500">
-            Объектов: {entry.object_count.toLocaleString('ru-RU')}, слоёв:{' '}
-            {entry.layer_names?.length ?? 0}
+          <span className="text-xs leading-4 font-normal text-neutral-500">
+            Объектов: {entry.object_count.toLocaleString('ru-RU')}
+            {entry.layer_names !== undefined &&
+              `, слоёв: ${entry.layer_names.length}`}
           </span>
         </span>
         <span
           className={
             entry.status === 'partial' || entry.status === 'missing'
-              ? 'text-xs font-normal text-amber-700'
-              : 'text-xs font-normal text-neutral-600'
+              ? 'text-warning-strong text-sm leading-5 font-normal'
+              : 'text-sm leading-5 font-normal text-neutral-600'
           }
         >
-          {STATUS_LABELS[entry.status]}
+          {entry.status === 'verified' && !entry.used_in_calculation
+            ? 'Не в расчёте'
+            : STATUS_LABELS[entry.status]}
         </span>
       </span>
     }
   >
-    <div className="grid min-w-0 gap-4 text-xs wrap-anywhere text-neutral-700">
+    <div className="grid min-w-0 gap-4 text-sm leading-5 wrap-anywhere text-neutral-700">
+      {entry.note && <p className="m-0">{entry.note}</p>}
       <SourceFacts
         items={[
           {
@@ -72,9 +76,12 @@ export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
                 },
                 {
                   label: 'Пропусков подготовки',
-                  value: (
-                    entry.geometry_coverage.unresolved?.length ?? 0
-                  ).toLocaleString('ru-RU'),
+                  value:
+                    entry.geometry_coverage.unresolved === undefined
+                      ? 'Нет данных'
+                      : entry.geometry_coverage.unresolved.length.toLocaleString(
+                          'ru-RU',
+                        ),
                 },
               ]
             : [
@@ -85,9 +92,27 @@ export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
               ]),
         ]}
       />
+      {!!entry.geometry_coverage?.unresolved?.length && (
+        <Disclosure title="Пропуски подготовленной геометрии" variant="plain">
+          <ul
+            className="m-0 grid gap-3 pl-5"
+            aria-label={`Пропуски: ${entry.label}`}
+          >
+            {entry.geometry_coverage.unresolved.map((issue, index) => (
+              <li key={index} className="grid gap-1">
+                <span>{issue.detail}</span>
+                {!!issue.routes?.length && (
+                  <code>{issue.routes.join(', ')}</code>
+                )}
+                <span className="text-neutral-500">{issue.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
+      )}
       {entry.layer_names?.length ? (
         <ul
-          className="m-0 grid list-none gap-2 rounded-lg bg-neutral-50 p-3"
+          className="m-0 grid list-none gap-2 p-0"
           aria-label={`Слои: ${entry.label}`}
         >
           {entry.layer_names.map((name) => (
@@ -97,7 +122,11 @@ export const EntryDetails: FC<EntryDetailsProps> = ({ entry, passport }) => (
           ))}
         </ul>
       ) : (
-        <p>Слои этого класса не найдены</p>
+        <p className="m-0">
+          {entry.layer_names === undefined
+            ? 'Имена слоёв не представлены'
+            : 'Слои этого класса не найдены'}
+        </p>
       )}
       {!!(
         entry.source_file_name &&

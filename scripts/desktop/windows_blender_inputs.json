@@ -1,0 +1,6 @@
+{
+  "version": "4.5.11",
+  "url": "https://download.blender.org/release/Blender4.5/blender-4.5.11-windows-x64.zip",
+  "sha256": "e11d3a8e4d4249be5a7db4a9325c1f670037d4233467c3b0bda181001efe44d3",
+  "checksum_source": "https://download.blender.org/release/Blender4.5/blender-4.5.11.sha256"
+}

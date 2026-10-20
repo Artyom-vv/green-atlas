@@ -5,7 +5,7 @@ import type {
   ReleaseCreateRequest,
   ReleasePackage,
 } from '@green/api-client';
-import { ControlProvider, InlineMessage } from '@green/ui';
+import { ControlProvider, InlineMessage, Progress } from '@green/ui';
 import type { GrowthHorizon } from '@/entities/planting-forecast/ui/GrowthHorizonControl';
 import type { ReleaseFormValues } from '../model/releaseForm';
 import type { ReleaseDraftContext } from '../model/releaseDraft';
@@ -72,6 +72,14 @@ export const ReleasePanel: FC<ReleasePanelProps> = ({
             loading={loading}
             onShowFiles={onShowFiles}
           />
+          {loading && (
+            <div className="grid gap-2" role="status" aria-live="polite">
+              <Progress label="Собираем файлы выпуска" />
+              <p className="m-0 text-neutral-600">
+                Выпуск выполняется в фоне. Готовые файлы появятся здесь
+              </p>
+            </div>
+          )}
           {showRelease && release ? (
             <ReleaseFiles
               release={release}
@@ -95,27 +103,27 @@ export const ReleasePanel: FC<ReleasePanelProps> = ({
                 onReviewContext={onReviewContext}
               />
               <ReleaseForm
+                footerAside={
+                  hasDraft ? (
+                    <ReleaseDraftSettings
+                      storageAvailable={storageAvailable}
+                      loading={loading}
+                      onClear={onClearDraft}
+                    />
+                  ) : undefined
+                }
                 plan={plan}
                 draftStale={draftStale}
+                submissionUnknown={submissionUnknown}
                 loading={loading}
                 onCreate={onCreate}
                 onGrowthHorizon={onGrowthHorizon}
               />
-              {hasDraft && (
-                <ReleaseDraftSettings
-                  storageAvailable={storageAvailable}
-                  loading={loading}
-                  onClear={onClearDraft}
-                />
-              )}
             </>
           )}
           {Boolean(error) && (
             <InlineMessage tone="error">{error}</InlineMessage>
           )}
-          <p className="m-0 text-xs text-neutral-600">
-            Пакет не является согласованием или порубочным билетом.
-          </p>
         </div>
       </FormProvider>
     </ControlProvider>

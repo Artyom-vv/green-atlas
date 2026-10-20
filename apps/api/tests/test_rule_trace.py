@@ -11,22 +11,22 @@ from test_placement_allocation import application
 from app.contracts import GeometrySnapshot, Plan, PlanObject, Project
 from app.dxf_import.contracts import SourceFile
 from app.exporting.contracts import ReleaseCreateRequest
-from app.geometry.adapters import ShapelyGeometryEngine
-from app.geometry.domain import PositionChecker
-from app.geometry.rule_trace import position_rule_trace
-from app.geometry.utility_contracts import UtilityContext
-from app.planning.change_contracts import (
+from app.geometry.checking.adapters import ShapelyGeometryEngine
+from app.geometry.checking.domain import PositionChecker
+from app.geometry.checking.rule_trace import position_rule_trace
+from app.geometry.networks.utility_contracts import UtilityContext
+from app.planning.changes.contracts import (
     PlanChangeSetDraft,
     PlanObjectAddOperation,
     PlanObjectDeleteOperation,
     PlanObjectUpdateOperation,
 )
+from app.planning.changes.trace import operation_rule_trace
 from app.planning.contracts import (
     PlacementCheckRequest,
     PlanObjectCreate,
     PlanObjectUpdate,
 )
-from app.planning.trace import operation_rule_trace
 from app.regulations.profiles import LCT_REQUIREMENT_PROFILE, requirement_profile
 from app.releases.service import build_release, release_identity
 from app.scene.contracts import SceneSnapshot

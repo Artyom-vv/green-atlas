@@ -8,16 +8,17 @@ import argparse
 import hashlib
 import json
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.cad_bridge import CadSnapshot
-from app.cad_bridge.provider import build_dxf_import_from_snapshot
+from app.cad_bridge.provider import build_project_from_snapshot
 from app.composition import create_runtime
 from app.dxf_import.capacity import SourceGeometryCapacity
-from app.dxf_import.layer_contracts import LayerKind
-from app.geometry.adapters import ShapelyGeometryEngine
-from app.geometry.domain import PositionChecker
-from app.planning.pattern_contracts import FillPatternRequest
+from app.dxf_import.layers.contracts import LayerKind
+from app.geometry.checking.adapters import ShapelyGeometryEngine
+from app.geometry.checking.domain import PositionChecker
+from app.planning.patterns.contracts import FillPatternRequest
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 from shapely.geometry import mapping, shape
@@ -29,7 +30,7 @@ def run(
     snapshot_path: Path,
     output: Path,
     site_layer: str | None = None,
-):
+) -> None:
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     timings: dict[str, float] = {}
@@ -44,18 +45,16 @@ def run(
     stage_started = finish_stage("hash_source", stage_started)
     snapshot = CadSnapshot.model_validate_json(snapshot_path.read_bytes())
     stage_started = finish_stage("parse_snapshot", stage_started)
-    imported = build_dxf_import_from_snapshot(
+    project = build_project_from_snapshot(
+        Project(name="Isolated planting diagnostic"),
         snapshot,
+        filename=source.name,
+        imported_at=datetime.now(UTC).isoformat(),
         source_sha256=digest,
+        source_size=source.stat().st_size,
         capacity=SourceGeometryCapacity.process_bounded(),
     )
     stage_started = finish_stage("build_import", stage_started)
-    project = Project(
-        name="Isolated planting diagnostic",
-        layers=imported.layers,
-        source_geometry=imported.geometry,
-        coordinate_reference=imported.coordinate_reference,
-    )
     excluded_incomplete_layers: list[dict[str, object]] = []
     for layer in project.layers:
         if site_layer is not None and layer.suggested_kind == LayerKind.SITE_BORDER:
@@ -137,6 +136,7 @@ def run(
             saved = runtime.application.save_planting_zones(project.id, [zone])
             stage_started = finish_stage("save_planting_zones", stage_started)
             saved = runtime.application.create_manual_plan(project.id)
+            assert saved.plan is not None
             stage_started = finish_stage("create_manual_plan", stage_started)
             checker = PositionChecker(saved)
             report["tree_space_check"] = {

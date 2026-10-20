@@ -1,8 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  onlineManager,
+} from '@tanstack/react-query';
 import { api, ApiClientError, type ProjectSummary } from '@green/api-client';
-import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectsPage } from './ProjectsPage';
 
 const project = {
@@ -20,7 +24,71 @@ const project = {
 } as ProjectSummary;
 
 describe('ProjectsPage recovery', () => {
-  afterEach(() => vi.restoreAllMocks());
+  beforeEach(() => {
+    const NativeRequest = Request;
+    vi.stubGlobal(
+      'Request',
+      class extends NativeRequest {
+        constructor(input: RequestInfo | URL, init?: RequestInit) {
+          super(input, { ...init, signal: undefined });
+        }
+      },
+    );
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    onlineManager.setOnline(true);
+  });
+
+  it('reads the local library while the browser reports offline', async () => {
+    onlineManager.setOnline(false);
+    const list = vi.spyOn(api, 'listProjects').mockResolvedValue([project]);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider
+          router={createMemoryRouter(
+            [{ path: '/projects', element: <ProjectsPage /> }],
+            { initialEntries: ['/projects'] },
+          )}
+        />
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByRole('link', { name: /^Проект после восстановления/ }),
+    ).toBeVisible();
+    expect(list).toHaveBeenCalledOnce();
+  });
+
+  it('does not show an empty library before the first successful response', async () => {
+    let finish!: (projects: ProjectSummary[]) => void;
+    vi.spyOn(api, 'listProjects').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider
+          router={createMemoryRouter(
+            [{ path: '/projects', element: <ProjectsPage /> }],
+            { initialEntries: ['/projects'] },
+          )}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText('Проектов пока нет')).not.toBeInTheDocument();
+    finish([]);
+    expect(await screen.findByText('Проектов пока нет')).toBeVisible();
+    expect(screen.queryByText('Загрузить DXF')).not.toBeInTheDocument();
+  });
 
   it('retries a failed project request without reloading the page', async () => {
     const listProjects = vi
@@ -35,9 +103,12 @@ describe('ProjectsPage recovery', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
-          <ProjectsPage />
-        </MemoryRouter>
+        <RouterProvider
+          router={createMemoryRouter(
+            [{ path: '/projects', element: <ProjectsPage /> }],
+            { initialEntries: ['/projects'] },
+          )}
+        />
       </QueryClientProvider>,
     );
 

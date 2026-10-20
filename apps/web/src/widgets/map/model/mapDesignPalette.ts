@@ -1,16 +1,16 @@
 export const MAP_DESIGN_PALETTE: Readonly<
   Record<string, readonly [string, string]>
 > = {
-  building: ['#ccd3df', '#64748b'],
+  building: ['#8a98aa', '#4b586b'],
   road: ['#f0e8da', '#aa9475'],
-  existing_green: ['#abd4c1', '#287652'],
+  existing_green: ['#2d7a57', '#19543b'],
   lawn: ['#d0e7ac', '#709241'],
-  water: ['#c0dff2', '#4287b1'],
+  water: ['#429eb8', '#246780'],
   planting_area: ['rgba(0,0,0,0)', '#84948c'],
   site_border: ['rgba(0,0,0,0)', '#35414e'],
   allowed: ['rgba(25,135,84,.025)', 'rgba(25,135,84,.13)'],
-  utility: ['rgba(0,0,0,0)', '#718da8'],
-  restricted: ['rgba(183,100,0,.05)', '#8a4b00'],
+  utility: ['rgba(0,0,0,0)', '#536b8a'],
+  restricted: ['rgba(183,100,0,.05)', '#925e30'],
 };
 
 export const MAP_DESIGN_CONTEXT_STROKE = '#85919e';

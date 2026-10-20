@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Disclosure } from '@green/ui';
 
 const SectionsContext = createContext<{
@@ -6,33 +14,49 @@ const SectionsContext = createContext<{
   setActive: (number: string | null) => void;
 } | null>(null);
 
-/** Keep panels mounted: switching sections must not discard edits or reviews. */
+/** Разделы остаются смонтированными: переключение сохраняет правки и проверки. */
 export function SourceSections({
   defaultSection,
   reviewRequest,
+  activeSection,
+  onActiveChange,
   children,
 }: {
   defaultSection: string | null;
   reviewRequest?: { section: string; sequence: number };
+  activeSection?: string | null;
+  onActiveChange?: (number: string | null) => void;
   children: ReactNode;
 }) {
-  const [active, setActive] = useState(defaultSection);
+  const [localActive, setLocalActive] = useState(defaultSection);
+  const controlled = activeSection !== undefined;
+  const active = controlled ? activeSection : localActive;
+  const setActive = useCallback(
+    (number: string | null) => {
+      if (!controlled) setLocalActive(number);
+      onActiveChange?.(number);
+    },
+    [controlled, onActiveChange],
+  );
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!reviewRequest) return;
     setActive(reviewRequest.section);
-    const section = root.current?.querySelectorAll(':scope > section')[
-      Number(reviewRequest.section) - 1
-    ];
-    const trigger = section?.querySelector<HTMLButtonElement>(':scope > div > button');
+    const section =
+      root.current?.querySelectorAll(':scope > section')[
+        Number(reviewRequest.section) - 1
+      ];
+    const trigger = section?.querySelector<HTMLButtonElement>(
+      ':scope > div > button',
+    );
     trigger?.focus({ preventScroll: true });
     trigger?.scrollIntoView?.({ block: 'nearest' });
-  }, [reviewRequest]);
+  }, [reviewRequest, setActive]);
   return (
     <SectionsContext.Provider value={{ active, setActive }}>
       <div
         ref={root}
-        className="min-w-0"
+        className="min-w-0 [&>section:nth-last-of-type(1)]:border-b-0"
         onKeyDown={(event) => {
           const buttons = Array.from(
             event.currentTarget.querySelectorAll<HTMLButtonElement>(
@@ -75,6 +99,7 @@ export function SourceSection({
   return (
     <Disclosure
       variant="section"
+      stickyHeader
       label={title}
       defaultOpen={defaultOpen}
       open={sections ? sections.active === number : undefined}

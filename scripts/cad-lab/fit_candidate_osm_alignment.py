@@ -25,8 +25,7 @@ from shapely.ops import unary_union
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
 
-from app.dxf_import.adapters import _hatch_polygon_geometry  # noqa: E402
-from app.dxf_import.polygons import hatch_geometry  # noqa: E402
+from app.dxf_import.legacy.entities.polygons import hatch_geometry  # noqa: E402
 from automatic_address_controls import normalize_address, normalize_street, pair_unique_addresses  # noqa: E402
 
 
@@ -386,7 +385,7 @@ def main() -> None:
         primary = entity.dxf.layer.split(" за ", 1)[0]
         if "Тип2_ПЧ" not in primary and "Тип4_ПЧ" not in primary:
             continue
-        geometry = hatch_geometry(entity, 1.0, _hatch_polygon_geometry)
+        geometry = hatch_geometry(entity, 1.0)
         if geometry is not None:
             road_parts.append(shape(geometry).intersection(boundary))
     authored_road = unary_union(road_parts)

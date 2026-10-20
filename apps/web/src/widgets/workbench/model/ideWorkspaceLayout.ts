@@ -1,4 +1,5 @@
-import { DOCK_STRIP_HEIGHT } from '@/shared/layout/dockLayout';
+/** Рабочее пространство распределяет место между ресурсами, картой и инспектором. */
+import { RESULTS_STRIP_HEIGHT } from '@/shared/ui/results/resultsLayout';
 
 export type IdeWorkspaceSide = 'resources' | 'right';
 export type IdeWorkspaceSize =
@@ -7,13 +8,13 @@ export type IdeWorkspacePreference = Partial<Record<IdeWorkspaceSize, number>>;
 
 export const IDE_WORKSPACE_STORAGE_KEY = 'green-ide-workspace-layout-v1';
 export const IDE_WORKSPACE_DEFAULTS = {
-  resourcesWidth: 220,
-  rightWidth: 340,
+  resourcesWidth: 260,
+  rightWidth: 300,
   resultsHeight: 220,
 };
-export const IDE_WORKSPACE_RAIL = 40;
+export const IDE_WORKSPACE_RAIL = 48;
 export const IDE_WORKSPACE_MIN_MAP = 640;
-export const IDE_WORKSPACE_RESULTS_TABS = DOCK_STRIP_HEIGHT;
+export const IDE_WORKSPACE_RESULTS_TABS = RESULTS_STRIP_HEIGHT;
 
 const limits = {
   resourcesWidth: [180, 320],
@@ -38,7 +39,7 @@ export function readIdeWorkspacePreference(
   return result;
 }
 
-/** Measured constraints never overwrite the user's preferred dimensions. */
+/** Ограничения окна временно сжимают панели, сохраняя выбранные пользователем размеры. */
 export function ideWorkspaceLayout(
   container: { width: number; height: number },
   preference: IdeWorkspacePreference = {},
@@ -58,8 +59,8 @@ export function ideWorkspaceLayout(
   let resourcesExpanded = visibility.resourcesOpen;
   let rightExpanded = visibility.rightOpen;
 
-  // At 1024px two readable panes cannot coexist with a 640px map. Keep
-  // whichever pane the user explicitly opened last; the other becomes a rail.
+  // Когда места для двух панелей и карты недостаточно, оставляем панель,
+  // которую пользователь открыл последней; другая сворачивается в полоску.
   if (
     resourcesExpanded &&
     rightExpanded &&
@@ -96,8 +97,8 @@ export function ideWorkspaceLayout(
     shrinkRight();
   }
 
-  // Below the desktop stand's supported width, keep the open controls usable
-  // and avoid negative tracks. A 640px map is physically impossible there.
+  // В очень узком окне сохраняем доступные контролы и не допускаем
+  // отрицательной ширины колонок, даже когда карта уже не помещается целиком.
   resourcesWidth = Math.min(resourcesWidth, Math.max(0, width - rightWidth));
   rightWidth = Math.min(rightWidth, Math.max(0, width - resourcesWidth));
   const mapWidth = Math.max(0, width - resourcesWidth - rightWidth);

@@ -27,7 +27,7 @@ export const MenuPopup: FC<MenuPopupProps> = ({
         {...props}
         className={(state) =>
           cx(
-            'rounded-card max-h-(--available-height) min-w-40 overflow-y-auto border border-solid border-neutral-300 bg-white p-1 text-sm text-neutral-800 shadow-lg outline-none',
+            'rounded-card max-h-(--available-height) min-w-40 overflow-y-auto border border-solid border-neutral-300 bg-white p-1 text-sm text-neutral-800 shadow-lg transition-[opacity,transform] duration-150 ease-out outline-none data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 motion-reduce:transition-none',
             typeof className === 'function' ? className(state) : className,
           )
         }

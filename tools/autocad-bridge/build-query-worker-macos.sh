@@ -4,6 +4,7 @@ repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 sdk_root="${OBJECTARX_SDK_ROOT:-$repo_root/.local/objectarx-2027}"
 acad_root="${AUTOCAD_2027_ROOT:-/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app}"
 source_root="$repo_root/tools/autocad-bridge/native"
+worker_version="0.1.49"
 output_parent="$repo_root/.runtime/autocad-bridge/query-worker"
 mkdir -p "$output_parent"
 build_root="$(mktemp -d "$output_parent/build-XXXXXXXX")"
@@ -12,8 +13,18 @@ mkdir -p "$bundle/Contents/MacOS"
 cp "$source_root/Info.plist" "$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier ru.green-atlas.native-query-worker' "$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleName Green Atlas Native Query Worker' "$bundle/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $worker_version" "$bundle/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :GAFaceProtocols array' "$bundle/Contents/Info.plist"
+for protocol in 1 2 3; do
+  /usr/libexec/PlistBuddy -c "Add :GAFaceProtocols: string green-atlas.archive-face-preparation/$protocol" "$bundle/Contents/Info.plist"
+done
+/usr/libexec/PlistBuddy -c 'Add :GATopologyShapes array' "$bundle/Contents/Info.plist"
+for shape in curve AcDbRegion AcDbHatch; do
+  /usr/libexec/PlistBuddy -c "Add :GATopologyShapes: string $shape" "$bundle/Contents/Info.plist"
+done
 xcrun clang++ -std=c++17 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -bundle -O2 \
   -DNDEBUG -D_ADESK_MAC_ -DOSX_SYSTEM -D_NATIVE_WCHAR_T_DEFINED -DUNICODE -DACDB_EXT \
+  -DGA_QUERY_WORKER_VERSION="\"$worker_version\"" \
   -Wno-deprecated-declarations -Wno-nonportable-include-path -Wno-extra-tokens \
   -Wno-parentheses -Wno-unused -Wno-comment -Wno-switch-enum -DDLLNAME_ACBR=AcBr.dbx \
   -include "$source_root/prefix.pch" \
@@ -24,8 +35,13 @@ xcrun clang++ -std=c++17 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -bun
   "$acad_root/Contents/Plugins/AcBr.dbx/AcBr" \
   "$repo_root/tools/autocad-bridge/query-worker/entry.cpp" \
   "$repo_root/tools/autocad-bridge/query-worker/package_query.cpp" \
+  "$repo_root/tools/autocad-bridge/query-worker/package_faces.cpp" \
   "$repo_root/tools/autocad-bridge/query-worker/cad_release.cpp" \
   "$source_root/session_capture_instances.cpp" \
+  "$source_root/operation_control.cpp" \
+  "$source_root/semantic_capture.cpp" \
+  "$source_root/semantic_evidence.cpp" \
+  "$source_root/xref_dependency.cpp" \
   "$source_root/direct_query_kernel.cpp" \
   "$source_root/native_affine_query.cpp" \
   "$source_root/native_area_group.cpp" \

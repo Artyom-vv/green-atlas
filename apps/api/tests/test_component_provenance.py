@@ -2,9 +2,9 @@ from io import StringIO
 
 import ezdxf
 
-from app.dxf_import.adapters import EzdxfReader
-from app.dxf_import.component_provenance import component_definition_provenance
-from app.dxf_import.layer_contracts import Layer, LayerKind
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.dxf_import.legacy.entities.component_provenance import component_definition_provenance
+from app.dxf_import.layers.contracts import Layer, LayerKind
 
 
 def test_nested_annotation_preserves_leaf_identity_without_reclassifying():

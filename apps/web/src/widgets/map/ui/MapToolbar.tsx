@@ -25,7 +25,7 @@ export const MapToolbar: FC<MapToolbarProps> = ({
   mapMode = '2d',
 }) => (
   <MapControlGroup
-    className="max-h-[calc(100dvh-150px)] overflow-y-auto max-[600px]:max-h-90"
+    className="max-h-full overflow-y-auto [scrollbar-gutter:auto]"
     orientation="vertical"
     label="Инструменты карты"
   >

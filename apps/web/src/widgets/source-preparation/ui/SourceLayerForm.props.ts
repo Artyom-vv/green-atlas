@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { SourcePreparationState } from '../model/sourcePreparation';
 export interface SourceLayerFormProps extends Pick<
   SourcePreparationState,
@@ -12,19 +13,20 @@ export interface SourceLayerFormProps extends Pick<
   | 'layers'
   | 'mappings'
   | 'setMappings'
-  | 'dataPassportQuery'
   | 'mutationError'
   | 'reloadAfterConflict'
   | 'projectQuery'
   | 'nativeAreaProposals'
   | 'decideNativeArea'
   | 'layerRecognition'
-  | 'allSavedLayersConfirmed'
   | 'automaticAcceptancePending'
-  | 'layerRecognitionQuery'
-  | 'retryLayerRecognition'
 > {
+  initialSection?: '02' | '03' | '04';
   reviewRequest?: { section: string; sequence: number };
+  status?: ReactNode;
+  recognitionProgress?: ReactNode;
+  footer?: ReactNode;
+  intro?: string;
 }
 export const SourceLayerFormPropsFor = (
   state: Pick<
@@ -40,17 +42,13 @@ export const SourceLayerFormPropsFor = (
     | 'layers'
     | 'mappings'
     | 'setMappings'
-    | 'dataPassportQuery'
     | 'mutationError'
     | 'reloadAfterConflict'
     | 'projectQuery'
     | 'nativeAreaProposals'
     | 'decideNativeArea'
     | 'layerRecognition'
-    | 'allSavedLayersConfirmed'
     | 'automaticAcceptancePending'
-    | 'layerRecognitionQuery'
-    | 'retryLayerRecognition'
   >,
 ) => ({
   sourceWarnings: state.sourceWarnings,
@@ -65,14 +63,10 @@ export const SourceLayerFormPropsFor = (
   mappings: state.mappings,
   setMappings: state.setMappings,
   automaticAcceptancePending: state.automaticAcceptancePending,
-  dataPassportQuery: state.dataPassportQuery,
   mutationError: state.mutationError,
   reloadAfterConflict: state.reloadAfterConflict,
   projectQuery: state.projectQuery,
   nativeAreaProposals: state.nativeAreaProposals,
   decideNativeArea: state.decideNativeArea,
   layerRecognition: state.layerRecognition,
-  allSavedLayersConfirmed: state.allSavedLayersConfirmed,
-  layerRecognitionQuery: state.layerRecognitionQuery,
-  retryLayerRecognition: state.retryLayerRecognition,
 });

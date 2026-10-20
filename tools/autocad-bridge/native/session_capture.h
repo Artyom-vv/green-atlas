@@ -4,6 +4,11 @@
 class AcDbDatabase;
 
 namespace ga::capture {
+// Read-only admission of live topology before display serialization. Uses the
+// same instance walk as the archive, without retaining an instance catalogue.
+// Throws an addressed refusal for an unsupported route or XREF provenance.
+void validateLiveInstanceTopology(AcDbDatabase& source);
+
 // Copy the loaded native databases, never saved disk substitutes. The caller
 // must hold the editor command context and disclose the authorised DBMOD side
 // effect. No save/reset/rollback is performed on a source database.

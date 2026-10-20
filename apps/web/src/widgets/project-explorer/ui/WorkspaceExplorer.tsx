@@ -51,26 +51,28 @@ export const WorkspaceExplorer: FC<WorkspaceExplorerProps> = ({
         </WorkbenchContribution>
         <ScrollArea
           className="flex-1"
-          contentClassName="p-2"
+          contentClassName="px-2 pt-2 pb-6"
           hidden={tab !== 'project'}
         >
-          <ExplorerZones
-            zones={zones}
-            selectedIds={selectedZoneIds}
-            selectionDisabled={zoneSelectionDisabled}
-            managementDisabled={disabled}
-            onSelectionChange={onZonesChange}
-            onFocus={onZone}
-            onManage={onManageZones}
-          />
-          <ExplorerPlantings
-            objects={objects}
-            speciesNames={speciesNames}
-            selectedIds={selectedIds}
-            disabled={disabled}
-            onSelect={onSelect}
-            onManage={onManagePlantings}
-          />
+          <div className="grid gap-1">
+            <ExplorerZones
+              zones={zones}
+              selectedIds={selectedZoneIds}
+              selectionDisabled={zoneSelectionDisabled}
+              managementDisabled={disabled}
+              onSelectionChange={onZonesChange}
+              onFocus={onZone}
+              onManage={onManageZones}
+            />
+            <ExplorerPlantings
+              objects={objects}
+              speciesNames={speciesNames}
+              selectedIds={selectedIds}
+              disabled={disabled}
+              onSelect={onSelect}
+              onManage={onManagePlantings}
+            />
+          </div>
         </ScrollArea>
         <div
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
@@ -78,10 +80,10 @@ export const WorkspaceExplorer: FC<WorkspaceExplorerProps> = ({
         >
           {layers}
         </div>
-        <DockStrip edge="top" aria-label="Источники проекта">
+        <DockStrip edge="top" aria-label="Источники проекта" className="p-0">
           <Button
             variant="ghost"
-            className="w-full justify-start"
+            className="h-full w-full justify-start rounded-none px-4 py-0 focus-visible:-outline-offset-2"
             icon={<Settings2 />}
             title={`${sourceName ?? 'Исходный DXF'}: ${sourceCount.toLocaleString('ru')} объектов`}
             onClick={onSource}

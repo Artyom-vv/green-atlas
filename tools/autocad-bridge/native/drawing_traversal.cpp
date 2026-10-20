@@ -1,4 +1,6 @@
 #include "drawing_traversal.h"
+#include "cad_utils.h"
+#include "instance_layer.h"
 #include "operation_control.h"
 #include "exact_polyline_pairs.h"
 #include "dbents.h"
@@ -11,12 +13,7 @@ namespace ga::bridge {
 std::string effectiveEntityLayer(const std::string& sourceLayer,
                                  const std::string& inheritedLayer,
                                  const std::string& layerNamespace) {
-    const std::string layer = sourceLayer == "0" ? inheritedLayer : sourceLayer;
-    if (layerNamespace.empty() || layer.empty() || layer == "0" ||
-        layer.rfind(layerNamespace + "|", 0) == 0) {
-        return layer;
-    }
-    return layerNamespace + "|" + layer;
+    return resolveInstanceLayer(sourceLayer, inheritedLayer, layerNamespace);
 }
 
 bool objectIdIn(const std::vector<AcDbObjectId>& values, const AcDbObjectId& candidate) {
@@ -36,7 +33,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                             std::vector<NativePoint>& points,
                             std::vector<EntityCoverage>& coverage,
                             ExternalDatabaseCache& externalDatabases,
-                            RegionTraversalDiagnostics& diagnostics) {
+                            RegionTraversalDiagnostics& diagnostics,
+                            const bool annotationContext) {
     if (recordId.isNull() || objectIdIn(activeRecords, recordId)) {
         ++diagnostics.cyclicBlockReferences;
         return;
@@ -75,7 +73,20 @@ void collectRegionInstances(const AcDbObjectId& recordId,
             collectBlockInstance(block, accumulatedTransform, instanceChain,
                                  inheritedLayer, layerNamespace, tolerance,
                                  activeRecords, regions, areaProposals, paths, points, coverage,
-                                 externalDatabases, diagnostics);
+                                 externalDatabases, diagnostics, annotationContext);
+        } else if (annotationContext) {
+            // Графика внутри таблицы остаётся в полном перечне и CAD-архиве,
+            // но не создаёт расчётные контуры, точки или предложения областей.
+            EntityCoverage row;
+            row.handle = entityHandle(entity);
+            row.entityType = utf8(entity->isA()->name());
+            row.sourceLayer = utf8(entity->layer());
+            row.layer = effectiveEntityLayer(row.sourceLayer, inheritedLayer, layerNamespace);
+            row.instanceChain = instanceChain;
+            row.status = "context";
+            row.method = "autodesk-annotation-owner-context";
+            row.reason = "entity belongs to a non-calculation annotation owner";
+            coverage.push_back(std::move(row));
         } else {
             NativeCurveCandidate candidate;
             const bool candidateReady = inspectNativeCurveCandidate(entity, candidate);
@@ -96,7 +107,7 @@ void collectRegionInstances(const AcDbObjectId& recordId,
         entity->close();
     }
 
-    if (!operationCancelled()) {
+    if (!annotationContext && !operationCancelled()) {
         collectExactPolylinePairs(candidateCurves, accumulatedTransform,
                                   instanceChain, inheritedLayer, layerNamespace,
                                   tolerance, regions);

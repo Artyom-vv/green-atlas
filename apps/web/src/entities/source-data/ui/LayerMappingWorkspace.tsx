@@ -1,143 +1,169 @@
-import { useState } from 'react';
-import { Button, TextInput, Text } from '@green/ui';
+/** Исходные данные: общая таблица слоёв, очередь назначений и поиск */
+import { useId, useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import { Button, IconButton, Tabs, TextInput } from '@green/ui';
 import type { LayerMappingTableProps } from './LayerMappingTable';
 import { LayerMappingTable } from './LayerMappingTable';
-import { LayerMappingReview } from './LayerMappingReview';
-import { toLayerMapping } from '../model/layerKinds';
+import { LayerMappingInformation } from './LayerMappingInformation';
+import { requiresLayerRoleReview, toLayerMapping } from '../model/layerKinds';
 
-/** One stable list: confirming a row must not move it under the user's cursor. */
+/** Принятые строки остаются на месте до следующего входа в очередь проверки */
 export function LayerMappingWorkspace(
   props: LayerMappingTableProps & {
     automaticAcceptancePending?: boolean;
+    informationInHeader?: boolean;
+    defaultView?: 'review' | 'list';
   },
 ) {
   const { layers, mappings, readOnly } = props;
+  const id = useId();
+  const tabsId = `${id}-tabs`;
+  const panelId = `${id}-panel`;
   const [query, setQuery] = useState('');
-  const pending = layers.filter(
-    (layer) =>
-      (mappings[layer.id] ?? toLayerMapping(layer)).confirmed === false,
+  const searchInput = useRef<HTMLInputElement>(null);
+  const clearSearch = () => {
+    setQuery('');
+    searchInput.current?.focus();
+  };
+  const [view, setView] = useState<'review' | 'list'>(
+    props.defaultView ?? (readOnly ? 'list' : 'review'),
   );
-  const proposalsById = new Map(
-    props.recognition?.proposals.map((item) => [item.layer_id, item]) ?? [],
+  const pending = layers.filter((layer) =>
+    requiresLayerRoleReview(mappings[layer.id] ?? toLayerMapping(layer)),
   );
-  const categoriesById = new Map(
-    props.recognition?.categories.map((item) => [item.category, item]) ?? [],
-  );
-  const reviewReasons = pending.reduce(
-    (counts, layer) => {
-      const proposal = proposalsById.get(layer.id);
-      const category = proposal?.category
-        ? categoriesById.get(proposal.category)
-        : undefined;
-      if (category?.kind === 'site_border') counts.boundary += 1;
-      else if (category && category.kind == null) counts.descriptive += 1;
-      else counts.uncertain += 1;
-      return counts;
-    },
-    { boundary: 0, descriptive: 0, uncertain: 0 },
-  );
-  const confirmedCount = layers.length - pending.length;
-  const [view, setView] = useState<'review' | 'list'>('review');
-  const showReview = !readOnly && view === 'review';
+  const [reviewIds, setReviewIds] = useState(() => new Set<string>());
+  const changeView = (next: 'review' | 'list') => {
+    if (next === 'review' && view !== 'review')
+      setReviewIds(new Set(pending.map((layer) => layer.id)));
+    if (next === 'review') setQuery('');
+    setView(next);
+  };
   const search = query.trim().toLocaleLowerCase('ru');
-  const visible = layers.filter((layer) =>
-    layer.source_name.toLocaleLowerCase('ru').includes(search),
+  const visible = layers.filter(
+    (layer) =>
+      (view === 'list' ||
+        reviewIds.has(layer.id) ||
+        pending.some((item) => item.id === layer.id)) &&
+      (view === 'review' ||
+        layer.source_name.toLocaleLowerCase('ru').includes(search)),
   );
   if (props.automaticAcceptancePending)
     return (
-      <section aria-label="Сопоставление слоёв" className="min-w-0">
+      <section
+        aria-label="Сопоставление слоёв"
+        className="min-w-0 px-4 py-4 min-[720px]:px-6"
+      >
         <p className="m-0 text-sm text-neutral-600" role="status">
           Принимаем однозначные назначения слоёв
         </p>
       </section>
     );
   return (
-    <section
-      aria-label="Сопоставление слоёв"
-      className="@container grid min-w-0 gap-3"
-    >
-      {props.recognition?.status === 'completed' && (
-        <div
-          className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-neutral-600"
-          role="status"
-        >
-          <span>
-            Распознано Luna: {props.recognition.processed_count} из{' '}
-            {layers.length}
-          </span>
-          <span>
-            Подтверждено: {confirmedCount} из {layers.length}
-          </span>
-          {pending.length > 0 && <span>Проверить: {pending.length}</span>}
-          {pending.length > 0 && (
-            <details className="basis-full text-neutral-600">
-              <summary className="w-fit cursor-pointer">
-                Почему нужна проверка
-              </summary>
-              <p className="mt-2 mb-0">
-                Границы: {reviewReasons.boundary}, без расчётной роли:{' '}
-                {reviewReasons.descriptive}, другие: {reviewReasons.uncertain}
-              </p>
-            </details>
-          )}
-        </div>
-      )}
-      {!readOnly && (
-        <div
-          role="group"
-          aria-label="Просмотр слоёв"
-          className="flex flex-wrap gap-1"
-        >
-          <Button
-            variant={showReview ? 'secondary' : 'ghost'}
-            aria-pressed={showReview}
-            onClick={() => setView('review')}
-          >
-            Подтверждение ({pending.length})
-          </Button>
-          <Button
-            variant={!showReview ? 'secondary' : 'ghost'}
-            aria-pressed={!showReview}
-            onClick={() => setView('list')}
-          >
-            Все слои ({layers.length})
-          </Button>
-        </div>
-      )}
-      {showReview ? (
-        <section aria-label="Подтверждение групп" className="grid gap-2">
-          {!pending.length && (
-            <p className="m-0 text-sm">Все типы слоёв подтверждены</p>
-          )}
-          <LayerMappingReview
-            {...props}
-            layers={pending}
-            showComposition={false}
-          />
-        </section>
-      ) : (
-        <>
-          <div className="grid min-w-0 items-center gap-2">
-            <TextInput
-              aria-label="Поиск слоя"
-              placeholder="Найти слой по названию"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+    <section aria-label="Сопоставление слоёв" className="min-w-0">
+      <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-neutral-200 px-4 min-[720px]:px-6">
+        <Tabs
+          id={tabsId}
+          label="Просмотр слоёв"
+          value={view}
+          onChange={changeView}
+          controlSize="large"
+          options={[
+            {
+              value: 'review',
+              label: `Проверить (${pending.length})`,
+              panelId,
+            },
+            { value: 'list', label: `Все слои (${layers.length})`, panelId },
+          ]}
+        />
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+          {!props.informationInHeader && (
+            <LayerMappingInformation
+              layers={layers}
+              mappings={mappings}
+              recognition={props.recognition}
             />
-          </div>
-          <Text variant="caption" className="text-neutral-600" role="status">
-            Показано {visible.length} из {layers.length}
-          </Text>
-          <div
-            className="max-h-[65vh] overflow-auto border border-neutral-200"
-          >
-            <LayerMappingTable {...props} layers={visible} />
-            {!visible.length && (
-              <p className="px-4 text-sm text-neutral-600">Слои не найдены</p>
+          )}
+          {view === 'list' && (
+            <div className="relative flex w-full max-w-60 min-w-0">
+              <TextInput
+                ref={searchInput}
+                className={query ? 'pr-10' : undefined}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    clearSearch();
+                  }
+                }}
+                variant="ghost"
+                controlSize="large"
+                startIcon={<Search />}
+                aria-label="Поиск слоя"
+                placeholder="Найти слой"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              {query && (
+                <IconButton
+                  icon={X}
+                  variant="ghost"
+                  controlSize="large"
+                  label="Очистить поиск"
+                  className="absolute top-0 right-0"
+                  onClick={clearSearch}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div
+        id={panelId}
+        role="tabpanel"
+        aria-labelledby={`${tabsId}-tab-${view}`}
+        className="min-w-0"
+      >
+        <LayerMappingTable
+          {...props}
+          layers={visible}
+          stickyHeader
+          onChange={(next) => {
+            if (view === 'review')
+              setReviewIds(
+                (current) =>
+                  new Set([...current, ...pending.map((layer) => layer.id)]),
+              );
+            props.onChange(next);
+          }}
+        />
+        {!visible.length && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 min-[720px]:px-6">
+            <p className="m-0 text-sm text-neutral-500" role="status">
+              {search
+                ? 'Слои не найдены'
+                : view === 'review'
+                  ? 'Все назначения приняты'
+                  : 'В чертеже нет слоёв'}
+            </p>
+            {(search || view === 'review') && (
+              <Button
+                variant="ghost"
+                controlSize="default"
+                className="-ml-3 text-blue-600"
+                onClick={() => {
+                  if (search) clearSearch();
+                  else {
+                    changeView('list');
+                    document.getElementById(`${tabsId}-tab-list`)?.focus();
+                  }
+                }}
+              >
+                {search ? 'Сбросить фильтр' : 'Показать все слои'}
+              </Button>
             )}
           </div>
-        </>
-      )}
+        )}
+      </div>
     </section>
   );
 }

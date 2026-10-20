@@ -1,0 +1,99 @@
+name: Immutable 122 upgrade from released121
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-upgrade121-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    if: github.repository == 'Artyom-vv/green-atlas-dev'
+    permissions:
+      contents: write # Read the existing unpublished candidate draft; no release writes.
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Prepare locked verification dependencies
+        run: |
+          . ./scripts/windows-env.ps1
+          $ErrorActionPreference = 'Stop'
+          $inputs = Get-Content tools/autocad-bridge/windows-ci-inputs.json -Raw | ConvertFrom-Json
+          $python = (Get-Command python).Source
+          & $python -m pip install --disable-pip-version-check ('uv==' + $inputs.uv)
+          if ($LASTEXITCODE -ne 0) { throw 'uv installation failed' }
+          $env:UV_PYTHON_DOWNLOADS = 'never'
+          . ./scripts/windows-env.ps1
+          & $python -m uv sync --project apps/api --locked --group dev --python $python
+          if ($LASTEXITCODE -ne 0) { throw 'Locked API dependencies failed' }
+      - name: Download exact accepted 122 and released121 without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . ./scripts/windows-env.ps1
+          $ErrorActionPreference = 'Stop'
+          $source = '2b64cb09bc98958970aa8bfb27080bed509e1cbd'
+          & git diff --exit-code $source HEAD -- apps tools packages package.json pnpm-lock.yaml pnpm-workspace.yaml scripts/windows-env.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Production source changed; rebuild and qualify the product' }
+          $root = Join-Path $env:GITHUB_WORKSPACE '.runtime/autocad-bridge/ci-product'
+          $current = Join-Path $root 'deliverable'
+          $previous = Join-Path $root 'previous'
+          New-Item -ItemType Directory -Path $current,$previous | Out-Null
+          . ./scripts/windows-env.ps1
+          & gh release download v0.1.122-windows-candidate-39121021418 --repo Artyom-vv/green-atlas-dev --dir $current
+          if ($LASTEXITCODE -ne 0) { throw 'Immutable candidate download failed' }
+          . ./scripts/windows-env.ps1
+          & gh release download v0.1.121-windows-candidate-39100548515 --repo Artyom-vv/green-atlas-dev --pattern GreenAtlas-0.1.121-Windows-x64-Setup-2.exe --dir $previous
+          if ($LASTEXITCODE -ne 0) { throw 'Released121 download failed' }
+          $build = Get-Content (Join-Path $current 'product-build-receipt.json') -Raw | ConvertFrom-Json
+          $installation = Get-Content (Join-Path $current 'installation-checks.json') -Raw | ConvertFrom-Json
+          $sha = '5ee9a17418b0a0802d9566f406b265da52f7d185cdac1eec69fe1e757700a5ba'
+          if ($build.git_commit -cne $source -or $build.product_version -cne '0.1.122' -or $build.setup -cne 'GreenAtlas-0.1.122-Windows-x64-Setup-2.exe' -or $build.sha256 -cne $sha) { throw 'Candidate identity differs' }
+          if ((Get-FileHash (Join-Path $current $build.setup) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $sha) { throw 'Candidate EXE differs' }
+          if ($installation.passed -ne $true -or $installation.source_manifest_sha256 -cne $build.source_manifest_sha256 -or $installation.setup_sha256 -cne $build.backend_sha256) { throw 'Candidate installation evidence differs' }
+          # Explicit QA input merges the accepted wrapper identity and installed bundle SHA.
+          $build | Add-Member -NotePropertyName distribution_manifest_sha256 -NotePropertyValue $installation.distribution_manifest_sha256
+          $build | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'setup-qa-input.json') -Encoding utf8
+          [ordered]@{ candidate_source=$source; verification_source=$env:GITHUB_SHA; production_source_unchanged=$true; setup_sha256=$sha; previous_version='0.1.121'; candidate_rebuilt=$false } | ConvertTo-Json -Compress | ForEach-Object { Write-Host ('GA_UPGRADE121_SOURCE ' + $_) }
+      - name: Prepare pinned machine WebView2 before ordinary-user upgrade
+        run: |
+          . ./scripts/windows-env.ps1
+          $ErrorActionPreference = 'Stop'
+          $webviewInput = (Get-Content tools/autocad-bridge/windows-product-inputs.json -Raw | ConvertFrom-Json).webview_runtime
+          $installer = Join-Path $env:GITHUB_WORKSPACE '.runtime/autocad-bridge/ci-product/MicrosoftEdgeWebView2RuntimeInstallerX64.exe'
+          Invoke-WebRequest -Uri $webviewInput.url -OutFile $installer
+          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $webviewInput.sha256) { throw 'Pinned Microsoft prerequisite differs' }
+          $process = Start-Process -FilePath $installer -ArgumentList @('/silent','/install') -PassThru
+          if (-not $process.WaitForExit(600000)) { $process.Kill($true); throw 'Microsoft prerequisite timeout' }
+          if ($process.ExitCode -notin @(0,3010)) { throw ('Microsoft prerequisite exit=' + $process.ExitCode) }
+      - name: Upgrade prepared positive project under an ordinary user
+        run: |
+          . ./scripts/windows-env.ps1
+          $root = Join-Path $env:GITHUB_WORKSPACE '.runtime/autocad-bridge/ci-product'
+          & ./tools/autocad-bridge/ci-windows-product-install.ps1 -SetupPath (Join-Path $root 'deliverable/GreenAtlas-0.1.122-Windows-x64-Setup-2.exe') -SetupReceipt (Join-Path $root 'setup-qa-input.json') -BuildPython (Join-Path $env:GITHUB_WORKSPACE 'apps/api/.venv/Scripts/python.exe') -OutputDirectory '.runtime/autocad-bridge/ci-product/upgrade121-smoke' -HelperScript scripts/desktop/windows_upgrade121_smoke.py -TimeoutSeconds 1200
+      - name: Emit bounded synthetic upgrade receipt
+        if: always()
+        run: |
+          . ./scripts/windows-env.ps1
+          $path = Join-Path $env:GITHUB_WORKSPACE '.runtime/autocad-bridge/ci-product/upgrade121-smoke/user-checks/install-ci-receipt.json'
+          if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Missing121 upgrade receipt' }
+          if ((Get-Item -LiteralPath $path).Length -gt 32KB) { throw 'Oversized121 upgrade receipt' }
+          $r = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $r | Select-Object schema, passed, ordinary_user_token, synthetic_profile_only, autocad_executed, blender_executed, stage, setup_sha256, previous_setup_sha256, source_manifest_sha256, previous_version, current_version, different_version_update_tested, old_executable_created_project, old_executable_created_plantings, new_executable_reopened_project, update_preserved_database_bytes, uninstall_preserved_database_bytes, prepared_cad_project_migration_tested, real_prepared_cad_project_migration_tested, synthetic_prepared_project_upgrade_tested, synthetic_prepared_lifecycle | ConvertTo-Json -Compress -Depth 8 | ForEach-Object { Write-Host ('GA_UPGRADE121_RECEIPT ' + $_) }
+          if ($r.passed -ne $true -or $r.synthetic_prepared_project_upgrade_tested -ne $true -or $r.synthetic_prepared_lifecycle.Count -ne 3) { throw 'Positive121 upgrade not accepted' }

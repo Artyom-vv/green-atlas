@@ -1,4 +1,6 @@
-"""Versioned source inventory. Reference rows do not fabricate growth models."""
+"""Версионированный перечень источника ассортимента; справочная строка не создаёт модель
+роста растения.
+"""
 
 from functools import lru_cache
 from pathlib import Path

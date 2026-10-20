@@ -1,9 +1,16 @@
-"""Versioned distances, with normative rows separate from project assumptions."""
+"""Домен правил посадки: типизированные отступы, допущения и параметры поиска.
+
+Pydantic проверяет общий справочник; его содержимое и версия входят в основание
+расчёта. Сценарные допущения не подменяют нормативные расстояния.
+"""
 
 from hashlib import sha256
 from importlib.resources import files
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.shared.messages import message
 
 
 class StrictConfig(BaseModel):
@@ -27,7 +34,7 @@ class Setback(StrictConfig):
 
     def distance(self, kind: str) -> float | None:
         if kind not in {"tree", "shrub"}:
-            raise ValueError("Неизвестный тип посадки")
+            raise ValueError(message("config.placement.unknown_kind"))
         return self.tree_m if kind == "tree" else self.shrub_m
 
 
@@ -66,10 +73,24 @@ class CandidateSearchConfig(StrictConfig):
     minimum_grid_cell_m: float = Field(gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
-    def ordered_limits(self):
-        if self.minimum_probes > self.maximum_probes or self.minimum_batch_size > self.batch_size:
-            raise ValueError("Минимальный размер поиска превышает максимальный")
+    def ordered_limits(self) -> Self:
+        if (
+            self.minimum_probes > self.maximum_probes
+            or self.minimum_batch_size > self.batch_size
+        ):
+            raise ValueError(message("config.placement.search_limits"))
         return self
+
+
+class GeometrySearchConfig(StrictConfig):
+    """Точность и бюджет вычисления координат, не нормативные расстояния."""
+
+    basis: str
+    resolution_m: float = Field(gt=0, allow_inf_nan=False)
+    maximum_cells: int = Field(gt=0)
+    maximum_frontier: int = Field(gt=0)
+    maximum_trials: int = Field(gt=0)
+    batch_size: int = Field(gt=0)
 
 
 class Spacing(StrictConfig):
@@ -95,9 +116,16 @@ class Layout(StrictConfig):
     maximum_road_offset_m: float = Field(gt=0, allow_inf_nan=False)
 
     def maximum_spacing(self, radii_sum: float) -> float:
-        return max(rule.distance(radii_sum) for rule in (
-            self.tree_canopy, self.tree_balanced, self.tree_open, self.shrub, self.mixed,
-        ))
+        return max(
+            rule.distance(radii_sum)
+            for rule in (
+                self.tree_canopy,
+                self.tree_balanced,
+                self.tree_open,
+                self.shrub,
+                self.mixed,
+            )
+        )
 
 
 class PlacementConfig(StrictConfig):
@@ -109,13 +137,14 @@ class PlacementConfig(StrictConfig):
     layout: Layout
     hybrid_search: HybridSearchConfig
     candidate_search: CandidateSearchConfig
+    geometry_search: GeometrySearchConfig
 
     @model_validator(mode="after")
-    def require_sources(self):
+    def require_sources(self) -> Self:
         if any(row.source not in self.sources for row in self.setbacks.values()):
-            raise ValueError("У отступа отсутствует нормативный источник")
+            raise ValueError(message("config.placement.source_missing"))
         if len({row.id for row in self.setbacks.values()}) != len(self.setbacks):
-            raise ValueError("Повторный идентификатор правила")
+            raise ValueError(message("config.placement.duplicate_rule"))
         return self
 
 
@@ -124,6 +153,10 @@ PLACEMENT_CONFIG = PlacementConfig.model_validate_json(_content)
 PLACEMENT_RULES_REVISION = f"{PLACEMENT_CONFIG.revision}:{sha256(_content).hexdigest()}"
 MAX_SETBACK_M = max(
     PLACEMENT_CONFIG.working_geometry.unknown_network_setback_m,
-    *(value for rule in PLACEMENT_CONFIG.setbacks.values()
-      for value in (rule.tree_m, rule.shrub_m) if value is not None),
+    *(
+        value
+        for rule in PLACEMENT_CONFIG.setbacks.values()
+        for value in (rule.tree_m, rule.shrub_m)
+        if value is not None
+    ),
 )

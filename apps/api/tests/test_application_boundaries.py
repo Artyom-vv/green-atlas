@@ -1,12 +1,15 @@
 """Behavior at the new composition, import and pure projection boundaries."""
 
 import os
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from test_autocad_live_import import live_bytes
 from test_placement_allocation import application as allocation_application
 
 from app.composition import create_runtime
@@ -19,8 +22,9 @@ from app.contracts import (
 )
 from app.dxf_import.application import ImportApplication
 from app.planning.ports import PatternCandidate
-from app.projects.adapters import InMemoryProjectRepository
+from app.projects.adapters import SqliteProjectRepository
 from app.scene.domain import build_scene
+from app.shared.failures import DomainFailure, FailureReason
 from app.species.catalog import get_species
 
 
@@ -43,9 +47,7 @@ def test_isolated_runtimes_own_and_close_their_resources(tmp_path: Path) -> None
     second = create_runtime(tmp_path / "second.sqlite3")
     try:
         project = first.application.create_project("First runtime")
-        first.conversations.create(project.id, "Draft")
-        assert first.conversations is first.conversations
-        assert first.agent_runs is first.agent_runs
+        assert first.layer_recognition is first.layer_recognition
         with pytest.raises(KeyError):
             second.application.get(project.id)
         assert second.application.list_projects() == []
@@ -56,7 +58,30 @@ def test_isolated_runtimes_own_and_close_their_resources(tmp_path: Path) -> None
     # Windows refuses this when a runtime-owned SQLite handle remains open.
     Path(first.database_path).rename(tmp_path / "closed.sqlite3")
     with pytest.raises(RuntimeError, match="closed"):
-        _ = first.agent_runs
+        _ = first.layer_recognition
+
+
+def test_runtime_retains_existing_chat_records_without_creating_chat_tables(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "existing.sqlite3"
+    with closing(sqlite3.connect(database)) as connection, connection:
+        connection.execute("CREATE TABLE agent_runs(id TEXT PRIMARY KEY, state TEXT)")
+        connection.execute("INSERT INTO agent_runs VALUES('retained', 'user history')")
+    runtime = create_runtime(database)
+    runtime.close()
+    with closing(sqlite3.connect(database)) as connection, connection:
+        assert connection.execute("SELECT * FROM agent_runs").fetchall() == [
+            ("retained", "user history")
+        ]
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert "agent_conversations" not in tables
+        assert "agent_run_events" not in tables
 
 
 class ImportReader:
@@ -80,11 +105,11 @@ class HistoryReset:
         self.events.append("history")
 
 
-def test_import_uses_injected_clock_and_invalidates_only_after_commit(
+def test_native_import_uses_injected_clock_and_invalidates_only_after_commit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
-    repository = InMemoryProjectRepository()
+    repository = SqliteProjectRepository(":memory:")
     project = repository.create(Project(name="Source"))
     instant = datetime(2026, 9, 14, tzinfo=UTC)
     service = ImportApplication(
@@ -101,14 +126,26 @@ def test_import_uses_injected_clock_and_invalidates_only_after_commit(
 
     monkeypatch.setattr(repository, "save", reject)
     with pytest.raises(OSError, match="Cannot commit"):
-        service.import_dxf(project.id, "source.dxf", b"DXF")
+        service.import_autocad_live(
+            project.id,
+            "document.json",
+            live_bytes(),
+            autocad_version="2027.0.1",
+            target="macos-arm64",
+        )
     assert events == []
     assert repository.get(project.id).source_file is None
     monkeypatch.setattr(repository, "save", original_save)
-    saved = service.import_dxf(project.id, "source.dxf", b"DXF")
+    saved = service.import_autocad_live(
+        project.id,
+        "document.json",
+        live_bytes(),
+        autocad_version="2027.0.1",
+        target="macos-arm64",
+    )
     assert saved.source_file is not None
     assert saved.source_file.imported_at == instant.isoformat()
-    assert repository.get_source(project.id) == b"DXF"
+    assert repository.get_source(project.id) == live_bytes()
     assert events == ["spatial", "history"]
 
 
@@ -145,6 +182,7 @@ def test_generation_keeps_its_original_snapshot_when_project_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     application, project = allocation_application()
+    assert project.plan is not None
 
     def generate(*args: object, **kwargs: object) -> list[PatternCandidate]:
         newer = application.get(project.id)
@@ -164,7 +202,7 @@ def test_generation_keeps_its_original_snapshot_when_project_changes(
     )
     assert preview.change_set is not None
     assert preview.change_set.can_apply
-    with pytest.raises(ValueError, match="изменились"):
+    with pytest.raises(DomainFailure) as failure:
         application.apply_change_set(
             project.id,
             PlanChangeSetApplyRequest(
@@ -173,4 +211,8 @@ def test_generation_keeps_its_original_snapshot_when_project_changes(
                 base_plan_version=project.plan.version,
             ),
         )
-    assert application.get(project.id).plan.objects == []
+    assert failure.value.reason is FailureReason.CHANGE_BASIS_CHANGED
+    assert failure.value.params == {}
+    retained = application.get(project.id)
+    assert retained.plan is not None
+    assert retained.plan.objects == []

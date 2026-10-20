@@ -1,20 +1,49 @@
+import re
+from collections.abc import Callable, Iterator
 from io import StringIO
+from typing import Any
 
 import ezdxf
 import pytest
-from ezdxf.entities import Insert
-from shapely.geometry import shape
+from ezdxf.entities import DXFGraphic, Insert
+from legacy_geometry_fixture import calculate_confirmed_fixture
+from shapely.geometry import MultiPolygon, shape
 
-import app.dxf_import.adapters as dxf_adapters
+import app.dxf_import.legacy.entities.block_diagnostics as block_diagnostics
+import app.dxf_import.legacy.reader as dxf_adapters
 from app.contracts import LayerKind, Project
-from app.dxf_import.adapters import EzdxfReader
-from app.geometry.adapters import ShapelyGeometryEngine
+from app.dxf_import.capacity import SourceCapacityExceeded, SourceGeometryCapacity
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.shared.error_messages import public_failure_message
+from app.shared.failures import DomainFailure, FailureReason
 
 
 def source_bytes(document: ezdxf.document.Drawing) -> bytes:
     stream = StringIO()
     document.write(stream)
     return stream.getvalue().encode(document.output_encoding)
+
+
+def test_capacity_refusal_stops_before_projecting_later_entities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = ezdxf.new("R2013")
+    document.units = ezdxf.units.M
+    entities = [document.modelspace().add_circle((index, 0), 1) for index in range(3)]
+    projected: list[str] = []
+    original = dxf_adapters._entity_geometry
+
+    def track_projection(entity: DXFGraphic, factor: float) -> dict[str, Any] | None:
+        projected.append(entity.dxf.handle)
+        return original(entity, factor)
+
+    monkeypatch.setattr(dxf_adapters, "_entity_geometry", track_projection)
+    reader = EzdxfReader(capacity=SourceGeometryCapacity(max_features=1))
+
+    with pytest.raises(SourceCapacityExceeded, match="2 > 1"):
+        reader.read("capacity.dxf", source_bytes(document))
+
+    assert projected == [entity.dxf.handle for entity in entities[:2]]
 
 
 def test_missing_layer_keeps_source_geometry_and_explicit_style() -> None:
@@ -110,7 +139,7 @@ def test_mpolygon_keeps_holes_islands_ocs_offset_and_units() -> None:
     feature = imported.geometry.feature_collection["features"][0]
     geometry = shape(feature["geometry"])
 
-    assert geometry.geom_type == "MultiPolygon"
+    assert isinstance(geometry, MultiPolygon)
     assert geometry.area == pytest.approx(325)
     assert geometry.bounds == pytest.approx((-40, 7, -5, 27))
     assert sum(len(part.interiors) for part in geometry.geoms) == 1
@@ -120,7 +149,7 @@ def test_mpolygon_keeps_holes_islands_ocs_offset_and_units() -> None:
     project = Project(
         name="MPOLYGON", layers=imported.layers, source_geometry=imported.geometry
     )
-    assert ShapelyGeometryEngine().calculate(project).site_area_m2 == pytest.approx(325)
+    assert calculate_confirmed_fixture(project).site_area_m2 == pytest.approx(325)
 
 
 def test_mpolygon_with_invalid_second_ring_cannot_become_a_partial_safe_site() -> None:
@@ -145,8 +174,11 @@ def test_mpolygon_with_invalid_second_ring_cannot_become_a_partial_safe_site() -
     project = Project(
         name="Invalid area", layers=imported.layers, source_geometry=imported.geometry
     )
-    with pytest.raises(ValueError, match="часть объектов"):
-        ShapelyGeometryEngine().calculate(project)
+    with pytest.raises(DomainFailure) as failure:
+        calculate_confirmed_fixture(project)
+    assert failure.value.reason is FailureReason.GEOMETRY_INCOMPLETE_LAYERS
+    assert failure.value.params == {"layer_names": ["SITE_BORDER"]}
+    assert re.search("часть объектов", public_failure_message(failure.value))
 
 
 def test_insert_reuse_keeps_distinct_instances_and_avoids_second_expansion(
@@ -168,10 +200,14 @@ def test_insert_reuse_keeps_distinct_instances_and_avoids_second_expansion(
     original = Insert.virtual_entities
     expansions = 0
 
-    def counted(self: Insert, *args: object, **kwargs: object):
+    def counted(
+        self: Insert,
+        *,
+        skipped_entity_callback: Callable[[DXFGraphic, str], None] | None = None,
+    ) -> Iterator[DXFGraphic]:
         nonlocal expansions
         expansions += 1
-        return original(self, *args, **kwargs)
+        return original(self, skipped_entity_callback=skipped_entity_callback)
 
     monkeypatch.setattr(Insert, "virtual_entities", counted)
     imported = EzdxfReader().read("two-instances.dxf", source_bytes(document))
@@ -199,7 +235,7 @@ def test_failed_block_expansion_keeps_anchor_and_incomplete_layer(
     document.modelspace().add_blockref(
         "UNREADABLE", (20, 30), dxfattribs={"layer": "BUILDING"}
     )
-    monkeypatch.setattr(dxf_adapters, "_insert_instance_components", lambda *_: [])
+    monkeypatch.setattr(block_diagnostics, "_insert_instance_components", lambda *_: [])
 
     imported = EzdxfReader().read("failed-transform.dxf", source_bytes(document))
 
@@ -212,8 +248,11 @@ def test_failed_block_expansion_keeps_anchor_and_incomplete_layer(
         layers=imported.layers,
         source_geometry=imported.geometry,
     )
-    with pytest.raises(ValueError, match="часть объектов"):
-        ShapelyGeometryEngine().calculate(project)
+    with pytest.raises(DomainFailure) as failure:
+        calculate_confirmed_fixture(project)
+    assert failure.value.reason is FailureReason.GEOMETRY_INCOMPLETE_LAYERS
+    assert failure.value.params == {"layer_names": ["BUILDING"]}
+    assert re.search("часть объектов", public_failure_message(failure.value))
 
 
 def test_mpolygon_bulge_and_array_instances_preserve_curved_area() -> None:

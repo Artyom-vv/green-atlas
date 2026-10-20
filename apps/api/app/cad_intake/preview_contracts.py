@@ -1,4 +1,6 @@
-"""Compact public inputs/results; CAD paths and entity links stay server-side."""
+"""Компактные запросы и результаты прежнего CAD-предпросмотра; файловые пути и связи
+объектов остаются на сервере.
+"""
 
 from typing import Literal
 
@@ -48,7 +50,7 @@ class CadPreviewResult(BaseModel):
     output_bytes: int = Field(ge=1)
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_units: int
-    # Mask evidence is not a calculated Project site/planning/allowed area.
+    # Свидетельство маски не является расчётной территорией или областью посадки проекта.
     boundary_mask_area_m2: float = Field(gt=0, allow_inf_nan=False)
     selected_entities: int = Field(ge=0)
     unknown_bounds: int = Field(ge=0)

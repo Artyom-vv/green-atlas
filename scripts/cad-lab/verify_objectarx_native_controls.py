@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.cad_bridge import CadSnapshotAdmissionError, compile_region_probe
 from app.cad_bridge.provider import apply_cad_snapshot
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 
 
 def digest(path: Path) -> str:

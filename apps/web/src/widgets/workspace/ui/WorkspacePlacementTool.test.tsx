@@ -19,7 +19,9 @@ it('opens the manual form directly and keeps it mounted while drawing and review
   } as unknown as WorkspacePlacementToolProps;
   const { rerender } = render(<WorkspacePlacementTool {...props} />);
   const draft = screen.getByRole('textbox', { name: 'Черновик размещения' });
-  expect(screen.queryByRole('button', { name: 'Подобрать автоматически' })).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: 'Подобрать автоматически' }),
+  ).toBeNull();
   fireEvent.change(draft, { target: { value: '32' } });
 
   rerender(

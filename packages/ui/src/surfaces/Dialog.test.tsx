@@ -1,8 +1,50 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Button, Dialog, FormActions } from '../index';
+import {
+  Button,
+  ControlProvider,
+  Dialog,
+  FormActions,
+  TextInput,
+} from '../index';
 afterEach(cleanup);
+it('owns body density independently of the workspace and keeps header actions compact', () => {
+  const { rerender } = render(
+    <ControlProvider size="compact">
+      <Button>Вне окна</Button>
+      <Dialog open title="Параметры" onClose={vi.fn()}>
+        <TextInput aria-label="Параметр" />
+      </Dialog>
+    </ControlProvider>,
+  );
+  expect(
+    screen.getByRole('button', { name: 'Вне окна', hidden: true }),
+  ).toHaveAttribute('data-size', 'compact');
+  expect(screen.getByRole('button', { name: 'Закрыть' })).toHaveAttribute(
+    'data-size',
+    'compact',
+  );
+  expect(screen.getByRole('textbox', { name: 'Параметр' })).toHaveAttribute(
+    'data-size',
+    'default',
+  );
+  rerender(
+    <ControlProvider size="large">
+      <Dialog open controlSize="compact" title="Параметры" onClose={vi.fn()}>
+        <TextInput aria-label="Параметр" />
+      </Dialog>
+    </ControlProvider>,
+  );
+  expect(screen.getByRole('button', { name: 'Закрыть' })).toHaveAttribute(
+    'data-size',
+    'compact',
+  );
+  expect(screen.getByRole('textbox', { name: 'Параметр' })).toHaveAttribute(
+    'data-size',
+    'compact',
+  );
+});
 it('owns one header and a footer outside the scrolling body', () => {
   render(
     <Dialog
@@ -117,4 +159,23 @@ it('Escape closes only the topmost dialog', () => {
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(inner).toHaveBeenCalledOnce();
   expect(outer).not.toHaveBeenCalled();
+});
+
+it('makes closing unavailable during a protected operation and restores it afterwards', () => {
+  const close = vi.fn();
+  const { rerender } = render(
+    <Dialog open closeDisabled title="Удаление" onClose={close}>
+      {null}
+    </Dialog>,
+  );
+  expect(screen.getByRole('button', { name: 'Закрыть' })).toBeDisabled();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(close).not.toHaveBeenCalled();
+  rerender(
+    <Dialog open title="Удаление" onClose={close}>
+      {null}
+    </Dialog>,
+  );
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(close).toHaveBeenCalledOnce();
 });

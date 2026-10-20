@@ -19,10 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 BASELINE = Path(__file__).with_name("legacy-cad-edges.json")
 LEGACY_PREFIXES = (
     "ezdxf",
-    "app.dxf_import.adapters",
-    "app.cad_import.conversion",
+    "app.dxf_import.legacy.reader",
+    "app.cad_import.legacy.conversion",
     "app.cad_import.aoi",
-    "app.cad_import.dxf_inspection",
+    "app.cad_import.legacy.dxf_inspection",
 )
 PROTECTED = ("app.cad_bridge", "app.geometry", "app.planning")
 
@@ -102,14 +102,17 @@ def inventory(root: Path) -> list[Edge]:
         module = ".".join(parts[:-1] if package else parts)
         result.extend(
             python_edges(
-                path.read_text(), module, path.relative_to(root).as_posix(), package
+                path.read_text(encoding="utf-8"),
+                module,
+                path.relative_to(root).as_posix(),
+                package,
             )
         )
     native = root / "tools/autocad-bridge/native"
     for path in sorted(native.iterdir()):
         if path.suffix not in {".cpp", ".h", ".mm"} or path.name.startswith("test_"):
             continue
-        for line, text in enumerate(path.read_text().splitlines(), 1):
+        for line, text in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             found = re.match(r'\s*#include\s*"([^"]+)"', text)
             if found and (native / found[1]).is_file():
                 result.append(
@@ -151,7 +154,7 @@ def violations(edges: list[Edge], allowed: set[str]) -> list[str]:
 
 
 def load_baseline(path: Path = BASELINE) -> set[str]:
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     if not data.get("reason"):
         raise ValueError("Baseline must explain existing debt")
     return set(data["edges"])

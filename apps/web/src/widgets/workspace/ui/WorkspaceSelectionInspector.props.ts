@@ -19,6 +19,7 @@ export interface WorkspaceSelectionInspectorProps extends Pick<
   | 'setDeleteSelectionOpen'
   | 'selectedObjects'
   | 'issues'
+  | 'editor'
 > {}
 export const workspaceSelectionInspectorPropsFor = (
   model: WorkspaceSelectionInspectorProps,
@@ -41,4 +42,5 @@ export const workspaceSelectionInspectorPropsFor = (
   setDeleteSelectionOpen: model.setDeleteSelectionOpen,
   selectedObjects: model.selectedObjects,
   issues: model.issues,
+  editor: model.editor,
 });

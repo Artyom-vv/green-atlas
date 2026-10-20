@@ -1,5 +1,8 @@
-"""Shared journal transitions; work itself remains in scenario applications."""
+"""Общие переходы журнала операций и отмены; предметная работа остаётся в владельцах
+сценариев.
+"""
 
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
@@ -15,12 +18,16 @@ from app.operations.contracts import (
     OperationStatus,
     ProjectOperation,
 )
+from app.operations.policy import ACTIVE_OPERATION_STATUSES
 from app.operations.ports import OperationRepository
 from app.operations.progress import OperationCancelled, WorkProgress
 from app.projects.concurrency import assert_project_version
 from app.projects.ports import ProjectSnapshotRepository
+from app.shared.error_messages import public_failure_message
+from app.shared.failures import FailureReason, ResourceNotFound
+from app.shared.messages import message
 
-ACTIVE = {OperationStatus.QUEUED, OperationStatus.RUNNING, OperationStatus.CANCELLING}
+_LOGGER = logging.getLogger(__name__)
 
 
 class _Unset(Enum):
@@ -55,7 +62,7 @@ class OperationLifecycle:
             project = self.repository.get(project_id, lightweight=True)
             assert_project_version(project_id, project.state_version)
             latest = self.operations.get_latest(project_id, kind)
-            if latest is not None and latest.status in ACTIVE:
+            if latest is not None and latest.status in ACTIVE_OPERATION_STATUSES:
                 return latest
             retry = (
                 latest.id
@@ -86,7 +93,7 @@ class OperationLifecycle:
     def get(self, project_id: str, operation_id: str) -> ProjectOperation:
         operation = self.operations.get(operation_id)
         if operation.project_id != project_id:
-            raise KeyError("Операция не найдена")
+            raise ResourceNotFound(FailureReason.OPERATION_MISSING)
         return operation
 
     def latest(self, project_id: str, kind: OperationKind) -> ProjectOperation | None:
@@ -115,7 +122,7 @@ class OperationLifecycle:
             OperationStatus.QUEUED,
             OperationStatus.RUNNING,
         }:
-            raise OperationCancelled("Операция больше не выполняется")
+            raise OperationCancelled(message("operation.not_running"))
 
     def update(
         self,
@@ -135,15 +142,15 @@ class OperationLifecycle:
         with self.lock:
             while True:
                 current = self.operations.get(operation_id)
-                if current.status not in ACTIVE:
+                if current.status not in ACTIVE_OPERATION_STATUSES:
                     if status == OperationStatus.RUNNING:
-                        raise OperationCancelled("Операция больше не выполняется")
+                        raise OperationCancelled(message("operation.not_running"))
                     return current
                 if (
                     current.status == OperationStatus.CANCELLING
                     and status != OperationStatus.CANCELLED
                 ):
-                    raise OperationCancelled("Операция остановлена пользователем")
+                    raise OperationCancelled(message("operation.cancelled"))
                 operation = current.model_copy(deep=True)
                 operation.status = status
                 operation.progress = (
@@ -168,7 +175,7 @@ class OperationLifecycle:
                 operation.updated_at = self.now().isoformat()
                 if status == OperationStatus.RUNNING and operation.started_at is None:
                     operation.started_at = operation.updated_at
-                if status not in ACTIVE:
+                if status not in ACTIVE_OPERATION_STATUSES:
                     operation.completed_at = operation.updated_at
                 saved = self.operations.compare_and_save(current, operation)
                 if saved is not None:
@@ -202,7 +209,7 @@ class OperationLifecycle:
             operation_id,
             status=OperationStatus.CANCELLED,
             progress=current.progress,
-            stage="Операция остановлена пользователем",
+            stage=message("operation.cancelled"),
             progress_mode=current.progress_mode,
         )
 
@@ -211,7 +218,7 @@ class OperationLifecycle:
             while True:
                 current = self.get(project_id, operation_id)
                 if current.status == OperationStatus.QUEUED:
-                    # CAS below ensures a concurrent claim receives a running cancellation.
+                    # Условная запись ниже гарантирует отмену и при одновременном захвате операции.
                     next_status = OperationStatus.CANCELLED
                 elif current.status == OperationStatus.RUNNING:
                     next_status = OperationStatus.CANCELLING
@@ -221,16 +228,22 @@ class OperationLifecycle:
                 operation.status = next_status
                 operation.cancel_requested_at = self.now().isoformat()
                 operation.updated_at = operation.cancel_requested_at
-                operation.stage = "Останавливаем операцию после текущего шага"
+                operation.stage = message("operation.cancelling")
                 if next_status == OperationStatus.CANCELLED:
                     operation.completed_at = operation.updated_at
-                    operation.stage = "Операция остановлена пользователем"
+                    operation.stage = message("operation.cancelled")
                 saved = self.operations.compare_and_save(current, operation)
                 if saved is not None:
                     return saved
 
     def fail(self, operation_id: str, stage: str, code: str, error: Exception) -> None:
         current = self.operations.get(operation_id)
+        _LOGGER.error(
+            "Operation %s failed (%s)",
+            operation_id,
+            code,
+            exc_info=(type(error), error, error.__traceback__),
+        )
         try:
             self.update(
                 operation_id,
@@ -238,7 +251,9 @@ class OperationLifecycle:
                 progress=current.progress,
                 stage=stage,
                 progress_mode=current.progress_mode,
-                error=OperationError(code=code, message=str(error)),
+                error=OperationError(
+                    code=code, message=public_failure_message(error, "operation_failed")
+                ),
             )
         except OperationCancelled:
             self.complete_cancellation(operation_id)

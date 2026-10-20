@@ -3,7 +3,7 @@ import {
   type BrushBindingOptions,
 } from './brushToolBindings';
 import type { FC } from 'react';
-import { BrushToolPanel } from '@/features/placement/ui/BrushToolPanel';
+import { BrushToolPanel } from '@/features/placement/brush/ui/BrushToolPanel';
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
 import { brushToolBindings } from './brushToolBindings';
 export interface WorkspaceBrushToolProps

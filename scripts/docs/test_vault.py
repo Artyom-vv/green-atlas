@@ -38,6 +38,30 @@ class VaultTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "session-specific"):
             check(self.vault)
 
+    def test_public_source_with_uuid_is_optional(self):
+        self.page("Описание содержится здесь. [Источник](https://example.com/12345678-1234-1234-1234-123456789abc)")
+        self.assertEqual(check(self.vault)["internal_links"], 0)
+
+    def test_remote_embedded_image_rejected(self):
+        self.page("![Изображение](https://example.com/image.svg)")
+        with self.assertRaisesRegex(ValueError, "external dependency"):
+            check(self.vault)
+
+    def test_private_link_and_plain_session_id_still_rejected(self):
+        for text in (
+            "[Локальный проект](http://localhost:5177/project)",
+            "[Локальный проект](http://10.0.0.1/project)",
+            "[Локальный проект](http://localhost.:5177/project)",
+            "[Локальный проект](http://127.1/project)",
+            "[Локальный путь](https://example.com/%55sers/artem/project)",
+            "[Локальный адрес](https://example.com/?target=http://127.0.0.1:5177/project)",
+            "Идентификатор проекта: 12345678-1234-1234-1234-123456789abc",
+        ):
+            with self.subTest(text=text):
+                self.page(text)
+                with self.assertRaises(ValueError):
+                    check(self.vault)
+
     def test_svg_external_image_rejected(self):
         self.page("![diagram](diagram.svg)")
         (self.vault / "diagram.svg").write_text(

@@ -4,6 +4,7 @@ import {
   MAP_DESIGN_TEXT_COLOR,
 } from '../../../model/mapDesignPalette';
 import type { CadAppearanceClass, CadLayerRoles } from './cadAppearanceTypes';
+import { mapDesignFillOrder } from '../../../model/mapDesignDrawOrder';
 
 const CAD_CONTEXT_FILL_OPACITY = 0.12;
 const CAD_RENDER_ORDER = { fill: -2, line: -1, text: 0 } as const;
@@ -31,6 +32,8 @@ export function cadDesignAppearance(
           : 1
         : CAD_CONTEXT_FILL_OPACITY
       : 1,
-    renderOrder: CAD_RENDER_ORDER[appearanceClass],
+    renderOrder: isFill
+      ? mapDesignFillOrder(roles[layer])
+      : CAD_RENDER_ORDER[appearanceClass],
   };
 }

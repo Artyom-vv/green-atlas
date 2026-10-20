@@ -1,1 +1,3 @@
-"""CAD package intake, conversion evidence and reproducible command-line entry."""
+"""Совместимость прежних CAD-комплектов: конвертация копий, сведения о XREF и служебный
+CLI.
+"""

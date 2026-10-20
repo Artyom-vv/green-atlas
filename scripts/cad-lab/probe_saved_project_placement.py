@@ -17,12 +17,12 @@ from threading import RLock
 from unittest.mock import Mock
 from uuid import uuid4
 
-from app.geometry.adapters import ShapelyGeometryEngine
-from app.planning.changes import ChangeSetApplication
-from app.planning.evaluation import PlanEvaluation
-from app.planning.pattern_application import PatternApplication
-from app.planning.pattern_contracts import FillPatternRequest
-from app.planning.patterns import ShapelyCandidateGenerator
+from app.geometry.checking.adapters import ShapelyGeometryEngine
+from app.planning.changes.commands import ChangeSetApplication
+from app.planning.changes.evaluation import PlanEvaluation
+from app.planning.patterns.application import PatternApplication
+from app.planning.patterns.contracts import FillPatternRequest
+from app.planning.patterns.generators import ShapelyCandidateGenerator
 from app.projects.contracts import Project
 from app.validation.adapters import RuleBasedPlanValidator
 from app.validation.application import PlanValidation

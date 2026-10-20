@@ -1,3 +1,7 @@
+"""Снимок геометрии и система координат проекта, включая отдельное представление
+вертикальных DXF-примитивов.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -29,9 +33,9 @@ class CoordinateReference(BaseModel):
 class GeometrySnapshot(BaseModel):
     feature_collection: dict[str, Any]
     calculation_scope: Literal["complete_source", "available_data"] | None = None
-    # Metric XYZ evidence is deliberately stored beside, rather than inside,
-    # the 2D GeoJSON projection. GeoJSON consumers may continue to reason in
-    # XY while the scene can reproduce genuine CAD elevations and surfaces.
+    # Метрические XYZ-свидетельства хранятся рядом с 2D GeoJSON, а не внутри него.
+    # Карта продолжает работать в XY; сцена воспроизводит реальные CAD-высоты
+    # и поверхности по отдельному основанию.
     vertical_primitives: list[DxfVerticalPrimitive] = Field(default_factory=list)
     site_area_m2: float | None = Field(default=None, ge=0)
     planning_area_m2: float | None = Field(default=None, ge=0)

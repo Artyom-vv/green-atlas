@@ -9,12 +9,18 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
+#ifdef _WIN32
+#include "local_platform.h"
+#include "filesystem_utf8.h"
+#else
 #include <dirent.h>
-#include <fstream>
-#include <iomanip>
-#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
+#include <fstream>
+#include <filesystem>
+#include <iomanip>
+#include <sstream>
 
 namespace ga::bridge {
 
@@ -33,7 +39,11 @@ bool mcpCancellationRequested() {
     gNextMcpControlCheck = now + std::chrono::milliseconds(200);
     const std::string cancellationPath =
         mcpDirectory() + "/cancel-" + gActiveMcpRequestId + ".txt";
+#ifdef _WIN32
+    if (ga::platform::fileExists(cancellationPath)) {
+#else
     if (access(cancellationPath.c_str(), F_OK) == 0) {
+#endif
         gMcpCancellationObserved = true;
     }
     return gMcpCancellationObserved;
@@ -42,17 +52,25 @@ bool mcpCancellationRequested() {
 }  // namespace
 
 std::string mcpDirectory() {
+#ifdef _WIN32
+    return ga::platform::mcpQueueDirectory(kMcpQueueVersion);
+#else
     return "/tmp/green-atlas-autocad-mcp-" +
         std::to_string(static_cast<unsigned long>(getuid())) + "-" +
         kMcpQueueVersion;
+#endif
 }
 
 bool ensureMcpDirectory() {
+#ifdef _WIN32
+    return ga::platform::ensurePrivateDirectory(mcpDirectory());
+#else
     const std::string directory = mcpDirectory();
     if (mkdir(directory.c_str(), 0700) != 0 && errno != EEXIST) {
         return false;
     }
     return chmod(directory.c_str(), 0700) == 0;
+#endif
 }
 
 void publishMcpProgress(const std::string& phase,
@@ -79,7 +97,13 @@ void publishMcpStatus(const bool ready) {
         std::string("{\"schema\":\"green-atlas.autocad-mcp-status/1\",") +
         "\"ready\":" + (ready ? "true" : "false") +
         ",\"plugin_version\":\"" + kPluginVersion +
-        "\",\"pid\":" + std::to_string(static_cast<long>(getpid())) + "}\n";
+        "\",\"pid\":" + std::to_string(
+#ifdef _WIN32
+            ga::platform::processId()
+#else
+            static_cast<long>(getpid())
+#endif
+        ) + "}\n";
     writeAtomicText(mcpDirectory() + "/status.json", payload);
 }
 
@@ -108,6 +132,14 @@ void processMcpRequestsOnIdle() {
     gaDelivery::installMenu(gaQueueOpenInService); // Main menu may not exist at module startup.
     if (!ensureMcpDirectory()) return;
 
+#ifdef _WIN32
+    std::string requestName;
+    try {
+        for(const auto& candidate : ga::platform::directoryNames(mcpDirectory()))
+            if(isMcpRequestName(candidate) && (requestName.empty() || candidate<requestName))
+                requestName=candidate;
+    } catch(...) { return; }
+#else
     DIR* directory = opendir(mcpDirectory().c_str());
     if (directory == nullptr) return;
     std::string requestName;
@@ -119,13 +151,18 @@ void processMcpRequestsOnIdle() {
         }
     }
     closedir(directory);
+#endif
     if (requestName.empty()) return;
 
     const std::string requestId = requestName.substr(8, 32);
     const std::string requestPath = mcpDirectory() + "/" + requestName;
     const std::string processingPath =
         mcpDirectory() + "/processing-" + requestId + ".txt";
+#ifdef _WIN32
+    if(!ga::platform::renameFile(requestPath,processingPath)) return;
+#else
     if (std::rename(requestPath.c_str(), processingPath.c_str()) != 0) return;
+#endif
 
     gMcpRequestInProgress = true;
     gActiveMcpRequestId = requestId;
@@ -137,18 +174,35 @@ void processMcpRequestsOnIdle() {
         publishMcpProgress
     });
     publishMcpProgress("accepted", 0);
+#ifdef _WIN32
+    std::string boundedRequest;
+    try { boundedRequest=ga::platform::readBoundedFile(processingPath,16384); }
+    catch(...) {
+        std::error_code cleanup;std::filesystem::remove(ga::bridge::nativePath(processingPath),cleanup);
+        gActiveMcpRequestId.clear();gMcpRequestInProgress=false;return;
+    }
+    std::istringstream request(boundedRequest);
+#else
     std::ifstream request(processingPath, std::ios::binary);
+#endif
     std::ostringstream requestBuffer;
     requestBuffer << request.rdbuf();
     const bool requestReadable = request.good() || request.eof();
+#ifndef _WIN32
     request.close();
+#endif
     std::string sourcePath = requestBuffer.str();
     if (!sourcePath.empty() && sourcePath.back() == '\n') sourcePath.pop_back();
     if (!sourcePath.empty() && sourcePath.back() == '\r') sourcePath.pop_back();
 
     ExportResult result;
     bool succeeded = false;
-    if (!requestReadable || sourcePath.empty() || sourcePath.front() != '/' ||
+#ifdef _WIN32
+    const bool absolute=ga::platform::directPath(sourcePath);
+#else
+    const bool absolute=!sourcePath.empty() && sourcePath.front()=='/';
+#endif
+    if (!requestReadable || sourcePath.empty() || !absolute || sourcePath.find('\0')!=std::string::npos ||
         sourcePath.find('\n') != std::string::npos ||
         sourcePath.find('\r') != std::string::npos) {
         result.error = "invalid MCP request payload";
@@ -172,9 +226,16 @@ void processMcpRequestsOnIdle() {
     writeAtomicText(
         mcpDirectory() + "/response-" + requestId + ".json",
         response.str());
+#ifdef _WIN32
+    std::error_code cleanup;
+    std::filesystem::remove(ga::bridge::nativePath(processingPath),cleanup);
+    std::filesystem::remove(ga::bridge::nativePath(mcpDirectory()+"/cancel-"+requestId+".txt"),cleanup);
+    std::filesystem::remove(ga::bridge::nativePath(mcpDirectory()+"/progress-"+requestId+".json"),cleanup);
+#else
     std::remove(processingPath.c_str());
     std::remove((mcpDirectory() + "/cancel-" + requestId + ".txt").c_str());
     std::remove((mcpDirectory() + "/progress-" + requestId + ".json").c_str());
+#endif
     publishMcpStatus(true);
     gActiveMcpRequestId.clear();
     gMcpCancellationObserved = false;

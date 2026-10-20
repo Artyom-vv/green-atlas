@@ -44,25 +44,34 @@ export function NativeAreaReview({
   return (
     <>
       <Disclosure
-        variant="panel"
+        variant="section"
         title={
           automatic
             ? 'Ручная корректировка замыканий'
             : `Замыкание контуров (${pending} на проверке)`
         }
       >
-        <ul className="m-0 space-y-2 p-0">
+        <ul className="m-0 p-0">
           {proposals.map((proposal) => (
             <li
               key={proposal.id}
-              className="flex flex-wrap items-center gap-3 rounded border border-neutral-200 p-3"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-neutral-200 py-3 last:border-b-0 max-[719px]:grid-cols-1"
             >
               <div className="min-w-0 flex-1 text-sm">
                 <div className="font-medium wrap-anywhere">
                   {proposal.layer}
                 </div>
-                <div>Площадь {formatArea(proposal.area_m2)}</div>
-                <div>Разрыв {formatGap(proposal.closure_gap_m)}</div>
+                <div className="flex flex-wrap gap-x-4 text-xs leading-4 text-neutral-500">
+                  <span className="font-mono tabular-nums">
+                    {formatArea(proposal.area_m2)}
+                  </span>
+                  <span>
+                    Разрыв{' '}
+                    <span className="font-mono tabular-nums">
+                      {formatGap(proposal.closure_gap_m)}
+                    </span>
+                  </span>
+                </div>
                 {proposal.decision !== 'pending' && (
                   <div
                     className={
@@ -79,6 +88,7 @@ export function NativeAreaReview({
               </div>
               <Button
                 variant="secondary"
+                controlSize="default"
                 onClick={() => setSelectedId(proposal.id)}
               >
                 Показать контур

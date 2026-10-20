@@ -1,3 +1,7 @@
+#include "filesystem_utf8.h"
+#ifdef _WIN32
+#include "local_platform.h"
+#endif
 #include "session_capture.h"
 #include "session_capture_internal.h"
 #include "bridge_config.h"
@@ -7,6 +11,7 @@
 #include "rxevent.h"
 #include "aced.h"
 #include "adslib.h"
+#include "operation_control.h"
 #include <set>
 #include <sstream>
 
@@ -94,7 +99,7 @@ std::vector<Link> links(AcDbDatabase& source,
             AcString resolved;
             if (acdbHostApplicationServices()->findFile(resolved, path.kwszPtr(), &source,
                     AcDbHostApplicationServices::kXRefDrawing) == Acad::eOk) {
-                const auto found = loaded->find(fs::weakly_canonical(resolved.utf8Str()).string());
+                const auto found = loaded->find(ga::bridge::utf8Path(fs::weakly_canonical(ga::bridge::nativePath(resolved.utf8Str()))));
                 if (found != loaded->end()) { target = found->second; status = int(AcDb::kXrfResolved); }
             }
         }
@@ -168,14 +173,19 @@ void localize(Unit& unit, const std::map<AcDbDatabase*, std::string>& files,
 
 void capturePackage(AcDbDatabase& source, const std::string& destination,
                     const std::string& displaySha256) {
-    const fs::path root(destination);
+    const fs::path root=ga::bridge::nativePath(destination);
     if (!root.is_absolute() || fs::exists(root) || !fs::is_directory(root.parent_path()))
         throw std::runtime_error("fresh private capture directory required");
+#ifdef _WIN32
+    if(!ga::platform::ensurePrivateDirectory(destination))
+        throw std::runtime_error("Не удалось создать приватный CAD-архив");
+#else
     fs::create_directory(root);
     fs::permissions(root, fs::perms::owner_all, fs::perm_options::replace);
+#endif
     const int beforeFlags = dbmod();
     const auto sourceName = filename(source);
-    const auto instances = captureInstances(source);
+    const auto instances = captureInstances(source, true);
     AcDbXrefGraph graph;
     checked(acdbGetHostDwgXrefGraph(&source, graph, true), "capture loaded XREF graph");
     std::vector<Unit> units;
@@ -193,30 +203,43 @@ void capturePackage(AcDbDatabase& source, const std::string& destination,
     std::map<std::string, std::string> diskHashes;
     std::map<std::string, AcDbDatabase*> loaded;
     for (const auto& unit : units) {
-        const auto name = filename(*unit.source);
-        if (!name.empty()) {
-            const auto added = loaded.emplace(fs::weakly_canonical(name).string(), unit.source);
+        // A loaded XREF can have a private .ac$ runtime filename. AutoCAD's
+        // resolver returns its original DWG path, so bind both names to the
+        // same already loaded database; never reopen the disk file instead.
+        const auto* original = unit.source->originalFileName();
+        const std::set<std::string> names{
+            filename(*unit.source), original ? AcString(original).utf8Str() : ""};
+        for (const auto& name : names) {
+            if (name.empty()) continue;
+            const auto added = loaded.emplace(ga::bridge::utf8Path(fs::weakly_canonical(ga::bridge::nativePath(name))), unit.source);
             if (!added.second && added.first->second != unit.source)
                 throw std::runtime_error("ambiguous loaded native database path");
-        }
-        if (!name.empty() && fs::is_regular_file(name)) {
-            const auto hash = ga::bridge::sha256File(name);
-            if (hash.empty()) throw std::runtime_error("capture source hash unavailable");
-            diskHashes.emplace(name, hash);
+            if (fs::is_regular_file(ga::bridge::nativePath(name))) {
+                const auto hash = ga::bridge::sha256File(name);
+                if (hash.empty()) throw std::runtime_error("capture source hash unavailable");
+                diskHashes.emplace(name, hash);
+            }
         }
     }
-    for (auto& unit : units) clone(unit, unit.source == &source, sources, loaded);
-    const auto identity = instanceReceipt(instances, units);
+    std::size_t processedUnits = 0;
+    for (auto& unit : units) {
+        ga::bridge::reportOperationProgress("archive_copy", processedUnits++);
+        clone(unit, unit.source == &source, sources, loaded);
+    }
+    SemanticCatalogue semantics;
+    const auto identity = instanceReceipt(instances, units, semantics);
     std::ostringstream refs, catalogue;
     refs << '['; catalogue << '[';
     bool firstLink = true, firstFile = true;
+    processedUnits = 0;
     for (auto& unit : units) {
+        ga::bridge::reportOperationProgress("archive_files", processedUnits++);
         if (acedUsrBrk()) throw std::runtime_error("Захват отменён");
         localize(unit, files, refs, firstLink);
         const auto path = root / unit.file;
-        checked(unit.copy->saveAs(AcString(path.string().c_str()).kwszPtr(), false,
+        checked(unit.copy->saveAs(AcString(ga::bridge::utf8Path(path).c_str()).kwszPtr(), false,
                                   AcDb::kDHL_CURRENT), "save private capture");
-        const auto hash = ga::bridge::sha256File(path.string());
+        const auto hash = ga::bridge::sha256File(ga::bridge::utf8Path(path));
         if (hash.empty()) throw std::runtime_error("capture output hash unavailable");
         catalogue << (firstFile ? "" : ",") << "{\"path\":" << quote(unit.file)
             << ",\"sha256\":" << quote(hash) << ",\"bytes\":" << fs::file_size(path) << '}';
@@ -229,14 +252,20 @@ void capturePackage(AcDbDatabase& source, const std::string& destination,
         if (ga::bridge::sha256File(item.first) != item.second)
             throw std::runtime_error("source file changed during capture");
     publish(root / "instances.json", identity);
+    const auto instancesHash = ga::bridge::sha256File(ga::bridge::utf8Path(root / "instances.json"));
+    publish(root / "semantics.json", semantics.receipt(instancesHash, displaySha256, instances.size()));
+    const auto semanticsPath = root / "semantics.json";
     std::ostringstream receipt;
-    receipt << "{\"schema\":\"green-atlas.native-session/1\",\"plugin_version\":"
+    receipt << "{\"schema\":\"green-atlas.native-session/3\",\"plugin_version\":"
         << quote(ga::bridge::kPluginVersion) << ",\"entry\":\"host.dwg\",\"units_code\":"
         << int(source.insunits()) << ",\"source_path\":" << quote(sourceName)
         << ",\"display_sha256\":" << quote(displaySha256)
         << ",\"source_dbmod_before\":" << beforeFlags << ",\"source_dbmod_after\":" << dbmod()
         << ",\"source_disk_hashes_verified\":true,\"instance_count\":" << instances.size()
-        << ",\"instances_sha256\":" << quote(ga::bridge::sha256File((root / "instances.json").string()))
+        << ",\"instances_sha256\":" << quote(instancesHash)
+        << ",\"semantics_sha256\":" << quote(ga::bridge::sha256File(ga::bridge::utf8Path(semanticsPath)))
+        << ",\"semantics_bytes\":" << fs::file_size(semanticsPath)
+        << ",\"semantics_count\":" << semantics.emitted()
         << ",\"files\":" << catalogue.str() << ",\"references\":" << refs.str() << '}';
     publish(root / "session.json", receipt.str());
 }

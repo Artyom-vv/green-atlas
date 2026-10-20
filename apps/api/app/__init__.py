@@ -1,2 +1,1 @@
-"""Green Atlas API package."""
-
+"""Локальный API Green Atlas: проекты, расчёты посадок и подготовленные данные AutoCAD."""

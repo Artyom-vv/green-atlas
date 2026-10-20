@@ -1,14 +1,13 @@
 import type { MapViewportOptions } from '@/widgets/map/model/mapViewportOptions';
 import type { WorkspaceReadyModel } from '../useWorkspaceModel';
+import { zoneCollection } from '@/features/workspace/zoneSelection';
 
 export interface ViewportPresentationProps extends Pick<
   WorkspaceReadyModel,
-  | 'assistant'
-  | 'assistantPreview'
-  | 'assistantZonePreview'
   | 'changePreview'
   | 'cadSource'
   | 'onCadRenderState'
+  | 'onGeometryRenderState'
   | 'draftZones'
   | 'editorBusy'
   | 'focusGeometry'
@@ -16,6 +15,7 @@ export interface ViewportPresentationProps extends Pick<
   | 'handleMapExtent'
   | 'hiddenLayerNames'
   | 'initialExtent'
+  | 'issues'
   | 'mapGeometryDelivery'
   | 'mapPanActive'
   | 'mapRenderMode'
@@ -26,6 +26,7 @@ export interface ViewportPresentationProps extends Pick<
   | 'patternPreview'
   | 'previewPattern'
   | 'planLocked'
+  | 'planComparison'
   | 'planObjects'
   | 'previewChanges'
   | 'previewDraft'
@@ -33,16 +34,17 @@ export interface ViewportPresentationProps extends Pick<
   | 'reviewZones'
   | 'selectedPatternZoneIds'
   | 'tool'
-> {}
+> {
+  mapScenarioIssues?: WorkspaceReadyModel['mapScenarioIssues'];
+  mapScenarioObjects?: WorkspaceReadyModel['mapScenarioObjects'];
+}
 export const viewportPresentationPropsFor = (
   props: ViewportPresentationProps,
 ): ViewportPresentationProps => ({
-  assistant: props.assistant,
-  assistantPreview: props.assistantPreview,
-  assistantZonePreview: props.assistantZonePreview,
   changePreview: props.changePreview,
   cadSource: props.cadSource,
   onCadRenderState: props.onCadRenderState,
+  onGeometryRenderState: props.onGeometryRenderState,
   draftZones: props.draftZones,
   editorBusy: props.editorBusy,
   focusGeometry: props.focusGeometry,
@@ -50,6 +52,9 @@ export const viewportPresentationPropsFor = (
   handleMapExtent: props.handleMapExtent,
   hiddenLayerNames: props.hiddenLayerNames,
   initialExtent: props.initialExtent,
+  issues: props.issues,
+  mapScenarioIssues: props.mapScenarioIssues,
+  mapScenarioObjects: props.mapScenarioObjects,
   mapGeometryDelivery: props.mapGeometryDelivery,
   mapPanActive: props.mapPanActive,
   mapRenderMode: props.mapRenderMode,
@@ -60,6 +65,7 @@ export const viewportPresentationPropsFor = (
   patternPreview: props.patternPreview,
   previewPattern: props.previewPattern,
   planLocked: props.planLocked,
+  planComparison: props.planComparison,
   planObjects: props.planObjects,
   previewChanges: props.previewChanges,
   previewDraft: props.previewDraft,
@@ -70,12 +76,10 @@ export const viewportPresentationPropsFor = (
 });
 
 export const viewportPresentationBindings = ({
-  assistant,
-  assistantPreview,
-  assistantZonePreview,
   changePreview,
   cadSource,
   onCadRenderState,
+  onGeometryRenderState,
   draftZones,
   editorBusy,
   focusGeometry,
@@ -83,6 +87,9 @@ export const viewportPresentationBindings = ({
   handleMapExtent,
   hiddenLayerNames,
   initialExtent,
+  issues,
+  mapScenarioIssues,
+  mapScenarioObjects,
   mapGeometryDelivery,
   mapPanActive,
   mapRenderMode,
@@ -93,6 +100,7 @@ export const viewportPresentationBindings = ({
   patternPreview,
   previewPattern,
   planLocked,
+  planComparison,
   planObjects,
   previewChanges,
   previewDraft,
@@ -105,14 +113,17 @@ export const viewportPresentationBindings = ({
   | 'changeDraft'
   | 'cadSource'
   | 'onCadRenderState'
+  | 'onGeometryRenderState'
   | 'metadataOnlyIds'
   | 'editPending'
   | 'interactionDisabled'
+  | 'planComparison'
   | 'renderMode'
   | 'geometry'
   | 'geometryRevision'
   | 'initialExtent'
   | 'objects'
+  | 'planIssues'
   | 'growthHorizon'
   | 'draftPlantingZones'
   | 'hiddenLayerNames'
@@ -123,42 +134,42 @@ export const viewportPresentationBindings = ({
   | 'searchDomains'
   | 'onProbeCoordinate'
   | 'changePreview'
-  | 'zoneChangePreview'
   | 'liveMoveValidation'
   | 'tool'
   | 'onExtentChange'
 > => ({
   cadSource,
   onCadRenderState,
-  changeDraft: assistantPreview
-    ? assistant.assistantMode === 'autonomous'
-      ? undefined
-      : assistant.proposal?.draft
-    : previewDraft?.previewId === changePreview?.id
+  onGeometryRenderState,
+  changeDraft:
+    previewDraft?.previewId === changePreview?.id
       ? previewDraft?.draft
       : undefined,
   metadataOnlyIds,
   editPending: previewChanges.isPending,
   interactionDisabled: editorBusy || planLocked,
+  planComparison: planComparison.mode,
   renderMode: mapRenderMode,
   geometry: mapGeometryDelivery?.feature_collection as
     Record<string, unknown> | undefined,
   geometryRevision: mapGeometryDelivery?.loadedGeometryVersion,
   initialExtent,
-  objects: planObjects,
+  objects: mapScenarioObjects ?? planObjects,
+  planIssues: mapScenarioIssues ?? issues,
   growthHorizon,
   draftPlantingZones: !projectHasPlan ? draftZones : reviewZones,
   hiddenLayerNames,
   highlightedPlantingZoneIds: selectedPatternZoneIds,
-  focusGeometry,
+  focusGeometry: projectHasPlan ? focusGeometry : zoneCollection(draftZones),
   placementPreview,
   inspectionPreview: candidateInspection.marker,
-  searchDomains: patternPreview?.search_domains ?? previewPattern.progress?.search_domains,
-  onProbeCoordinate: candidateInspection.picking
-    ? candidateInspection.probe
-    : undefined,
-  changePreview: assistantPreview ?? changePreview,
-  zoneChangePreview: assistantZonePreview,
+  searchDomains:
+    patternPreview?.search_domains ?? previewPattern.progress?.search_domains,
+  onProbeCoordinate:
+    candidateInspection.picking && !planComparison.active
+      ? candidateInspection.probe
+      : undefined,
+  changePreview,
   liveMoveValidation: moveLiveCheck,
   tool: mapPanActive ? 'pan' : tool,
   onExtentChange: handleMapExtent,

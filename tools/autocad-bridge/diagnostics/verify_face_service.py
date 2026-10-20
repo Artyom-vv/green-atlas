@@ -16,10 +16,10 @@ from uuid import uuid4
 
 from app.composition import create_runtime
 from app.desktop.handoff import LocalHandoff
-from app.dxf_import.layer_contracts import Layer
+from app.dxf_import.layers.contracts import Layer
 from app.native_query.contracts import NativeObjectQuery
-from app.native_query.derived_faces import face_targets
-from app.native_query.live_client import LiveQueryClient
+from app.native_query.preparation.derived_faces import face_targets
+from app.native_query.live.live_client import LiveQueryClient
 from app.planting_zones.contracts import PlantingZoneAssignment
 
 

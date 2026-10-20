@@ -1,11 +1,54 @@
-import type { FC } from 'react';
-import { Button, InlineMessage, Text } from '@green/ui';
+import type { FC, ReactNode } from 'react';
+import { Button, Icon, type IconNode } from '@green/ui';
+import { Box, CircleAlert, RefreshCw } from 'lucide-react';
 import type { SceneReviewOptions } from '../model/sceneContracts';
 import { sceneHorizonLabel } from '../model/scenePresentation';
 
+/** The overlay layout owns placement; each message owns its content and action. */
+export function SceneNotice({
+  title,
+  children,
+  action,
+  error = false,
+  busy = false,
+  icon = Box,
+}: {
+  title: string;
+  children?: ReactNode;
+  action?: ReactNode;
+  error?: boolean;
+  busy?: boolean;
+  icon?: IconNode;
+}) {
+  return (
+    <div
+      className="rounded-control grid w-fit max-w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2 gap-y-2 border border-neutral-300 bg-white p-3 text-xs leading-4"
+      role={error ? 'alert' : 'status'}
+    >
+      <Icon
+        icon={error ? CircleAlert : icon}
+        className={
+          error
+            ? 'text-error'
+            : busy
+              ? 'animate-pulse text-neutral-600 motion-reduce:animate-none'
+              : 'text-neutral-600'
+        }
+      />
+      <div className="grid min-w-0 gap-1 break-words">
+        <strong className="font-medium text-neutral-800">{title}</strong>
+        {children && <div className="text-neutral-600">{children}</div>}
+      </div>
+      {action && (
+        <div className="col-start-2 flex flex-wrap gap-2">{action}</div>
+      )}
+    </div>
+  );
+}
+
 export interface SceneStatusProps extends Pick<
   SceneReviewOptions,
-  'horizon' | 'loading' | 'error'
+  'horizon' | 'loading' | 'error' | 'onRetryScene'
 > {
   snapshotHorizon?: number;
   modelsReady: boolean;
@@ -21,57 +64,57 @@ export const SceneStatus: FC<SceneStatusProps> = ({
   modelsReady,
   renderError,
   onRetry,
+  onRetryScene,
 }) => {
   const shownHorizonNote =
     modelsReady &&
     !renderError &&
     snapshotHorizon !== undefined &&
     snapshotHorizon !== horizon
-      ? `На сцене: ${sceneHorizonLabel(snapshotHorizon)}. Запрошено: ${sceneHorizonLabel(horizon)}.`
+      ? `На сцене: ${sceneHorizonLabel(snapshotHorizon)}. Запрошено: ${sceneHorizonLabel(horizon)}`
       : undefined;
-  const showStatus = Boolean(
-    (!modelsReady || loading || shownHorizonNote) && !renderError && !error,
-  );
-  return (
-    <div className="absolute top-4 left-18 z-2 grid w-[min(28rem,calc(100%-11rem))] gap-2">
-      {showStatus && (
-        <div
-          className="rounded-card grid gap-1 border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700"
-          role="status"
-        >
-          <span>
-            {!modelsReady
-              ? 'Загружаем модели растений'
-              : loading
-                ? snapshotHorizon !== undefined
-                  ? 'Обновляем прогноз'
-                  : 'Загружаем сцену'
-                : 'Показан предыдущий прогноз'}
-          </span>
-          {Boolean(shownHorizonNote) && (
-            <Text as="p" variant="caption">
-              {shownHorizonNote}
-            </Text>
-          )}
-        </div>
-      )}
-      {Boolean(error || renderError) && (
-        <div className="grid gap-2">
-          <InlineMessage tone="error">{error ?? renderError}</InlineMessage>
-          {Boolean(shownHorizonNote) && (
-            <div className="rounded-card border border-neutral-300 bg-white px-3 py-2">
-              <Text as="p" variant="caption">
-                {shownHorizonNote}
-              </Text>
-            </div>
-          )}
-          {Boolean(renderError) && (
-            <Button variant="secondary" onClick={onRetry}>
-              Повторить запуск 3D
+  if (error || renderError) {
+    return (
+      <SceneNotice
+        title={
+          renderError ? 'Не удалось запустить 3D' : 'Не удалось обновить сцену'
+        }
+        error
+        action={
+          (renderError || onRetryScene) && (
+            <Button
+              variant="secondary"
+              icon={RefreshCw}
+              onClick={renderError ? onRetry : onRetryScene}
+              aria-label={
+                renderError ? 'Повторить запуск 3D' : 'Повторить загрузку сцены'
+              }
+            >
+              Повторить
             </Button>
-          )}
-        </div>
-      )}
-    </div>
+          )
+        }
+      >
+        <p className="m-0">{renderError ?? error}</p>
+        {shownHorizonNote && <p className="mt-2 mb-0">{shownHorizonNote}</p>}
+      </SceneNotice>
+    );
+  }
+  if (modelsReady && !loading && !shownHorizonNote) return null;
+  return (
+    <SceneNotice
+      busy={!modelsReady || Boolean(loading)}
+      title={
+        !modelsReady
+          ? 'Загружаем модели растений'
+          : loading
+            ? snapshotHorizon !== undefined
+              ? 'Обновляем прогноз'
+              : 'Загружаем сцену'
+            : 'Показан предыдущий прогноз'
+      }
+    >
+      {shownHorizonNote}
+    </SceneNotice>
   );
 };

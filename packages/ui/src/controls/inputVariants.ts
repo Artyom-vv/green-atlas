@@ -11,6 +11,18 @@ export const input = tv({
   defaultVariants: { size: 'default' },
 });
 
+export const textInput = tv({
+  extend: input,
+  variants: {
+    variant: {
+      default: '',
+      ghost:
+        'aria-[invalid=true]:border-b-error rounded-none border-0 border-y-2 border-transparent bg-transparent px-0 hover:border-transparent focus-visible:border-b-blue-600 focus-visible:outline-none disabled:bg-transparent aria-[invalid=true]:border-transparent',
+    },
+  },
+  defaultVariants: { variant: 'default' },
+});
+
 export const textarea = tv({
   extend: fieldControl,
   base: 'min-h-19 resize-y py-2.5 leading-5',

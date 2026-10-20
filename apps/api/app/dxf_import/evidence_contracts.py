@@ -1,3 +1,9 @@
+"""Паспорт исходных данных: наблюдаемое покрытие и ограничения доверия.
+
+Контракт отделяет объекты CAD, отображение и расчётные представления. Отсутствие
+слоя не доказывает свободную территорию; сведения о полноте не заменяют нормы.
+"""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -6,38 +12,43 @@ from pydantic import BaseModel, Field
 
 from app.geometry.contracts import CoordinateReference
 from app.geometry.coverage_contracts import LayerGeometryCoverage
+from app.planning.config import PlanningHorizonYear
+
+DataPassportKind = Literal[
+    "site_border",
+    "building",
+    "road",
+    "utility",
+    "existing_green",
+    "lawn",
+    "water",
+    "restricted",
+    "unclassified",
+]
+DataPassportEntryStatus = Literal["verified", "partial", "missing", "excluded"]
+DataPassportConfidence = Literal["high", "medium", "low"]
+DataPassportDecision = Literal["stop", "warning", "advisory"]
 
 
 class DataPassportEntry(BaseModel):
-    """One source-data class and its role in the current calculation.
+    """Класс исходных данных и его участие в текущем расчёте.
 
-    The passport is deliberately a compact audit contract.  It reports what
-    the importer can prove from the DXF and never treats an absent layer as an
-    empty physical area.
+    Сообщаем только доказуемые сведения об исходнике и подготовке. Отсутствующий
+    слой не становится подтверждением отсутствия физических объектов.
     """
 
-    kind: Literal[
-        "site_border",
-        "building",
-        "road",
-        "utility",
-        "existing_green",
-        "lawn",
-        "water",
-        "restricted",
-        "unclassified",
-    ]
+    kind: DataPassportKind
     label: str
-    status: Literal["verified", "partial", "missing", "excluded"]
+    status: DataPassportEntryStatus
     layer_names: list[str] = Field(default_factory=list)
     object_count: int = Field(default=0, ge=0)
-    # Historical clients called display-feature counts "objects in calculation".
-    # There is no object-level query ledger here. None means not measured, not 0.
+    # Старые клиенты называли число частей отображения объектами в расчёте.
+    # Журнала проверки каждого объекта здесь нет: None означает «не измерено».
     used_object_count: int | None = Field(default=None, ge=0, deprecated=True)
     display_feature_count: int | None = Field(default=None, ge=0)
     used_in_calculation: bool = False
-    semantic_confidence: Literal["high", "medium", "low"] = "low"
-    decision_level: Literal["stop", "warning", "advisory"] = "advisory"
+    semantic_confidence: DataPassportConfidence = "low"
+    decision_level: DataPassportDecision = "advisory"
     source_file_name: str | None = None
     source_imported_at: str | None = None
     source_owner: str | None = None
@@ -46,8 +57,9 @@ class DataPassportEntry(BaseModel):
 
 
 class DataPassport(BaseModel):
-    """Evidence summary shown before an operator starts mass placement."""
+    """Сводка оснований перед массовой посадкой; сама посадка здесь не проверяется."""
 
+    planning_horizon_year: PlanningHorizonYear | None = None
     overall_status: Literal["verified", "limited", "not_ready"]
     calculation_status: Literal["ready", "not_ready"]
     mass_placement_status: Literal["verified", "limited", "blocked"]

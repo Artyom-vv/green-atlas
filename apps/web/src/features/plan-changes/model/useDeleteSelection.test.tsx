@@ -6,6 +6,7 @@ import type { Plan, Project } from '@green/api-client';
 import { deleteSelection, readDeletionProject } from '../api/deleteSelection';
 import { useDeleteSelection } from './useDeleteSelection';
 import { UNKNOWN_DELETION_NOTICE } from './deleteSelection';
+import { acknowledgeProjectWrite } from '@/entities/project/model/acknowledgedRead';
 
 vi.mock('../api/deleteSelection', () => ({
   deleteSelection: vi.fn(),
@@ -36,6 +37,48 @@ function harness() {
 }
 
 describe('selection deletion ownership', () => {
+  it('keeps a failed fresh read and editing recovery when a late deletion GET is below a newer acknowledged write', async () => {
+    const read = deferred<Project>();
+    vi.mocked(deleteSelection).mockResolvedValue(plan(2));
+    vi.mocked(readDeletionProject).mockReturnValue(read.promise);
+    const context = harness();
+    const key = ['workspace-project', 'a'];
+    context.client.setQueryData(key, project(1));
+    const onCommitted = vi.fn();
+    const { result } = renderHook(
+      () =>
+        useDeleteSelection({
+          projectId: 'a',
+          project: project(1),
+          onCommitted,
+          refresh: async () => {},
+        }),
+      context,
+    );
+    await act(async () => result.current.mutate(['first']));
+    acknowledgeProjectWrite(context.client, 'a', { stateVersion: 3 });
+    const freshReadError = new Error('Fresh read unavailable');
+    await expect(
+      context.client.fetchQuery({
+        queryKey: key,
+        queryFn: async () => {
+          throw freshReadError;
+        },
+        staleTime: 0,
+      }),
+    ).rejects.toBe(freshReadError);
+    await act(async () => read.resolve(project(2)));
+    expect(context.client.getQueryData(key)).toEqual(project(1));
+    expect(context.client.getQueryState(key)?.status).toBe('error');
+    expect(context.client.getQueryState(key)?.error).toBe(freshReadError);
+    expect(result.current.writeOutcome).toBe('confirmed');
+    expect(result.current.readRecovery).toBe(true);
+    expect(result.current.blocked).toBe(true);
+    expect(onCommitted).not.toHaveBeenCalled();
+    expect(deleteSelection).toHaveBeenCalledOnce();
+    context.client.clear();
+  });
+
   it('captures IDs and versions once and closes the gate synchronously', async () => {
     const write = deferred<Plan>();
     vi.mocked(deleteSelection).mockReturnValue(write.promise);

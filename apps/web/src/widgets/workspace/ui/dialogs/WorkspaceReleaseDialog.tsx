@@ -44,6 +44,8 @@ export const WorkspaceReleaseDialog: FC<WorkspaceReleaseDialogProps> = ({
     <Dialog
       open={releaseOpen}
       title="Выпуск проекта"
+      size="form"
+      controlSize="compact"
       onClose={() => setReleaseOpen(false)}
     >
       {releaseState.restoring ? (

@@ -4,7 +4,6 @@ import type {
   ChangeSetPreview,
   PatternPreview,
   RecommendationPreview,
-  ZoneChangePreview,
 } from '../contracts';
 import { ApiClientError } from '../transport/errors';
 
@@ -50,14 +49,5 @@ export function normalizeBrushPreview(
     change_set: source.change_set
       ? normalizeChangeSetPreview(source.change_set)
       : source.change_set,
-  };
-}
-export function normalizeZoneChangePreview(
-  source: WireSchema<'ZoneChangePreview'>,
-): ZoneChangePreview {
-  return {
-    ...source,
-    blockers: [...(source.blockers ?? [])],
-    affected_planting_ids: [...(source.affected_planting_ids ?? [])],
   };
 }

@@ -184,8 +184,6 @@ describe('PlantingCompositionFields', () => {
     rerender(<PlantingCompositionFields {...props} species={[]} />);
     fireEvent.click(screen.getByRole('button', { name: /Порода деревьев/ }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(
-      screen.getByText('Нет растений для выбора'),
-    ).toBeVisible();
+    expect(screen.getByText('Нет растений для выбора')).toBeVisible();
   });
 });

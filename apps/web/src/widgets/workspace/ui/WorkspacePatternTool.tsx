@@ -5,6 +5,7 @@ import {
 import { PatternToolPanel } from '@/features/placement';
 import { errorMessage as message } from '@/shared/errors/errorMessage';
 import type { FC } from 'react';
+import { useWatch } from 'react-hook-form';
 import { patternToolBindings } from './patternToolBindings';
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
 
@@ -71,10 +72,15 @@ export const WorkspacePatternTool: FC<WorkspacePatternToolProps> = (props) => {
     tool,
     zoneSpeciesShortlistQuery,
   } = props;
+  const draftYear = useWatch({
+    control: patternForm.control,
+    name: 'planningHorizonYear',
+  });
   return (
     <PatternToolPanel
       {...patternToolBindings(props)}
       calculating={previewPattern.isPending}
+      calculationPhase={previewPattern.phase}
       guided={tool !== 'pattern_row'}
       mode={tool === 'pattern_row' ? 'row' : 'fill'}
       zones={project.planting_zones ?? []}
@@ -89,24 +95,27 @@ export const WorkspacePatternTool: FC<WorkspacePatternToolProps> = (props) => {
       form={patternForm}
       selectedZoneIds={selectedPatternZoneIds}
       drawingZone={placementAreaDrawing}
-      preview={patternPreview}
+      preview={previewPattern.editing ? undefined : patternPreview}
       preparation={previewPattern.progress}
       inspection={props.candidateInspection}
       growthHorizon={growthHorizon}
       onGrowthHorizon={setGrowthHorizon}
-      loading={
-        previewPattern.isPending ||
-        applyChanges.isPending ||
-        savePlacementZone.isPending
-      }
+      planningHorizon={{
+        year: draftYear ?? 0,
+        onChange: (year) =>
+          patternForm.setValue('planningHorizonYear', year, {
+            shouldDirty: true,
+          }),
+      }}
+      loading={applyChanges.isPending || savePlacementZone.isPending}
       error={
         previewPattern.error
           ? message(previewPattern.error)
           : zoneSpeciesShortlistQuery.error
-          ? message(zoneSpeciesShortlistQuery.error)
-          : placementMasksQuery.error
-            ? message(placementMasksQuery.error)
-            : undefined
+            ? message(zoneSpeciesShortlistQuery.error)
+            : placementMasksQuery.error
+              ? message(placementMasksQuery.error)
+              : undefined
       }
       onSelectedZoneIdsChange={selectPatternZones}
     />

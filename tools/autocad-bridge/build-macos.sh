@@ -67,6 +67,7 @@ xcrun clang++ \
   "$source_root/green_atlas_bridge.cpp" \
   "$source_root/cad_utils.cpp" \
   "$source_root/file_io.cpp" \
+  "$source_root/local_platform.cpp" \
   "$source_root/geometry_math.cpp" \
   "$source_root/direct_query_kernel.cpp" \
   "$source_root/native_affine_query.cpp" \
@@ -87,6 +88,8 @@ xcrun clang++ \
   "$source_root/live_query_session.cpp" \
   "$source_root/session_capture.cpp" \
   "$source_root/session_capture_instances.cpp" \
+  "$source_root/semantic_capture.cpp" \
+  "$source_root/semantic_evidence.cpp" \
   "$source_root/live_inventory.cpp" \
   "$source_root/live_query_transport.cpp" \
   "$source_root/xref_instance_access.cpp" \
@@ -96,6 +99,7 @@ xcrun clang++ \
   "$source_root/region_extraction.cpp" \
   "$source_root/hatch_loop_roles.cpp" \
   "$source_root/hatch_extraction.cpp" \
+  "$source_root/xref_dependency.cpp" \
   "$source_root/xref_resolver.cpp" \
   "$source_root/drawing_traversal.cpp" \
   "$source_root/exact_polyline_pairs.cpp" \
@@ -108,7 +112,7 @@ xcrun clang++ \
   "$source_root/geometry_selftest.cpp" \
   "$source_root/delivery_command.cpp" \
   "$source_root/delivery_recovery.cpp" \
-  "$build_root/delivery_ui.o" "$build_root/reference_search.o" -framework AppKit -framework Foundation \
+  "$build_root/delivery_ui.o" "$build_root/reference_search.o" -framework AppKit -framework Foundation -framework QuartzCore \
   -o "$bundle_root/Contents/MacOS/GreenAtlasBridge"
 
 codesign --force --sign - "$bundle_root"

@@ -32,7 +32,7 @@ type TestProps = Omit<
   | 'onClearDraft'
   | 'onReviewContext'
 > & { growthHorizon?: number };
-// This UI harness supplies controlled values; persistence and submission belong to feature tests.
+// Стенд передаёт управляемые значения; сохранение и отправку проверяют тесты сценария.
 function ReleasePanel(props: TestProps) {
   const formMethods = useForm<ReleaseFormValues>({
     defaultValues: initialForm(props.growthHorizon),
@@ -54,6 +54,7 @@ function ReleasePanel(props: TestProps) {
 afterEach(cleanup);
 
 const draftPlan = {
+  planning_horizon_year: 20,
   id: 'plan-1',
   version: 3,
   issues: [],
@@ -74,6 +75,95 @@ const draftPlan = {
 } as Plan;
 
 describe('ReleasePanel', () => {
+  it('не повторяет информационные оговорки и сохраняет реальную ошибку выпуска', () => {
+    const plan = {
+      ...draftPlan,
+      issues: [
+        {
+          code: 'SOURCE_GEOMETRY_PARTIAL',
+          severity: 'warning',
+          title: 'Неполная подоснова',
+          description: 'Расчёт по доступным данным',
+        },
+        {
+          code: 'GEOMETRY_RULE_ASSUMPTION',
+          severity: 'warning',
+          title: 'Допущения по сетям',
+          description: 'Характеристики сети не указаны',
+        },
+      ],
+    } as Plan;
+    const props = { plan, onCreate: vi.fn(), onDownload: vi.fn() };
+    const view = render(<ReleasePanel {...props} />);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Неполная подоснова')).not.toBeInTheDocument();
+    expect(screen.queryByText('Допущения по сетям')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Собрать черновой пакет' }),
+    ).toBeEnabled();
+    view.rerender(
+      <ReleasePanel {...props} error="Не удалось записать файлы выпуска" />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Не удалось записать файлы выпуска',
+    );
+    expect(
+      screen.getByRole('button', { name: 'Собрать черновой пакет' }),
+    ).toBeEnabled();
+  });
+
+  it('makes a pending release visible and prevents submitting it twice', () => {
+    const onCreate = vi.fn();
+    render(
+      <ReleasePanel
+        plan={draftPlan}
+        loading
+        onCreate={onCreate}
+        onDownload={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Собираем файлы выпуска')).toBeVisible();
+    expect(
+      screen.getByText(
+        'Выпуск выполняется в фоне. Готовые файлы появятся здесь',
+      ),
+    ).toBeVisible();
+    const button = screen.getByRole('button', {
+      name: 'Собрать черновой пакет',
+    });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+  it('blocks an unknown release without pretending it is still running', () => {
+    const onCreate = vi.fn();
+    render(
+      <ReleasePanel
+        plan={draftPlan}
+        hasDraft
+        submissionUnknown
+        onCreate={onCreate}
+        onDownload={vi.fn()}
+      />,
+    );
+    const button = screen.getByRole('button', {
+      name: 'Собрать черновой пакет',
+    });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText('Собираем файлы выпуска'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Сбросить настройки' }),
+    ).toBeEnabled();
+    expect(
+      screen.getByText(
+        'Исход предыдущей сборки неизвестен. Заметки сохранены. Для новой сборки сбросьте настройки',
+      ),
+    ).toBeVisible();
+  });
   it('exposes forecast without opening another section and sends the chosen year', () => {
     const onCreate = vi.fn();
     const onGrowthHorizon = vi.fn();
@@ -120,7 +210,7 @@ describe('ReleasePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Финальный' }));
     expect(
       screen.getByText(
-        'Проверьте исходные данные и выполните расчёт ограничений.',
+        'Проверьте исходные данные и выполните расчёт ограничений',
       ),
     ).toBeVisible();
     expect(
@@ -148,7 +238,9 @@ describe('ReleasePanel', () => {
     expect(
       screen.getByRole('button', { name: 'Собрать финальный пакет' }),
     ).toBeDisabled();
-    expect(screen.getByText(/не является согласованием/)).toBeVisible();
+    expect(
+      screen.queryByText(/не является согласованием/),
+    ).not.toBeInTheDocument();
   });
 
   it('requires attributable PP-616 and PP-1160 decisions before a final package', () => {
@@ -171,7 +263,7 @@ describe('ReleasePanel', () => {
     });
     expect(finalButton).toBeDisabled();
     expect(finalButton).toHaveAccessibleDescription(
-      'Заполните оба решения, их основания и ответственного за проверку.',
+      'Заполните оба решения, их основания и ответственного за проверку',
     );
     expect(
       within(
@@ -214,6 +306,7 @@ describe('ReleasePanel', () => {
   it('downloads the bundle and exposes its individual files', () => {
     const onDownload = vi.fn();
     const release = {
+      planning_horizon_year: 20,
       id: 'release-1',
       project_id: 'project-1',
       plan_version: 3,
@@ -307,6 +400,7 @@ describe('ReleasePanel', () => {
     const onCreate = vi.fn();
     const onDownload = vi.fn();
     const release: ReleasePackage = {
+      planning_horizon_year: 20,
       id: 'before-zone-edit',
       project_id: 'project-1',
       plan_version: draftPlan.version!,
@@ -405,7 +499,7 @@ describe('ReleasePanel', () => {
     });
     expect(final).toBeDisabled();
     expect(final).toHaveAccessibleDescription(
-      'Устраните ошибки размещения. Назначьте виды посадкам. Заполните оба решения, их основания и ответственного за проверку.',
+      'Устраните ошибки размещения Назначьте виды посадкам Заполните оба решения, их основания и ответственного за проверку',
     );
     fireEvent.click(final);
     expect(onCreate).not.toHaveBeenCalled();
@@ -417,10 +511,10 @@ describe('ReleasePanel', () => {
       />,
     );
     expect(
-      screen.queryByText('Устраните ошибки размещения.'),
+      screen.queryByText('Устраните ошибки размещения'),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText('Назначьте виды посадкам.'),
+      screen.queryByText('Назначьте виды посадкам'),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Черновой' }));
     expect(
@@ -428,7 +522,7 @@ describe('ReleasePanel', () => {
     ).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Собрать черновой пакет' }),
-    ).toHaveAccessibleDescription('Добавьте посадки в план перед выпуском.');
+    ).toHaveAccessibleDescription('Добавьте посадки в план перед выпуском');
   });
 
   it('freezes the selected parameters while building and preserves them after a failure', () => {

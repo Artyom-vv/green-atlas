@@ -22,6 +22,7 @@ import {
 } from './releaseDraftStorage';
 
 const plan = {
+  planning_horizon_year: 20,
   id: 'plan-1',
   version: 7,
   objects: [
@@ -56,6 +57,7 @@ const packageResult = (
   id = 'release-1',
   projectId = 'project-1',
 ): ReleasePackage => ({
+  planning_horizon_year: 20,
   id,
   project_id: projectId,
   plan_version: 7,

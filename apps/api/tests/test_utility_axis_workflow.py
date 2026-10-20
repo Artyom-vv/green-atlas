@@ -2,6 +2,7 @@
 
 import json
 from io import StringIO
+from typing import Literal, cast
 from unittest.mock import Mock
 
 import ezdxf
@@ -14,32 +15,43 @@ from test_utility_axis import (
     save_bindings,
     source_axes,
 )
-from test_utility_context import import_service
 
 from app.application import ProjectApplication
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.contracts import SourceFile
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.exporting.application import ExportApplication
 from app.exporting.contracts import RegulatoryReleaseBasis, ReleaseCreateRequest
-from app.geometry.adapters import ShapelyGeometryEngine
-from app.geometry.domain import PositionChecker
-from app.geometry.network_trace import network_rule_entries
-from app.history.adapters import InMemoryProjectHistory
-from app.planning.change_contracts import (
+from app.exporting.ports import DxfWriterPort
+from app.geometry.checking.adapters import ShapelyGeometryEngine
+from app.geometry.checking.domain import PositionChecker
+from app.geometry.networks.network_trace import network_rule_entries
+from app.geometry.viewport.query_adapters import IndexedGeometryQuery
+from app.history.adapters import SqliteProjectHistory
+from app.operations.ports import OperationRepository
+from app.planning.changes.contracts import (
     PlanChangeSetApplyRequest,
     PlanChangeSetDraft,
     PlanObjectAddOperation,
 )
-from app.planning.contracts import PlanObject, PlanObjectCreate
+from app.planning.contracts import Plan, PlanObject, PlanObjectCreate
+from app.planning.ports import CandidateGeneratorPort
+from app.projects.adapters import SqliteProjectRepository
 from app.projects.contracts import Project
+from app.regulations.trace_contracts import PlantingRuleTrace
 from app.releases.service import build_release, release_identity
 from app.scene.contracts import SceneSnapshot
+from app.shared.error_messages import public_failure_message
+from app.shared.failures import DomainFailure, FailureReason
+from app.species.catalog import get_species, growth_forecasts
 from app.validation.adapters import RuleBasedPlanValidator
 from app.validation.application import PlanValidation
 
 
 @pytest.mark.parametrize("entity_type", ["LWPOLYLINE", "POLYLINE"])
 @pytest.mark.parametrize("curved", [False, True])
-def test_reader_proves_only_straight_original_polylines(entity_type, curved):
+def test_reader_proves_only_straight_original_polylines(
+    entity_type: Literal["LWPOLYLINE", "POLYLINE"], curved: bool
+) -> None:
     document = ezdxf.new("R2010")
     document.units = 6
     model = document.modelspace()
@@ -57,23 +69,24 @@ def test_reader_proves_only_straight_original_polylines(entity_type, curved):
     assert ("source_axis_provenance" in properties) is not curved
 
 
-def test_preview_trace_and_apply_reject_stale_axis_size_without_losing_draft():
+def test_preview_trace_and_apply_reject_stale_axis_size_without_losing_draft() -> None:
     service, project, source, _ = axis_project()
     binding = binding_for(project, source_axes(project)[0], 2)
     project = prepared(service, project, [binding])
+    assert isinstance(service.repository, SqliteProjectRepository)
     app = ProjectApplication(
         repository=service.repository,
-        operation_repository=None,
-        history=InMemoryProjectHistory(),
+        operation_repository=cast(OperationRepository, None),
+        history=SqliteProjectHistory(service.repository),
         dxf_reader=EzdxfReader(),
         geometry=ShapelyGeometryEngine(),
-        geometry_query=None,
+        geometry_query=IndexedGeometryQuery(),
         validator=RuleBasedPlanValidator(),
-        writer=None,
-        candidate_generator=None,
+        writer=cast(DxfWriterPort, None),
+        candidate_generator=cast(CandidateGeneratorPort, None),
     )
 
-    def draft(x):
+    def draft(x: float) -> PlanChangeSetDraft:
         return PlanChangeSetDraft(
             base_plan_version=1,
             source="manual",
@@ -87,7 +100,9 @@ def test_preview_trace_and_apply_reject_stale_axis_size_without_losing_draft():
     assert not rejected.can_apply
     entry = next(
         entry
-        for entry in rejected.candidate_results[0].rule_trace.entries
+        for entry in cast(
+            PlantingRuleTrace, rejected.candidate_results[0].rule_trace
+        ).entries
         if entry.obstacle_kind == "utility"
     )
     assert entry.status == "failed" and entry.actual_distance_m == pytest.approx(0.5)
@@ -95,7 +110,9 @@ def test_preview_trace_and_apply_reject_stale_axis_size_without_losing_draft():
     assert accepted.can_apply
     accepted_entry = next(
         entry
-        for entry in accepted.candidate_results[0].rule_trace.entries
+        for entry in cast(
+            PlantingRuleTrace, accepted.candidate_results[0].rule_trace
+        ).entries
         if entry.obstacle_kind == "utility"
     )
     assert accepted_entry.status == "passed"
@@ -110,14 +127,18 @@ def test_preview_trace_and_apply_reject_stale_axis_size_without_losing_draft():
                 preview_id=accepted.id, digest=accepted.digest, base_plan_version=1
             ),
         )
-    assert service.repository.get(project.id).plan.objects == []
+    retained = service.repository.get(project.id)
+    assert retained.plan is not None
+    assert retained.plan.objects == []
 
 
-def test_release_roundtrip_preserves_source_binding_surface_trace_and_final_fresh_gate():
+def test_release_and_saved_project_preserve_source_binding_surface_trace_and_final_fresh_gate() -> (
+    None
+):
     service, project, source, _ = axis_project()
     binding = binding_for(project, source_axes(project)[0], 2)
     project = prepared(service, project, [binding])
-    project.plan.objects = [
+    cast(Plan, project.plan).objects = [
         PlanObject(
             id="plant",
             kind="shrub",
@@ -127,7 +148,13 @@ def test_release_roundtrip_preserves_source_binding_surface_trace_and_final_fres
             species_revision_id="spiraea-japonica@2026-08-28.1",
         )
     ]
-    PlanValidation(RuleBasedPlanValidator()).refresh(project, project.plan)
+    plant = cast(Plan, project.plan).objects[0]
+    assert plant.species_revision_id is not None
+    plant.canopy_forecast, plant.root_forecast = growth_forecasts(
+        get_species(plant.species_revision_id), "standard"
+    )
+    validation = PlanValidation(RuleBasedPlanValidator())
+    validation.refresh(project, cast(Plan, project.plan))
     request = ReleaseCreateRequest(mode="draft")
     scene = SceneSnapshot(
         plan_version=1, horizon_year=0, coordinate_origin=[0, 0], note="Axis fixture"
@@ -151,13 +178,11 @@ def test_release_roundtrip_preserves_source_binding_surface_trace_and_final_fres
     )["nearest_features"][0]
     assert evidence["actual_distance_m"] == 2
     assert evidence["axis_evidence"]["binding"]["outside_diameter_m"] == 2
-    target_service, target, _ = import_service(Project(name="Restored axis"))
-    target_service.dxf_reader = EzdxfReader()
-    bundle = artifacts[
-        next(item.id for item in package.artifacts if item.kind == "bundle")
-    ]
-    restored = target_service.import_release_bundle(target.id, "release.zip", bundle)
-    assert restored.source_file.content_sha256 == project.source_file.content_sha256
+    restored = Project.model_validate_json(project.model_dump_json())
+    assert (
+        cast(SourceFile, restored.source_file).content_sha256
+        == cast(SourceFile, project.source_file).content_sha256
+    )
     layer = next(layer for layer in restored.layers if layer.source_name == "utility")
     assert layer.utility_axis_bindings == [binding]
     assert (
@@ -174,7 +199,10 @@ def test_release_roundtrip_preserves_source_binding_surface_trace_and_final_fres
     repository.get_source_components.return_value = {}
     writer.create.return_value = (None, source)
     export = ExportApplication(
-        repository=repository, writer=writer, scene=lambda *_: scene
+        repository=repository,
+        writer=writer,
+        scene=lambda *_: scene,
+        validation=validation,
     )
     final = ReleaseCreateRequest(
         mode="final",
@@ -186,9 +214,15 @@ def test_release_roundtrip_preserves_source_binding_surface_trace_and_final_fres
             confirmed_by="Reviewer",
         ),
     )
-    restored.plan.issues = []
+    cast(Plan, restored.plan).issues = []
     export.create_release(restored.id, final)
     layer.utility_axis_bindings = [binding.model_copy(update={"outside_diameter_m": 6})]
     restored.geometry_version += 1
-    with pytest.raises(ValueError, match="инженерных сетей"):
+    with pytest.raises(DomainFailure) as failure:
         export.create_release(restored.id, final)
+    assert failure.value.reason is FailureReason.RELEASE_FINAL_UNAVAILABLE
+    assert any(
+        check["code"] == "network_checks"
+        for check in failure.value.params["release_checks"]
+    )
+    assert "инженерных сетей" in public_failure_message(failure.value)

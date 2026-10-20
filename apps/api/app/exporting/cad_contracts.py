@@ -1,4 +1,6 @@
-"""CAD release payloads. No interpretation of DWG geometry in this module."""
+"""Посадки и квитанция CAD-выпуска с проверкой состава и хешей; DWG-геометрия здесь не
+интерпретируется.
+"""
 
 from dataclasses import dataclass
 from typing import Annotated, Literal

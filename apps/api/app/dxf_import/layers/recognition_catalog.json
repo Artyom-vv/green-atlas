@@ -1,0 +1,488 @@
+{
+  "policy": "cad-subject-rules/3",
+  "name_prefixes": [
+    "дв_гп_п_до",
+    "дв_гп_п",
+    "топо",
+    "кл"
+  ],
+  "prefix_notes": {
+    "топо": "Префикс топографической группы; не определяет расчётную роль",
+    "кл": "В собственном имени красных линий — оформление регуляционной границы, не кабельная линия",
+    "дв": "Код автора проекта; универсальная расшифровка не установлена",
+    "ит": "Код раздела автора проекта; универсальная расшифровка не установлена",
+    "гп": "Генеральный план в стандарте модели Москвы; префикс не определяет содержимое слоя"
+  },
+  "sources": [
+    {
+      "url": "https://protect.gost.ru/gost/details/965635d0-c443-4d42-96ee-8ad1fab64986",
+      "purpose": "ГОСТ 21.508-2020, область генерального плана"
+    },
+    {
+      "url": "https://protect.gost.ru/gost/details/d682ef8f-9ec0-453e-b6ee-eccdf0b7d780",
+      "purpose": "ГОСТ 21.204-2020, область условных изображений генерального плана"
+    },
+    {
+      "url": "https://www.mos.ru/upload/documents/files/6245/Prilojenie1_TrebovaniyakIMOKS_Chast1_ObshietrebovaniyakCIM.pdf",
+      "purpose": "Таблица кодов разделов, ГП — генеральный план; это не словарь локальных CAD-слоёв"
+    },
+    {
+      "url": "https://www.mos.ru/upload/documents/oiv/tom_3_compressed.pdf",
+      "purpose": "Схема электроснабжения Москвы, раздел обозначений: ВЛ — воздушная линия, КЛ — кабельная линия; значение ГП зависит от раздела"
+    },
+    {
+      "url": "https://www.mos.ru/upload/documents/files/8493/antikor609.pdf",
+      "purpose": "План регулирования территории Москвы: красные линии обозначают границы территорий общего пользования, а не трубопроводы"
+    }
+  ],
+  "rules": [
+    {
+      "pattern": "^0$",
+      "category": "mixed_source"
+    },
+    {
+      "pattern": "демонтаж",
+      "category": "demolition_object"
+    },
+    {
+      "pattern": "^эн[\\W_]+вл[\\W_]+но$",
+      "category": "power_network",
+      "native_profile": "linear_network",
+      "evidence": "ВЛ обозначает воздушную линию; назначение подтверждено полным линейным составом захвата, без определения напряжения и прокладки",
+      "confidence": "high"
+    },
+    {
+      "pattern": "^\\d+[xх]\\d+[\\W_]*мм[\\W_]+освещение$",
+      "category": "power_network",
+      "native_profile": "linear_network",
+      "evidence": "В собственном имени указана линия освещения; линейный состав подтверждён захватом AutoCAD, числовое обозначение не задаёт диаметр и характеристики сети",
+      "confidence": "high"
+    },
+    {
+      "pattern": "^(?:дв[\\W_]+гп[\\W_]+п[\\W_]+)?по[\\W_]+ограничивающее$",
+      "category": "fence",
+      "native_profile": "physical_object",
+      "evidence": "В авторском слое ограничивающее ограждение обозначено собственным предметным кодом; полный физический состав подтверждён захватом AutoCAD",
+      "confidence": "high"
+    },
+    {
+      "pattern": "выгребн[а-я]*[\\W_]+ям[а-я]*(?:$|[\\W_])",
+      "category": "cesspit",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "physical_object",
+      "confidence": "high"
+    },
+    {
+      "pattern": "(?:^|[\\W_])решетк[а-я]*(?:$|[\\W_])",
+      "category": "grating",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "physical_object",
+      "confidence": "high"
+    },
+    {
+      "pattern": "(?:^|[\\W_])пандус[а-я]*(?:$|[\\W_])",
+      "category": "ramp",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "physical_object",
+      "confidence": "high"
+    },
+    {
+      "pattern": "(?:^|[\\W_])трамвайн[а-я]*[\\W_]+лини[а-я]*(?:$|[\\W_])",
+      "category": "railway",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "physical_object",
+      "confidence": "high"
+    },
+    {
+      "pattern": "(?:^|[\\W_])(?:детск[а-я]*|спорт[а-я]*)[\\W_]+(?:спорт[а-я]*[\\W_]+)?площадк[а-я]*(?:$|[\\W_])",
+      "category": "playground",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "built_surface",
+      "confidence": "high"
+    },
+    {
+      "pattern": "подъемн[а-я]*[\\W_]+кран[а-я]*(?:$|[\\W_])",
+      "category": "equipment",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "physical_object",
+      "confidence": "high"
+    },
+    {
+      "pattern": "(?:^|[\\W_])громоотвод[а-я]*(?:$|[\\W_])",
+      "category": "pole",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "physical_object",
+      "confidence": "high"
+    },
+    {
+      "pattern": "^(?:крест[а-я]*[\\W_]+)границ[а-я]*[\\W_]+заказ[а-я]*$",
+      "category": "survey_reference",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "survey_mark",
+      "confidence": "high"
+    },
+    {
+      "pattern": "(?:^|[\\W_])до[\\W_]+тип\\d+[\\W_]+устройств[а-я]*[\\W_]+уширен[а-я]*(?:$|[\\W_])",
+      "category": "carriageway",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "built_surface",
+      "confidence": "high"
+    },
+    {
+      "pattern": "(?:^|[\\W_])до[\\W_]+(?:ремонт[\\W_]+)?гранитн[а-я]*[\\W_]+плитк[а-я]*(?:$|[\\W_])",
+      "category": "hard_surface",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "built_surface",
+      "confidence": "medium"
+    },
+    {
+      "pattern": "(?:^|[\\W_])до[\\W_]+(?:тип[\\W_]+)?(?:укреплен[а-я]*[\\W_]+щебн[а-я]*|кромк[а-я]*[\\W_]+укр[\\W_]+обочин[а-я]*)(?:$|[\\W_])",
+      "category": "hard_surface",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "built_surface",
+      "confidence": "high"
+    },
+    {
+      "pattern": "^(?:тр[.]?|труб[а-я]*)[\\W_]+пэ$",
+      "category": "unspecified_network",
+      "evidence": "Предмет назван в слое; физические объекты полностью представлены в захвате AutoCAD",
+      "native_profile": "pipe",
+      "confidence": "low"
+    },
+    {
+      "pattern": "границ.*(?:раститель|грунт)",
+      "category": "surface_boundary"
+    },
+    {
+      "pattern": "откос",
+      "category": "terrain_slope"
+    },
+    {
+      "pattern": "внутреннее заполнение",
+      "category": "interior_detail"
+    },
+    {
+      "pattern": "топографические объекты",
+      "category": "unspecified_topography"
+    },
+    {
+      "pattern": "границ.*проект.*штрих",
+      "category": "boundary_decoration"
+    },
+    {
+      "pattern": "границ.*(?:проект|работ|участ|благоустр)",
+      "category": "project_boundary"
+    },
+    {
+      "pattern": "разметк",
+      "category": "road_marking"
+    },
+    {
+      "pattern": "(?:подпис|размер|номер дома|нумерац|выноск|поясн|текст|text|dimension)",
+      "category": "annotation"
+    },
+    {
+      "pattern": "геодез.*пункт",
+      "category": "geodetic_marker"
+    },
+    {
+      "pattern": "(?:координат.*крест|рамк)",
+      "category": "survey_reference"
+    },
+    {
+      "pattern": "горизонтал",
+      "category": "relief_reference"
+    },
+    {
+      "pattern": "(?:крыльц|porch)",
+      "category": "porch"
+    },
+    {
+      "pattern": "(?:лестниц|stairs)",
+      "category": "stairs"
+    },
+    {
+      "pattern": "(?:вентил|воздуховод)",
+      "category": "ventilation"
+    },
+    {
+      "pattern": "павильон",
+      "category": "pavilion"
+    },
+    {
+      "pattern": "навес|беседк",
+      "category": "canopy"
+    },
+    {
+      "pattern": "(?:здани|зданий|сооруж|building|house)",
+      "category": "building"
+    },
+    {
+      "pattern": "подпорн.*стен",
+      "category": "retaining_wall"
+    },
+    {
+      "pattern": "оград|парапет|огражд",
+      "category": "fence"
+    },
+    {
+      "pattern": "отмостк",
+      "category": "hard_surface"
+    },
+    {
+      "pattern": "люк|колод",
+      "category": "manhole"
+    },
+    {
+      "pattern": "столб|опор|вышк|мачт|фонар|светофор|светильник",
+      "category": "pole"
+    },
+    {
+      "pattern": "памятник|постамент",
+      "category": "monument"
+    },
+    {
+      "pattern": "фонтан",
+      "category": "fountain"
+    },
+    {
+      "pattern": "водоотвод.*лот",
+      "category": "open_drain"
+    },
+    {
+      "pattern": "(?:маф|оборудован|equipment)",
+      "category": "equipment"
+    },
+    {
+      "pattern": "(?:парков|стоянк|parking)",
+      "category": "parking"
+    },
+    {
+      "pattern": "(?:тротуар|(?:^|_)трот(?:_|$)|дорожк|пешеход|footway|sidewalk)",
+      "category": "footway"
+    },
+    {
+      "pattern": "(?:^|[\\W_])пч(?:$|[\\W_])|(?:проезд|дорог|carriageway)",
+      "category": "carriageway"
+    },
+    {
+      "pattern": "борт",
+      "category": "curb"
+    },
+    {
+      "pattern": "покрыти",
+      "category": "hard_surface"
+    },
+    {
+      "pattern": "леса.*газон",
+      "category": "mixed_vegetation"
+    },
+    {
+      "pattern": "газон|lawn",
+      "category": "lawn"
+    },
+    {
+      "pattern": "цветник|клумб|flower",
+      "category": "flowerbed"
+    },
+    {
+      "pattern": "кустар|shrub",
+      "category": "shrub"
+    },
+    {
+      "pattern": "дерев|tree",
+      "category": "tree"
+    },
+    {
+      "pattern": "озелен|растительн",
+      "category": "mixed_vegetation"
+    },
+    {
+      "pattern": "водопровод",
+      "category": "water_network"
+    },
+    {
+      "pattern": "канализ",
+      "category": "sewer_network"
+    },
+    {
+      "pattern": "тепло(?:сет|провод|трасс)",
+      "category": "heat_network"
+    },
+    {
+      "pattern": "газо(?:провод|снабж)",
+      "category": "gas_network"
+    },
+    {
+      "pattern": "(?:электро|электрическ|силов.*кабел|кабел.*силов)|(?:^|[\\W_])(?:кл|вл)[\\W_].*\\d[\\d.,\\-]*[\\W_]*кв(?:$|[\\W_])",
+      "category": "power_network"
+    },
+    {
+      "pattern": "(?:связ|телефон)",
+      "category": "communication_network"
+    },
+    {
+      "pattern": "(?:дренаж|водосток|ливнев)",
+      "category": "drainage_network"
+    },
+    {
+      "pattern": "кабел|труб|коммуникац|коллектор|(?:^|_)лэп(?:_|$)|(?:^|[\\W_])провод(?:а|ов|ка)?(?:$|[\\W_])",
+      "category": "unspecified_network"
+    },
+    {
+      "pattern": "(?:водоем|пруд|река|ручей|береговая)",
+      "category": "water"
+    }
+  ],
+  "native_profiles": {
+    "physical_object": {
+      "geometry_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "ELLIPSE",
+        "SPLINE",
+        "HATCH",
+        "REGION"
+      ],
+      "context_types": [
+        "INSERT",
+        "ATTRIB",
+        "ATTDEF",
+        "TEXT",
+        "MTEXT",
+        "AUTOCAD:AcDbMLeader",
+        "DIMENSION",
+        "LEADER",
+        "MLEADER"
+      ],
+      "required_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "ELLIPSE",
+        "SPLINE",
+        "HATCH",
+        "REGION"
+      ]
+    },
+    "built_surface": {
+      "geometry_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "ELLIPSE",
+        "SPLINE",
+        "HATCH",
+        "REGION"
+      ],
+      "context_types": [
+        "INSERT",
+        "ATTRIB",
+        "ATTDEF",
+        "TEXT",
+        "MTEXT",
+        "AUTOCAD:AcDbMLeader",
+        "DIMENSION",
+        "LEADER",
+        "MLEADER"
+      ],
+      "required_types": [
+        "HATCH",
+        "REGION"
+      ]
+    },
+    "survey_mark": {
+      "geometry_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ],
+      "context_types": [
+        "LINE"
+      ],
+      "required_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE"
+      ]
+    },
+    "pipe": {
+      "geometry_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "ELLIPSE",
+        "SPLINE",
+        "HATCH",
+        "REGION"
+      ],
+      "context_types": [
+        "INSERT",
+        "ATTRIB",
+        "ATTDEF",
+        "TEXT",
+        "MTEXT",
+        "AUTOCAD:AcDbMLeader",
+        "DIMENSION",
+        "LEADER",
+        "MLEADER"
+      ],
+      "required_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "CIRCLE",
+        "ELLIPSE",
+        "SPLINE",
+        "HATCH",
+        "REGION"
+      ]
+    },
+    "linear_network": {
+      "geometry_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "SPLINE"
+      ],
+      "context_types": [
+        "TEXT",
+        "MTEXT",
+        "ATTRIB",
+        "ATTDEF",
+        "DIMENSION",
+        "LEADER",
+        "MLEADER",
+        "AUTOCAD:AcDbMLeader"
+      ],
+      "required_types": [
+        "LINE",
+        "LWPOLYLINE",
+        "POLYLINE",
+        "ARC",
+        "SPLINE"
+      ]
+    }
+  },
+  "surface_boundary_pattern": "^(?:границ[а-я]*[\\W_]+(?:улиц[а-я]*|площадк[а-я]*|(?:раститель[а-я]*|грунт[а-я]*)(?:[\\W_]+(?:и|или)[\\W_]+(?:раститель[а-я]*|грунт[а-я]*))?|заказ[а-я]*)|красн[а-я]*[\\W_]+лини[а-я]*|red[\\W_]+lines|кромк[а-я]*[\\W_]+укр[\\W_]+обочин[а-я]*)$",
+  "native_only_categories": [
+    "cesspit",
+    "grating",
+    "ramp",
+    "railway",
+    "playground",
+    "cad_reference"
+  ],
+  "native_admission_issue": "Состав захвата AutoCAD не подтверждает эту предметную категорию"
+}

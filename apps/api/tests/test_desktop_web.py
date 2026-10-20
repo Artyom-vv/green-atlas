@@ -37,7 +37,13 @@ def authenticate(client):
 
 
 def test_no_files_or_api_without_desktop_session(desktop):
-    for path in ("/projects", "/api/echo", "/asset.js", "/_desktop/health"):
+    for path in (
+        "/projects",
+        "/api/echo",
+        "/asset.js",
+        "/_desktop/health",
+        "/_desktop/location/dadata",
+    ):
         response = desktop.get(path)
         assert response.status_code == 403
         assert SECRET not in response.text
@@ -122,3 +128,38 @@ def test_no_external_or_ambiguous_origin(origin):
 def test_missing_built_ui_is_explicit(tmp_path):
     with pytest.raises(ValueError, match="missing"):
         create_desktop_web(FastAPI(), tmp_path, origin=ORIGIN, secret=SECRET)
+
+
+def test_dadata_key_is_saved_only_in_authenticated_desktop_profile(
+    desktop, tmp_path, monkeypatch
+):
+    from app.location.providers import load_dadata_token
+
+    path = tmp_path / "private" / "dadata.json"
+    monkeypatch.setenv("GREEN_ATLAS_LOCATION_SETTINGS", str(path))
+    monkeypatch.delenv("DADATA_API_KEY", raising=False)
+    authenticate(desktop)
+    assert desktop.get("/_desktop/location/dadata").json() == {"configured": False}
+    assert (
+        desktop.post(
+            "/_desktop/location/dadata", json={"api_key": "abcdefgh"}
+        ).status_code
+        == 403
+    )
+    response = desktop.post(
+        "/_desktop/location/dadata",
+        json={"api_key": "abcdefgh"},
+        headers={"Origin": ORIGIN},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"configured": True}
+    assert "abcdefgh" not in response.text
+    assert load_dadata_token() == "abcdefgh"
+    assert desktop.get("/_desktop/location/dadata").json() == {"configured": True}
+    bad = desktop.post(
+        "/_desktop/location/dadata",
+        json={"api_key": "short"},
+        headers={"Origin": ORIGIN},
+    )
+    assert bad.status_code == 400
+    assert load_dadata_token() == "abcdefgh"

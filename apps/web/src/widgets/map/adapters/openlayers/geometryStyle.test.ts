@@ -2,8 +2,8 @@ import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
 import Polygon from 'ol/geom/Polygon';
 import { describe, expect, it } from 'vitest';
-import { geometryStyle } from '@/widgets/map/adapters/openlayers/mapStyles';
-import { isTechnical3dMapFeature } from '@/widgets/map/adapters/openlayers/hitTargets';
+import { geometryStyle } from '@/widgets/map/adapters/openlayers/overlays/mapStyles';
+import { isTechnical3dMapFeature } from '@/widgets/map/adapters/openlayers/interactions/hitTargets';
 
 describe('geometryStyle', () => {
   it('reuses expensive per-feature CAD text styles between render frames', () => {

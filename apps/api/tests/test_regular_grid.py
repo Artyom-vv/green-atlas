@@ -1,12 +1,17 @@
+from itertools import combinations
+from math import cos, hypot, radians, sin, sqrt
+
 import pytest
 from regular_grid_baseline import BaselineRegularGrid
 from shapely.affinity import rotate
-from shapely.geometry import MultiPolygon, Polygon, box, mapping
+from shapely.geometry import MultiPolygon, Point, Polygon, box, mapping
 
-from app.planning import patterns, regular_grid
-from app.planning.pattern_contracts import FillPatternRequest
+from app.planning.patterns import generators as patterns
+from app.planning.patterns.contracts import FillPatternRequest
 from app.planning.ports import PatternCandidate
-from app.planning.regular_grid import RegularFillGrid
+from app.planning.search import regular_grid
+from app.planning.search.allocation import spread_indices
+from app.planning.search.regular_grid import RegularFillGrid
 from app.planting_zones.contracts import PlantingZoneAssignment
 
 GEOMETRIES = [
@@ -37,9 +42,18 @@ def test_exact_points_order_phase_and_count_match_previous_loop(
 
 @pytest.mark.parametrize("layout", ["regular", "staggered"])
 @pytest.mark.parametrize("target", [1, 12, 60])
-def test_complete_existing_count_search_returns_unchanged_candidates(
+def test_count_keeps_one_contained_lattice_and_bounds_the_reserve(
     monkeypatch, layout, target
 ):
+    variants = []
+    original_variant = RegularFillGrid._count_variant
+
+    def record_variant(self, parts, spacing, *args):
+        result = original_variant(self, parts, spacing, *args)
+        variants.append((result[0], spacing))
+        return result
+
+    monkeypatch.setattr(RegularFillGrid, "_count_variant", record_variant)
     zones = [
         PlantingZoneAssignment(
             id="zone", label="fixture", geometry=mapping(GEOMETRIES[1])
@@ -55,8 +69,168 @@ def test_complete_existing_count_search_returns_unchanged_candidates(
         angle_deg=-33,
     )
     actual = patterns.generate_fill(request, zones)
-    monkeypatch.setattr(patterns, "RegularFillGrid", BaselineRegularGrid)
+    assert len(actual) == target
     assert actual == patterns.generate_fill(request, zones)
+    usable = patterns.usable_zone_geometry(zones[0], request.edge_offset_m)
+    assert all(usable.covers(Point(point.x, point.y)) for point in actual)
+    assert all(
+        hypot(first.x - second.x, first.y - second.y) >= request.spacing_m
+        for first, second in combinations(actual, 2)
+    )
+    # Выбран один рисунок, а не смесь узлов нескольких фаз или шагов.
+    spacing = next(spacing for points, spacing in variants if points is actual)
+    assert spacing >= request.spacing_m
+    first = actual[0]
+    angle = radians(request.angle_deg)
+    row_step = spacing * (sqrt(3) / 2 if layout == "staggered" else 1)
+    for point in actual:
+        dx, dy = point.x - first.x, point.y - first.y
+        x = dx * cos(angle) + dy * sin(angle)
+        row = (-dx * sin(angle) + dy * cos(angle)) / row_step
+        assert row == pytest.approx(round(row), abs=2e-6)
+        column = x / spacing
+        if layout == "staggered" and round(row) % 2:
+            column -= 0.5
+        assert column == pytest.approx(round(column), abs=2e-6)
+
+
+def test_early_count_reserve_and_final_six_cover_both_ends_of_the_zone():
+    zone = PlantingZoneAssignment(
+        id="zone", label="fixture", geometry=mapping(box(0, 0, 100, 100))
+    )
+    request = FillPatternRequest(
+        base_plan_version=1,
+        zone_ids=["zone"],
+        layout="regular",
+        placement_mode="count",
+        target_count=48,
+        spacing_m=6.73,
+        edge_offset_m=0,
+    )
+    reserve = patterns.generate_fill(request, [zone])
+    assert len(reserve) == 48
+    actual = [reserve[index] for index in spread_indices(list(range(48)), 6)]
+    assert min(point.y for point in actual) < 25
+    assert max(point.y for point in actual) > 75
+    assert min(point.x for point in actual) < 25
+    assert max(point.x for point in actual) > 75
+
+
+@pytest.mark.parametrize("angle", [44, 51])
+def test_count_rounding_does_not_undercut_the_strict_minimum_spacing(angle):
+    from shapely.affinity import translate
+
+    geometry = translate(
+        rotate(box(-5.336, -1.811, 5.336, 1.811), angle, origin=(0, 0)),
+        100,
+        100,
+    )
+    points = RegularFillGrid(geometry, angle, "regular").count_candidates(3.5, 3)
+    assert len(points) == 3
+    assert all(
+        hypot(first.x - second.x, first.y - second.y) >= 3.5
+        for first, second in combinations(points, 2)
+    )
+    assert all(geometry.covers(Point(point.x, point.y)) for point in points)
+
+
+def test_raw_minimum_recovers_exact_boundary_positions_without_weakening_spacing():
+    geometry = box(-3.5, -0.05, 3.5, 0.05)
+    points = RegularFillGrid(geometry, 0, "regular").count_candidates(3.5, 3)
+    assert {(point.x, point.y) for point in points} == {
+        (-3.5, 0),
+        (0, 0),
+        (3.5, 0),
+    }
+    assert all(
+        hypot(first.x - second.x, first.y - second.y) >= 3.5
+        for first, second in combinations(points, 2)
+    )
+
+
+@pytest.mark.parametrize("layout", ["regular", "staggered"])
+def test_lower_horizon_keeps_the_feasible_count_when_reserve_is_unreachable(layout):
+    # Области центров одной липы после обычной подготовки на 7 и 5 лет.
+    # Пользователь просит 6 позиций, внутренний резерв составляет 48.
+    rows = []
+    for bounds, spacing in (
+        ((83.264, 94.064, 84.336, 131.436), 7.65),
+        ((82.7, 93.5, 84.9, 132.0), 6.73),
+    ):
+        zone = PlantingZoneAssignment(
+            id="zone", label="fixture", geometry=mapping(box(*bounds))
+        )
+        rows.append(
+            patterns.generate_fill(
+                FillPatternRequest(
+                    base_plan_version=1,
+                    zone_ids=["zone"],
+                    layout=layout,
+                    placement_mode="count",
+                    target_count=48,
+                    spacing_m=spacing,
+                    edge_offset_m=0,
+                ),
+                [zone],
+            )
+        )
+    assert 0 < len(rows[0]) < 48
+    assert len(rows[1]) >= len(rows[0])
+    if layout == "regular":
+        assert len(rows[1]) >= 6
+
+
+@pytest.mark.parametrize("layout", ["regular", "staggered"])
+@pytest.mark.parametrize("angle", [0, 31, -90])
+def test_count_is_equivariant_under_world_translation(layout, angle):
+    from shapely.affinity import translate
+
+    geometry = GEOMETRIES[1]
+    offset = 12_345.25, -8_765.5
+    original = RegularFillGrid(geometry, angle, layout).count_candidates(7, 20)
+    shifted = RegularFillGrid(
+        translate(geometry, *offset), angle, layout
+    ).count_candidates(7, 20)
+    assert len(original) == len(shifted) == 20
+    for before, after in zip(original, shifted, strict=True):
+        assert after.x == pytest.approx(before.x + offset[0], abs=2e-6)
+        assert after.y == pytest.approx(before.y + offset[1], abs=2e-6)
+
+
+def test_count_probe_budget_bounds_huge_sparse_lattices(monkeypatch):
+    monkeypatch.setattr(regular_grid, "COUNT_GRID_MAX_PROBES", 25)
+    monkeypatch.setattr(regular_grid, "COUNT_GRID_VARIANT_PROBES", 10)
+    checks = []
+    original_prep = regular_grid.prep
+
+    class Coverage:
+        def __init__(self, geometry):
+            self.real = original_prep(geometry)
+
+        def covers(self, point):
+            checks.append(point)
+            return self.real.covers(point)
+
+    monkeypatch.setattr(regular_grid, "prep", Coverage)
+    grid = RegularFillGrid(
+        MultiPolygon([box(-1e9, 0, -1e9 + 100, 100), box(1e9, 0, 1e9 + 100, 100)]),
+        0,
+        "regular",
+    )
+    points = grid.count_candidates(0.5, 50)
+    assert 0 < len(points) < 50
+    assert len(checks) <= 25
+
+
+def test_count_propagates_cancellation(monkeypatch):
+    from app.operations.progress import OperationCancelled
+
+    def cancel():
+        raise OperationCancelled()
+
+    monkeypatch.setattr(regular_grid, "check_operation_cancelled", cancel)
+    with pytest.raises(OperationCancelled):
+        RegularFillGrid(GEOMETRIES[0], 0, "regular").count_candidates(6, 20)
 
 
 def test_count_probes_rotate_source_once_and_do_not_construct_candidates(monkeypatch):

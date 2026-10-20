@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { startWorkspaceApi } from '../api/startWorkspace';
 import { useStartWorkspace } from './useStartWorkspace';
+import { acknowledgeProjectWrite } from '@/entities/project/model/acknowledgedRead';
 
 vi.mock('../api/startWorkspace', () => ({
   startWorkspaceApi: {
@@ -51,6 +52,48 @@ function setup(
   return { ...hook, client, callback, refresh };
 }
 beforeEach(() => vi.resetAllMocks());
+
+it('keeps a lost start in recovery when a late project GET is below a newer acknowledgement despite matching its own saved basis', async () => {
+  let finishRead!: (project: Project) => void;
+  vi.mocked(startWorkspaceApi.saveZones).mockResolvedValue(saved);
+  vi.mocked(startWorkspaceApi.createPlan).mockRejectedValue(
+    new Error('Lost start response'),
+  );
+  vi.mocked(startWorkspaceApi.readProject).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+  );
+  const { result, client, callback } = setup();
+  const key = ['workspace-project', 'a'];
+  act(() => result.current.mutate());
+  await waitFor(() =>
+    expect(startWorkspaceApi.readProject).toHaveBeenCalledOnce(),
+  );
+  acknowledgeProjectWrite(client, 'a', { stateVersion: 4 });
+  const freshReadError = new Error('Fresh read unavailable');
+  await expect(
+    client.fetchQuery({
+      queryKey: key,
+      queryFn: async () => {
+        throw freshReadError;
+      },
+      staleTime: 0,
+      retry: false,
+    }),
+  ).rejects.toBe(freshReadError);
+  await act(async () => finishRead(completed));
+  expect(client.getQueryData(key)).toEqual(saved);
+  expect(client.getQueryState(key)?.status).toBe('error');
+  expect(client.getQueryState(key)?.error).toBe(freshReadError);
+  expect(result.current.readRecovery).toBe(true);
+  expect(result.current.blocked).toBe(true);
+  expect(callback).not.toHaveBeenCalled();
+  expect(startWorkspaceApi.saveZones).toHaveBeenCalledOnce();
+  expect(startWorkspaceApi.createPlan).toHaveBeenCalledOnce();
+  client.clear();
+});
 
 it('captures the zones and chains exact server versions through one synchronous gate', async () => {
   vi.mocked(startWorkspaceApi.saveZones).mockResolvedValue(saved);

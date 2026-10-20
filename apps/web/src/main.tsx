@@ -8,9 +8,14 @@ import './styles.css';
 import { App } from './app/App';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 5_000 }, mutations: { retry: 0 } },
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 5_000, networkMode: 'always' },
+    mutations: { retry: 0, networkMode: 'always' },
+  },
 });
-const router = createBrowserRouter([{ path: '*', element: <App /> }], { future: { v7_relativeSplatPath: true } });
+const router = createBrowserRouter([{ path: '*', element: <App /> }], {
+  future: { v7_relativeSplatPath: true },
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

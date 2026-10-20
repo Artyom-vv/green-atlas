@@ -1,0 +1,190 @@
+{
+  "schema": "green-atlas.native-build-plan/1",
+  "autocad": {
+    "release": "2027",
+    "runtime": "R26.0",
+    "target": "windows-x86_64"
+  },
+  "sdk": {
+    "include_directories": [
+      "inc",
+      "inc-x64",
+      "utils/brep/inc"
+    ],
+    "required_headers": [
+      "inc/adesk.h",
+      "inc/aced.h",
+      "inc/acdb.h",
+      "inc/AcRxDefault.def",
+      "utils/brep/inc/brbrep.h"
+    ],
+    "library_directories": [
+      "lib-x64",
+      "utils/brep/lib-x64"
+    ],
+    "common_libraries": [
+      "accore.lib",
+      "acdb26.lib",
+      "acge26.lib",
+      "rxapi.lib",
+      "acpal.lib",
+      "acgeoment.lib"
+    ],
+    "brep_libraries": [
+      "acbr26.lib",
+      "acgex26.lib"
+    ],
+    "definition_file": "inc/AcRxDefault.def"
+  },
+  "msvc": {
+    "minimum_tools_version": "14.44.35207",
+    "architecture": "x64",
+    "standard": "c++20",
+    "runtime": "MD"
+  },
+  "targets": {
+    "core": {
+      "version": "0.1.49",
+      "binary": "GreenAtlasQuery.crx",
+      "build_state": "candidate",
+      "sources": [
+        "tools/autocad-bridge/native/cad_utils.cpp",
+        "tools/autocad-bridge/native/direct_query_kernel.cpp",
+        "tools/autocad-bridge/native/file_io.cpp",
+        "tools/autocad-bridge/native/native_affine_query.cpp",
+        "tools/autocad-bridge/native/native_area_candidates.cpp",
+        "tools/autocad-bridge/native/native_area_group.cpp",
+        "tools/autocad-bridge/native/native_clearance.cpp",
+        "tools/autocad-bridge/native/native_clearance_cache.cpp",
+        "tools/autocad-bridge/native/native_clearance_domain.cpp",
+        "tools/autocad-bridge/native/native_clearance_targets.cpp",
+        "tools/autocad-bridge/native/native_curve_query.cpp",
+        "tools/autocad-bridge/native/native_face_catalog.cpp",
+        "tools/autocad-bridge/native/native_query_batch.cpp",
+        "tools/autocad-bridge/native/native_query_command.cpp",
+        "tools/autocad-bridge/native/operation_control.cpp",
+        "tools/autocad-bridge/native/planar_face_graph.cpp",
+        "tools/autocad-bridge/native/planar_face_repairs.cpp",
+        "tools/autocad-bridge/native/planar_face_split.cpp",
+        "tools/autocad-bridge/native/planar_faces.cpp",
+        "tools/autocad-bridge/native/semantic_capture.cpp",
+        "tools/autocad-bridge/native/semantic_evidence.cpp",
+        "tools/autocad-bridge/native/session_capture_instances.cpp",
+        "tools/autocad-bridge/native/xref_dependency.cpp",
+        "tools/autocad-bridge/native/xref_instance_access.cpp",
+        "tools/autocad-bridge/query-worker/cad_release.cpp",
+        "tools/autocad-bridge/query-worker/entry.cpp",
+        "tools/autocad-bridge/query-worker/package_faces.cpp",
+        "tools/autocad-bridge/query-worker/package_query.cpp"
+      ],
+      "system_libraries": [
+        "bcrypt.lib"
+      ],
+      "sdk_additional_libraries": [],
+      "commands": {
+        "GAQUERYOBJECTS": "ga::nativeQuery::queryObjectsCommand",
+        "GAQUERYPACKAGE": "ga::queryWorker::queryPackageCommand",
+        "GAFACESPACKAGE": "ga::queryWorker::prepareFacesPackageCommand",
+        "GARELEASEPACKAGE": "ga::queryWorker::releasePackageCommand"
+      },
+      "face_protocols": [
+        "green-atlas.archive-face-preparation/1",
+        "green-atlas.archive-face-preparation/2",
+        "green-atlas.archive-face-preparation/3"
+      ],
+      "topology_shapes": [
+        "curve",
+        "AcDbRegion",
+        "AcDbHatch"
+      ],
+      "qualification": "pending-windows-build-and-autocad-2027-execution"
+    },
+    "gui": {
+      "version": "0.1.48",
+      "binary": "GreenAtlasBridge.arx",
+      "build_state": "candidate",
+      "sources": [
+        "tools/autocad-bridge/native/block_traversal.cpp",
+        "tools/autocad-bridge/native/cad_utils.cpp",
+        "tools/autocad-bridge/native/capture_commands.cpp",
+        "tools/autocad-bridge/native/curve_extraction.cpp",
+        "tools/autocad-bridge/native/curve_sampling.cpp",
+        "tools/autocad-bridge/native/delivery_command.cpp",
+        "tools/autocad-bridge/native/delivery_recovery.cpp",
+        "tools/autocad-bridge/native/direct_query_kernel.cpp",
+        "tools/autocad-bridge/native/drawing_traversal.cpp",
+        "tools/autocad-bridge/native/entity_extraction.cpp",
+        "tools/autocad-bridge/native/exact_polyline_pairs.cpp",
+        "tools/autocad-bridge/native/file_io.cpp",
+        "tools/autocad-bridge/native/geometry_math.cpp",
+        "tools/autocad-bridge/native/geometry_selftest.cpp",
+        "tools/autocad-bridge/native/green_atlas_bridge.cpp",
+        "tools/autocad-bridge/native/hatch_extraction.cpp",
+        "tools/autocad-bridge/native/hatch_loop_roles.cpp",
+        "tools/autocad-bridge/native/live_inventory.cpp",
+        "tools/autocad-bridge/native/live_query_session.cpp",
+        "tools/autocad-bridge/native/live_query_transport.cpp",
+        "tools/autocad-bridge/native/local_platform.cpp",
+        "tools/autocad-bridge/native/mcp_transport.cpp",
+        "tools/autocad-bridge/native/native_affine_query.cpp",
+        "tools/autocad-bridge/native/native_area_candidates.cpp",
+        "tools/autocad-bridge/native/native_area_group.cpp",
+        "tools/autocad-bridge/native/native_clearance.cpp",
+        "tools/autocad-bridge/native/native_clearance_cache.cpp",
+        "tools/autocad-bridge/native/native_clearance_domain.cpp",
+        "tools/autocad-bridge/native/native_clearance_targets.cpp",
+        "tools/autocad-bridge/native/native_curve_query.cpp",
+        "tools/autocad-bridge/native/native_face_catalog.cpp",
+        "tools/autocad-bridge/native/native_query_batch.cpp",
+        "tools/autocad-bridge/native/native_query_command.cpp",
+        "tools/autocad-bridge/native/operation_control.cpp",
+        "tools/autocad-bridge/native/planar_face_graph.cpp",
+        "tools/autocad-bridge/native/planar_face_repairs.cpp",
+        "tools/autocad-bridge/native/planar_face_split.cpp",
+        "tools/autocad-bridge/native/planar_faces.cpp",
+        "tools/autocad-bridge/native/probe_command.cpp",
+        "tools/autocad-bridge/native/region_extraction.cpp",
+        "tools/autocad-bridge/native/semantic_capture.cpp",
+        "tools/autocad-bridge/native/semantic_evidence.cpp",
+        "tools/autocad-bridge/native/session_capture.cpp",
+        "tools/autocad-bridge/native/session_capture_instances.cpp",
+        "tools/autocad-bridge/native/snapshot_writer.cpp",
+        "tools/autocad-bridge/native/xref_dependency.cpp",
+        "tools/autocad-bridge/native/xref_instance_access.cpp",
+        "tools/autocad-bridge/native/xref_resolver.cpp",
+        "tools/autocad-bridge/windows/delivery_ticket.cpp",
+        "tools/autocad-bridge/windows/delivery_ui.cpp",
+        "tools/autocad-bridge/windows/installed_module.cpp",
+        "tools/autocad-bridge/windows/launch_connector.cpp",
+        "tools/autocad-bridge/windows/progress_window.cpp",
+        "tools/autocad-bridge/windows/reference_search.cpp"
+      ],
+      "macos_adapters": [
+        "tools/autocad-bridge/native/delivery_ui.mm",
+        "tools/autocad-bridge/native/reference_search.mm"
+      ],
+      "sdk_additional_libraries": [
+        "acad.lib"
+      ],
+      "system_libraries": [
+        "advapi32.lib",
+        "bcrypt.lib",
+        "user32.lib",
+        "comctl32.lib",
+        "gdi32.lib",
+        "shell32.lib",
+        "ole32.lib",
+        "normaliz.lib",
+        "uuid.lib"
+      ],
+      "blockers": [],
+      "qualification": "pending-windows-build-and-autocad-2027-execution"
+    }
+  },
+  "references": [
+    "https://blog.autodesk.io/autocad-2027-sdk-what-every-plugin-developer-needs-to-know/",
+    "https://help.autodesk.com/cloudhelp/2027/ENU/AutoCAD-Customization/files/GUID-C21B8F00-C7DE-4E44-8006-D5DC99199F31.htm",
+    "https://learn.microsoft.com/en-us/cpp/build/reference/unicode-support-in-the-compiler-and-linker?view=msvc-180"
+  ],
+  "reference_recipe_commit": "23d203a69f663914abfc431d568be115e82db95b"
+}

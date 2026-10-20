@@ -1,8 +1,5 @@
 import type { RecommendationPanelProps } from '@/features/recommendation/ui/RecommendationPanel';
-import type {
-  BuildingScreenDraft,
-  RecommendationDraft,
-} from '@/features/recommendation/model/recommendationForm';
+import type { RecommendationDraft } from '@/features/recommendation/model/recommendationForm';
 import type { WorkspaceRecommendationToolProps } from './WorkspaceRecommendationTool.props';
 
 interface RecommendationBindingOptions extends Pick<
@@ -17,17 +14,13 @@ interface RecommendationBindingOptions extends Pick<
 
 type RecommendationBindings = Pick<
   RecommendationPanelProps,
-  | 'onChooseComposition'
-  | 'onCancelCalculation'
-  | 'onScreenPreview'
-  | 'onPreview'
-  | 'onCancel'
+  'onCancelCalculation' | 'onPreview' | 'onCancel'
 >;
 
 export function recommendationToolBindings(
   options: RecommendationBindingOptions,
 ): RecommendationBindings {
-  const preview = (draft: RecommendationDraft | BuildingScreenDraft) => {
+  const preview = (draft: RecommendationDraft) => {
     if (options.sceneOpen) options.changeMapMode('2d');
     options.previewRecommendation.mutate({
       ...draft,
@@ -35,9 +28,7 @@ export function recommendationToolBindings(
     });
   };
   return {
-    onChooseComposition: () => options.setRecommendationOpen(false),
     onCancelCalculation: () => options.previewRecommendation.reset(),
-    onScreenPreview: preview,
     onPreview: preview,
     onCancel: () => {
       options.previewRecommendation.reset();

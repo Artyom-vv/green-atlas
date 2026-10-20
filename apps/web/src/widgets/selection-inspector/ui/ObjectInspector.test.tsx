@@ -6,11 +6,44 @@ import type { ValidationIssue } from '@green/api-client';
 afterEach(cleanup);
 
 describe('ObjectInspector', () => {
+  it('не повторяет общее замечание о геометрии для выбранной посадки', () => {
+    render(
+      <ObjectInspector
+        object={{
+          id: 'plant-1',
+          kind: 'tree',
+          x: 1,
+          y: 2,
+          radius: 1,
+          size_class: 'unspecified',
+          spacing_policy: 'balanced',
+          locked: false,
+          status: 'warning',
+        }}
+        issues={[
+          {
+            code: 'SOURCE_GEOMETRY_PARTIAL',
+            severity: 'warning',
+            title: 'Неполная подоснова',
+            description: 'Полнота исходника не подтверждена',
+            object_id: 'plant-1',
+          },
+        ]}
+        onSpecies={vi.fn()}
+        onGrowthHorizon={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('Неполная подоснова')).not.toBeInTheDocument();
+    expect(screen.queryByText('Есть замечания')).not.toBeInTheDocument();
+    expect(screen.queryByText('Размещение допустимо')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Удалить' })).toBeEnabled();
+  });
   it('shows one cause for repeated checks of the selected planting', () => {
     const issue = {
       id: 'warning-1',
       object_id: 'plant-1',
-      code: 'SOURCE_GEOMETRY_PARTIAL',
+      code: 'NATIVE_LOCAL_UNKNOWN',
       severity: 'warning',
       title: 'Неполная геометрия',
       description: 'Часть исходных объектов недоступна',
@@ -96,7 +129,7 @@ describe('ObjectInspector', () => {
     expect(screen.queryByText('Диаметр кроны')).not.toBeInTheDocument();
     expect(screen.getByText(/Без породы: 1 из 1/)).toBeVisible();
     expect(
-      screen.getByRole('slider', { name: 'Горизонт прогноза' }),
+      screen.getByRole('slider', { name: 'Просмотр роста' }),
     ).toBeEnabled();
   });
 
@@ -166,7 +199,7 @@ describe('ObjectInspector', () => {
     expect(onMove).toHaveBeenCalledOnce();
     expect(onSpecies).toHaveBeenCalledOnce();
     expect(
-      screen.queryByRole('slider', { name: 'Горизонт прогноза' }),
+      screen.queryByRole('slider', { name: 'Просмотр роста' }),
     ).not.toBeInTheDocument();
   });
 

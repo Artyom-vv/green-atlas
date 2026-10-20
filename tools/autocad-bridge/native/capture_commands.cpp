@@ -4,6 +4,7 @@
 #include "bridge_config.h"
 #include "drawing_traversal.h"
 #include "xref_resolver.h"
+#include "session_capture.h"
 #include "operation_control.h"
 #include "mcp_transport.h"
 #include "aced.h"
@@ -13,6 +14,8 @@
 #include "AcString.h"
 #include <algorithm>
 #include <cctype>
+#include <exception>
+#include <utility>
 
 namespace ga::bridge {
 
@@ -89,13 +92,27 @@ ExportResult captureTopology(AcDbDatabase* database,
         return result;
     }
 
+    if (!sideDatabaseCapture) {
+        try {
+            ga::capture::validateLiveInstanceTopology(*database);
+        } catch (const std::exception& error) {
+            result.error = error.what();
+            acutPrintf(_T("\nGreen Atlas: %s"), AcString(result.error.c_str()).kwszPtr());
+            return result;
+        }
+    }
+
     DrawingGeometry geometry;
     auto& regions = geometry.regions;
     auto& areaProposals = geometry.areaProposals;
     auto& paths = geometry.paths;
     auto& points = geometry.points;
     auto& coverage = geometry.coverage;
-    ExternalDatabaseCache externalDatabases;
+    // A live capture inventories only the editor's loaded databases. Opening
+    // disk files here would substitute an unloaded/missing XREF and diverge
+    // from both the watched source and its native archive. Historical side-DB
+    // readers keep their explicitly separate compatibility policy.
+    ExternalDatabaseCache externalDatabases(sideDatabaseCapture);
     auto& traversal = geometry.traversal;
     const AcGeMatrix3d rootTransform = AcGeMatrix3d::kIdentity;
     std::vector<std::string> instanceChain;
@@ -144,14 +161,23 @@ void exportRegionTopologyProbe() {
 
 bool captureLiveSnapshotForService(const std::string& destination, std::string& error,
                                    const CaptureObserver& observer) {
+    return captureLiveSnapshotForService(destination, error, observer, nullptr);
+}
+
+bool captureLiveSnapshotForService(const std::string& destination, std::string& error,
+                                   const CaptureObserver& observer,
+                                   std::string* transferFacts) {
     if (destination.empty() || mcpRequestInProgress() || gSideDatabaseCapture) {
         error = "AutoCAD уже подготавливает другой снимок или путь передачи пуст.";
         return false;
     }
-    ScopedOperationControl control({[] { return acedUsrBrk() != 0; }, {}});
+    auto callbacks = currentOperationControl();
+    callbacks.cancelled = [] { return acedUsrBrk() != 0; };
+    ScopedOperationControl control(std::move(callbacks));
     const auto result = captureTopology(
         acdbHostApplicationServices()->workingDatabase(), {}, destination, observer);
     error = result.error;
+    if (transferFacts && result.success) *transferFacts = result.transferFacts;
     return result.success;
 }
 

@@ -1,3 +1,7 @@
+"""Предпросмотр и сохранение рабочих зон с квитанциями, историей и доказанным
+переиспользованием проверки плана.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -5,8 +9,8 @@ from threading import RLock
 
 from shapely.geometry import shape
 
-from app.dxf_import.admission import require_calculation_source
 from app.dxf_import.contracts import ImportEditability
+from app.dxf_import.source.admission import require_calculation_source
 from app.history.ports import ProjectHistoryPort
 from app.planning.contracts import Plan
 from app.planting_zones.change_contracts import ZoneChangeResult
@@ -18,6 +22,8 @@ from app.planting_zones.domain import (
 )
 from app.planting_zones.ports import ZoneProjectRepository, ZoneValidator
 from app.projects.contracts import Project, ProjectStatus
+from app.shared.error_messages import public_failure_message
+from app.shared.failures import DomainFailure, FailureReason
 from app.validation.application import PlanValidation
 from app.validation.ports import PlanValidatorPort
 
@@ -53,14 +59,14 @@ class PlantingZoneApplication:
     def preview_planting_zone(
         self, project_id: str, zone: PlantingZoneAssignment
     ) -> dict[str, object]:
-        """Read-only preflight. Saving revalidates against the current project."""
+        """Проверяет зону без записи; сохранение повторяет проверку текущего проекта."""
         project = self.repository.get(project_id)
         zones = [item for item in project.planting_zones if item.id != zone.id] + [zone]
         error = None
         try:
             self.validate_planting_zones(project, zones)
-        except ValueError as problem:
-            error = str(problem)
+        except DomainFailure as problem:
+            error = public_failure_message(problem)
         try:
             parsed = shape(zone.geometry)
             if not parsed.is_valid:
@@ -99,15 +105,22 @@ class PlantingZoneApplication:
         mutation_receipt: dict | None = None,
     ) -> Project:
         project = self.repository.get(project_id)
+        previous = project.model_copy(deep=False)
         base_state_version = project.state_version
         protected_objects = (
-            [item.model_dump(mode="json") for item in project.plan.objects]
+            [
+                item.model_dump(mode="json", exclude={"status"})
+                for item in project.plan.objects
+            ]
             if preserve_plan and project.plan is not None
             else None
         )
         self.validate_planting_zones(project, zones)
         project.planting_zones = [zone.model_copy(deep=True) for zone in zones]
         if project.geometry is not None:
+            project.geometry = project.geometry.model_copy(
+                update={"feature_collection": dict(project.geometry.feature_collection)}
+            )
             attach_planting_zone_features(project)
             project.geometry_version += 1
         project.status = (
@@ -117,13 +130,14 @@ class PlantingZoneApplication:
         )
         try:
             if project.plan is not None:
-                self.validation.refresh(project, project.plan, increment_version=False)
+                self.validation.refresh_after_zone_change(
+                    previous, project, project.plan
+                )
                 if protected_objects is not None and protected_objects != [
-                    item.model_dump(mode="json") for item in project.plan.objects
+                    item.model_dump(mode="json", exclude={"status"})
+                    for item in project.plan.objects
                 ]:
-                    raise ValueError(
-                        "Изменение участка затрагивает существующие посадки. Подготовьте отдельное изменение плана."
-                    )
+                    raise DomainFailure(FailureReason.ZONE_CHANGE_PLANTINGS_AFFECTED)
             if mutation_receipt is not None:
                 receipt = ZoneChangeResult.model_validate(mutation_receipt)
                 if (
@@ -137,9 +151,7 @@ class PlantingZoneApplication:
                     or [item.model_dump(mode="json") for item in receipt.after_zones]
                     != [item.model_dump(mode="json") for item in project.planting_zones]
                 ):
-                    raise ValueError(
-                        "Квитанция не соответствует сохраняемому изменению участков"
-                    )
+                    raise DomainFailure(FailureReason.ZONE_CHANGE_SAVE_RECEIPT_MISMATCH)
                 saved = self.repository.save_with_receipt(
                     project,
                     "planting_zones",
@@ -150,9 +162,8 @@ class PlantingZoneApplication:
                 saved = self.repository.save(project)
         except Exception:
             if preserve_plan:
-                # Validation cached the prospective geometry revision before
-                # durability. A rejected guard or CAS must not let a later,
-                # different edit reuse that uncommitted spatial index.
+                # Проверка кеширует будущую ревизию до устойчивой записи. После отказа
+                # проверки или условной записи следующая правка не использует этот неподтверждённый индекс.
                 self.validator.discard(project.id)
             raise
         self.invalidate_spatial(project.id)
@@ -165,7 +176,9 @@ class PlantingZoneApplication:
     def get_zone_change_receipt(
         self, project_id: str, preview_id: str, digest: str, base_state_version: int
     ) -> ZoneChangeResult | None:
-        """Read exact durable zone success independently of preview lifetime."""
+        """Читает точный сохранённый результат изменения зоны независимо от срока
+        предпросмотра.
+        """
         value = self.repository.mutation_receipt(
             project_id, "planting_zones", preview_id
         )
@@ -178,28 +191,24 @@ class PlantingZoneApplication:
             or receipt.digest != digest
             or receipt.base_state_version != base_state_version
         ):
-            raise ValueError(
-                "Квитанция не соответствует подтверждённому изменению участка"
-            )
+            raise DomainFailure(FailureReason.ZONE_CHANGE_RECEIPT_MISMATCH)
         return receipt
 
     def create_manual_plan(self, project_id: str) -> Project:
         project = self.repository.get(project_id)
         require_calculation_source(project.source_file)
         if project.import_status.editability == ImportEditability.READ_ONLY:
-            raise ValueError(project.import_status.message)
+            raise DomainFailure(FailureReason.SOURCE_READ_ONLY)
         if project.geometry is None:
-            raise ValueError("Сначала подготовьте карту и ограничения")
+            raise DomainFailure(FailureReason.MANUAL_MAP_REQUIRED)
         if not project.planting_zones:
-            raise ValueError("Сначала выберите хотя бы один участок для посадок")
+            raise DomainFailure(FailureReason.MANUAL_ZONES_REQUIRED)
         attach_planting_zone_features(project)
         project.plan = Plan(objects=[], issues=[])
-        # The calculated snapshot is now the single map source for manual
-        # work. The raw normalized snapshot was needed only to calculate it
-        # and to support a mapping retry before the plan existed. Keeping both
-        # GeoJSON graphs makes a large project persist two copies of every DXF
-        # feature for the entire editing session. The original DXF BLOB stays
-        # untouched for audit and export; mappings are already locked here.
+        # Для ручной работы используется единый расчётный снимок. Сырой снимок был
+        # нужен для расчёта и повторного назначения до создания плана; два GeoJSON-графа
+        # удваивали каждую DXF-сущность. Исходный DXF BLOB остаётся для аудита и выпуска,
+        # а назначения на этом шаге уже зафиксированы.
         project.source_geometry = None
         project.status = ProjectStatus.EDITING
         self.history.clear(project.id)

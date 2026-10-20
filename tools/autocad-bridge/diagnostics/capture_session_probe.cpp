@@ -176,6 +176,26 @@ void walk(std::ostream& o,AcDbObjectId record,const AcGeMatrix3d& transform,cons
                   <<",\"block_transform\":"; matrix(o,ref->blockTransform()); }
         o<<'}';
         if(ref) {
+            // Independent oracle: attached attributes are not BTR entities.
+            // Their stored coordinates already include their owning INSERT.
+            std::unique_ptr<AcDbObjectIterator> attributes(ref->attributeIterator());
+            if(attributes) for(attributes->start();!attributes->done();attributes->step()) {
+                const auto attributeId=attributes->objectId();
+                auto attribute=open<AcDbAttribute>(attributeId);
+                AcString attributeLayer; ok(attribute->layer(attributeLayer),"attribute layer");
+                o<<(first?"":",")<<"{\"route\":"<<q(address+"/"+handle(attributeId))
+                 <<",\"handle\":"<<q(handle(attributeId))
+                 <<",\"runtime_object_id\":"<<q(std::to_string(attributeId.asOldId()))
+                 <<",\"runtime_database\":"<<q(std::to_string(reinterpret_cast<uintptr_t>(attribute->database())))
+                 <<",\"class\":"<<q(utf(attribute->isA()->name()))
+                 <<",\"layer\":"<<q(utf(attributeLayer.kwszPtr()))
+                 <<",\"attribute_text\":"<<q(utf(attribute->textString()))
+                 <<",\"attribute_tag\":"<<q(utf(attribute->tag()))<<",\"transform\":";
+                matrix(o,transform);
+                o<<",\"vertices\":[";point(o,attribute->position());
+                o<<"],\"world_vertices\":[";point(o,attribute->position().transformBy(transform));
+                o<<"]}";first=false;
+            }
             auto child=open<AcDbBlockTableRecord>(ref->blockTableRecord());
             if(!child->isFromExternalReference() || (child->xrefStatus()==AcDb::kXrfResolved&&child->xrefDatabase()))
                 walk(o,ref->blockTableRecord(),transform*ref->blockTransform(),address+"/",first,depth+1);
@@ -197,7 +217,7 @@ AcDbObjectId attach(AcDbDatabase* db,const fs::path& file,const wchar_t* name,Ac
     ok(overlay?acdbOverlayXref(db,path.kwszPtr(),name,id):acdbAttachXref(db,path.kwszPtr(),name,id),"attach");
     append(db,new AcDbBlockReference(pos,id)); return id;
 }
-void seed(const fs::path& root) {
+void seed(const fs::path& root,bool complete=false) {
     auto dir=root/"source"; fs::create_directory(dir);
     for(const auto& name:{"nested","offline","missing"}) {
         AcDbDatabase db(true,true); db.setInsunits(AcDb::kUnitsMeters);
@@ -209,12 +229,32 @@ void seed(const fs::path& root) {
         ok(save(&db,dir/"child.dwg"),"save child");
     }
     AcDbDatabase db(true,true); db.setInsunits(AcDb::kUnitsMeters);
+    AcDbObjectId siteLayer,buildingLayer;
+    if(complete) {
+        auto table=open<AcDbLayerTable>(db.layerTableId(),AcDb::kForWrite);
+        for(const auto* name:{L"SITE",L"BUILDING"}) {
+            auto* layer=new AcDbLayerTableRecord();layer->setName(name);
+            AcDbObjectId id;ok(table->add(id,layer),"fixture layer");layer->close();
+            if(AcString(name)==L"SITE") siteLayer=id;else buildingLayer=id;
+        }
+    }
     auto* p=new AcDbPolyline(); p->addVertexAt(0,{0,0}); p->addVertexAt(1,{10,0});
-    p->addVertexAt(2,{10,10}); p->addVertexAt(3,{0,10}); p->setClosed(true); append(&db,p);
+    p->addVertexAt(2,{10,10}); p->addVertexAt(3,{0,10}); p->setClosed(true);
+    if(complete) ok(p->setLayer(siteLayer),"fixture site layer");
+    append(&db,p);
+    if(complete) {
+        const std::vector<AcGePoint3d> corners{{1,1,0},{2,1,0},{2,2,0},{1,2,0}};
+        for(std::size_t i=0;i<corners.size();++i) {
+            auto* edge=new AcDbLine(corners[i],corners[(i+1)%corners.size()]);
+            ok(edge->setLayer(buildingLayer),"fixture building layer");append(&db,edge);
+        }
+    }
     auto child=attach(&db,dir/"child.dwg",L"CHILD",{100,200,0});
     auto* ref=new AcDbBlockReference({-50,60,0},child); ref->setRotation(0.35); ref->setScaleFactors({2,0.5,1}); append(&db,ref);
     auto off=attach(&db,dir/"offline.dwg",L"OFFLINE",{0,1000,0},true);
-    AcDbObjectIdArray unload; unload.append(off); ok(acdbUnloadXrefs(&db,unload),"unload");
+    if(!complete) {
+        AcDbObjectIdArray unload; unload.append(off); ok(acdbUnloadXrefs(&db,unload),"unload");
+    }
     attach(&db,dir/"missing.dwg",L"MISSING",{0,2000,0});
     ok(save(&db,dir/"host.dwg"),"save host");
     write(root/"seed.json","{\"completed\":true}");

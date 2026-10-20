@@ -28,6 +28,8 @@ export const ExplorerPlantings: FC<ExplorerPlantingsProps> = ({
   return (
     <Disclosure
       variant="plain"
+      headerVariant="inset"
+      stickyHeader
       defaultOpen
       label="Посадки проекта"
       contentClassName="py-1"
@@ -40,45 +42,55 @@ export const ExplorerPlantings: FC<ExplorerPlantingsProps> = ({
         </span>
       }
     >
-      {groups.map((group) => (
-        <section
-          key={group.kind}
-          aria-label={group.label}
-          className="grid min-w-0 gap-1 pl-2"
-        >
-          <Text as="h3" variant="label" tone="muted" className="py-1 pl-2">
-            {group.label}
-          </Text>
-          <ul className="m-0 grid list-none gap-1 p-0">
-            {group.items.map(({ object, ordinal, name }) => (
-              <li key={object.id ?? `planting-${ordinal}`}>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-2 text-left aria-pressed:bg-blue-100 aria-pressed:text-blue-700"
-                  aria-label={`Выбрать посадку № ${ordinal}: ${name}`}
-                  title={name}
-                  aria-pressed={Boolean(object.id && selected.has(object.id))}
-                  disabled={disabled || !object.id}
-                  onClick={() => {
-                    if (object.id) onSelect([object.id]);
-                  }}
-                  content={
-                    <span className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-2">
-                      <Text variant="caption" mono>
-                        {ordinal}
-                      </Text>
-                      <span className="truncate">{name}</span>
-                    </span>
-                  }
-                />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-      {!objects.length && <Text variant="caption">Посадок пока нет</Text>}
+      {!!groups.length && (
+        <div className="grid gap-3">
+          {groups.map((group) => (
+            <section
+              key={group.kind}
+              aria-label={group.label}
+              className="grid min-w-0 gap-1"
+            >
+              <Text
+                as="h3"
+                variant="label"
+                tone="muted"
+                className="py-1 pr-2 pl-8"
+              >
+                {group.label}
+              </Text>
+              <ul className="m-0 grid list-none gap-1 p-0">
+                {group.items.map(({ object, ordinal, name }) => (
+                  <li key={object.id ?? `planting-${ordinal}`}>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start px-2 text-left aria-pressed:bg-blue-100 aria-pressed:text-blue-700"
+                      aria-label={`Выбрать посадку № ${ordinal}: ${name}`}
+                      title={name}
+                      aria-pressed={Boolean(
+                        object.id && selected.has(object.id),
+                      )}
+                      disabled={disabled || !object.id}
+                      onClick={() => {
+                        if (object.id) onSelect([object.id]);
+                      }}
+                      content={
+                        <span className="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-baseline gap-2">
+                          <Text variant="caption" mono className="w-4">
+                            {ordinal}
+                          </Text>
+                          <span className="truncate">{name}</span>
+                        </span>
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
       {objects.length > visibleCount && (
-        <Text variant="caption">
+        <Text variant="caption" className="px-2">
           Показано {visibleCount} из {objects.length} посадок
         </Text>
       )}
@@ -90,7 +102,7 @@ export const ExplorerPlantings: FC<ExplorerPlantingsProps> = ({
           disabled={disabled}
           onClick={onManage}
         >
-          Все посадки ({objects.length})
+          Все посадки
         </Button>
       )}
     </Disclosure>

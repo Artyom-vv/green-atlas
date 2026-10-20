@@ -11,6 +11,8 @@ export interface ButtonProps extends Omit<
 > {
   variant?: ButtonVariant;
   loading?: boolean;
+  /** State still blocks repeat submission when progress belongs to a parent. */
+  loadingIndicator?: boolean;
   /** Legacy constructor adapter. New composition uses startIcon/endIcon nodes. */
   icon?: IconNode;
   startIcon?: ReactNode;
@@ -23,6 +25,7 @@ export interface ButtonProps extends Omit<
 export const Button: FC<ButtonProps> = ({
   variant = 'secondary',
   loading = false,
+  loadingIndicator = true,
   icon,
   startIcon,
   endIcon,
@@ -47,7 +50,7 @@ export const Button: FC<ButtonProps> = ({
       className={styles.root({ className })}
       disabled={disabled || loading}
     >
-      {loading ? (
+      {loading && loadingIndicator ? (
         <Icon
           icon={<LoaderCircle />}
           className="animate-spin motion-reduce:animate-none"

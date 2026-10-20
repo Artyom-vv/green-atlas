@@ -1,40 +1,51 @@
 """Numerical rules require the exact source context and remain edition-scoped."""
 
 from types import SimpleNamespace
+from typing import Literal, cast
 from unittest.mock import Mock
 
 import pytest
 from shapely.geometry import LineString, Point, Polygon, box, mapping
+from shapely.geometry.base import BaseGeometry
 from test_placement_allocation import application
 
 from app.contracts import GeometrySnapshot, Plan, PlanObject, Project
 from app.dxf_import.contracts import SourceFile
-from app.dxf_import.layer_contracts import Layer
+from app.dxf_import.layers.contracts import Layer, LayerKind
 from app.exporting.application import ExportApplication
 from app.exporting.contracts import (
     ExportArtifact,
     RegulatoryReleaseBasis,
     ReleaseCreateRequest,
 )
-from app.geometry.domain import PositionChecker
-from app.geometry.network_trace import network_rule_entries
-from app.geometry.rule_trace import position_rule_trace
-from app.geometry.utility_contracts import UtilityContext
-from app.planning.change_contracts import PlanChangeSetDraft, PlanObjectAddOperation
+from app.geometry.checking.domain import PositionChecker, PositionViolation
+from app.geometry.checking.rule_trace import position_rule_trace
+from app.geometry.networks.network_trace import network_rule_entries
+from app.geometry.networks.utility_contracts import (
+    UtilityContext,
+    UtilityGeometryReference,
+    UtilityType,
+)
+from app.planning.changes.contracts import PlanChangeSetDraft, PlanObjectAddOperation
 from app.planning.contracts import PlacementCheckRequest, PlanObjectCreate
-from app.planning.pattern_contracts import FillPatternRequest
+from app.planning.patterns.contracts import FillPatternRequest
 from app.regulations.network_rules import NETWORK_RULE_PACK
+from app.regulations.trace_contracts import PlantingRuleTrace, RuleTraceEntry
 from app.scene.contracts import SceneSnapshot
+from app.shared.error_messages import public_failure_message
+from app.shared.failures import DomainFailure, FailureReason
+from app.species.catalog import get_species, growth_forecasts
 from app.validation.adapters import RuleBasedPlanValidator
+from app.validation.application import PlanValidation
 
 
-def network_project(*networks):
+def network_project(*networks: tuple[str, BaseGeometry, str]) -> Project:
     layers, features = [], []
     for index, (kind, geometry, reference) in enumerate(networks):
         name = f"network-{index}"
         context = UtilityContext(
-            network_type=kind,
-            geometry_reference=reference,
+            network_type=UtilityType(kind),
+            geometry_reference=UtilityGeometryReference(reference),
             installation="underground",
             review_status="confirmed",
             source_reference=f"Survey sheet {index}",
@@ -44,8 +55,8 @@ def network_project(*networks):
             Layer(
                 id=name,
                 source_name=name,
-                suggested_kind="utility",
-                mapped_kind="utility",
+                suggested_kind=LayerKind.UTILITY,
+                mapped_kind=LayerKind.UTILITY,
                 object_count=1,
                 color="#888888",
                 utility_context=context,
@@ -75,7 +86,12 @@ def network_project(*networks):
     )
 
 
-def entries(project, kind="tree", crown=5.0, point=None):
+def entries(
+    project: Project,
+    kind: Literal["tree", "shrub"] = "tree",
+    crown: float | None = 5.0,
+    point: Point | None = None,
+) -> list[RuleTraceEntry]:
     return network_rule_entries(
         PositionChecker(project).networks, point or Point(0, 0), kind, crown
     )
@@ -95,8 +111,8 @@ def entries(project, kind="tree", crown=5.0, point=None):
 )
 @pytest.mark.parametrize("plant_kind", ["tree", "shrub"])
 def test_each_source_row_has_exact_threshold_and_dash_is_not_zero(
-    kind, tree, shrub, plant_kind
-):
+    kind: str, tree: float, shrub: float | None, plant_kind: Literal["tree", "shrub"]
+) -> None:
     required = tree if plant_kind == "tree" else shrub
     project = network_project((kind, box(required or 1, -2, 4, 2), "outer_surface"))
     result = entries(project, plant_kind)[0]
@@ -111,13 +127,15 @@ def test_each_source_row_has_exact_threshold_and_dash_is_not_zero(
     assert result.required_distance_m == required
     assert PositionChecker(project).check(0, 0, 0.1, plant_kind) is None
     assert (
-        PositionChecker(project).check(0.01, 0, 0.1, plant_kind).rule_id
+        cast(
+            PositionViolation, PositionChecker(project).check(0.01, 0, 0.1, plant_kind)
+        ).rule_id
         == result.rule_id
     )
     assert entries(project, plant_kind, point=Point(0.01, 0))[0].status == "failed"
 
 
-def test_stricter_farther_network_is_not_hidden_by_nearest_network():
+def test_stricter_farther_network_is_not_hidden_by_nearest_network() -> None:
     project = network_project(
         ("gas", box(1.6, -1, 2, 1), "outer_surface"),
         ("heat", box(-3, -1, -1.8, 1), "channel_wall"),
@@ -127,7 +145,7 @@ def test_stricter_farther_network_is_not_hidden_by_nearest_network():
         ("passed", 1.6),
         ("failed", 1.8),
     ]
-    violation = PositionChecker(project).check(0, 0, 0.1)
+    violation = cast(PositionViolation, PositionChecker(project).check(0, 0, 0.1))
     assert violation.rule_id.endswith("heat")
     assert violation.source_feature_ids == ("network-1",)
     trace = position_rule_trace(PositionChecker(project), project, 0, 0, "tree", 5)
@@ -136,7 +154,9 @@ def test_stricter_farther_network_is_not_hidden_by_nearest_network():
 
 
 @pytest.mark.parametrize("crown", [None, 5.01, 20])
-def test_unknown_or_wide_crown_cannot_turn_base_minimum_into_full_pass(crown):
+def test_unknown_or_wide_crown_cannot_turn_base_minimum_into_full_pass(
+    crown: float | None,
+) -> None:
     project = network_project(("heat", box(2, -3, 4, 3), "channel_wall"))
     assert entries(project, crown=crown)[0].code == "NETWORK_CROWN_CLEARANCE_UNRESOLVED"
     assert entries(project, crown=crown, point=Point(0.1, 0))[0].status == "failed"
@@ -156,30 +176,30 @@ def test_unknown_or_wide_crown_cannot_turn_base_minimum_into_full_pass(crown):
     ],
 )
 def test_unknown_physical_reference_does_not_receive_a_numeric_buffer(
-    geometry, reference, reason
-):
+    geometry: BaseGeometry, reference: str, reason: str
+) -> None:
     project = network_project(("gas", geometry, reference))
     assert entries(project)[0].code == reason
     assert entries(project)[0].required_distance_m is None
     assert PositionChecker(project).check(3, 0, 0.1) is None
 
 
-def test_confirmation_must_match_mapped_layer_and_complete_source():
+def test_confirmation_must_match_mapped_layer_and_complete_source() -> None:
     project = network_project(("heat", box(3, -1, 4, 1), "outer_surface"))
     project.layers[0].utility_context = None
     assert entries(project)[0].code == "NETWORK_SOURCE_UNCONFIRMED"
-    project.layers[0].mapped_kind = "ignore"
+    project.layers[0].mapped_kind = LayerKind.IGNORE
     assert entries(project)[-1].code == "NETWORK_SOURCE_INCOMPLETE"
 
 
-def test_visibility_is_not_permission_to_exclude_a_network():
+def test_visibility_is_not_permission_to_exclude_a_network() -> None:
     project = network_project(("heat", box(1, -1, 3, 1), "outer_surface"))
     project.layers[0].visible = False
     assert entries(project)[0].status == "failed"
     assert PositionChecker(project).check(0, 0, 0.1) is not None
 
 
-def test_holes_and_occupied_interior_measure_the_actual_area():
+def test_holes_and_occupied_interior_measure_the_actual_area() -> None:
     geometry = Polygon(
         [(-5, -5), (5, -5), (5, 5), (-5, 5)],
         holes=[[(-3, -3), (-3, 3), (3, 3), (3, -3)]],
@@ -190,7 +210,7 @@ def test_holes_and_occupied_interior_measure_the_actual_area():
     assert entries(project, point=Point(4, 0))[0].status == "failed"
 
 
-def test_local_safe_area_matches_full_network_exclusion():
+def test_local_safe_area_matches_full_network_exclusion() -> None:
     project = network_project(
         ("heat", box(10, -1000, 12, 1000), "channel_wall"),
         ("gas", box(10000, 0, 10001, 1), "outer_surface"),
@@ -202,7 +222,7 @@ def test_local_safe_area_matches_full_network_exclusion():
     assert actual.symmetric_difference(expected).area < 1e-7
 
 
-def test_final_rechecks_evidence_and_draft_stays_editable():
+def test_final_rechecks_evidence_and_draft_stays_editable() -> None:
     project = network_project(("heat", box(10, -2, 11, 2), "outer_surface"))
     project.source_file = SourceFile(
         name="source.dxf",
@@ -212,7 +232,7 @@ def test_final_rechecks_evidence_and_draft_stays_editable():
         units="m",
         entity_count=1,
     )
-    project.plan.objects = [
+    cast(Plan, project.plan).objects = [
         PlanObject(
             kind="shrub",
             x=0,
@@ -231,9 +251,18 @@ def test_final_rechecks_evidence_and_draft_stays_editable():
         ExportArtifact(filename="source.dxf", status="ready", size=3, download_url=""),
         b"dxf",
     )
+    plan = cast(Plan, project.plan)
+    plant = plan.objects[0]
+    assert plant.species_revision_id is not None
+    plant.canopy_forecast, plant.root_forecast = growth_forecasts(
+        get_species(plant.species_revision_id), "standard"
+    )
+    validation = PlanValidation(RuleBasedPlanValidator())
+    validation.refresh(project, plan)
     app = ExportApplication(
         repository=repository,
         writer=writer,
+        validation=validation,
         scene=lambda *_: SceneSnapshot(
             plan_version=1, horizon_year=0, coordinate_origin=[0, 0], note="test"
         ),
@@ -251,29 +280,39 @@ def test_final_rechecks_evidence_and_draft_stays_editable():
     assert app.create_release(project.id, request).status == "ready"
     # Invalidate the actual source while keeping a stale empty issue list.
     project.layers[0].utility_context = None
-    project.plan.issues = []
-    with pytest.raises(ValueError, match="инженерных сетей"):
+    cast(Plan, project.plan).issues = []
+    with pytest.raises(DomainFailure) as failure:
         app.create_release(project.id, request)
+    assert failure.value.reason is FailureReason.RELEASE_FINAL_UNAVAILABLE
+    assert any(
+        check["code"] == "network_checks"
+        for check in failure.value.params["release_checks"]
+    )
+    assert "инженерных сетей" in public_failure_message(failure.value)
     assert (
         app.create_release(
             project.id, request.model_copy(update={"mode": "draft"})
         ).status
         == "draft"
     )
-    issues = RuleBasedPlanValidator().validate_plan(project, project.plan)
+    issues = RuleBasedPlanValidator().validate_plan(project, cast(Plan, project.plan))
+    # The cleared layer context overrides stale confirmed GeoJSON metadata.
+    # A missing type stays unknown instead of retaining its previous heat rule.
     assert any(
-        issue.code == "NETWORK_SOURCE_UNCONFIRMED" and issue.severity == "warning"
+        issue.code == "NETWORK_CONTEXT_UNKNOWN" and issue.severity == "warning"
         for issue in issues
     )
-    assert project.plan.objects[0].status == "warning"
+    assert cast(Plan, project.plan).objects[0].status == "warning"
 
 
-def test_preview_and_apply_use_same_network_rule_and_uncertainty_remains_draft():
+def test_preview_and_apply_use_same_network_rule_and_uncertainty_remains_draft() -> (
+    None
+):
     app, project = application()
     network = network_project(("heat", box(31.8, 0, 32.8, 100), "channel_wall"))
     project.layers = network.layers
-    project.geometry.feature_collection["features"].extend(
-        network.geometry.feature_collection["features"]
+    cast(GeometrySnapshot, project.geometry).feature_collection["features"].extend(
+        cast(GeometrySnapshot, network.geometry).feature_collection["features"]
     )
     project.geometry_version += 1
     project = app.repository.save(project)
@@ -282,15 +321,19 @@ def test_preview_and_apply_use_same_network_rule_and_uncertainty_remains_draft()
     assert not result.allowed
     assert result.code == "NETWORK_CLEARANCE_FAILED"
     entry = next(
-        item for item in result.rule_trace.entries if item.obstacle_kind == "utility"
+        item
+        for item in cast(PlantingRuleTrace, result.rule_trace).entries
+        if item.obstacle_kind == "utility"
     )
     assert entry.rule_id == result.rule_id
     assert entry.status == "failed"
     with pytest.raises(ValueError):
         app.add_object(project.id, PlanObjectCreate(kind="tree", x=30, y=30))
-    assert not app.get(project.id).plan.objects
+    retained = app.get(project.id)
+    assert retained.plan is not None
+    assert not retained.plan.objects
     draft = PlanChangeSetDraft(
-        base_plan_version=project.plan.version,
+        base_plan_version=cast(Plan, project.plan).version,
         source="manual",
         label="Draft",
         operations=[
@@ -300,24 +343,26 @@ def test_preview_and_apply_use_same_network_rule_and_uncertainty_remains_draft()
     preview = app.preview_change_set(project.id, draft)
     assert preview.can_apply
     assert (
-        preview.candidate_results[0].rule_trace.entries[-1].code
+        cast(PlantingRuleTrace, preview.candidate_results[0].rule_trace)
+        .entries[-1]
+        .code
         == "NETWORK_CROWN_CLEARANCE_UNRESOLVED"
     )
 
 
 def test_bulk_uncertainty_is_one_limited_reason_not_a_false_verified_result(
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app, project = application()
     network = network_project(("heat", box(10000, 0, 10001, 10), "outer_surface"))
     project.layers = network.layers
-    project.geometry.feature_collection["features"].extend(
-        network.geometry.feature_collection["features"]
+    cast(GeometrySnapshot, project.geometry).feature_collection["features"].extend(
+        cast(GeometrySnapshot, network.geometry).feature_collection["features"]
     )
     project.geometry_version += 1
     project = app.repository.save(project)
     monkeypatch.setattr(
-        "app.planning.pattern_application.build_data_passport",
+        "app.planning.patterns.application.build_data_passport",
         lambda _, **kwargs: SimpleNamespace(gaps=[], mass_placement_status="verified"),
     )
     preview = app.preview_pattern(
@@ -330,6 +375,7 @@ def test_bulk_uncertainty_is_one_limited_reason_not_a_false_verified_result(
         ),
     )
     assert preview.accepted_count == 3
+    assert preview.change_set is not None
     assert preview.change_set.can_apply
     assert preview.data_confidence == "limited"
     assert len(preview.data_confidence_reasons) == 1

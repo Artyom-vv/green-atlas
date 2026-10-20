@@ -6,7 +6,11 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiClientError, type Plan } from '@green/api-client';
+import {
+  ApiClientError,
+  isUnsentLocalRequest,
+  type Plan,
+} from '@green/api-client';
 import {
   emptyReleaseForm,
   releaseDraftRequest,
@@ -82,6 +86,7 @@ export function useProjectRelease(
     queryKey: releaseKey(projectId, state.releaseId),
     queryFn: () => readRelease(projectId, state.releaseId!),
     enabled: Boolean(projectId && state.releaseId),
+    networkMode: 'always',
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnMount: 'always',
@@ -156,8 +161,8 @@ export function useProjectRelease(
 
   const create = async () => {
     const current = getReleaseDraftSnapshot(projectId);
-    if (current.submission?.phase === 'pending' || current.recoveryReleaseId)
-      return;
+    // An unresolved submission can be superseded only by an explicit new draft.
+    if (current.submission || current.recoveryReleaseId) return;
     const draft = current.draft ?? newDraft();
     const submitted = releaseDraftRequest(draft);
     const retainUnusedBasis =
@@ -217,10 +222,10 @@ export function useProjectRelease(
           view: matchesDraft ? 'files' : latest.view,
           notice:
             matchesDraft && retainUnusedBasis
-              ? 'Основания финального выпуска сохранены в черновике.'
+              ? 'Основания финального выпуска сохранены в черновике'
               : versionsMatch
                 ? undefined
-                : 'Пакет собран для другой версии плана или геометрии. Заметки сохранены — проверьте основания перед следующим выпуском.',
+                : 'Пакет собран для другой версии плана или геометрии. Заметки сохранены — проверьте основания перед следующим выпуском',
         };
       });
       // The receipt is durable before cache publication. From this point any
@@ -247,10 +252,10 @@ export function useProjectRelease(
             ? {
                 ...latest,
                 recoveryError: new Error(
-                  'Пакет сохранён. Не удалось обновить представление. Загрузите сохранённый пакет повторно.',
+                  'Пакет сохранён. Не удалось обновить представление. Загрузите сохранённый пакет повторно',
                 ),
                 notice:
-                  'Пакет сохранён. Не удалось обновить представление. Загрузите сохранённый пакет повторно.',
+                  'Пакет сохранён. Не удалось обновить представление. Загрузите сохранённый пакет повторно',
               }
             : latest,
         );
@@ -259,8 +264,11 @@ export function useProjectRelease(
       // A validated 4xx response is a definitive refusal: no package was
       // published. Only a lost/ambiguous response may have committed a package.
       const rejected =
-        cause instanceof ApiClientError &&
-        ['BAD_REQUEST', 'NOT_FOUND', 'VALIDATION_ERROR'].includes(cause.code);
+        isUnsentLocalRequest(cause) ||
+        (cause instanceof ApiClientError &&
+          ['BAD_REQUEST', 'NOT_FOUND', 'VALIDATION_ERROR'].includes(
+            cause.code,
+          ));
       updateReleaseDraft(projectId, (latest) =>
         latest.submission?.id === submission.id
           ? {
@@ -271,7 +279,7 @@ export function useProjectRelease(
               error:
                 cause instanceof Error
                   ? cause
-                  : new Error('Не удалось собрать пакет.'),
+                  : new Error('Не удалось собрать пакет'),
             }
           : latest,
       );
@@ -303,7 +311,7 @@ export function useProjectRelease(
               recoveryError:
                 cause instanceof Error
                   ? cause
-                  : new Error('Не удалось загрузить сохранённый пакет.'),
+                  : new Error('Не удалось загрузить сохранённый пакет'),
             }
           : latest,
       );
@@ -311,6 +319,14 @@ export function useProjectRelease(
   };
 
   return {
+    writeOutcome: loading
+      ? ('writing' as const)
+      : state.submission?.phase === 'unknown'
+        ? ('unknown' as const)
+        : state.recoveryReleaseId
+          ? ('confirmed' as const)
+          : ('idle' as const),
+    readRecovery: Boolean(state.recoveryReleaseId),
     release: state.releaseId && !saved.isError ? saved.data : undefined,
     restoring: Boolean(state.releaseId && saved.isPending),
     restoreError:

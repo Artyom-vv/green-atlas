@@ -8,11 +8,8 @@ export type GrowthOverlayForecast = {
   roots?: GrowthEnvelopeForecast;
 };
 
-/**
- * Resolve every growth envelope from the same bounded forecast source used by
- * the inspector. Preview objects replace durable objects with the same ID so
- * the map never renders two contradictory envelopes for one planting.
- */
+/** Прогноз карты и инспектора имеет одно основание; предпросмотр заменяет
+ * сохранённый объект с тем же ID, не создавая вторую крону. */
 export function growthOverlayForecasts(
   objects: readonly PlanObject[],
   selectedIds: readonly string[],
@@ -22,7 +19,7 @@ export function growthOverlayForecasts(
   if (year === undefined) return [];
   const selected = new Set(selectedIds);
   const candidates = new globalThis.Map<string, PlanObject>();
-  const wholePlan = selected.size === 0 && year > 0;
+  const wholePlan = selected.size === 0;
   for (const object of objects) {
     if (object.id && (wholePlan || selected.has(object.id)))
       candidates.set(object.id, object);

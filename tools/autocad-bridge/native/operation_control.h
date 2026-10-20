@@ -23,6 +23,7 @@ private:
 };
 
 bool operationCancelled();
+OperationControl currentOperationControl();
 void reportOperationProgress(const std::string& phase, std::size_t processedEntities);
 
 }  // namespace ga::bridge

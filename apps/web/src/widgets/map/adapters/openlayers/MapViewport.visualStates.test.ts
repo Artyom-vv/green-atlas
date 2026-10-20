@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import type { ChangeSetPreview, PlanObject } from '@green/api-client';
+import type {
+  ChangeSetPreview,
+  PlanObject,
+  ValidationIssue,
+} from '@green/api-client';
 import Feature from 'ol/Feature';
 import Circle from 'ol/geom/Circle';
 import LineString from 'ol/geom/LineString';
 import Point from 'ol/geom/Point';
+import VectorSource from 'ol/source/Vector';
 import { Circle as CircleStyle, Icon, type Style } from 'ol/style';
-import { brushCursorStyle } from '@/widgets/map/adapters/openlayers/mapStyles';
-import { brushStrokeStyle } from '@/widgets/map/adapters/openlayers/mapStyles';
-import { changePreviewFeatures } from '@/widgets/map/adapters/openlayers/planFeatures';
-import { changePreviewStyle } from '@/widgets/map/adapters/openlayers/mapStyles';
-import { planStyle } from '@/widgets/map/adapters/openlayers/mapStyles';
-import { selectionDraftStyle } from '@/widgets/map/adapters/openlayers/mapStyles';
+import { brushCursorStyle } from '@/widgets/map/adapters/openlayers/overlays/mapStyles';
+import { brushStrokeStyle } from '@/widgets/map/adapters/openlayers/overlays/mapStyles';
+import {
+  changePreviewFeatures,
+  syncPlanFeatures,
+} from '@/widgets/map/adapters/openlayers/overlays/planFeatures';
+import { changePreviewStyle } from '@/widgets/map/adapters/openlayers/overlays/mapStyles';
+import { planStyle } from '@/widgets/map/adapters/openlayers/overlays/mapStyles';
+import { selectionDraftStyle } from '@/widgets/map/adapters/openlayers/overlays/mapStyles';
 
 const object = (status: PlanObject['status'] = 'valid'): PlanObject => ({
   id: 'tree-1',
@@ -56,7 +64,77 @@ const preview = (update: PlanObject): ChangeSetPreview => ({
   expires_at: '2030-01-01T00:00:00Z',
 });
 
+const generalNotice: ValidationIssue = {
+  severity: 'warning',
+  code: 'SOURCE_GEOMETRY_PARTIAL',
+  title: 'Сведения об исходнике',
+  description: 'Общий состав исходника отражён в паспорте.',
+  object_id: 'tree-1',
+};
+
+const markerColors = (result: Style | Style[]) =>
+  (Array.isArray(result) ? result : [result]).flatMap((style) => {
+    const image = style.getImage();
+    return image instanceof CircleStyle ? [image.getFill()?.getColor()] : [];
+  });
+
 describe('plan marker visual semantics', () => {
+  it.each([
+    ['only general notice', 'warning', [generalNotice], '#168A5B'],
+    [
+      'related general notice',
+      'warning',
+      [{ ...generalNotice, object_id: null, related_object_ids: ['tree-1'] }],
+      '#168A5B',
+    ],
+    [
+      'mixed with an addressable unknown',
+      'warning',
+      [generalNotice, { ...generalNotice, code: 'UTILITY_TYPE_UNKNOWN' }],
+      '#B76400',
+    ],
+    [
+      'mixed with a related warning',
+      'warning',
+      [
+        generalNotice,
+        {
+          ...generalNotice,
+          code: 'UTILITY_CLEARANCE',
+          object_id: 'other',
+          related_object_ids: ['tree-1'],
+        },
+      ],
+      '#B76400',
+    ],
+    ['no issue evidence', 'warning', undefined, '#B76400'],
+    ['empty issue evidence', 'warning', [], '#B76400'],
+    [
+      'general code with error severity',
+      'warning',
+      [{ ...generalNotice, severity: 'error' }],
+      '#B76400',
+    ],
+    ['persisted error', 'error', [generalNotice], '#D92D20'],
+  ] satisfies Array<
+    [
+      string,
+      PlanObject['status'],
+      readonly ValidationIssue[] | undefined,
+      string,
+    ]
+  >)('preserves saved status for %s', (_, status, issues, color) => {
+    const saved = object(status);
+    const source = new VectorSource();
+    syncPlanFeatures(source, [saved], issues);
+    const feature = source.getFeatureById('tree-1');
+    expect(feature).not.toBeNull();
+    if (!feature) throw new Error('Expected saved planting feature');
+    expect(markerColors(planStyle(feature, new Set(), 2))).toContain(color);
+    expect(feature.get('status')).toBe(status);
+    expect(saved.status).toBe(status);
+  });
+
   it('keeps validation color distinct from selection at detail scale', () => {
     const colors = (['valid', 'warning', 'error'] as const).map((status) => {
       const styles = planStyle(
@@ -122,6 +200,53 @@ describe('plan marker visual semantics', () => {
 });
 
 describe('move preview visual semantics', () => {
+  it.each([
+    ['unknown', 'SOURCE_GEOMETRY_PARTIAL', '#168A5B'],
+    ['unknown', 'NETWORK_CONTEXT_UNKNOWN', '#168A5B'],
+    ['unknown', 'NETWORK_SOURCE_INCOMPLETE', '#168A5B'],
+    ['blocked', 'NETWORK_CONTEXT_UNKNOWN', '#D92D20'],
+    ['soft_conflict', 'GEOMETRY_RULE_ASSUMPTION', '#168A5B'],
+    ['unknown', 'UTILITY_TYPE_UNKNOWN', '#B76400'],
+    ['unknown', undefined, '#B76400'],
+    ['blocked', 'SOURCE_GEOMETRY_PARTIAL', '#D92D20'],
+  ])(
+    'keeps candidate %s/%s intact while choosing its display',
+    (status, code, color) => {
+      const feature = new Feature({
+        geometry: new Circle([10, 20], 1.6),
+        kind: 'tree',
+        candidateStatus: status,
+        candidateCode: code,
+        previewRole: 'candidate',
+      });
+      expect(markerColors(changePreviewStyle(feature, 2))).toContain(color);
+      expect(feature.get('candidateStatus')).toBe(status);
+      expect(feature.get('candidateCode')).toBe(code);
+    },
+  );
+
+  it('does not repeat a general notice through the group move trail', () => {
+    const update = { ...object(), x: 35, y: 42 };
+    const general = {
+      ...preview(update),
+      candidate_results: [
+        {
+          ...preview(update).candidate_results![0],
+          status: 'unknown' as const,
+          code: 'SOURCE_GEOMETRY_PARTIAL',
+        },
+      ],
+    };
+    const features = changePreviewFeatures([object()], general);
+    expect(features[0].get('candidateStatus')).toBe('soft_conflict');
+    expect(changePreviewStyle(features[0], 2)[1].getStroke()?.getColor()).toBe(
+      '#168A5B',
+    );
+    expect(markerColors(changePreviewStyle(features[2], 2))).toContain(
+      '#168A5B',
+    );
+  });
+
   it('marks only proposed deletions, without removing saved objects', () => {
     const saved = object();
     const change = {

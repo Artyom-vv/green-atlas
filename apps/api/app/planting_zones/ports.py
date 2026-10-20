@@ -1,3 +1,5 @@
+"""Порты проверки и сохранения рабочих зон с устойчивой квитанцией изменения проекта."""
+
 from collections.abc import Callable
 from threading import RLock
 from typing import Protocol

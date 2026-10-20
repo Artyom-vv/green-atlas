@@ -1,0 +1,28 @@
+[Unit]
+Description=Green Atlas Luna layer recognition relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=green-atlas-luna
+Group=green-atlas-luna
+WorkingDirectory=/opt/green-atlas-luna/current/api
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=GREEN_ATLAS_RELAY_RELEASE_TOKEN_FILE=/etc/green-atlas-luna-release/release.token
+LoadCredential=openai_key:/etc/green-atlas-luna/openai.key
+LoadCredential=proxy_url:/etc/green-atlas-luna/proxy.url
+LoadCredential=client_token:/etc/green-atlas-luna/client.token
+ExecStart=/opt/green-atlas-luna/venv/bin/uvicorn app.layer_recognition.remote_server:create_app_from_environment --factory --host 127.0.0.1 --port 8011 --workers 1 --limit-concurrency 8
+Restart=on-failure
+RestartSec=5
+UMask=0027
+StateDirectory=green-atlas-luna
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/green-atlas-luna
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

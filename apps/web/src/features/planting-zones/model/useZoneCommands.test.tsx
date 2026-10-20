@@ -19,6 +19,7 @@ import type { PlantingZoneAssignment, Project } from '@green/api-client';
 import { readZoneProject, saveZoneSnapshot } from '../api/zoneCommands';
 import { useZoneCommands } from './useZoneCommands';
 import { UNKNOWN_ZONE_SAVE_NOTICE } from './zoneCommand';
+import { acknowledgeProjectWrite } from '@/entities/project/model/acknowledgedRead';
 
 vi.mock('../api/zoneCommands', () => ({
   readZoneProject: vi.fn(),
@@ -68,6 +69,52 @@ function harness(
 }
 
 describe('zone command ownership', () => {
+  it('does not let a late zones recovery GET below the acknowledgement floor clear a failed fresh read', async () => {
+    const read = deferred();
+    vi.mocked(saveZoneSnapshot).mockRejectedValue(
+      new Error('Lost write response'),
+    );
+    vi.mocked(readZoneProject).mockReturnValue(read.promise);
+    const context = harness();
+    const key = ['workspace-project', 'a'];
+    context.client.setQueryData(key, snapshot(1));
+    const onCommitted = vi.fn();
+    const { result } = renderHook(
+      () =>
+        useZoneCommands({
+          projectId: 'a',
+          project: snapshot(1),
+          onCommitted,
+          refresh: async () => {},
+        }),
+      context,
+    );
+    await act(async () =>
+      result.current.saveManagedZones.mutate({ zones: [extra] }),
+    );
+    acknowledgeProjectWrite(context.client, 'a', { stateVersion: 3 });
+    const freshReadError = new Error('Fresh read unavailable');
+    await expect(
+      context.client.fetchQuery({
+        queryKey: key,
+        queryFn: async () => {
+          throw freshReadError;
+        },
+        staleTime: 0,
+      }),
+    ).rejects.toBe(freshReadError);
+    await act(async () => read.resolve(snapshot(2, [extra])));
+    expect(context.client.getQueryData(key)).toEqual(snapshot(1));
+    expect(context.client.getQueryState(key)?.status).toBe('error');
+    expect(context.client.getQueryState(key)?.error).toBe(freshReadError);
+    expect(result.current.writeOutcome).toBe('unknown');
+    expect(result.current.readRecovery).toBe(true);
+    expect(result.current.blocked).toBe(true);
+    expect(onCommitted).not.toHaveBeenCalled();
+    expect(saveZoneSnapshot).toHaveBeenCalledOnce();
+    context.client.clear();
+  });
+
   it('keeps the committed owner when a concurrent project render is suspended', async () => {
     const request = deferred();
     vi.mocked(saveZoneSnapshot).mockReturnValue(request.promise);

@@ -51,13 +51,13 @@ def main():
             from unittest.mock import patch
 
             from app.composition import create_runtime
-            from app.planning.candidate_search import search_candidates
-            from app.planning.pattern_contracts import FillPatternRequest
+            from app.planning.search.candidate_search import search_candidates
+            from app.planning.patterns.contracts import FillPatternRequest
 
             runtime = create_runtime(args.audit_database)
             try:
                 with patch(
-                    "app.planning.pattern_application.search_candidates",
+                    "app.planning.patterns.application.search_candidates",
                     partial(search_candidates, time_limit_s=600),
                 ):
                     result = runtime.application.preview_pattern(

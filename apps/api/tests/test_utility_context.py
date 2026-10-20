@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from io import StringIO
 
@@ -8,22 +9,26 @@ from shapely.geometry import LineString, box, mapping
 from test_application_boundaries import HistoryReset, ImportReader
 
 from app.contracts import GeometrySnapshot, Plan, Project
-from app.dxf_import.adapters import EzdxfReader
 from app.dxf_import.application import ImportApplication
 from app.dxf_import.contracts import SourceFile
-from app.dxf_import.layer_contracts import Layer, LayerKind, LayerMapping
+from app.dxf_import.layers.contracts import Layer, LayerKind, LayerMapping
 from app.exporting.contracts import ReleaseCreateRequest
-from app.geometry.adapters import ShapelyGeometryEngine
-from app.geometry.utility_contracts import UtilityContext
-from app.projects.adapters import InMemoryProjectRepository
+from app.geometry.checking.adapters import ShapelyGeometryEngine
+from app.geometry.networks.utility_contracts import (
+    UtilityContext,
+    UtilityGeometryReference,
+    UtilityType,
+)
+from app.projects.adapters import SqliteProjectRepository
 from app.releases.service import build_release, release_identity
 from app.scene.contracts import SceneSnapshot
+from app.shared.failures import DomainFailure, FailureReason
 
 
-def confirmed_context():
+def confirmed_context() -> UtilityContext:
     return UtilityContext(
-        network_type="gas",
-        geometry_reference="axis",
+        network_type=UtilityType.GAS,
+        geometry_reference=UtilityGeometryReference.AXIS,
         installation="underground",
         review_status="confirmed",
         source_reference="Survey page 1",
@@ -31,7 +36,7 @@ def confirmed_context():
     )
 
 
-def layer(kind, context=None):
+def layer(kind: LayerKind, context: UtilityContext | None = None) -> Layer:
     return Layer(
         id=kind,
         source_name=kind,
@@ -43,7 +48,7 @@ def layer(kind, context=None):
     )
 
 
-def mapped_project():
+def mapped_project() -> Project:
     context = confirmed_context()
     features = [
         {
@@ -75,10 +80,10 @@ def mapped_project():
     )
 
 
-def import_service(project):
-    repository = InMemoryProjectRepository()
+def import_service(project: Project) -> tuple[ImportApplication, Project, list[str]]:
+    repository = SqliteProjectRepository(":memory:")
     project = repository.create(project)
-    invalidated = []
+    invalidated: list[str] = []
     service = ImportApplication(
         repository=repository,
         dxf_reader=ImportReader(),
@@ -89,19 +94,22 @@ def import_service(project):
     return service, project, invalidated
 
 
-def test_context_defaults_unknown_and_confirmation_requires_evidence():
+def test_context_defaults_unknown_and_confirmation_requires_evidence() -> None:
     assert UtilityContext().network_type == "unknown"
     assert UtilityContext().review_status == "unconfirmed"
     with pytest.raises(ValidationError, match="подтверждения"):
-        UtilityContext(review_status="confirmed", network_type="gas")
+        UtilityContext(review_status="confirmed", network_type=UtilityType.GAS)
     with pytest.raises(ValidationError, match="слоя инженерных"):
-        LayerMapping(layer_id="road", kind="road", utility_context=confirmed_context())
+        LayerMapping(
+            layer_id="road", kind=LayerKind.ROAD, utility_context=confirmed_context()
+        )
 
 
-def test_old_mapping_client_preserves_context_without_invalidating_geometry():
+def test_old_mapping_client_preserves_context_without_invalidating_geometry() -> None:
     service, project, invalidated = import_service(mapped_project())
     saved = service.save_mappings(
-        project.id, [LayerMapping(layer_id="utility", kind="utility", visible=False)]
+        project.id,
+        [LayerMapping(layer_id="utility", kind=LayerKind.UTILITY, visible=False)],
     )
     assert saved.layers[1].utility_context == confirmed_context()
     assert saved.map_ready
@@ -110,7 +118,50 @@ def test_old_mapping_client_preserves_context_without_invalidating_geometry():
     assert invalidated == []
 
 
-def test_review_required_mapping_can_be_saved_before_calculation():
+@pytest.mark.parametrize("mapped_kind", [None, LayerKind.IGNORE])
+def test_partial_mapping_rejects_an_unassigned_required_saved_layer(
+    mapped_kind: LayerKind | None,
+) -> None:
+    original = mapped_project()
+    original.layers[1].required = True
+    original.layers[1].mapped_kind = mapped_kind
+    service, project, invalidated = import_service(original)
+    before = project.model_dump_json()
+
+    with pytest.raises(DomainFailure) as failure:
+        service.save_mappings(
+            project.id,
+            [
+                LayerMapping(
+                    layer_id="site_border", kind=LayerKind.SITE_BORDER, visible=False
+                )
+            ],
+        )
+    assert failure.value.reason is FailureReason.REQUIRED_LAYERS_UNMAPPED
+    assert failure.value.params == {"layer_names": ["utility"]}
+
+    assert service.repository.get(project.id).model_dump_json() == before
+    assert invalidated == []
+
+
+def test_partial_mapping_cannot_ignore_an_assigned_required_layer() -> None:
+    original = mapped_project()
+    original.layers[1].required = True
+    service, project, invalidated = import_service(original)
+    before = project.model_dump_json()
+
+    with pytest.raises(DomainFailure) as failure:
+        service.save_mappings(
+            project.id, [LayerMapping(layer_id="utility", kind=LayerKind.IGNORE)]
+        )
+    assert failure.value.reason is FailureReason.REQUIRED_LAYERS_UNMAPPED
+    assert failure.value.params == {"layer_names": ["utility"]}
+
+    assert service.repository.get(project.id).model_dump_json() == before
+    assert invalidated == []
+
+
+def test_review_required_mapping_can_be_saved_before_calculation() -> None:
     project = mapped_project()
     project.layers[1].mapping_review_required = True
     project.layers[1].mapping_confirmed = False
@@ -118,7 +169,7 @@ def test_review_required_mapping_can_be_saved_before_calculation():
 
     pending = service.save_mappings(
         project.id,
-        [LayerMapping(layer_id="utility", kind="utility", confirmed=False)],
+        [LayerMapping(layer_id="utility", kind=LayerKind.UTILITY, confirmed=False)],
     )
     assert not pending.layers[1].mapping_confirmed
 
@@ -127,7 +178,7 @@ def test_review_required_mapping_can_be_saved_before_calculation():
         [
             LayerMapping(
                 layer_id="utility",
-                kind="utility",
+                kind=LayerKind.UTILITY,
                 confirmed=True,
             )
         ],
@@ -135,21 +186,25 @@ def test_review_required_mapping_can_be_saved_before_calculation():
     assert saved.layers[1].mapping_confirmed
 
 
-@pytest.mark.parametrize("kind", ["utility", "road"])
-def test_explicit_clear_or_semantic_remap_invalidates_derived_geometry(kind):
+@pytest.mark.parametrize("kind", [LayerKind.UTILITY, LayerKind.ROAD])
+def test_clear_context_preserves_map_and_role_change_requires_preparation(
+    kind: LayerKind,
+) -> None:
     service, project, invalidated = import_service(mapped_project())
     saved = service.save_mappings(
         project.id, [LayerMapping(layer_id="utility", kind=kind, utility_context=None)]
     )
     assert saved.layers[1].utility_context is None
-    assert saved.geometry is None
+    assert (saved.geometry is None) == (kind == "road")
     assert saved.source_geometry is not None
-    assert not saved.map_ready
-    assert saved.geometry_version == 4
+    assert saved.map_ready == (kind == "utility")
+    assert saved.geometry_version == (4 if kind == "road" else 3)
     assert invalidated == [project.id]
 
 
-def test_metadata_only_change_invalidates_and_rebuild_uses_mapping_not_raw_metadata():
+def test_network_meaning_change_preserves_map_and_rebuild_uses_current_context() -> (
+    None
+):
     original = mapped_project()
     service, project, invalidated = import_service(original)
     context = UtilityContext.model_validate(
@@ -157,9 +212,16 @@ def test_metadata_only_change_invalidates_and_rebuild_uses_mapping_not_raw_metad
     )
     saved = service.save_mappings(
         project.id,
-        [LayerMapping(layer_id="utility", kind="utility", utility_context=context)],
+        [
+            LayerMapping(
+                layer_id="utility", kind=LayerKind.UTILITY, utility_context=context
+            )
+        ],
     )
-    assert saved.geometry_version == 4
+    assert saved.geometry_version == 3
+    assert saved.geometry is not None and saved.map_ready
+    assert saved.plan is not None
+    assert saved.plan.validation_basis is None
     assert invalidated == [project.id]
     result = ShapelyGeometryEngine().calculate(saved)
     feature = next(
@@ -168,6 +230,7 @@ def test_metadata_only_change_invalidates_and_rebuild_uses_mapping_not_raw_metad
         if item["properties"].get("source_layer") == "utility"
     )
     assert feature["properties"]["utility_context"]["network_type"] == "water"
+    assert original.source_geometry is not None
     assert (
         original.source_geometry.feature_collection["features"][1]["properties"][
             "utility_context"
@@ -176,7 +239,7 @@ def test_metadata_only_change_invalidates_and_rebuild_uses_mapping_not_raw_metad
     )
 
 
-def test_unconfirmed_layer_name_never_inherits_raw_confirmed_context():
+def test_unconfirmed_layer_name_never_inherits_raw_confirmed_context() -> None:
     project = mapped_project()
     project.layers[1].utility_context = None
     result = ShapelyGeometryEngine().calculate(project)
@@ -189,7 +252,9 @@ def test_unconfirmed_layer_name_never_inherits_raw_confirmed_context():
 
 
 @pytest.mark.parametrize("confirmed", [False, True])
-def test_release_round_trip_preserves_only_explicit_layer_context(confirmed):
+def test_release_and_saved_project_preserve_only_explicit_layer_context(
+    confirmed: bool,
+) -> None:
     document = ezdxf.new("R2010")
     document.units = 6
     document.layers.new("site_border")
@@ -222,12 +287,24 @@ def test_release_round_trip_preserves_only_explicit_layer_context(confirmed):
     package, artifacts = build_release(
         project, request, release_identity(project, request), source, scene, source
     )
-    bundle = artifacts[
-        next(item.id for item in package.artifacts if item.kind == "bundle")
-    ]
-    service, target, _invalidated = import_service(Project(name="Restored"))
-    service.dxf_reader = EzdxfReader()
-    restored = service.import_release_bundle(target.id, "release.zip", bundle)
+    manifest = json.loads(
+        artifacts[
+            next(item.id for item in package.artifacts if item.kind == "manifest")
+        ]
+    )
+    mapping_record = next(
+        item for item in manifest["layer_mappings"] if item["source_name"] == "utility"
+    )
+    assert mapping_record["utility_context"] == (
+        confirmed_context().model_dump(mode="json") if confirmed else None
+    )
+    # Saved legacy state still resolves semantics from explicit layer context.
+    project.geometry = ShapelyGeometryEngine().calculate(project)
+    service, saved, _invalidated = import_service(
+        Project.model_validate_json(project.model_dump_json())
+    )
+    restored = service.repository.get(saved.id)
+    assert restored.geometry is not None
     utility = next(item for item in restored.layers if item.source_name == "utility")
     restored_properties = next(
         item["properties"]

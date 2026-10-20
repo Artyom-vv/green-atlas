@@ -6,19 +6,19 @@ from test_native_live_provider import setup as native_setup
 from test_source_object_review import imported
 
 from app.composition import get_application
-from app.dxf_import.area_group_review import (
+from app.dxf_import.review.context import object_context
+from app.dxf_import.review.contracts import (
+    SourceAreaGroupCheck,
+    SourceAreaGroupRequest,
+)
+from app.dxf_import.review.groups import (
     accept_group,
     remove_group,
     validate_members,
 )
-from app.dxf_import.object_context import object_context
-from app.dxf_import.object_review import review_objects
-from app.dxf_import.object_review_contracts import (
-    SourceAreaGroupCheck,
-    SourceAreaGroupRequest,
-)
-from app.native_query.live_inventory import LiveInventory
-from app.native_query.reviewed_groups import verify_group
+from app.dxf_import.review.objects import review_objects
+from app.native_query.live.live_inventory import LiveInventory
+from app.native_query.preparation.reviewed_groups import verify_group
 
 setup = native_setup
 
@@ -206,7 +206,7 @@ def test_group_native_target_replaces_only_chosen_members(setup):
     )
     result = verify_group(engine, project, request)
     assert result.valid and client.calls[-1].targets[0].additional_routes == ("DD",)
-    from app.dxf_import.object_review_contracts import SourceAreaGroup
+    from app.dxf_import.review.contracts import SourceAreaGroup
 
     project.source_file.area_groups = [
         SourceAreaGroup(**request.model_dump(), id="group")
@@ -228,7 +228,7 @@ def test_read_issues_separate_unreadable_objects_from_layer_assignment():
 
 def test_read_issue_russian_causes_use_native_class_names(monkeypatch):
     from app.cad_bridge.contracts import SourceIdentity
-    from app.dxf_import.read_issues import source_read_issues
+    from app.dxf_import.review.issues import source_read_issues
 
     _, _, project = imported()
     records = [
@@ -250,7 +250,7 @@ def test_read_issue_russian_causes_use_native_class_names(monkeypatch):
         ),
     ]
     monkeypatch.setattr(
-        "app.dxf_import.read_issues.area_evidence",
+        "app.dxf_import.review.issues.area_evidence",
         lambda *_args, **_kwargs: SimpleNamespace(unresolved=records),
     )
     result = source_read_issues(project, b"fixture")
@@ -258,3 +258,33 @@ def test_read_issue_russian_causes_use_native_class_names(monkeypatch):
     assert "AutoCAD не вернул область" in result.items[0].reason
     assert result.items[1].entity_type == "LWPOLYLINE"
     assert "не прошёл проверку" in result.items[1].reason
+
+
+def test_mixed_context_uses_exact_object_override_and_restores_unassigned_kind() -> (
+    None
+):
+    from test_source_object_review import mixed_source_project, object_request
+
+    from app.dxf_import.review.objects import decide_object
+
+    project = mixed_source_project()
+    assigned = decide_object(project, object_request(project, kind="building"))
+    context = object_context(assigned, "CA/A1")
+    assert (
+        next(item for item in context.objects if item.route == "CA/A1").kind
+        == "building"
+    )
+    assert all(
+        item.kind is None
+        for item in context.objects
+        if item.layer == "0" and item.route != "CA/A1"
+    )
+    restored = decide_object(assigned, object_request(assigned))
+    assert (
+        next(
+            item
+            for item in object_context(restored, "CA/A1").objects
+            if item.route == "CA/A1"
+        ).kind
+        is None
+    )

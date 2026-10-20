@@ -1,6 +1,8 @@
+/** Подготовка исходника: выбор конкретного экземпляра из очереди объектов */
 import { useEffect, useRef } from 'react';
 import type { SourceObjectReviewItem } from '@green/api-client';
 import { Button } from '@green/ui';
+import { LAYER_KIND_LABELS } from '@/entities/source-data/model/layerKinds';
 
 export function ObjectReviewQueue({
   items,
@@ -39,14 +41,14 @@ export function ObjectReviewQueue({
       <div
         ref={list}
         role="listbox"
-        aria-label="Линии для проверки"
+        aria-label="Объекты для проверки"
         aria-activedescendant={
           items[index]
             ? `review-${items[index].route.replaceAll('/', '-')}`
             : undefined
         }
         tabIndex={0}
-        className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+        className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-(--focus) focus-visible:ring-inset"
       >
         {items.map((item, i) => (
           <button
@@ -57,17 +59,19 @@ export function ObjectReviewQueue({
             tabIndex={-1}
             disabled={busy}
             onClick={() => onIndex(i)}
-            className={`flex w-full items-center justify-between border-0 border-l-2 px-3 py-2 text-left text-xs ${i === index ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-transparent bg-white text-neutral-700 hover:bg-neutral-50'}`}
+            className={`flex w-full items-center justify-between gap-2 border-0 border-l-2 border-solid px-3 py-2 text-left text-xs leading-4 ${i === index ? 'border-blue-600 bg-blue-100 text-blue-800' : 'border-transparent bg-white text-neutral-700 hover:bg-neutral-100'}`}
           >
-            <span>{item.source.handle}</span>
-            <span className="text-[10px] text-neutral-500">
-              {item.interpretation === 'linear'
-                ? 'Линия'
-                : item.interpretation === 'reference'
-                  ? 'Обозначение'
-                  : item.entity_type === 'LINE'
-                    ? 'Отрезок'
-                    : 'Контур'}
+            <span className="font-mono">{item.source.handle}</span>
+            <span className="min-w-0 text-xs leading-4 text-neutral-500">
+              {item.kind
+                ? LAYER_KIND_LABELS[item.kind]
+                : item.interpretation === 'linear'
+                  ? 'Линия'
+                  : item.interpretation === 'reference'
+                    ? 'Обозначение'
+                    : item.entity_type === 'LINE'
+                      ? 'Отрезок'
+                      : 'Контур'}
             </span>
           </button>
         ))}

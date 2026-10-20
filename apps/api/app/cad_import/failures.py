@@ -1,4 +1,6 @@
-"""Keep a bounded failed conversion for diagnosis without publishing it as valid."""
+"""Ограниченные материалы сбоя CAD-конвертации для диагностики; ошибочный результат не
+публикуется как пригодный.
+"""
 
 import json
 from pathlib import Path

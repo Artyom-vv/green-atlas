@@ -1,1 +1,3 @@
-"""Bounded model proposals, separate from confirmed calculation mappings."""
+"""Ограниченные предложения модели о ролях CAD-слоёв, отдельно от подтверждённых
+расчётных назначений.
+"""

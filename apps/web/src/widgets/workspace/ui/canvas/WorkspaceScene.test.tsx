@@ -1,7 +1,21 @@
-import { controlFixture } from '@/test/controlFixture';
-import { act, render, screen } from '@testing-library/react';
+import { projectFixture } from '@/test/projectFixture';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceScene, type WorkspaceSceneProps } from './WorkspaceScene';
+import {
+  SceneActivityProvider,
+  useSceneActivity,
+} from '@/widgets/scene/model/SceneActivityContext';
+
+function HeaderSlots() {
+  const activity = useSceneActivity();
+  return (
+    <>
+      <div data-testid="header" ref={activity?.setHeaderSlot} />
+      <div data-testid="progress" ref={activity?.setProgressSlot} />
+    </>
+  );
+}
 
 const sceneModule = vi.hoisted(() => {
   let resolve!: () => void;
@@ -26,11 +40,13 @@ describe('lazy workspace scene', () => {
   it('releases the 2D surface immediately when the user returns before the 3D module loads', async () => {
     const props: WorkspaceSceneProps = {
       editorBusy: false,
+      focusZones: vi.fn(),
+      selectedPatternZones: [],
       handleCoordinate: vi.fn(),
       issues: [],
       mapPanActive: false,
       planLocked: false,
-      project: controlFixture().project,
+      project: projectFixture(),
       projectHasPlan: true,
       sceneHorizon: 0,
       sceneInitialViewState: undefined,
@@ -52,20 +68,36 @@ describe('lazy workspace scene', () => {
       selectedPatternZoneIds: [],
       setSceneHorizon: vi.fn(),
     };
-    const { rerender } = render(<WorkspaceScene {...props} />);
-    const loading = screen.getByText('Загрузка 3D');
+    const returnToMap = vi.fn();
+    const content = (sceneOpen = true) => (
+      <SceneActivityProvider>
+        <HeaderSlots />
+        <WorkspaceScene
+          {...props}
+          sceneOpen={sceneOpen}
+          viewControls={<button onClick={returnToMap}>2D</button>}
+        />
+      </SceneActivityProvider>
+    );
+    const { rerender } = render(content());
+    const loading = screen.getByText('Открываем 3D');
     expect(loading).toBeVisible();
+    expect(screen.getByTestId('header')).toContainElement(loading);
+    expect(document.querySelector('[data-slot=viewport-loading]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '2D' }));
+    expect(returnToMap).toHaveBeenCalledOnce();
 
-    rerender(<WorkspaceScene {...props} sceneOpen={false} />);
-    expect(loading).not.toBeVisible();
-    expect(loading.closest('[hidden]')).toBeInTheDocument();
+    rerender(content(false));
+    expect(screen.getByTestId('header')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('progress')).toBeEmptyDOMElement();
+    expect(screen.queryByText('Открываем 3D')).not.toBeInTheDocument();
 
     await act(async () => sceneModule.resolve());
-    expect(screen.queryByText('Загрузка 3D')).toBeNull();
+    expect(screen.queryByText('Открываем 3D')).toBeNull();
     const scene = screen.getByRole('region', { hidden: true });
     expect(scene).not.toBeVisible();
 
-    rerender(<WorkspaceScene {...props} />);
+    rerender(content());
     expect(screen.getByRole('region', { name: 'Готовая 3D-сцена' })).toBe(
       scene,
     );

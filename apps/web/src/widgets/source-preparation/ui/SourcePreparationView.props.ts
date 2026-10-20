@@ -1,4 +1,5 @@
 import type { SourcePreparationState } from '../model/sourcePreparation';
+import type { SourceRecognitionProgressProps } from './SourceRecognitionProgress';
 import {
   PreparationStatusPropsFor,
   type PreparationStatusProps,
@@ -15,7 +16,8 @@ export interface SourcePreparationViewProps
   extends
     PreparationStatusProps,
     PreparationActionsProps,
-    SourceLayerFormProps {
+    SourceLayerFormProps,
+    SourceRecognitionProgressProps {
   projectName: string;
   sourceReviewMessage?: string;
 }
@@ -26,4 +28,10 @@ export const SourcePreparationViewPropsFor = (
   ...PreparationActionsPropsFor(state),
   ...SourceLayerFormPropsFor(state),
   sourceReviewMessage: state.sourceReviewMessage,
+  autoApplyingRecognition: state.autoApplyingRecognition,
+  recognitionMappings: state.recognitionMappings,
+  recognitionSaveRecovery: state.recognitionSaveRecovery,
+  allSavedLayersConfirmed: state.allSavedLayersConfirmed,
+  layerRecognitionQuery: state.layerRecognitionQuery,
+  retryLayerRecognition: state.retryLayerRecognition,
 });

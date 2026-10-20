@@ -61,6 +61,13 @@ void checkControlScopes() {
             }});
         assert(operationCancelled());
         reportOperationProgress("collecting", 3);
+        {
+            auto inherited = currentOperationControl();
+            inherited.cancelled = [] { return false; };
+            ScopedOperationControl capture(std::move(inherited));
+            assert(!operationCancelled());
+            reportOperationProgress("collecting", 5);
+        }
         try {
             ScopedOperationControl inner({[] { return false; }, {}});
             assert(!operationCancelled());
@@ -70,10 +77,10 @@ void checkControlScopes() {
         assert(operationCancelled());
         reportOperationProgress("collecting", 4);
     }
-    assert(observed == 7);
+    assert(observed == 12);
     assert(!operationCancelled());
     reportOperationProgress("ignored", 100);
-    assert(observed == 7);
+    assert(observed == 12);
 }
 
 int main(int argc, char** argv) {
@@ -93,5 +100,7 @@ int main(int argc, char** argv) {
         metadata, sampleGeometry(), argc == 5 ? argv[4] : "");
     std::cout << "{\"success\":" << (result.success ? "true" : "false")
               << ",\"path\":\"" << jsonEscape(result.path)
-              << "\",\"error\":\"" << jsonEscape(result.error) << "\"}\n";
+              << "\",\"error\":\"" << jsonEscape(result.error) << "\"";
+    if (result.success) std::cout << ",\"transfer_facts\":" << result.transferFacts;
+    std::cout << "}\n";
 }

@@ -12,17 +12,18 @@ from pathlib import Path
 from test_cad_bridge_compiler import valid_probe
 
 from app.cad_bridge.compiler import compile_live_document
-from app.desktop.tickets import LiveTicket
+from app.desktop.tickets import ArchivedTicket, CaptureTicketFields
 
 
 def test_actual_native_producer_versions_admit_the_transfer():
     native = Path(__file__).resolve().parents[3] / "tools/autocad-bridge/native"
     version_match = re.search(
-        r'kPluginVersion\s*=\s*"([^"]+)"', (native / "bridge_config.h").read_text()
+        r'kPluginVersion\s*=\s*"([^"]+)"',
+        (native / "bridge_config.h").read_text(encoding="utf-8"),
     )
     ticket_match = re.search(
         r"writeLiveTicket\(\s*directory,\s*([^,]+),",
-        (native / "delivery_command.cpp").read_text(),
+        (native / "delivery_command.cpp").read_text(encoding="utf-8"),
     )
     if version_match is None or ticket_match is None:
         raise ValueError("Producer API changed; update the contract probe explicitly")
@@ -40,21 +41,40 @@ def test_actual_native_producer_versions_admit_the_transfer():
     probe["source"].update(database_modified_flags=32, live_database_matches_disk=False)
     probe["area_proposals"] = []
     probe["area_proposal_rejections"] = []
-    probe["summary"].update(paths=0, points=0, area_proposals=0,
-                            area_proposal_candidates=0, area_proposal_rejected=0)
+    probe["summary"].update(
+        paths=0,
+        points=0,
+        area_proposals=0,
+        area_proposal_candidates=0,
+        area_proposal_rejected=0,
+    )
     payload = json.dumps(probe).encode()
-    ticket = LiveTicket.model_validate({
-        "schema": "green-atlas.transfer/2", "plugin_version": ticket_version,
-        "source_name": "Street.dxf",
-        "manifest": {
-            "entry": "Drawing.autocad.json",
-            "files": [{"name": "Drawing.autocad.json", "kind": "live_capture",
-                       "bytes": len(payload), "sha256": sha256(payload).hexdigest()}],
-        },
-        "producer": {"autocad_version": "2027.0.1", "target": "macos-arm64"},
-    })
+    assert (
+        ticket_version
+        in ArchivedTicket.model_fields["plugin_version"].annotation.__args__
+    )
+    assert "green-atlas.transfer/5" in (native / "delivery_ui.mm").read_text(
+        encoding="utf-8"
+    )
+    ticket = CaptureTicketFields.model_validate(
+        {
+            "source_name": "Street.dxf",
+            "manifest": {
+                "entry": "Drawing.autocad.json",
+                "files": [
+                    {
+                        "name": "Drawing.autocad.json",
+                        "kind": "live_capture",
+                        "bytes": len(payload),
+                        "sha256": sha256(payload).hexdigest(),
+                    }
+                ],
+            },
+            "producer": {"autocad_version": "2027.0.1", "target": "macos-arm64"},
+        }
+    )
     snapshot = compile_live_document(payload, **ticket.producer.model_dump())
-    assert snapshot.extraction.plugin_version == ticket.plugin_version == version
+    assert snapshot.extraction.plugin_version == ticket_version == version
     assert snapshot.source.sha256 == ticket.manifest.files[0].sha256
     assert snapshot.source.live_capture.database_modified_flags == 32
     assert snapshot.geometry

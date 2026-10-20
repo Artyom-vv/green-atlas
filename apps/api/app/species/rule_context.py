@@ -1,4 +1,6 @@
-"""Catalog evidence used by a rule, separate from editable symbol dimensions."""
+"""Каталожные свидетельства для предметного правила отдельно от редактируемых размеров
+символа посадки.
+"""
 
 from app.species.catalog import get_species
 

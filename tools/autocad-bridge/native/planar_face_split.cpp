@@ -1,6 +1,7 @@
 #include "planar_faces_internal.h"
 #include <algorithm>
 #include <numeric>
+#include <stdexcept>
 
 namespace ga::faces {
 namespace {

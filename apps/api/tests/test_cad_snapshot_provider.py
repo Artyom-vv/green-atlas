@@ -1,23 +1,42 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from hashlib import sha256
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from shapely.geometry import LineString, Polygon
 
 from app.cad_bridge import CadSnapshot
-from app.cad_bridge.compiler import _canonical_sha256
+from app.cad_bridge.contracts import PathGeometry, PointGeometry, RegionGeometry
+from app.cad_bridge.integrity import canonical_record_sha256 as _canonical_sha256
 from app.cad_bridge.provider import (
     CadSnapshotProviderError,
     _boundary_candidate,
     apply_cad_snapshot,
-    build_dxf_import_from_snapshot,
-    build_dxf_import_from_snapshot_path,
+    build_project_from_snapshot,
+    native_geometry_shape,
 )
-from app.dxf_import.application import ImportApplication
+from app.dxf_import.capacity import SourceCapacityExceeded, SourceGeometryCapacity
 from app.dxf_import.contracts import DxfImportResult
-from app.dxf_import.layer_contracts import BoundaryCandidateStatus, Layer, LayerKind
+from app.dxf_import.layers.categories import LayerCategory
+from app.dxf_import.layers.contracts import BoundaryCandidateStatus, Layer, LayerKind
+from app.geometry.checking.adapters import _unprojectable_physical_layers
+from app.geometry.contracts import GeometrySnapshot
+from app.layer_recognition.review_policy import local_layer_proposal
+from app.native_query.live.live_inventory import QueryObject
+from app.native_query.search.hybrid_geometry import HybridGeometry, uses_linear_geometry
+from app.projects.contracts import Project
+
+
+def native_project(snapshot: CadSnapshot, *, source_sha256: str) -> Project:
+    return build_project_from_snapshot(
+        Project(name="Native projection"),
+        snapshot,
+        filename="Drawing.autocad.json",
+        imported_at="2026-10-08T12:00:00+03:00",
+        source_sha256=source_sha256,
+        source_size=1,
+    )
 
 
 def test_native_site_candidate_does_not_hide_dominant_open_boundary() -> None:
@@ -28,6 +47,7 @@ def test_native_site_candidate_does_not_hide_dominant_open_boundary() -> None:
     candidate = _boundary_candidate([small_surface, long_open_outline])
     assert candidate.status == BoundaryCandidateStatus.INVALID
     assert candidate.area_m2 == small_surface.area
+    assert candidate.issue is not None
     assert "незамкнутый" in candidate.issue
 
 
@@ -38,15 +58,11 @@ def test_native_site_candidate_keeps_small_local_open_annotation() -> None:
     assert candidate.status == BoundaryCandidateStatus.USABLE
 
 
-def test_imported_name_confidence_does_not_confirm_a_role():
-    result = build_dxf_import_from_snapshot(snapshot(), source_sha256='a' * 64)
+def test_imported_name_confidence_does_not_confirm_a_role() -> None:
+    result = native_project(snapshot(), source_sha256="a" * 64)
     assert result.layers
     assert all(layer.mapping_review_required for layer in result.layers)
     assert all(layer.mapping_confirmed is False for layer in result.layers)
-from app.geometry.adapters import _unprojectable_physical_layers
-from app.geometry.contracts import GeometrySnapshot
-from app.projects.adapters import InMemoryProjectRepository
-from app.projects.contracts import Project
 
 
 def snapshot(
@@ -56,7 +72,7 @@ def snapshot(
     with_primitives: bool = False,
 ) -> CadSnapshot:
     identity = {"handle": "A12", "instance_chain": ["10"]}
-    payload = {
+    payload: dict[str, Any] = {
         "schema": "green-atlas.autocad-snapshot/1",
         "source": {
             "sha256": source_sha256,
@@ -253,6 +269,102 @@ def test_applies_native_region_with_hole_and_preserves_provenance() -> None:
     assert result.cad_snapshot_provenance.native_geometry == 1
 
 
+def test_casing_context_counters_come_only_from_verified_coverage() -> None:
+    payload = snapshot().model_dump(by_alias=True, mode="json", exclude_none=True)
+    for row in payload["coverage"]:
+        row["layer"] = "ЭС_Футляры"
+    for index, entity_type in enumerate(
+        [
+            "AcDbBlockReference",
+            "AcDbAttribute",
+            "AcDbAttributeDefinition",
+        ]
+    ):
+        payload["coverage"].append(
+            {
+                "identity": {"handle": f"C{index}", "instance_chain": ["10"]},
+                "entity_type": entity_type,
+                "layer": "ЭС_Футляры",
+                "status": "context",
+                "method": "native-context",
+                "reason": "Контейнер или атрибут без физической геометрии",
+                "geometry_ids": [],
+            }
+        )
+    payload["summary"].update(source_instances=4, context=3)
+    payload["summary"]["payload_sha256"] = _canonical_sha256(
+        {key: value for key, value in payload.items() if key != "summary"}
+    )
+    native = CadSnapshot.model_validate(payload)
+    source_before = native.model_dump()
+    project = native_project(native, source_sha256="a" * 64)
+    layer = project.layers[0]
+    assert layer.context_entity_types == {"INSERT": 1, "ATTRIB": 1, "ATTDEF": 1}
+    assert layer.entity_types == {"REGION": 1, "INSERT": 1, "ATTRIB": 1, "ATTDEF": 1}
+    assert layer.projected_geometry_types == {"REGION": 1}
+    assert layer.object_count == 4 and layer.geometry_complete
+    assert local_layer_proposal(layer).category == LayerCategory.PROTECTIVE_CASING
+    assert project.source_geometry is not None
+    area = project.source_geometry.feature_collection["features"][0]
+    assert area["geometry"]["type"] == "Polygon"
+    assert len(area["geometry"]["coordinates"]) == 2
+    assert native.model_dump() == source_before
+
+
+@pytest.mark.parametrize(
+    "role, category, expected_closed_path_type",
+    [
+        (LayerKind.RESTRICTED, LayerCategory.PROTECTIVE_CASING, "LineString"),
+        (LayerKind.RESTRICTED, LayerCategory.EQUIPMENT, "Polygon"),
+        (LayerKind.RESTRICTED, None, "Polygon"),
+        (LayerKind.UTILITY, None, "LineString"),
+    ],
+)
+def test_casing_uses_measured_region_but_not_filled_native_closed_path(
+    role: LayerKind,
+    category: LayerCategory | None,
+    expected_closed_path_type: str,
+) -> None:
+    project = native_project(snapshot(with_primitives=True), source_sha256="a" * 64)
+    assert project.source_geometry is not None
+    layer = next(item for item in project.layers if item.source_name == "BUILDINGS")
+    layer.mapped_kind, layer.category, layer.mapping_confirmed = role, category, True
+    features = project.source_geometry.feature_collection["features"]
+    closed_path = next(f for f in features if f["properties"]["source_handle"] == "C1")
+    assert closed_path["geometry"]["type"] == "Polygon"
+    assert closed_path["properties"]["source_closed_path"] is True
+    assert closed_path["properties"]["source_polygon_projection"] is True
+    assert "source_native_area_units2" not in closed_path["properties"]
+    engine = SimpleNamespace(factor=1.0, _faces=())
+    projection = HybridGeometry(engine, project, require_accuracy=True)
+    item = QueryObject(
+        routes=("C1",),
+        layer=layer.source_name,
+        bounds=(20, 0, 30, 10),
+        curve=True,
+        error="",
+    )
+    projected = projection.get(
+        item, linear=uses_linear_geometry(item, layer, frozenset())
+    )
+    assert not projected.reason
+    assert projected.geometries[0].geom_type == expected_closed_path_type
+    if role == LayerKind.RESTRICTED:
+        measured = projection.get(
+            QueryObject(
+                routes=("10/A12",),
+                layer=layer.source_name,
+                bounds=(0, 0, 10, 10),
+                curve=False,
+                error="",
+            )
+        )
+        assert not measured.reason
+        assert isinstance(measured.geometries[0], Polygon)
+        assert measured.geometries[0].area == 96
+        assert len(measured.geometries[0].interiors) == 1
+
+
 def test_applies_native_curve_and_point_from_autocad_snapshot() -> None:
     portable = imported()
     portable.geometry.feature_collection["features"] = [
@@ -296,18 +408,18 @@ def test_applies_native_curve_and_point_from_autocad_snapshot() -> None:
 
 
 def test_snapshot_only_builder_creates_layers_without_portable_reader() -> None:
-    result = build_dxf_import_from_snapshot(
-        snapshot(with_primitives=True), source_sha256="a" * 64
-    )
+    result = native_project(snapshot(with_primitives=True), source_sha256="a" * 64)
+    assert result.source_file is not None
+    assert result.source_geometry is not None
 
-    assert result.entity_count == 3
-    assert result.units == "м"
+    assert result.source_file.entity_count == 3
+    assert result.source_file.units == "м"
     # Application version is not a DXF ACxxxx header. A snapshot without an
     # actual DXF must not invent that header from the AutoCAD product version.
-    assert result.dxf_version == "unknown"
-    assert result.cad_snapshot_provenance is not None
-    assert result.cad_snapshot_provenance.autocad_version == "2027.0.1"
-    assert len(result.geometry.feature_collection["features"]) == 3
+    assert result.source_file.dxf_version == "AutoCAD live snapshot"
+    assert result.source_file.cad_snapshot_provenance is not None
+    assert result.source_file.cad_snapshot_provenance.autocad_version == "2027.0.1"
+    assert len(result.source_geometry.feature_collection["features"]) == 3
     assert {layer.source_name for layer in result.layers} == {
         "BUILDINGS",
         "TREES",
@@ -315,31 +427,55 @@ def test_snapshot_only_builder_creates_layers_without_portable_reader() -> None:
     assert all(layer.geometry_complete for layer in result.layers)
 
 
-def test_streaming_provider_matches_in_memory_provider(tmp_path) -> None:
-    native = snapshot(with_dependency=True, with_primitives=True)
-    path = tmp_path / "source.dxf.green-atlas.snapshot.json"
-    path.write_text(
-        native.model_dump_json(by_alias=True, exclude_none=True), encoding="utf-8"
-    )
-    verified = {item.path: item.sha256 for item in native.dependencies or []}
+@pytest.mark.parametrize(
+    "capacity,allowed",
+    [
+        (SourceGeometryCapacity(max_coordinates=15, max_feature_coordinates=10), True),
+        (SourceGeometryCapacity(max_coordinates=14), False),
+        (SourceGeometryCapacity(max_feature_coordinates=9), False),
+    ],
+)
+def test_projected_coordinate_budget_counts_holes_closure_and_points(
+    capacity: SourceGeometryCapacity, allowed: bool
+) -> None:
+    def build() -> Project:
+        return build_project_from_snapshot(
+            Project(name="Budget"),
+            snapshot(with_primitives=True),
+            filename="Drawing.autocad.json",
+            imported_at="2026-10-09T12:00:00+03:00",
+            source_sha256="a" * 64,
+            source_size=1,
+            capacity=capacity,
+        )
 
-    expected = build_dxf_import_from_snapshot(
-        native,
-        source_sha256=native.source.sha256,
-        verified_dependencies=verified,
-    )
-    streamed = build_dxf_import_from_snapshot_path(
-        path,
-        source=native.source,
-        extraction=native.extraction,
-        dependencies=tuple(native.dependencies or []),
-        summary=native.summary,
-        source_sha256=native.source.sha256,
-        scratch_root=tmp_path / "scratch",
-        verified_dependencies=verified,
-    )
+    if allowed:
+        result = build()
+        assert result.source_file is not None
+        assert result.source_file.bounds == [0, 0, 40, 50]
+        assert {layer.source_name: layer.bounds for layer in result.layers} == {
+            "BUILDINGS": (0, 0, 30, 10),
+            "TREES": (40, 50, 40, 50),
+        }
+    else:
+        with pytest.raises(SourceCapacityExceeded):
+            build()
 
-    assert streamed == expected
+
+def test_compatible_existing_features_still_expand_native_layer_and_project_bounds() -> (
+    None
+):
+    portable = imported()
+    portable.geometry.feature_collection["features"] = [
+        {
+            "type": "Feature",
+            "properties": {"source_handle": "F1", "source_layer": "BUILDINGS"},
+            "geometry": {"type": "Point", "coordinates": [-50, 60]},
+        }
+    ]
+    result = apply_cad_snapshot(portable, snapshot(), source_sha256="a" * 64)
+    assert result.bounds == [-50, 0, 10, 60]
+    assert result.layers[0].bounds == (-50, 0, 10, 60)
 
 
 def test_self_intersecting_closed_path_stays_reviewable_linework() -> None:
@@ -365,13 +501,12 @@ def test_self_intersecting_closed_path_stays_reviewable_linework() -> None:
         {key: value for key, value in payload.items() if key != "summary"}
     )
 
-    result = build_dxf_import_from_snapshot(
-        CadSnapshot.model_validate(payload), source_sha256="a" * 64
-    )
+    result = native_project(CadSnapshot.model_validate(payload), source_sha256="a" * 64)
+    assert result.source_geometry is not None
 
     feature = next(
         item
-        for item in result.geometry.feature_collection["features"]
+        for item in result.source_geometry.feature_collection["features"]
         if item["properties"].get("source_handle") == "C1"
     )
     assert feature["geometry"]["type"] == "LineString"
@@ -379,7 +514,7 @@ def test_self_intersecting_closed_path_stays_reviewable_linework() -> None:
     assert feature["properties"]["source_polygon_projection"] is False
 
 
-def test_invalid_native_surface_does_not_hide_other_admitted_objects(tmp_path) -> None:
+def test_invalid_native_surface_does_not_hide_other_admitted_objects() -> None:
     payload = snapshot(with_primitives=True).model_dump(
         by_alias=True, mode="json", exclude_none=True
     )
@@ -402,36 +537,104 @@ def test_invalid_native_surface_does_not_hide_other_admitted_objects(tmp_path) -
         {key: value for key, value in payload.items() if key != "summary"}
     )
     native = CadSnapshot.model_validate(payload)
-    path = tmp_path / "source.dwg.green-atlas.snapshot.json"
-    path.write_text(
-        native.model_dump_json(by_alias=True, exclude_none=True), encoding="utf-8"
+    result = native_project(native, source_sha256=native.source.sha256)
+    assert result.source_file is not None
+    assert result.source_geometry is not None
+    assert len(result.source_geometry.feature_collection["features"]) == 2
+    buildings = next(
+        layer for layer in result.layers if layer.source_name == "BUILDINGS"
     )
-
-    in_memory = build_dxf_import_from_snapshot(
-        native, source_sha256=native.source.sha256
-    )
-    streamed = build_dxf_import_from_snapshot_path(
-        path,
-        source=native.source,
-        extraction=native.extraction,
-        dependencies=(),
-        summary=native.summary,
-        source_sha256=native.source.sha256,
-        scratch_root=tmp_path / "scratch",
-    )
-
-    assert streamed.layers == in_memory.layers
-    assert streamed.geometry == in_memory.geometry
-    assert streamed.cad_snapshot_provenance == in_memory.cad_snapshot_provenance
-    assert streamed == in_memory
-    assert len(streamed.geometry.feature_collection["features"]) == 2
-    buildings = next(layer for layer in streamed.layers if layer.source_name == "BUILDINGS")
     assert buildings.geometry_complete is False
     assert buildings.unsupported_geometry_types == {"REGION": 1}
     assert buildings.projected_geometry_types == {"LWPOLYLINE": 1}
-    assert streamed.cad_snapshot_provenance.native_geometry == 2
-    assert len(streamed.warnings) == 1
-    assert "handle A12" in streamed.warnings[0]
+    assert result.source_file.cad_snapshot_provenance is not None
+    assert result.source_file.cad_snapshot_provenance.native_geometry == 2
+    assert len(result.source_file.warnings) == 1
+    assert "handle A12" in result.source_file.warnings[0]
+
+
+def test_native_surface_projection_preserves_close_distinct_vertices() -> None:
+    # Сокращённый контур HATCH 1457EDD: округление схлопывало два разных прохода.
+    coordinates = [
+        [17842.257116217268, 14253.971833003123, 0],
+        [17842.21111122393, 14256.392211087776, 0],
+        [17842.47376544471, 14253.191573770322, 0],
+        [17843.86509534638, 14250.584101964558, 0],
+        [17846.249067765788, 14248.773268750598, 0],
+        [17849.212572708147, 14248.132488140036, 0],
+        [17849.442350840385, 14248.13784722404, 0],
+        [17849.384924872607, 14248.13579555709, 0],
+        [17849.327483913752, 14248.134218421064, 0],
+        [17849.270031884964, 14248.133115923627, 0],
+        [17849.212572708147, 14248.132488140034, 0],
+        [17846.57734448795, 14248.351261279111, 0],
+        [17844.386915071107, 14249.525508223009, 0],
+        [17842.844242483297, 14251.519816271384, 0],
+        [17842.257116217268, 14253.971833003123, 0],
+    ]
+    original = Polygon(coordinates)
+    assert original.is_valid
+    assert not Polygon([(round(p[0], 6), round(p[1], 6)) for p in coordinates]).is_valid
+    payload = snapshot().model_dump(by_alias=True, mode="json", exclude_none=True)
+    region = payload["geometry"][0]
+    region["loops"] = [{"role": "outer", "closed": True, "coordinates": coordinates}]
+    region["native_area_units2"] = original.area
+    region["native_perimeter_units"] = original.length
+    payload = CadSnapshot.model_validate(payload).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    region = payload["geometry"][0]
+    region["content_sha256"] = _canonical_sha256(
+        {key: value for key, value in region.items() if key != "content_sha256"}
+    )
+    payload["summary"]["payload_sha256"] = _canonical_sha256(
+        {key: value for key, value in payload.items() if key != "summary"}
+    )
+
+    result = native_project(CadSnapshot.model_validate(payload), source_sha256="a" * 64)
+
+    assert result.source_geometry is not None
+    features = result.source_geometry.feature_collection["features"]
+    assert len(features) == 1
+    assert features[0]["geometry"]["coordinates"][0] == tuple(
+        (point[0], point[1]) for point in coordinates
+    )
+    assert result.layers[0].geometry_complete
+    assert result.layers[0].unsupported_geometry_types == {}
+    assert result.source_file is not None
+    assert result.source_file.warnings == []
+
+
+@pytest.mark.parametrize("factor", [1.0, 0.001])
+def test_native_projection_preserves_short_lines_and_point_position(
+    factor: float,
+) -> None:
+    coordinates = [(1.00000004, 2.00000004, 0.0), (1.00000005, 2.00000004, 0.0)]
+    identity = {"handle": "A12", "instance_chain": []}
+    line = PathGeometry.model_validate(
+        {
+            "id": "path/A12",
+            "identity": identity,
+            "kind": "path",
+            "closed": False,
+            "coordinates": coordinates,
+            "achieved_tolerance_m": 0.0005,
+            "content_sha256": "0" * 64,
+        }
+    )
+    point = PointGeometry.model_validate(
+        {
+            "id": "point/A12",
+            "identity": identity,
+            "kind": "point",
+            "coordinates": coordinates[0],
+            "content_sha256": "0" * 64,
+        }
+    )
+    expected = [(x * factor, y * factor) for x, y, _ in coordinates]
+
+    assert list(native_geometry_shape(line, factor).coords) == expected
+    assert list(native_geometry_shape(point, factor).coords) == [expected[0]]
 
 
 def test_unresolved_autocad_instance_never_keeps_fallback_geometry() -> None:
@@ -512,6 +715,7 @@ def test_xref_snapshot_requires_exact_verified_package_dependencies() -> None:
 
 def test_snapshot_geometry_hash_is_verified_again_at_use_time() -> None:
     native = snapshot()
+    assert isinstance(native.geometry[0], RegionGeometry)
     native.geometry[0].loops[0].coordinates[1] = (11, 0, 0)
     with pytest.raises(CadSnapshotProviderError, match="geometry hash differs"):
         apply_cad_snapshot(imported(), native, source_sha256="a" * 64)
@@ -523,40 +727,3 @@ def test_native_count_must_cover_every_region_before_physical_calculation() -> N
     assert _unprojectable_physical_layers(project, []) == {"BUILDINGS": {"REGION"}}
     layer.projected_geometry_types = {"REGION": 1}
     assert _unprojectable_physical_layers(project, []) == {}
-
-
-def test_import_application_uses_snapshot_only_when_explicitly_supplied() -> None:
-    source = b"DXF"
-    native = snapshot(sha256(source).hexdigest())
-
-    class Reader:
-        def read(self, filename: str, content: bytes | bytearray) -> DxfImportResult:
-            raise AssertionError("portable DXF reader must not run")
-
-    class History:
-        def clear(self, project_id: str) -> None:
-            pass
-
-    repository = InMemoryProjectRepository()
-    project = repository.create(Project(name="Native source"))
-    service = ImportApplication(
-        repository=repository,
-        dxf_reader=Reader(),
-        history=History(),
-        invalidate_spatial=lambda _project_id: None,
-        now=lambda: datetime(2026, 9, 17, tzinfo=UTC),
-    )
-    saved = service.import_dxf(
-        project.id,
-        "source.dxf",
-        source,
-        native.model_dump_json(by_alias=True).encode(),
-    )
-    assert saved.source_file is not None
-    assert saved.source_file.cad_snapshot_provenance is not None
-    assert (
-        saved.source_file.cad_snapshot_provenance.source_sha256
-        == sha256(source).hexdigest()
-    )
-    assert saved.source_geometry is not None
-    assert len(saved.source_geometry.feature_collection["features"]) == 1

@@ -29,6 +29,7 @@ const CONTEXT_COLORS: Record<string, number> = {
   allowed: 0x3f7d58,
   building: 0x8797a5,
   existing_green: 0x28744b,
+  lawn: 0x3f7d58,
   restricted: 0xbc4f42,
   road: 0xccd3d6,
   site_border: 0x173f4b,
@@ -39,7 +40,7 @@ const CONTEXT_COLORS: Record<string, number> = {
 // Most DXF polygons are semantic boundaries, not physical surfaces. Filling
 // all of them stacks large transparent sheets over the same pixels, washes
 // out the plan and is disproportionately expensive on dense city drawings.
-const SURFACE_KINDS = new Set(['building', 'road', 'water']);
+const SURFACE_KINDS = new Set(['building', 'road', 'water', 'lawn']);
 
 function ringPoints(value: unknown): LocalPoint[] {
   return Array.isArray(value)
@@ -321,9 +322,13 @@ export function buildContextScene(
         geometry = geometry.toNonIndexed();
         indexed.dispose();
       }
-      const geometries = fillGeometries.get(kind) ?? [];
+      // An unmeasured CAD footprint is a display annotation, not a physical
+      // wall. Keep it in a separate bucket so it cannot write depth or cast
+      // shadows just because another building has a known height.
+      const fillKind = kind === 'building' && !height ? 'building_flat' : kind;
+      const geometries = fillGeometries.get(fillKind) ?? [];
       geometries.push(geometry);
-      fillGeometries.set(kind, geometries);
+      fillGeometries.set(fillKind, geometries);
     }
   }
 
@@ -405,7 +410,7 @@ export function buildContextScene(
   base.name = 'context-datum-base';
   base.position.set(contextCenter.x, -0.06, contextCenter.z);
   base.receiveShadow = true;
-  base.renderOrder = 0;
+  base.renderOrder = -2;
   if (!hasTerrain) group.add(base);
   else {
     base.geometry.dispose();
@@ -442,6 +447,8 @@ export function buildContextScene(
     geometries.forEach((geometry) => geometry.dispose());
     if (!merged) continue;
     merged.computeVertexNormals();
+    const flatFootprint = kind === 'building_flat';
+    const colorKind = flatFootprint ? 'building' : kind;
     const material =
       kind === 'water'
         ? new THREE.MeshPhysicalMaterial({
@@ -455,19 +462,23 @@ export function buildContextScene(
             side: THREE.DoubleSide,
           })
         : new THREE.MeshStandardMaterial({
-            color: CONTEXT_COLORS[kind],
+            color: CONTEXT_COLORS[colorKind],
             roughness: kind === 'road' ? 0.82 : 0.9,
             metalness: 0,
             transparent: false,
             opacity: 1,
             side: THREE.DoubleSide,
-            depthWrite: true,
+            depthWrite: !flatFootprint,
           });
     const mesh = new THREE.Mesh(merged, material);
     mesh.name = `context-fill:${kind}`;
-    mesh.receiveShadow = kind === 'road' || kind === 'building';
-    mesh.castShadow = kind === 'building' && confirmedBuildingCount > 0;
-    mesh.renderOrder = 1;
+    mesh.userData.sourceKind = colorKind;
+    mesh.receiveShadow =
+      kind === 'road' || kind === 'building' || flatFootprint;
+    mesh.castShadow = kind === 'building';
+    // Ground covers deterministically overwrite coincident flat CAD marks.
+    // Geometry is unchanged and footprints remain visible outside those covers.
+    mesh.renderOrder = flatFootprint ? -1 : 1;
     group.add(mesh);
   }
 

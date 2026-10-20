@@ -1,17 +1,21 @@
+"""Общие правила зон, габаритов, роста и направляющих для ручных и шаблонных посадок."""
+
 from __future__ import annotations
+
+from math import ceil
 
 from shapely.geometry import Point, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.prepared import PreparedGeometry, prep
 
 from app.planning.config import (
-    GROWTH_REVIEW_HORIZON_YEAR,
+    DEFAULT_PLANNING_HORIZON_YEAR,
     SHRUB_LAYOUT_RADIUS_M,
     TREE_LAYOUT_RADIUS_M,
 )
 from app.planning.contracts import PlanObject
 from app.planning.domain import required_spacing
-from app.planning.pattern_contracts import (
+from app.planning.patterns.contracts import (
     PatternPreviewRequest,
     PlacementMaskRequest,
     RowPatternRequest,
@@ -19,25 +23,39 @@ from app.planning.pattern_contracts import (
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 from app.regulations.placement_config import PLACEMENT_CONFIG
+from app.shared.failures import DomainFailure, FailureReason
 from app.species.catalog import get_species, growth_forecasts
+from app.species.forecast import calculation_growth_radii, forecast_at
 
 
-def road_growth_request(request: PatternPreviewRequest) -> PatternPreviewRequest:
-    """Keep road-edge candidate axes outside the forecast canopy envelope."""
+def road_growth_request(
+    request: PatternPreviewRequest,
+    planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR,
+) -> PatternPreviewRequest:
+    """Отодвигает оси кандидатов у дороги за пределы прогнозной кроны."""
     if isinstance(request, PlacementMaskRequest) and request.mask_id == "road_edges":
-        radii = pattern_growth_radii(request)
+        radii = pattern_growth_radii(request, planning_horizon_year)
         if radii:
-            return request.model_copy(update={
-                "road_offset_m": min(PLACEMENT_CONFIG.layout.maximum_road_offset_m,
-                    max(request.road_offset_m, radii[0] + request.edge_offset_m + PLACEMENT_CONFIG.layout.road_edge_extra_m))
-            })
+            return request.model_copy(
+                update={
+                    "road_offset_m": min(
+                        PLACEMENT_CONFIG.layout.maximum_road_offset_m,
+                        max(
+                            request.road_offset_m,
+                            radii[0]
+                            + request.edge_offset_m
+                            + PLACEMENT_CONFIG.layout.road_edge_extra_m,
+                        ),
+                    )
+                }
+            )
     return request
 
 
 def compiled_planting_zones(
     project: Project,
 ) -> list[tuple[PlantingZoneAssignment, BaseGeometry, PreparedGeometry]]:
-    """Compile zone shapes once for bulk operations over complex DXF areas."""
+    """Подготавливает геометрию зон один раз для массовых операций на сложном DXF."""
     compiled = []
     for zone in project.planting_zones:
         geometry = shape(zone.geometry)
@@ -61,8 +79,8 @@ def planting_zone_at(
         for zone, geometry, prepared in zones
         if prepared.covers(footprint)
     ]
-    # Prefer the most specific nested task instead of the broad site
-    # contour that contains it.
+    # Выбираем наиболее конкретную вложенную задачу вместо охватывающего
+    # её общего контура территории.
     return min(matching, key=lambda item: item[1], default=(None, 0))[0]
 
 
@@ -71,7 +89,9 @@ def default_layout_radius(kind: str) -> float:
 
 
 def growth_radii(
-    revision_ids: list[str | None], size_class: str
+    revision_ids: list[str | None],
+    size_class: str,
+    planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR,
 ) -> tuple[float, float] | None:
     canopy_radii: list[float] = []
     root_radii: list[float] = []
@@ -80,25 +100,22 @@ def growth_radii(
             continue
         revision = get_species(revision_id)
         canopy, roots = growth_forecasts(revision, size_class)
-        canopy_20 = next(
-            (
-                item
-                for item in canopy
-                if item.horizon_year == GROWTH_REVIEW_HORIZON_YEAR
-            ),
-            None,
+        canopy_at_horizon = forecast_at(canopy, planning_horizon_year)
+        roots_at_horizon = forecast_at(roots, planning_horizon_year)
+        if canopy_at_horizon is None or roots_at_horizon is None:
+            raise DomainFailure(FailureReason.GROWTH_FORECAST_UNAVAILABLE)
+        canopy_radius, root_radius = calculation_growth_radii(
+            canopy_at_horizon, roots_at_horizon
         )
-        roots_20 = next(
-            (item for item in roots if item.horizon_year == GROWTH_REVIEW_HORIZON_YEAR),
-            None,
-        )
-        if canopy_20 and roots_20:
-            canopy_radii.append(canopy_20.radius_max_m)
-            root_radii.append(roots_20.radius_max_m)
+        canopy_radii.append(canopy_radius)
+        root_radii.append(root_radius)
     return (max(canopy_radii), max(root_radii)) if canopy_radii and root_radii else None
 
 
-def pattern_growth_radii(request: PatternPreviewRequest) -> tuple[float, float] | None:
+def pattern_growth_radii(
+    request: PatternPreviewRequest,
+    planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR,
+) -> tuple[float, float] | None:
     if isinstance(request, RowPatternRequest):
         revision_ids = [request.species_revision_id]
     elif request.composition == "mixed":
@@ -108,7 +125,7 @@ def pattern_growth_radii(request: PatternPreviewRequest) -> tuple[float, float] 
         ]
     else:
         revision_ids = [request.species_revision_id]
-    return growth_radii(revision_ids, request.size_class)
+    return growth_radii(revision_ids, request.size_class, planning_horizon_year)
 
 
 def mask_guide_geometries(
@@ -131,7 +148,10 @@ def mask_guide_geometries(
     ]
 
 
-def effective_pattern_spacing(request: PatternPreviewRequest) -> float:
+def effective_pattern_spacing(
+    request: PatternPreviewRequest,
+    planning_horizon_year: int = DEFAULT_PLANNING_HORIZON_YEAR,
+) -> float:
     if isinstance(request, RowPatternRequest):
         return request.spacing_m
     revision_id = (
@@ -143,7 +163,14 @@ def effective_pattern_spacing(request: PatternPreviewRequest) -> float:
         return request.spacing_m
     revision = get_species(revision_id)
     if revision.kind != request.plant_kind:
-        raise ValueError("Порода не соответствует типу посадочного места")
+        raise DomainFailure(
+            FailureReason.SPECIES_KIND_MISMATCH,
+            {
+                "species_revision_id": revision.id,
+                "expected_kind": request.plant_kind,
+                "actual_kind": revision.kind,
+            },
+        )
     radius = request.layout_radius_m or default_layout_radius(request.plant_kind)
     canopy, roots = growth_forecasts(revision, request.size_class)
     prototype = PlanObject(
@@ -160,4 +187,7 @@ def effective_pattern_spacing(request: PatternPreviewRequest) -> float:
         group_ids=["pattern-spacing-preview"],
         spacing_policy=request.spacing_policy,
     )
-    return round(required_spacing(prototype, prototype), 2)
+    required = required_spacing(prototype, prototype, planning_horizon_year)
+    # Шаг до сантиметра округляется вверх: округление вниз делает каждого
+    # соседнего кандидата заведомо недопустимым для того же проверяющего модуля.
+    return ceil(required * 100) / 100

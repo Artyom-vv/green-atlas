@@ -1,8 +1,35 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
+import { useState } from 'react';
 import { SourceSection, SourceSections } from './SourceSection';
 
 afterEach(cleanup);
+it('lets the controlling widget select another panel after a review request has been handled', () => {
+  const request = { section: '01', sequence: 1 };
+  function Sections() {
+    const [active, setActive] = useState<string | null>('02');
+    return (
+      <SourceSections
+        defaultSection="02"
+        activeSection={active}
+        onActiveChange={setActive}
+        reviewRequest={request}
+      >
+        <SourceSection number="01" title="Слои">
+          Слои
+        </SourceSection>
+        <SourceSection number="02" title="Сведения">
+          Сведения
+        </SourceSection>
+      </SourceSections>
+    );
+  }
+  render(<Sections />);
+  const details = screen.getByRole('button', { name: 'Сведения' });
+  expect(details).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(details);
+  expect(details).toHaveAttribute('aria-expanded', 'true');
+});
 it('makes the whole section heading and summary one accessible disclosure', () => {
   render(
     <SourceSection

@@ -1,0 +1,106 @@
+name: Windows prepared identity diagnostic
+
+on:
+  push:
+    branches: [codex/windows-identity-diagnostic]
+    paths: [.github/workflows/windows-identity-diagnostic.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  payload:
+    if: github.repository == 'Artyom-vv/green-atlas-dev'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Prepare locked dependencies
+        run: |
+          . ./scripts/windows-env.ps1
+          $inputs = Get-Content tools/autocad-bridge/windows-ci-inputs.json -Raw | ConvertFrom-Json
+          $python = (Get-Command python).Source
+          & $python -m pip install --disable-pip-version-check ('uv==' + $inputs.uv)
+          if ($LASTEXITCODE -ne 0) { throw 'uv installation failed' }
+          . ./scripts/windows-env.ps1
+          $env:UV_PYTHON_DOWNLOADS = 'never'
+          & $python -m uv sync --project apps/api --locked --group dev --python $python
+          if ($LASTEXITCODE -ne 0) { throw 'Locked dependencies failed' }
+      - name: Verify prepared identity and preview duration on own fixtures
+        timeout-minutes: 6
+        run: |
+          . ./scripts/windows-env.ps1
+          $env:PYTHONUTF8 = '1'
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'apps/api'
+          $probe = @'
+          """Собственные синтетические данные: наблюдаем правки того же размера без изменения проверок."""
+          import hashlib,json,os,pathlib,platform,runpy,sys,tempfile
+          from unittest.mock import Mock
+          import pytest
+          root=pathlib.Path.cwd();sys.path.insert(0,str(root/'apps/api/tests'))
+          import app.native_query.project_runtime as runtime
+          namespace=runpy.run_path(str(root/'apps/api/tests/test_preparation_identity.py'))
+          original=runtime.PreparedGeometryEngine
+          base=root/'.runtime/prepared-identity-probe';base.mkdir(parents=True,exist_ok=True)
+          rows=[]
+          for index in range(20):
+           with tempfile.TemporaryDirectory(dir=base) as folder:
+            directory=pathlib.Path(folder)
+            fixture=namespace['setup'].__wrapped__(directory)
+            live,_,project=namespace['network'](fixture)
+            store=namespace['PreparedStore'](directory/'prepared')
+            snapshot=namespace['prepare_snapshot'](live,project);store.save(snapshot)
+            path=store.directory/f'{snapshot.key}.json';row={'iteration':index,'before':store._fingerprint(snapshot.key),'stored':store._verified[snapshot.key],'before_sha':hashlib.sha256(path.read_bytes()).hexdigest(),'constructor_called':False}
+            def construct(*args,**kwargs):
+             engine=original(*args,**kwargs);row['constructor_called']=True
+             row['before_write']=store._fingerprint(snapshot.key)
+             previous=path.read_bytes();path.write_bytes(b'!'+previous[1:])
+             row['after_write']=store._fingerprint(snapshot.key)
+             row['same_size']=path.stat().st_size==len(previous)
+             row['after_sha']=hashlib.sha256(path.read_bytes()).hexdigest()
+             return engine
+            router=runtime.ProjectLiveGeometry(Mock(),prepared_store=store)
+            with pytest.MonkeyPatch.context() as patch:
+             patch.setattr(runtime,'PreparedGeometryEngine',construct)
+             try:
+              router._cache_snapshot(project,snapshot,None)
+             except namespace['PreparedGeometryUnavailable']:
+              row['rejected']=True
+             else:row['rejected']=False
+            row['after_return']=store._fingerprint(snapshot.key)
+            row['cached']=project.id in router._prepared
+            row['unchanged']=store.unchanged(snapshot.key)
+            assert row['constructor_called'] and row['before_sha']!=row['after_sha'] and row['same_size']
+            rows.append(row)
+          def fingerprint(path):
+           if os.name=='nt':
+            from app.native_query.transport.windows_job_files import file_fingerprint
+            return file_fingerprint(path)
+           s=path.stat();return (s.st_dev,s.st_ino,s.st_mtime_ns,s.st_ctime_ns,s.st_size)
+          changes=[]
+          with tempfile.TemporaryDirectory(dir=base) as folder:
+           path=pathlib.Path(folder)/'same-size.bin';path.write_bytes(b'a'*100)
+           for index in range(100):
+            before=fingerprint(path);path.write_bytes(bytes([65+index%26])*100);after=fingerprint(path)
+            if before==after:changes.append({'iteration':index,'before':before,'after':after})
+          report={'schema':'green-atlas.prepared-identity-diagnostic/2','platform':sys.platform,'python':platform.python_version(),'source':os.environ.get('GITHUB_SHA'),'autocad_executed':False,'user_data_used':False,'fixture_cases':rows,'generic_same_size_writes':100,'generic_identity_collision_count':len(changes),'generic_identity_collisions':changes[:5]}
+          wire=json.dumps(report,separators=(',',':'));assert len(wire)<32768
+          print('GA_PREPARED_IDENTITY_DIAGNOSTIC '+wire,flush=True)
+          if any(not row['rejected'] or row['cached'] for row in rows):
+              raise SystemExit('Подмена подготовленного файла принята при создании движка')
+          status = pytest.main(['-o', 'addopts=', '-q', '--timeout=45', '--tb=short', '--durations=15', '--basetemp', str(root / '.runtime/prepared-identity-regressions'), 'apps/api/tests/test_preparation_identity.py::test_written_snapshot_change_during_engine_construction_is_not_cached', 'apps/api/tests/test_preparation_identity.py::test_windows_prepared_read_scope_pins_bytes_once_and_releases_on_error', 'apps/api/tests/test_pattern_project_projection.py'])
+          raise SystemExit(status)
+          '@
+          . ./scripts/windows-env.ps1
+          & ./apps/api/.venv/Scripts/python.exe -c $probe
+          if ($LASTEXITCODE -ne 0) { throw 'Own-fixture identity diagnostic failed' }

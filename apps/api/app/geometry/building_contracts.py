@@ -1,11 +1,18 @@
+"""Запросы и цели озеленения у зданий: выбранные фасады, области и итоговые
+геометрические показатели.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.planning.config import DEFAULT_PLANNING_HORIZON_YEAR, PlanningHorizonYear
+
 
 class BuildingScreenRequest(BaseModel):
+    scenario_horizon_year: PlanningHorizonYear = DEFAULT_PLANNING_HORIZON_YEAR
     base_plan_version: int = Field(ge=1)
     zone_ids: list[str] = Field(min_length=1, max_length=40)
     screen_side: Literal["perimeter", "roads"] = "perimeter"

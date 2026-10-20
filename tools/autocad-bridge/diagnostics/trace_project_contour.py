@@ -12,7 +12,7 @@ from pathlib import Path
 
 from shapely.geometry import LineString, Point, Polygon, box, shape
 
-from app.geometry.domain import PositionChecker, rule_distance
+from app.geometry.checking.domain import PositionChecker, rule_distance
 from app.projects.contracts import Project
 
 

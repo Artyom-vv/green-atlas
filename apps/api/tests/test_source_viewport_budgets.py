@@ -1,16 +1,14 @@
 import json
-from pathlib import Path
 
 import ezdxf
 import pytest
 
-from app.composition import create_runtime
 from app.contracts import GeometrySnapshot, Project
-from app.dxf_import.adapters import EzdxfReader
 from app.dxf_import.capacity import SourceCapacityExceeded, SourceGeometryCapacity
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.geometry.geojson_size import coordinate_count
-from app.geometry.query_adapters import IndexedGeometryQuery
-from app.geometry.viewport_budget import feature_size
+from app.geometry.viewport.query_adapters import IndexedGeometryQuery
+from app.geometry.viewport.viewport_budget import feature_size
 from tests.test_dxf_reader_resilience import source_bytes
 
 
@@ -44,31 +42,6 @@ def test_source_capacity_accepts_exact_boundaries_and_rejects_next_position() ->
     document.modelspace().add_point((5, 5))
     with pytest.raises(SourceCapacityExceeded):
         reader.read("overflow.dxf", source_bytes(document))
-
-
-def test_failed_capacity_import_preserves_previous_source_and_project(
-    tmp_path: Path,
-) -> None:
-    runtime = create_runtime(tmp_path / "atomic-source.sqlite3")
-    try:
-        project = runtime.application.create_project("Source capacity")
-        document = ezdxf.new("R2013")
-        document.modelspace().add_line((0, 0), (10, 0))
-        first = source_bytes(document)
-        runtime.application.import_dxf(project.id, "original.dxf", first)
-        before = runtime.project_repository.get(project.id).model_dump_json()
-        runtime.application._imports.dxf_reader = EzdxfReader(
-            capacity=SourceGeometryCapacity(max_coordinates=2)
-        )
-        document.modelspace().add_point((20, 20))
-        with pytest.raises(SourceCapacityExceeded):
-            runtime.application.import_dxf(
-                project.id, "too-large.dxf", source_bytes(document)
-            )
-        assert runtime.project_repository.get_source(project.id) == first
-        assert runtime.project_repository.get(project.id).model_dump_json() == before
-    finally:
-        runtime.close()
 
 
 def test_display_vertex_budget_preserves_physical_context_after_dense_annotations() -> (

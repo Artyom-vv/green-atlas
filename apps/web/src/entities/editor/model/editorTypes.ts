@@ -1,3 +1,6 @@
+import type { PlanComparisonMode } from './planComparison';
+import type { PlanViewState } from './planViewState';
+
 export const MAP_TOOLS = [
   'select',
   'pan',
@@ -32,7 +35,7 @@ export const EDITOR_PANELS = [
 ] as const;
 export type EditorPanel = (typeof EDITOR_PANELS)[number] | null;
 
-export const EDITOR_RIGHT_TABS = ['inspector', 'tool', 'assistant'] as const;
+export const EDITOR_RIGHT_TABS = ['inspector', 'tool'] as const;
 export type EditorRightTab = (typeof EDITOR_RIGHT_TABS)[number];
 
 export const EDITOR_RESULTS_TABS = ['issues', 'schedule', 'history'] as const;
@@ -41,6 +44,10 @@ export type EditorResultsTab = (typeof EDITOR_RESULTS_TABS)[number];
 export type StateUpdate<Value> = Value | ((current: Value) => Value);
 
 export interface EditorViewState {
+  growthHorizon: number;
+  planComparison: PlanComparisonMode;
+  scenePhase: 'unmounted' | 'hidden' | 'visible';
+  sceneInitialViewState: PlanViewState | undefined;
   panel: EditorPanel;
   resourcesTab: 'project' | 'layers';
   ideRightTab: EditorRightTab;
@@ -53,6 +60,10 @@ export interface EditorViewState {
 }
 
 export const EDITOR_VIEW_DEFAULTS = {
+  growthHorizon: 0,
+  planComparison: 'editing',
+  scenePhase: 'unmounted',
+  sceneInitialViewState: undefined,
   panel: null,
   resourcesTab: 'project',
   ideRightTab: 'inspector',

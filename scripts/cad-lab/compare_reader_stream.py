@@ -16,10 +16,10 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
 
-from app.cad_import.cache import file_sha256
-from app.cad_import.process import run_converter
+from app.cad_import.archive.cache import file_sha256
+from app.cad_import.legacy.process import run_converter
 from app.cad_intake.prepare_policy import PREPARE_POLICY
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.dxf_import.capacity import SourceGeometryCapacity
 
 

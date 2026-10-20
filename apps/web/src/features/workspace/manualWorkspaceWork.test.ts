@@ -6,7 +6,6 @@ import {
 
 const idle: ManualWorkspaceInput = {
   tool: 'select',
-  placementPanelOpen: false,
   hasPlan: true,
   hasPreview: false,
   hasPendingZone: false,
@@ -24,46 +23,22 @@ const idle: ManualWorkspaceInput = {
 };
 
 describe('manual workspace work ownership', () => {
-  it('allows the assistant after leaving placement despite a retained panel preference', () => {
-    const placing = manualWorkspaceWork({
-      ...idle,
-      tool: 'pattern_fill',
-      placementPanelOpen: true,
-    });
-    expect(placing.blocksAssistant).toBe(true);
-    expect(placing.blocksLeaving).toBe(false);
-    expect(
-      manualWorkspaceWork({ ...idle, tool: 'select', placementPanelOpen: true })
-        .blocksAssistant,
-    ).toBe(false);
-    expect(
-      manualWorkspaceWork({
-        ...idle,
-        tool: 'pattern_fill',
-        placementPanelOpen: false,
-      }).blocksAssistant,
-    ).toBe(false);
-  });
-
   it('protects an unfinished row before an axis exists and releases after the drawing is cancelled', () => {
     const sketch = {
       ...idle,
       tool: 'pattern_row' as const,
       rowDrawingPoints: 1,
       hasRowAxis: false,
-      placementPanelOpen: true,
     };
     expect(manualWorkspaceWork(sketch)).toMatchObject({
       hasDraft: true,
       blocksLeaving: true,
-      blocksAssistant: true,
     });
     expect(
       manualWorkspaceWork({ ...sketch, rowDrawingPoints: 0 }),
     ).toMatchObject({
       hasDraft: false,
       blocksLeaving: false,
-      blocksAssistant: false,
     });
   });
 
@@ -77,14 +52,13 @@ describe('manual workspace work ownership', () => {
     expect(manualWorkspaceWork(live)).toMatchObject({
       hasDraft: true,
       blocksLeaving: true,
-      blocksAssistant: true,
     });
     expect(
       manualWorkspaceWork({ ...live, brushDrawing: false, brushStrokes: 1 })
-        .blocksAssistant,
+        .blocksLeaving,
     ).toBe(true);
     expect(
-      manualWorkspaceWork({ ...live, brushDrawing: false }).blocksAssistant,
+      manualWorkspaceWork({ ...live, brushDrawing: false }).blocksLeaving,
     ).toBe(false);
   });
 
@@ -102,13 +76,11 @@ describe('manual workspace work ownership', () => {
         hasDraft: false,
         pending: true,
         blocksLeaving: true,
-        blocksAssistant: true,
       });
       expect(manualWorkspaceWork({ ...active, [pending]: false })).toEqual({
         hasDraft: false,
         pending: false,
         blocksLeaving: false,
-        blocksAssistant: false,
       });
     },
   );
@@ -118,18 +90,12 @@ describe('manual workspace work ownership', () => {
       { ...idle, tool: 'draw_area', placementAreaDrawing: true },
       { ...idle, hasPendingZone: true },
       { ...idle, hasPendingZone: true, mutationPending: true },
-      { ...idle, tool: 'pattern_fill', placementPanelOpen: true },
+      { ...idle, tool: 'pattern_fill' },
     ];
-    expect(
-      phases.map((phase) => manualWorkspaceWork(phase).blocksAssistant),
-    ).toEqual([true, true, true, true]);
     expect(
       phases.map((phase) => manualWorkspaceWork(phase).blocksLeaving),
     ).toEqual([true, true, true, false]);
-    expect(
-      manualWorkspaceWork({ ...phases[3], placementPanelOpen: false })
-        .blocksAssistant,
-    ).toBe(false);
+    expect(manualWorkspaceWork(phases[3]).hasDraft).toBe(false);
   });
 
   it.each([
@@ -139,50 +105,28 @@ describe('manual workspace work ownership', () => {
     'placementAreaDrawing',
     'zoneDrawing',
   ] as const)(
-    'retains the same leaving and assistant boundary for a %s draft after a tool change',
+    'retains the leaving boundary for a %s draft after a tool change',
     (draft) => {
       expect(manualWorkspaceWork({ ...idle, [draft]: true })).toMatchObject({
         hasDraft: true,
         blocksLeaving: true,
-        blocksAssistant: true,
       });
     },
   );
 
   it('distinguishes initial unsaved zone drafts from saved zones on an existing plan', () => {
     expect(
-      manualWorkspaceWork({ ...idle, initialZoneDrafts: 8 }).blocksAssistant,
+      manualWorkspaceWork({ ...idle, initialZoneDrafts: 8 }).blocksLeaving,
     ).toBe(false);
     expect(
       manualWorkspaceWork({ ...idle, hasPlan: false, initialZoneDrafts: 1 }),
     ).toMatchObject({
       hasDraft: true,
       blocksLeaving: true,
-      blocksAssistant: true,
     });
     expect(
       manualWorkspaceWork({ ...idle, hasPlan: false, tool: 'draw_area' })
-        .blocksAssistant,
-    ).toBe(true);
-  });
-
-  it('does not let an assistant-owned proposal or preview become a manual blocker', () => {
-    const assistantOwned = {
-      ...idle,
-      assistantProposal: { id: 'assistant-proposal' },
-      assistantPreview: { id: 'assistant-preview' },
-      assistantZonePreview: { id: 'zone-preview' },
-      assistantPending: 'applying',
-    };
-    expect(manualWorkspaceWork(assistantOwned)).toEqual({
-      hasDraft: false,
-      pending: false,
-      blocksLeaving: false,
-      blocksAssistant: false,
-    });
-    expect(
-      manualWorkspaceWork({ ...assistantOwned, hasPreview: true })
-        .blocksAssistant,
+        .blocksLeaving,
     ).toBe(true);
   });
 });

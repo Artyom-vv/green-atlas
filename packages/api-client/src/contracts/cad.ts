@@ -1,20 +1,5 @@
 import type { Schemas } from './wire';
 
-export type CadRoot = Schemas['CadRoot'];
-export type CadTransferReview = Schemas['TransferReview'];
-export type CadTransferDecision = Schemas['TransferDecision'];
-export type CadTransferStatus = Schemas['TransferStatus'];
 export type CadSourceAsset = Schemas['CadSourceAsset'];
-export type CadDirectory = Schemas['CadDirectory'];
-export type CadDirectoryEntry = Schemas['CadDirectoryEntry'];
-export type CadDrawingEntry = Schemas['CadDrawingEntry'];
-export type CadFingerprint = Schemas['CadFingerprint'];
-export type CadUploadPackage = Schemas['CadUploadPackage'];
-export type CadIntakeRequest = Schemas['CadIntakeRequest'];
-export type CadPackagePassport = Schemas['CadPackagePassport'];
-export type CadDrawingPassport = Schemas['CadDrawingPassport'];
+/** Request embedded in a persisted CAD preview receipt, not a new-input API. */
 export type CadPreviewRequest = Schemas['CadPreviewRequest'];
-export type CadPrepareRequest = Schemas['CadPrepareRequest'];
-export type CadDrawingSelection = Schemas['CadDrawingSelection'];
-export type DrawingBoundaryCandidate = Schemas['DrawingBoundaryCandidate'];
-export type DrawingBoundaryCatalog = Schemas['DrawingBoundaryCatalog'];

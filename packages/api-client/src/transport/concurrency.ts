@@ -1,10 +1,11 @@
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-// These POST endpoints calculate or record workflow progress without applying
-// a project edit. Their responses must not advance the editor's snapshot.
+// Эти POST считают предпросмотр или ведут операцию без изменения проекта.
+// Их ответы не должны продвигать сохранённую версию редактора.
 const NON_PROJECT_MUTATIONS = [
-  /\/conversations(?:\/|$)/,
-  /\/agent-runs(?:\/|$)/,
+  /\/scene-renders(?:\/|$)/,
+  /\/scene-render-preparations(?:\/|$)/,
+  /\/location\/(?:suggestions|resolve|alignment|apply)$/,
   /\/operations(?:\/|$)/,
   /\/plan\/(?:placement-check|change-sets\/preview|patterns\/preview|recommendations\/preview|brush\/preview)$/,
   /\/building-screen\/preview$/,
@@ -27,18 +28,11 @@ export function requestScope(path: string, method = 'GET'): RequestScope {
     !NON_PROJECT_MUTATIONS.some((pattern) => pattern.test(pathname));
   const isProjectRead =
     verb === 'GET' && /^\/api\/projects\/[^/]+$/.test(pathname);
-  // Confirmation uses the saved preview and conversation revision rather than
-  // If-Match, but its successful response still commits project state.
-  const isConversationConfirmation =
-    verb === 'POST' &&
-    /\/conversations\/[^/]+\/proposals\/[^/]+\/confirm$/.test(pathname);
 
   return {
     projectId,
     sendsProjectVersion: Boolean(projectId && isMutation),
-    receivesProjectVersion: Boolean(
-      projectId && (isProjectRead || isMutation || isConversationConfirmation),
-    ),
+    receivesProjectVersion: Boolean(projectId && (isProjectRead || isMutation)),
   };
 }
 

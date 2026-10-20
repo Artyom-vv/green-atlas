@@ -7,72 +7,308 @@ from shapely.geometry import Point, shape
 from test_native_live_provider import rectangle
 from test_native_live_provider import setup as native_setup
 
-from app.native_query.domain_cells import Cell, certify_cell
-from app.native_query.search_domain import build_domain
-from app.planning.pattern_contracts import FillPatternRequest
-from app.planning.patterns import generate_fill
+from app.native_query.search.domain_cells import Cell, certify_cell
+from app.native_query.search.search_domain import build_domain
+from app.planning.patterns.contracts import FillPatternRequest
+from app.planning.patterns.generators import generate_fill
 
 setup = native_setup
+
+
+def test_checkpoint_write_receipt_checks_exact_unicode_bytes(tmp_path):
+    import json
+    from hashlib import sha256
+
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
+
+    store = DomainCheckpointStore(tmp_path)
+    value = {"слой": "Граница работ", "description": "А" * (1024 * 1024)}
+    receipt = store.save("unicode", value)
+    path = tmp_path / "unicode.json"
+    assert receipt == sha256(path.read_bytes()).hexdigest()
+    assert store.matches_saved("unicode", receipt)
+    assert json.loads(store.load_payload("unicode")) == value
+    assert store.load("unicode") == value
+    path.write_bytes(path.read_bytes() + b" ")
+    assert not store.matches_saved("unicode", receipt)
+    path.unlink()
+    assert not store.matches_saved("unicode", receipt)
+
+
+@pytest.mark.parametrize("escaped", [False, True])
+def test_checkpoint_envelope_decodes_utf8_bytes_without_unicode_copy(
+    tmp_path, monkeypatch, escaped
+):
+    import json
+    from hashlib import sha256
+    from pathlib import Path
+
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
+
+    payload = json.dumps(
+        {"слой": 'Граница 🦔\n"\\\t', "large": 2**128}, ensure_ascii=False
+    )
+    envelope = {
+        "payload": payload,
+        "sha256": sha256(payload.encode()).hexdigest(),
+        "extra": {"note": "Старый конверт"},
+    }
+    path = tmp_path / "key.json"
+    original = json.dumps(envelope, ensure_ascii=escaped).encode()
+    path.write_bytes(original)
+    monkeypatch.setattr(
+        Path, "read_text", lambda *args, **kwargs: pytest.fail("Unicode-копия")
+    )
+    store = DomainCheckpointStore(tmp_path)
+    loaded = store.load_payload("key")
+    assert isinstance(loaded, bytes) and loaded == payload.encode()
+    assert store.load("key") == json.loads(payload)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("payload", [True, 1, 1.5, None, [], {}])
+def test_checkpoint_envelope_rejects_nonstring_payload(tmp_path, payload):
+    import json
+
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
+
+    path = tmp_path / "key.json"
+    original = json.dumps({"payload": payload, "sha256": "0" * 64}).encode()
+    path.write_bytes(original)
+    store = DomainCheckpointStore(tmp_path)
+    with pytest.raises(ValueError, match="сохранённый ход"):
+        store.load_payload("key")
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "array",
+        "null",
+        "missing_payload",
+        "missing_sha",
+        "numeric_sha",
+        "null_sha",
+        "truncated",
+        "trailing",
+        "invalid_utf8",
+    ],
+)
+def test_checkpoint_envelope_rejects_invalid_shapes_and_incomplete_json(
+    tmp_path, problem
+):
+    import json
+    from hashlib import sha256
+
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
+
+    envelope = {"payload": "{}", "sha256": sha256(b"{}").hexdigest()}
+    if problem == "array":
+        envelope = [envelope]
+    elif problem == "null":
+        envelope = None
+    elif problem == "missing_payload":
+        del envelope["payload"]
+    elif problem == "missing_sha":
+        del envelope["sha256"]
+    elif problem == "numeric_sha":
+        envelope["sha256"] = 1
+    elif problem == "null_sha":
+        envelope["sha256"] = None
+    original = json.dumps(envelope).encode()
+    if problem == "truncated":
+        original = original[:-1]
+    elif problem == "trailing":
+        original += b" {}"
+    elif problem == "invalid_utf8":
+        original += b"\xff"
+    path = tmp_path / "key.json"
+    path.write_bytes(original)
+    with pytest.raises(ValueError, match="сохранённый ход"):
+        DomainCheckpointStore(tmp_path).load_payload("key")
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("payload", ['{"value":', '{"value":1} {}'])
+def test_checkpoint_verified_payload_still_requires_complete_inner_json(
+    tmp_path, payload
+):
+    import json
+    from hashlib import sha256
+
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
+
+    path = tmp_path / "key.json"
+    path.write_text(
+        json.dumps({"payload": payload, "sha256": sha256(payload.encode()).hexdigest()})
+    )
+    store = DomainCheckpointStore(tmp_path)
+    assert store.load_payload("key") == payload.encode()
+    with pytest.raises(ValueError, match="сохранённый ход"):
+        store.load("key")
+
+
+def test_checkpoint_cancellation_before_empty_payload_publication(
+    tmp_path, monkeypatch
+):
+    import json
+    from hashlib import sha256
+
+    from app.native_query.search import domain_checkpoint
+    from app.operations.progress import OperationCancelled
+
+    path = tmp_path / "key.json"
+    original = json.dumps({"payload": "", "sha256": sha256(b"").hexdigest()}).encode()
+    path.write_bytes(original)
+    checks = 0
+
+    def stop():
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise OperationCancelled("Остановлено")
+
+    monkeypatch.setattr(domain_checkpoint, "check_operation_cancelled", stop)
+    with pytest.raises(OperationCancelled):
+        domain_checkpoint.DomainCheckpointStore(tmp_path).load_payload("key")
+    assert path.read_bytes() == original
+
+
+def test_checkpoint_payload_checks_sha_and_cancellation_without_rewriting(
+    tmp_path, monkeypatch
+):
+    import json
+
+    from app.native_query.search import domain_checkpoint
+    from app.operations.progress import OperationCancelled
+
+    store = domain_checkpoint.DomainCheckpointStore(tmp_path)
+    store.save("key", {"description": "Граница\n" * 300_000})
+    path = tmp_path / "key.json"
+    before = path.read_bytes()
+    checks = 0
+
+    def stop_during_hash():
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise OperationCancelled("Остановлено")
+
+    monkeypatch.setattr(
+        domain_checkpoint, "check_operation_cancelled", stop_during_hash
+    )
+    with pytest.raises(OperationCancelled):
+        store.load_payload("key")
+    assert path.read_bytes() == before
+    monkeypatch.undo()
+    envelope = json.loads(before)
+    envelope["sha256"] = "0" * 64
+    path.write_text(json.dumps(envelope))
+    with pytest.raises(ValueError, match="сохранённый ход"):
+        store.load_payload("key")
+    with pytest.raises(ValueError, match="сохранённый ход"):
+        store.load("key")
+
+
+def test_checkpoint_stream_failure_preserves_last_committed_bytes(tmp_path):
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
+    from app.operations.progress import OperationCancelled
+
+    store = DomainCheckpointStore(tmp_path)
+    receipt = store.save("key", {"value": "Прежний результат"})
+    path = tmp_path / "key.json"
+    original = path.read_bytes()
+
+    def interrupted():
+        yield '{"value":'
+        raise OperationCancelled("stop")
+
+    with pytest.raises(OperationCancelled):
+        store.save_chunks("key", interrupted())
+    assert path.read_bytes() == original
+    assert store.matches_saved("key", receipt)
+    assert not list(tmp_path.glob("*.pending"))
 
 
 @pytest.fixture(autouse=True)
 def historical_cell_algorithm(monkeypatch):
     # Retain the certificate/checkpoint suite as an explicit historical control.
     # Product dispatch now uses hybrid masks; it never falls back to this path.
-    from app.native_query.live_provider import LiveNativeGeometryEngine
-    from app.native_query.search_domain import prepare_search_domain
+    from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+    from app.native_query.search.search_domain import prepare_search_domain
 
-    def prepare(engine, project, geometry, radius, plant_kind="tree",
-                growth_canopy_radius=None, growth_root_radius=None):
-        return prepare_search_domain(engine, project, geometry, radius, plant_kind,
-                                     growth_canopy_radius, growth_root_radius)
+    def prepare(
+        engine,
+        project,
+        geometry,
+        radius,
+        plant_kind="tree",
+        growth_canopy_radius=None,
+        growth_root_radius=None,
+    ):
+        return prepare_search_domain(
+            engine,
+            project,
+            geometry,
+            radius,
+            plant_kind,
+            growth_canopy_radius,
+            growth_root_radius,
+        )
 
     monkeypatch.setattr(LiveNativeGeometryEngine, "automatic_safe_geometry", prepare)
 
 
 def test_checkpoint_survives_engine_restart_and_cache_eviction(setup, tmp_path):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
-    from app.native_query.live_provider import LiveNativeGeometryEngine
+    from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     engine, client, project = setup
     store = DomainCheckpointStore(tmp_path / "checkpoints")
     engine._domain_checkpoints = store
     work = rectangle(-12, -4, 40, 4)
-    with patch("app.native_query.search_domain.MAX_DOMAIN_PROBES", 1):
-        first = engine.automatic_safe_geometry(project, work, .5, "shrub")
-        restarted = LiveNativeGeometryEngine(engine.session, client, inventory=engine.inventory)
+    with patch("app.native_query.search.search_domain.MAX_DOMAIN_PROBES", 1):
+        first = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
+        restarted = LiveNativeGeometryEngine(
+            engine.session, client, inventory=engine.inventory
+        )
         restarted._domain_checkpoints = store
-        second = restarted.automatic_safe_geometry(project, work, .5, "shrub")
+        second = restarted.automatic_safe_geometry(project, work, 0.5, "shrub")
         restarted._domain_cache.clear()
-        third = restarted.automatic_safe_geometry(project, work, .5, "shrub")
-    assert [r["ga_search_domain"]["measured_cells"] for r in (first, second, third)] == [1, 2, 3]
-    resumed = restarted.automatic_safe_geometry(project, work, .5, "shrub")
-    cold = build_domain(restarted, project, work, .5, "shrub", 0, 0)
+        third = restarted.automatic_safe_geometry(project, work, 0.5, "shrub")
+    assert [
+        r["ga_search_domain"]["measured_cells"] for r in (first, second, third)
+    ] == [1, 2, 3]
+    resumed = restarted.automatic_safe_geometry(project, work, 0.5, "shrub")
+    cold = build_domain(restarted, project, work, 0.5, "shrub", 0, 0)
     for field in ("geometry", "unresolved_geometry", "pending_geometry"):
-        assert shape(resumed["ga_search_domain"][field]).equals(shape(cold["ga_search_domain"][field]))
+        assert shape(resumed["ga_search_domain"][field]).equals(
+            shape(cold["ga_search_domain"][field])
+        )
 
 
 def test_checkpoint_does_not_cross_source_role_or_plant_basis(setup, tmp_path):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     engine, _, project = setup
     engine._domain_checkpoints = DomainCheckpointStore(tmp_path / "checkpoints")
     work = rectangle(-12, -4, 40, 4)
-    with patch("app.native_query.search_domain.MAX_DOMAIN_PROBES", 1):
-        engine.automatic_safe_geometry(project, work, .5, "shrub")
-        changed_kind = engine.automatic_safe_geometry(project, work, .5, "tree")
+    with patch("app.native_query.search.search_domain.MAX_DOMAIN_PROBES", 1):
+        engine.automatic_safe_geometry(project, work, 0.5, "shrub")
+        changed_kind = engine.automatic_safe_geometry(project, work, 0.5, "tree")
         assert changed_kind["ga_search_domain"]["measured_cells"] == 1
         project.layers[1].mapping_confirmed = False
-        changed_role = engine.automatic_safe_geometry(project, work, .5, "shrub")
+        changed_role = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
         assert changed_role["ga_search_domain"]["measured_cells"] == 1
         engine.session = engine.session.model_copy(update={"session_id": "f" * 32})
         engine._domain_cache.clear()
-        changed_capture = engine.automatic_safe_geometry(project, work, .5, "shrub")
+        changed_capture = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
         assert changed_capture["ga_search_domain"]["measured_cells"] == 1
 
 
 def test_corrupt_checkpoint_is_not_accepted_as_free_ground(tmp_path):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     store = DomainCheckpointStore(tmp_path)
     store.save("key", {"safe": False})
@@ -83,44 +319,51 @@ def test_corrupt_checkpoint_is_not_accepted_as_free_ground(tmp_path):
 
 
 def test_completed_checkpoint_skips_measurements_but_not_live_identity(setup, tmp_path):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
-    from app.native_query.live_provider import LiveNativeGeometryEngine
+    from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     engine, client, project = setup
     store = DomainCheckpointStore(tmp_path / "checkpoints")
     engine._domain_checkpoints = store
     work = rectangle(32, 0, 48, 16)
-    original = engine.automatic_safe_geometry(project, work, .5, "shrub")
+    original = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
     assert original["ga_search_domain"]["stop_reason"] == "resolution"
     calls = len(client.calls)
-    restarted = LiveNativeGeometryEngine(engine.session, client, inventory=engine.inventory)
+    restarted = LiveNativeGeometryEngine(
+        engine.session, client, inventory=engine.inventory
+    )
     restarted._domain_checkpoints = store
-    restored = restarted.automatic_safe_geometry(project, work, .5, "shrub")
-    assert restored["ga_search_domain"]["measured_cells"] == original["ga_search_domain"]["measured_cells"]
+    restored = restarted.automatic_safe_geometry(project, work, 0.5, "shrub")
+    assert (
+        restored["ga_search_domain"]["measured_cells"]
+        == original["ga_search_domain"]["measured_cells"]
+    )
     assert shape(restored).equals(shape(original))
     assert len(client.calls) == calls
     restarted._domain_cache.clear()
     client.stale = True
     with pytest.raises(ValueError, match="изменён"):
-        restarted.automatic_safe_geometry(project, work, .5, "shrub")
+        restarted.automatic_safe_geometry(project, work, 0.5, "shrub")
 
 
 def test_failed_pass_keeps_last_durable_checkpoint(setup, tmp_path, monkeypatch):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     engine, client, project = setup
     store = DomainCheckpointStore(tmp_path / "checkpoints")
     engine._domain_checkpoints = store
     work = rectangle(-12, -4, 40, 4)
-    with patch("app.native_query.search_domain.MAX_DOMAIN_PROBES", 1):
-        engine.automatic_safe_geometry(project, work, .5, "shrub")
+    with patch("app.native_query.search.search_domain.MAX_DOMAIN_PROBES", 1):
+        engine.automatic_safe_geometry(project, work, 0.5, "shrub")
     checkpoint = next(store.directory.glob("*.json"))
     before = checkpoint.read_bytes()
+
     def fail(session, query):
         raise ValueError("Native domain request failed")
+
     monkeypatch.setattr(client, "measure", fail)
     with pytest.raises(ValueError, match="Native domain request failed"):
-        engine.automatic_safe_geometry(project, work, .5, "shrub")
+        engine.automatic_safe_geometry(project, work, 0.5, "shrub")
     assert checkpoint.read_bytes() == before
     assert next(iter(engine._domain_cache.values()))[1].measured == 1
 
@@ -129,18 +372,28 @@ def test_pattern_returns_only_progress_until_domain_is_finished(setup):
     from types import SimpleNamespace
     from unittest.mock import Mock
 
-    from app.planning.pattern_application import PatternApplication
+    from app.planning.patterns.application import PatternApplication
 
     engine, _, project = setup
     work = rectangle(-12, -4, 40, 4)
-    with patch("app.native_query.search_domain.MAX_DOMAIN_PROBES", 1):
-        partial = engine.automatic_safe_geometry(project, work, .5, "shrub")
+    with patch("app.native_query.search.search_domain.MAX_DOMAIN_PROBES", 1):
+        partial = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
     project.source_review = None
     repository, generator, evaluation, previews = Mock(), Mock(), Mock(), Mock()
     repository.get.return_value = project
-    evaluation.automatic_generation_zones.return_value = [SimpleNamespace(id="zone", geometry=partial)]
-    result = PatternApplication(repository, generator, evaluation, previews).preview_pattern(
-        project.id, FillPatternRequest(base_plan_version=project.plan.version, zone_ids=[project.planting_zones[0].id], target_count=10),
+    evaluation.geometry = engine
+    evaluation.automatic_generation_zones.return_value = [
+        SimpleNamespace(id="zone", geometry=partial)
+    ]
+    result = PatternApplication(
+        repository, generator, evaluation, previews
+    ).preview_pattern(
+        project.id,
+        FillPatternRequest(
+            base_plan_version=project.plan.version,
+            zone_ids=[project.planting_zones[0].id],
+            target_count=10,
+        ),
     )
     assert result.search_domains[0].stop_reason == "probe_limit"
     assert result.change_set is None
@@ -153,7 +406,7 @@ def test_pattern_returns_only_progress_until_domain_is_finished(setup):
 def test_partial_domain_resumes_instead_of_caching_empty_forever(setup):
     engine, _, project = setup
     work = rectangle(-12, -4, 40, 4)
-    with patch("app.native_query.search_domain.MAX_DOMAIN_PROBES", 1):
+    with patch("app.native_query.search.search_domain.MAX_DOMAIN_PROBES", 1):
         first = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
         second = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
     assert first["ga_search_domain"]["stop_reason"] == "probe_limit"
@@ -170,8 +423,8 @@ def test_partial_domain_resumes_instead_of_caching_empty_forever(setup):
 def test_native_bounds_index_keeps_zero_width_and_unknown_extents():
     from types import SimpleNamespace
 
-    from app.native_query.bounds_index import NativeBoundsIndex
-    from app.native_query.live_inventory import QueryObject
+    from app.native_query.live.live_inventory import QueryObject
+    from app.native_query.search.bounds_index import NativeBoundsIndex
 
     objects = tuple(
         QueryObject(
@@ -222,7 +475,7 @@ def test_small_hole_between_passing_probes_is_not_filled(setup):
 def test_unknown_network_uses_project_setback_instead_of_review_envelope(setup):
     from dataclasses import replace
 
-    from app.dxf_import.layer_contracts import LayerKind
+    from app.dxf_import.layers.contracts import LayerKind
 
     engine, _, project = setup
     # Missing engineering metadata does not prevent a geometric exclusion.
@@ -231,36 +484,72 @@ def test_unknown_network_uses_project_setback_instead_of_review_envelope(setup):
     engine.prepare_positions(project, [cell.center], reach_m=30)
     rows = engine._cache[cell.center][1]
     network = next(r for r in rows if r.item.routes == ("BB",))
-    network = replace(network,
-                      item=network.item.model_copy(update={"bounds": (-100, -100, 100, 100)}),
-                      answer=network.answer.model_copy(update={"distance_units": 0.1}))
+    network = replace(
+        network,
+        item=network.item.model_copy(update={"bounds": (-100, -100, 100, 100)}),
+        answer=network.answer.model_copy(update={"distance_units": 0.1}),
+    )
     rows = tuple(r for r in rows if r.item.routes != ("BB",)) + (network,)
-    verdict = certify_cell(cell, rows, engine._layers, set(), 1, "shrub", .5, 0, 0, 5,
-                           refine_known_edges=True)
+    verdict = certify_cell(
+        cell,
+        rows,
+        engine._layers,
+        set(),
+        1,
+        "shrub",
+        0.5,
+        0,
+        0,
+        5,
+        refine_known_edges=True,
+    )
     assert verdict.state == "excluded"
     assert verdict.reason == "clearance"
     assert not verdict.refine
-    assert not certify_cell(cell, rows, engine._layers, set(), 1, "shrub", .5, 0, 0, 5).refine
+    assert not certify_cell(
+        cell, rows, engine._layers, set(), 1, "shrub", 0.5, 0, 0, 5
+    ).refine
     # The same measured distance remains excluded in a smaller square.
     outside = Cell(27, -1, 1)
     engine.prepare_positions(project, [outside.center], reach_m=10)
-    clear_rows = tuple(r for r in engine._cache[outside.center][1] if r.item.routes != ("BB",)) + (network,)
-    assert certify_cell(outside, clear_rows, engine._layers, set(), 1, "shrub", .5, 0, 0, 5).state == "excluded"
+    clear_rows = tuple(
+        r for r in engine._cache[outside.center][1] if r.item.routes != ("BB",)
+    ) + (network,)
+    assert (
+        certify_cell(
+            outside, clear_rows, engine._layers, set(), 1, "shrub", 0.5, 0, 0, 5
+        ).state
+        == "excluded"
+    )
 
 
-def test_area_partition_retains_unknown_space_and_resumes_without_double_counting(setup):
+def test_area_partition_retains_unknown_space_and_resumes_without_double_counting(
+    setup,
+):
     engine, _, project = setup
     project.layers[1].mapping_confirmed = False
     work = rectangle(-5, -3, 30, 3)
-    with patch("app.native_query.search_domain.MAX_DOMAIN_PROBES", 5):
-        engine.automatic_safe_geometry(project, work, .5, "shrub")
-    result = engine.automatic_safe_geometry(project, work, .5, "shrub")
+    with patch("app.native_query.search.search_domain.MAX_DOMAIN_PROBES", 5):
+        engine.automatic_safe_geometry(project, work, 0.5, "shrub")
+    result = engine.automatic_safe_geometry(project, work, 0.5, "shrub")
     domain = result["ga_search_domain"]
-    assert sum(domain["unresolved_reason_areas_m2"].values()) == pytest.approx(domain["unresolved_area_m2"])
+    assert sum(domain["unresolved_reason_areas_m2"].values()) == pytest.approx(
+        domain["unresolved_area_m2"]
+    )
     assert domain["unresolved_area_m2"] > 0
-    assert sum(domain[k] for k in ("available_area_m2", "excluded_area_m2", "unresolved_area_m2", "pending_area_m2")) == pytest.approx(shape(work).area)
-    cold = build_domain(engine, project, work, .5, "shrub", 0, 0)["ga_search_domain"]
-    assert domain["unresolved_reason_areas_m2"] == pytest.approx(cold["unresolved_reason_areas_m2"])
+    assert sum(
+        domain[k]
+        for k in (
+            "available_area_m2",
+            "excluded_area_m2",
+            "unresolved_area_m2",
+            "pending_area_m2",
+        )
+    ) == pytest.approx(shape(work).area)
+    cold = build_domain(engine, project, work, 0.5, "shrub", 0, 0)["ga_search_domain"]
+    assert domain["unresolved_reason_areas_m2"] == pytest.approx(
+        cold["unresolved_reason_areas_m2"]
+    )
 
 
 def test_wider_native_cache_does_not_change_domain_certificate(setup):
@@ -268,7 +557,7 @@ def test_wider_native_cache_does_not_change_domain_certificate(setup):
     project.layers[1].mapping_confirmed = False
     cell = Cell(48, -1, 2)
     engine.prepare_positions(project, [cell.center], reach_m=8)
-    args = (engine._layers, set(), 1, "shrub", .5, 0, 0, 5)
+    args = (engine._layers, set(), 1, "shrub", 0.5, 0, 0, 5)
     narrow = certify_cell(cell, engine._cache[cell.center][1], *args)
     engine.prepare_positions(project, [cell.center], reach_m=100)
     wide = certify_cell(cell, engine._cache[cell.center][1], *args)
@@ -370,7 +659,7 @@ def test_domain_cache_requires_live_revision_and_separates_plant_kind(setup):
 
 def test_budget_never_promotes_unmeasured_area_to_available(setup):
     engine, _, project = setup
-    with patch("app.native_query.search_domain.MAX_DOMAIN_PROBES", 0):
+    with patch("app.native_query.search.search_domain.MAX_DOMAIN_PROBES", 0):
         result = build_domain(
             engine, project, rectangle(30, 0, 35, 5), 0.5, "shrub", 0, 0
         )
@@ -397,24 +686,41 @@ def test_unknown_object_stays_local_and_outside_domain(setup):
 def test_confirmed_lawn_is_cover_not_an_obstacle_or_safety_certificate(setup):
     engine, client, project = setup
     # Put a lawn envelope over the WHOLE test site, including the known road.
-    from app.dxf_import.layer_contracts import LayerKind
-    from app.native_query.live_inventory import InventoryObject
+    from app.dxf_import.layers.contracts import LayerKind
+    from app.native_query.live.live_inventory import InventoryObject
+
     project.layers[1].mapped_kind = LayerKind.LAWN
-    lawn = InventoryObject(route="DD", layer="Здания", bounds=(-100, -100, 100, 100),
-                           entity_type="AcDbHatch", curve=False, context=False, error="")
-    engine.inventory = engine.inventory.model_copy(update={"objects": engine.inventory.objects + (lawn,)})
-    result = engine.automatic_safe_geometry(project, rectangle(0, -3, 35, 3), .5, "shrub")
+    lawn = InventoryObject(
+        route="DD",
+        layer="Здания",
+        bounds=(-100, -100, 100, 100),
+        entity_type="AcDbHatch",
+        curve=False,
+        context=False,
+        error="",
+    )
+    engine.inventory = engine.inventory.model_copy(
+        update={"objects": engine.inventory.objects + (lawn,)}
+    )
+    result = engine.automatic_safe_geometry(
+        project, rectangle(0, -3, 35, 3), 0.5, "shrub"
+    )
     assert shape(result).covers(Point(5, 0))
     assert not shape(result).covers(Point(23, 0))
     assert all(t.route not in {"BB", "DD"} for q in client.calls for t in q.targets)
-    assert engine.position_violation(project, 23, 0, .5, "shrub").code == "NATIVE_OCCUPIED"
+    assert (
+        engine.position_violation(project, 23, 0, 0.5, "shrub").code
+        == "NATIVE_OCCUPIED"
+    )
     project.layers[1].mapping_confirmed = False
-    result = engine.automatic_safe_geometry(project, rectangle(0, -3, 35, 3), .5, "shrub")
+    result = engine.automatic_safe_geometry(
+        project, rectangle(0, -3, 35, 3), 0.5, "shrub"
+    )
     assert shape(result).is_empty  # Unconfirmed lawn is not permission to ignore it.
 
 
 def test_utility_setback_uses_autocad_distance_not_large_query_envelope(setup):
-    from app.dxf_import.layer_contracts import LayerKind
+    from app.dxf_import.layers.contracts import LayerKind
 
     engine, _, project = setup
     project.layers[2].mapped_kind = LayerKind.UTILITY
@@ -427,11 +733,27 @@ def test_utility_setback_uses_autocad_distance_not_large_query_envelope(setup):
     edge = Cell(29, -1, 2)
     engine.prepare_positions(project, [c.center for c in (far, near, edge)], reach_m=8)
     for cell, expected in ((far, "available"), (near, "boundary"), (edge, "available")):
-        verdict = certify_cell(cell, engine._cache[cell.center][1], engine._layers,
-                               set(), 1, "shrub", .5, 0, 0, 5)
+        verdict = certify_cell(
+            cell,
+            engine._cache[cell.center][1],
+            engine._layers,
+            set(),
+            1,
+            "shrub",
+            0.5,
+            0,
+            0,
+            5,
+        )
         assert verdict.state == expected
-    assert engine.placement_advisory_detail(project, *far.center, .5, "shrub").code == "SOURCE_GEOMETRY_PARTIAL"
-    assert engine.placement_advisory_detail(project, *near.center, .5, "shrub").code == "SOURCE_GEOMETRY_PARTIAL"
+    assert (
+        engine.placement_advisory_detail(project, *far.center, 0.5, "shrub").code
+        == "SOURCE_GEOMETRY_PARTIAL"
+    )
+    assert (
+        engine.placement_advisory_detail(project, *near.center, 0.5, "shrub").code
+        == "SOURCE_GEOMETRY_PARTIAL"
+    )
 
 
 def test_sampler_does_not_erode_internal_domain_edges_again(setup):

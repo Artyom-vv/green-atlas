@@ -1,9 +1,15 @@
+"""Контракты артефактов и комплекта выпуска, включая явное подтверждение оператором
+основания финальной версии.
+"""
+
 from __future__ import annotations
 
 from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+from app.planning.config import DEFAULT_PLANNING_HORIZON_YEAR, PlanningHorizonYear
 
 
 class ExportArtifact(BaseModel):
@@ -37,10 +43,15 @@ class ReleaseCreateRequest(BaseModel):
     regulatory_basis: RegulatoryReleaseBasis | None = None
 
 
+ReleaseArtifactKind = Literal[
+    "bundle", "dxf", "cad", "schedule", "manifest", "scene", "dendroplan"
+]
+
+
 class ReleaseArtifact(BaseModel):
     id: str
     filename: str
-    kind: Literal["bundle", "dxf", "cad", "schedule", "manifest", "scene", "dendroplan"]
+    kind: ReleaseArtifactKind
     media_type: str
     size: int = Field(ge=0)
     sha256: str
@@ -48,6 +59,7 @@ class ReleaseArtifact(BaseModel):
 
 
 class ReleasePackage(BaseModel):
+    planning_horizon_year: PlanningHorizonYear = DEFAULT_PLANNING_HORIZON_YEAR
     id: str
     project_id: str
     plan_version: int = Field(ge=1)

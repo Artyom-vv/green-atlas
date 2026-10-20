@@ -1,4 +1,6 @@
-"""Monitor and stop an owned converter process together with its descendants."""
+"""Контроль памяти и завершение принадлежащего приложению дерева процессов
+CAD-конвертера.
+"""
 
 import psutil
 
@@ -29,8 +31,8 @@ class ProcessTree:
         return total
 
     def stop(self) -> None:
-        # Refresh descendants while their parent is still alive, then stop
-        # children first. A Windows venv Python launcher is not the parser.
+        # Обновляем перечень дочерних процессов, пока родитель жив, и сначала
+        # останавливаем потомков: Windows launcher виртуального Python не является парсером.
         self.resident_bytes()
         running = list(self._processes.values())
         for process in reversed(running):

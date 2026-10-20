@@ -17,6 +17,8 @@ struct ExportResult {
     bool success = false;
     std::string path;
     std::string error;
+    // Сводка того же захвата для передачи, без повторного чтения всех координат.
+    std::string transferFacts;
 };
 
 // Pure snapshot publication: no AutoCAD API, file loading, XREF repair or UI.

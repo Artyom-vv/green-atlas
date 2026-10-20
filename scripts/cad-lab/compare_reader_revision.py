@@ -14,7 +14,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'apps/api'))
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.dxf_import.capacity import SourceGeometryCapacity
 
 
@@ -30,7 +30,7 @@ def main():
     baseline = output / 'baseline_adapter.py'
     baseline_source = Path(revision)
     baseline.write_bytes(baseline_source.read_bytes() if baseline_source.is_file() else subprocess.check_output(
-        ['git', 'show', f'{revision}:apps/api/app/dxf_import/adapters.py'], cwd=ROOT))
+        ['git', 'show', f'{revision}:apps/api/app/dxf_import/legacy/reader.py'], cwd=ROOT))
     spec = importlib.util.spec_from_file_location('baseline_adapter', baseline)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

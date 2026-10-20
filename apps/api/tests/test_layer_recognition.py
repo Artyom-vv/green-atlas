@@ -1,7 +1,8 @@
 import pytest
 
-from app.dxf_import.layer_contracts import Layer, LayerMapping
-from app.dxf_import.layer_recognition import NameLayerRecognition, recognize_layers
+from app.dxf_import.layers.categories import CATEGORIES
+from app.dxf_import.layers.contracts import Layer, LayerMapping
+from app.dxf_import.layers.recognition import NameLayerRecognition, recognize_layers
 
 
 def layer(name):
@@ -55,7 +56,7 @@ def test_subject_not_neighbour_or_numeric_type(name, category):
 
 def test_unknown_is_not_a_proposal_to_ignore():
     result = recognize_layers([layer("ДД_Тип997")], "a" * 64)
-    assert len(result.categories) == 46
+    assert len(result.categories) == len(CATEGORIES)
     assert result.proposals[0].category is None
     assert result.proposals[0].confidence == "low"
     assert result.source_sha256 == "a" * 64
@@ -114,7 +115,7 @@ def test_semantic_category_has_an_independent_explicit_calculation_role(category
 
 
 def test_unrecognized_import_role_requires_review_not_confident_exclusion():
-    from app.dxf_import.layer_suggestions import assess_layer_suggestion
+    from app.dxf_import.layers.suggestions import assess_layer_suggestion
     confidence, reasons, required = assess_layer_suggestion("ignore", entity_types={"LINE": 3},
         has_polygon=False, geometry_complete=True, boundary_candidate=None)
     assert confidence == "low" and required

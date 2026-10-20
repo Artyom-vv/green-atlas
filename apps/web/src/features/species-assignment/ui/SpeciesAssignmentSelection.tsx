@@ -10,7 +10,7 @@ interface SpeciesAssignmentSelectionProps extends Pick<
 }
 export const SpeciesAssignmentSelection: FC<
   SpeciesAssignmentSelectionProps
-> = ({ objects, previewing, onSelectKind, browsing, mixedKinds }) => {
+> = ({ objects, previewing, onSelectKind, mixedKinds }) => {
   const selectionLabel = mixedKinds
     ? 'Посадочных мест'
     : objects[0]?.kind === 'shrub'
@@ -18,22 +18,14 @@ export const SpeciesAssignmentSelection: FC<
       : 'Деревьев';
   return (
     <>
-      {' '}
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <span className="rounded-control shrink-0 border border-solid border-neutral-200 px-2 py-1 text-xs">
+        <span className="shrink-0 text-xs text-neutral-600">
           {selectionLabel}: <strong>{objects.length}</strong>
         </span>
-        <p className="m-0 min-w-[min(100%,240px)] flex-1 text-xs leading-5 text-neutral-600">
-          {mixedKinds
-            ? 'Выберите тип посадок для назначения породы.'
-            : browsing
-              ? 'Выберите породу, затем проверьте замену в выбранных местах.'
-              : 'Выберите посадочный материал и проверьте условия подбора.'}
-        </p>
       </div>
       {mixedKinds && (
         <section className="grid gap-2">
-          <p className="m-0 text-xs">Кому назначить вид?</p>
+          <p className="m-0 text-xs">Тип посадок</p>
           <FormActions layout="equal" minItemWidth="10rem">
             {(['tree', 'shrub'] as const).map((kind) => (
               <Button

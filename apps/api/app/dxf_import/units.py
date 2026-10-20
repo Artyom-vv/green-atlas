@@ -1,17 +1,12 @@
-"""DXF ``$INSUNITS`` conversion shared by reading and round-trip export.
-
-Geometry inside the application is always expressed in metres.  The DXF
-header, however, may use any unit specified by Autodesk's INSUNITS table.
-Keeping the mapping in one place prevents an import/export pair from silently
-changing the physical size of a planting plan.
+"""Единый перевод DXF $INSUNITS в метры для совместимого чтения и выпуска; неизвестный
+масштаб остаётся явным.
 """
 
 from __future__ import annotations
 
-
-# DXF R2000+ INSUNITS values. Unitless (0) is deliberately absent: without a
-# declared physical scale the import warns and follows the product's explicit
-# metre assumption instead of pretending that a conversion is known.
+# Таблица INSUNITS DXF R2000+ намеренно не содержит безразмерное значение 0.
+# Без физического масштаба импорт предупреждает и явно принимает метры,
+# не выдавая это допущение за известное преобразование.
 DXF_UNIT_FACTORS: dict[int, tuple[str, float]] = {
     1: ("дюймы", 0.0254),
     2: ("футы", 0.3048),
@@ -37,7 +32,7 @@ DXF_UNIT_FACTORS: dict[int, tuple[str, float]] = {
 
 
 def meters_per_dxf_unit(unit_code: int) -> float | None:
-    """Return physical metres per DXF unit, or ``None`` when scale is absent."""
+    """Вернуть физические метры на единицу DXF или None при неизвестном масштабе."""
 
     item = DXF_UNIT_FACTORS.get(unit_code)
     return item[1] if item else None

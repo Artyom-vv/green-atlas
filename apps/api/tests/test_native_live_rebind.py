@@ -6,9 +6,9 @@ from unittest.mock import Mock
 import pytest
 
 import app.desktop.live_demo as demo
-import app.native_query.live_runtime as live_runtime
-from app.native_query.live_client import LiveQueryError, LiveSession
-from app.native_query.live_runtime import (
+import app.native_query.live.live_runtime as live_runtime
+from app.native_query.live.live_client import LiveQueryError, LiveSession
+from app.native_query.live.live_runtime import (
     BoundLiveGeometry,
     LiveBinding,
     binding_path,
@@ -62,6 +62,9 @@ def test_same_capture_reconnect_preserves_project_and_policy(tmp_path, monkeypat
 
 
 def test_saved_runtime_opens_without_loading_expired_native_files(tmp_path, monkeypatch):
+    # Проверяем ленивый engine, а не POSIX-транспорт очереди live-сеанса.
+    client_constructor = Mock()
+    monkeypatch.setattr(live_runtime, "LiveQueryClient", client_constructor)
     database = tmp_path / "project.sqlite"
     save_binding(database, binding())
     constructor = Mock(side_effect=FileNotFoundError("expired inventory"))
@@ -73,10 +76,14 @@ def test_saved_runtime_opens_without_loading_expired_native_files(tmp_path, monk
     with pytest.raises(LiveQueryError) as error:
         engine.calculate(SimpleNamespace(id="project"))
     assert error.value.code == "live_session_expired"
+    client_constructor.assert_called_once_with(pid=123)
     legacy.calculate.assert_not_called()
 
 
 def test_native_engine_initializes_once_when_a_calculation_needs_it(monkeypatch):
+    # Проверяем ленивый engine, а не POSIX-транспорт очереди live-сеанса.
+    client_constructor = Mock()
+    monkeypatch.setattr(live_runtime, "LiveQueryClient", client_constructor)
     constructor = Mock()
     monkeypatch.setattr(live_runtime, "LiveNativeGeometryEngine", constructor)
     engine = BoundLiveGeometry(binding(), Mock())
@@ -84,6 +91,7 @@ def test_native_engine_initializes_once_when_a_calculation_needs_it(monkeypatch)
     engine.calculate(project)
     engine.explain_position(project, 1, 2)
     constructor.assert_called_once()
+    client_constructor.assert_called_once_with(pid=123)
     constructor.return_value.calculate.assert_called_once_with(project)
     constructor.return_value.explain_position.assert_called_once_with(project, 1, 2)
     engine.legacy.calculate.assert_not_called()

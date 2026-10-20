@@ -1,4 +1,6 @@
-"""Shared candidate vocabulary used by rule results and transport schemas."""
+"""Общий словарь состояний, категорий и типов операций кандидатов для результатов правил
+и транспортных схем.
+"""
 
 from typing import Literal
 

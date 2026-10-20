@@ -10,7 +10,7 @@ import type { PlanObject } from '@green/api-client';
 import { WorkspaceChecks } from './WorkspaceChecks';
 afterEach(cleanup);
 
-it('shows distinct reasons instead of counting repeated warnings as separate problems', () => {
+it('keeps a physical conflict and suppresses repeated source assumptions', () => {
   const onLocate = vi.fn();
   const assumptions = Array.from({ length: 25 }, (_, index) => ({
     code: 'GEOMETRY_RULE_ASSUMPTION',
@@ -26,16 +26,49 @@ it('shows distinct reasons instead of counting repeated warnings as separate pro
     severity: 'warning' as const,
     object_id: `plant-${index}`,
   }));
-  render(<WorkspaceChecks issues={[...assumptions, ...partial]}
-    onAssign={vi.fn()} onLocate={onLocate} />);
-  expect(screen.getByText('Причин: 2')).toBeVisible();
-  expect(screen.getByText('Замечаний: 25')).toBeVisible();
-  expect(screen.getByText('Замечаний: 15')).toBeVisible();
-  const group = within(screen.getByRole('group', { name: 'Неполная подоснова' }));
-  fireEvent.click(group.getByRole('button', { name: 'Показать на карте: Неполная подоснова, посадок: 15' }));
-  expect(onLocate).toHaveBeenCalledWith(partial.map((item) => item.object_id));
-  fireEvent.click(group.getByRole('button', { name: 'Подробности проверки' }));
-  expect(screen.getByText(partial[0].description)).toBeVisible();
+  render(
+    <WorkspaceChecks
+      issues={[
+        ...assumptions,
+        ...partial,
+        {
+          code: 'NETWORK_CONTEXT_UNKNOWN',
+          title: 'Неизвестны характеристики сети',
+          description: 'В исходнике нет типа прокладки',
+          severity: 'warning',
+          object_id: 'plant-0',
+        },
+        {
+          code: 'NATIVE_CLEARANCE',
+          title: 'Отступ от здания',
+          description: 'До здания 2 м вместо 5 м',
+          severity: 'error',
+          object_id: 'plant-0',
+        },
+      ]}
+      onAssign={vi.fn()}
+      onLocate={onLocate}
+    />,
+  );
+  expect(screen.getByText('Причин: 1')).toBeVisible();
+  expect(screen.queryByText('Рабочие допущения')).not.toBeInTheDocument();
+  expect(screen.queryByText('Неполная подоснова')).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('Неизвестны характеристики сети'),
+  ).not.toBeInTheDocument();
+  const group = within(screen.getByRole('group', { name: 'Отступ от здания' }));
+  fireEvent.click(
+    group.getByRole('button', {
+      name: 'Показать на карте: Отступ от здания, посадок: 1',
+    }),
+  );
+  expect(onLocate).toHaveBeenCalledWith(['plant-0']);
+  fireEvent.click(
+    group.getByRole('button', {
+      name: /^Отступ от здания\. (Ошибка|Предупреждение)\./,
+    }),
+  );
+  expect(screen.getByText('До здания 2 м вместо 5 м')).toBeVisible();
 });
 
 it('groups metadata tasks while keeping real spatial evidence available', () => {
@@ -76,9 +109,14 @@ it('groups metadata tasks while keeping real spatial evidence available', () => 
   expect(screen.getAllByText('Вид не назначен')).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Назначить виды' }));
   expect(onAssign).toHaveBeenCalledWith(['a', 'b']);
-  fireEvent.click(screen.getByRole('button', { name: 'Подробности проверки' }));
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: /^Отступ от здания\. (Ошибка|Предупреждение)\./,
+    }),
+  );
   expect(screen.getByText('Посадка рядом со зданием')).toBeVisible();
-  expect(screen.getByText('Фактически: 2 м. Требуется: 5 м.')).toBeVisible();
+  expect(screen.getByRole('cell', { name: '2 м' })).toBeVisible();
+  expect(screen.getByRole('cell', { name: '5 м' })).toBeVisible();
   fireEvent.click(
     screen.getByRole('button', { name: 'Показать посадку: Отступ от здания' }),
   );
@@ -134,9 +172,14 @@ it('locates both sides of a conflict, including related objects', () => {
     />,
   );
   const group = screen.getByRole('group', { name: 'Пересечение' });
-  expect(within(group as HTMLElement).getByText('Замечаний: 1')).toBeVisible();
-  expect(within(group as HTMLElement).getByText('Посадок: 2')).toBeVisible();
-  expect(within(group as HTMLElement).getByText('Ошибка')).toBeVisible();
+  expect(within(group as HTMLElement).getByText(/замечание/)).toHaveTextContent(
+    '1 замечание, 2 посадки',
+  );
+  expect(
+    within(group as HTMLElement).getByRole('button', {
+      name: 'Пересечение. Ошибка. Замечаний 1. Посадок 2',
+    }),
+  ).toBeVisible();
   fireEvent.click(
     within(screen.getByRole('region', { name: 'Проверка проекта' })).getByRole(
       'button',
@@ -165,7 +208,7 @@ it('keeps assignment disabled while allowing a check to locate its objects', () 
       onLocate={onLocate}
     />,
   );
-  expect(screen.getByText('Предупреждение')).toBeVisible();
+  expect(screen.getByRole('img', { name: 'Предупреждение' })).toBeVisible();
   const assign = screen.getByRole('button', { name: 'Назначить виды' });
   expect(assign).toBeDisabled();
   fireEvent.click(assign);
@@ -176,4 +219,56 @@ it('keeps assignment disabled while allowing a check to locate its objects', () 
     }),
   );
   expect(onLocate).toHaveBeenCalledWith(['a']);
+});
+
+it('keeps unknown metrics unknown and map actions independent from disclosure', () => {
+  const onLocate = vi.fn();
+  render(
+    <WorkspaceChecks
+      embedded
+      issues={[
+        {
+          code: 'COLLISION',
+          title: 'Пересечение',
+          description: 'Неизвестный факт',
+          severity: 'error',
+          object_id: 'a',
+          related_object_ids: ['b'],
+          required: 5,
+          unit: 'м',
+        },
+        {
+          code: 'COLLISION',
+          title: 'Пересечение',
+          description: 'Нулевой отступ',
+          severity: 'error',
+          object_id: 'c',
+          actual: 0,
+          unit: 'м',
+        },
+      ]}
+      onAssign={vi.fn()}
+      onLocate={onLocate}
+    />,
+  );
+  expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  const disclosure = screen.getByRole('button', {
+    name: 'Пересечение. Ошибка. Замечаний 2. Посадок 3',
+  });
+  const map = screen.getByRole('button', {
+    name: 'Показать на карте: Пересечение, посадок: 3',
+  });
+  expect(disclosure).not.toContainElement(map);
+  fireEvent.click(map);
+  expect(onLocate).toHaveBeenLastCalledWith(['a', 'b', 'c']);
+  expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(disclosure);
+  expect(screen.getAllByRole('cell', { name: 'Нет данных' })).toHaveLength(2);
+  expect(screen.getByRole('cell', { name: '0 м' })).toBeVisible();
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: 'Показать связанные посадки: Пересечение',
+    }),
+  );
+  expect(onLocate).toHaveBeenLastCalledWith(['a', 'b']);
 });

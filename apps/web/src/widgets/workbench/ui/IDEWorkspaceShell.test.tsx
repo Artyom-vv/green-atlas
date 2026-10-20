@@ -31,7 +31,6 @@ const slots = (): IDEWorkspaceShellProps => ({
   resources: <Draft label="Поиск слоёв" />,
   inspector: <Draft label="Свойство" />,
   tool: <Draft label="Параметр ряда" />,
-  assistant: <Draft label="Сообщение" />,
   results: {
     checks: <Draft label="Фильтр проверок" />,
     schedule: <div>Ведомость проекта</div>,
@@ -144,23 +143,6 @@ describe('IDE workspace slot lifecycle', () => {
     expect(screen.getByRole('textbox', { name: 'Свойство' })).toBeVisible();
   });
 
-  it('shows the tool for an unavailable saved assistant tab without changing its draft', () => {
-    render(<IDEWorkspaceShell {...slots()} rightTab="assistant" />);
-    expect(
-      screen.queryByRole('tab', { name: 'Помощник' }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Инструмент' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
-    expect(
-      screen.getByRole('textbox', { name: 'Параметр ряда' }),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole('textbox', { name: 'Сообщение' }),
-    ).not.toBeInTheDocument();
-  });
-
   it('preserves resource and result filters while their surfaces are hidden', () => {
     render(<IDEWorkspaceShell {...slots()} />);
     const search = screen.getByRole('textbox', { name: 'Поиск слоёв' });
@@ -253,18 +235,18 @@ describe('IDE workspace slot lifecycle', () => {
       name: 'Ширина правой области',
     });
     fireEvent.keyDown(handle, { key: 'ArrowLeft' });
-    expect(handle).toHaveAttribute('aria-valuenow', '356');
+    expect(handle).toHaveAttribute('aria-valuenow', '316');
     act(() => {
       vi.advanceTimersByTime(200);
     });
     expect(
       JSON.parse(localStorage.getItem(IDE_WORKSPACE_STORAGE_KEY) ?? '{}'),
-    ).toMatchObject({ rightWidth: 356 });
+    ).toMatchObject({ rightWidth: 316 });
     expect(localStorage.getItem('green-editor-layout-v3')).toBe(
       '{"width":0.33}',
     );
     fireEvent.doubleClick(handle);
-    expect(handle).toHaveAttribute('aria-valuenow', '340');
+    expect(handle).toHaveAttribute('aria-valuenow', '300');
   });
 
   it('uses manual keyboard tab activation so guards run only on activation', () => {

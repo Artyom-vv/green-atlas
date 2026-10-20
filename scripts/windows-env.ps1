@@ -14,7 +14,8 @@ param(
 
     $repository = [IO.Path]::GetFullPath((Split-Path $ScriptDirectory -Parent))
     $runtime = Join-Path $repository '.runtime'
-    $cache = Join-Path ([IO.Path]::GetPathRoot($repository)) '.dev-cache'
+    # Не требуем записи в корень диска: все кеши принадлежат checkout.
+    $cache = Join-Path $runtime 'cache/packages'
     $temporary = Join-Path $runtime 'tmp'
     $environment = @{
         TEMP = $temporary

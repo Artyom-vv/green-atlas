@@ -3,13 +3,15 @@ import {
   evaluateSceneTelemetry,
   SCENE_RENDER_TARGETS,
   SCENE_TELEMETRY_ATTRIBUTES,
-} from '../src/domain-ui/scene/sceneRenderContract';
+} from '../src/widgets/scene/model/sceneRenderContract';
 import { createSceneProject } from './support/createSceneProject';
 import { readSceneTelemetry } from './support/sceneTelemetry';
 
 const typicalPlantCount = 600;
 
-test('typical Moscow scene sustains the measured 60 FPS target', async ({ page }) => {
+test('typical native-control scene sustains the measured 60 FPS target', async ({
+  page,
+}, testInfo) => {
   test.setTimeout(180_000);
   const apiBase = `http://127.0.0.1:${process.env.E2E_API_PORT ?? '18000'}`;
   const projectId = await createSceneProject({
@@ -29,12 +31,23 @@ test('typical Moscow scene sustains the measured 60 FPS target', async ({ page }
     await expect(view3d).toBeVisible({ timeout: 30_000 });
   }
   await view3d.click({ timeout: 15_000 });
-  const scene = page.getByRole('region', { name: 'Параметрический 3D-предпросмотр' });
+  const scene = page.getByRole('region', {
+    name: 'Параметрический 3D-предпросмотр',
+  });
   await expect(scene).toBeVisible();
   await page.waitForTimeout(3_000);
-  if (await view3d.getAttribute('aria-pressed') !== 'true') await view3d.click();
-  await expect(scene).toHaveAttribute(SCENE_TELEMETRY_ATTRIBUTES.status, 'ready', { timeout: 15_000 });
-  await expect.poll(async () => (await readSceneTelemetry(scene)).loadedPlantModels, { timeout: 15_000 }).toBeGreaterThanOrEqual(18);
+  if ((await view3d.getAttribute('aria-pressed')) !== 'true')
+    await view3d.click();
+  await expect(scene).toHaveAttribute(
+    SCENE_TELEMETRY_ATTRIBUTES.status,
+    'ready',
+    { timeout: 15_000 },
+  );
+  await expect
+    .poll(async () => (await readSceneTelemetry(scene)).loadedPlantModels, {
+      timeout: 15_000,
+    })
+    .toBeGreaterThanOrEqual(18);
 
   const canvas = page.getByLabel('3D-сцена посадок');
   const box = await canvas.boundingBox();
@@ -53,15 +66,26 @@ test('typical Moscow scene sustains the measured 60 FPS target', async ({ page }
   await page.mouse.up();
 
   expect(telemetry.plantInstances).toBe(typicalPlantCount);
-  expect(SCENE_RENDER_TARGETS.typicalPlantRange[0]).toBeLessThanOrEqual(typicalPlantCount);
-  expect(SCENE_RENDER_TARGETS.typicalPlantRange[1]).toBeGreaterThanOrEqual(typicalPlantCount);
+  expect(SCENE_RENDER_TARGETS.typicalPlantRange[0]).toBeLessThanOrEqual(
+    typicalPlantCount,
+  );
+  expect(SCENE_RENDER_TARGETS.typicalPlantRange[1]).toBeGreaterThanOrEqual(
+    typicalPlantCount,
+  );
   const violations = evaluateSceneTelemetry(telemetry, {
     profile: 'typical',
     expectedPlantInstances: typicalPlantCount,
   });
   expect(
-    process.env.E2E_HEADED === '1' ? violations : violations.filter((violation) => violation !== 'target-fps'),
+    process.env.E2E_HEADED === '1'
+      ? violations
+      : violations.filter((violation) => violation !== 'target-fps'),
     JSON.stringify(telemetry),
   ).toEqual([]);
-  if (process.env.E2E_HEADED === '1') expect(telemetry.fps).toBe(SCENE_RENDER_TARGETS.targetFps);
+  if (process.env.E2E_HEADED === '1')
+    expect(telemetry.fps).toBe(SCENE_RENDER_TARGETS.targetFps);
+  await testInfo.attach('typical-scene', {
+    body: await scene.screenshot(),
+    contentType: 'image/png',
+  });
 });

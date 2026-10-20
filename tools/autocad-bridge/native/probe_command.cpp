@@ -1,3 +1,5 @@
+#include "filesystem_utf8.h"
+#include <filesystem>
 #include "capture_commands.h"
 #include "bridge_config.h"
 #include "cad_utils.h"
@@ -105,7 +107,7 @@ void exportProbe() {
     const std::string outputPath = sourcePath + ".green-atlas.probe.json";
     const std::string temporaryPath = outputPath + ".tmp";
 
-    std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+    std::ofstream output(ga::bridge::nativePath(temporaryPath), std::ios::binary | std::ios::trunc);
     if (!output) {
         acutPrintf(_T("\nGreen Atlas: cannot create the sidecar file."));
         return;
@@ -164,8 +166,18 @@ void exportProbe() {
            << "}\n";
     output.close();
 
+#ifdef _WIN32
+    std::error_code publishError;
+    if(output) std::filesystem::rename(ga::bridge::nativePath(temporaryPath),ga::bridge::nativePath(outputPath),publishError);
+    if (!output || publishError) {
+#else
     if (!output || std::rename(temporaryPath.c_str(), outputPath.c_str()) != 0) {
+#endif
+#ifdef _WIN32
+        std::error_code cleanup;std::filesystem::remove(ga::bridge::nativePath(temporaryPath),cleanup);
+#else
         std::remove(temporaryPath.c_str());
+#endif
         acutPrintf(_T("\nGreen Atlas: failed to publish the sidecar atomically."));
         return;
     }

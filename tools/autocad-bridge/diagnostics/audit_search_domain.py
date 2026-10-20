@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.composition import create_runtime
-from app.native_query.domain_cells import certify_cell
-from app.native_query.search_domain import (
+from app.native_query.search.domain_cells import certify_cell
+from app.native_query.search.search_domain import (
     MIN_CELL_M,
     DomainProgress,
     build_domain,
@@ -119,7 +119,7 @@ def main():
             return verdict
 
         progress = DomainProgress()
-        with patch("app.native_query.search_domain.certify_cell", observed):
+        with patch("app.native_query.search.search_domain.certify_cell", observed):
             for attempt in range(10):
                 result = build_domain(
                     engine,

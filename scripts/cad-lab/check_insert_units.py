@@ -8,7 +8,7 @@ from shapely.geometry import shape
 
 root=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(root/'apps/api'))
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 
 rows=[]
 for name,model_units,block_units,size,scale,rotation,expected,area,nested in [

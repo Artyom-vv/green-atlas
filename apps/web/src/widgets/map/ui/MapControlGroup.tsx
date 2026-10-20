@@ -1,4 +1,5 @@
-import { ControlProvider, Toolbar, cx } from '@green/ui';
+import { Toolbar, cx } from '@green/ui';
+import { CanvasControlGroup } from '@/shared/ui/CanvasControls';
 import type { ComponentProps, FC } from 'react';
 
 export interface MapControlGroupProps extends ComponentProps<typeof Toolbar> {
@@ -11,17 +12,14 @@ export const MapControlGroup: FC<MapControlGroupProps> = ({
   label = 'Управление картой',
   className,
 }) => (
-  <ControlProvider size="compact">
-    <Toolbar
-      orientation={orientation}
-      label={label}
-      className={cx(
-        'rounded-card shadow-sm',
-        orientation === 'vertical' ? 'flex-col flex-nowrap' : undefined,
-        className,
-      )}
-    >
-      {children}
-    </Toolbar>
-  </ControlProvider>
+  <CanvasControlGroup
+    orientation={orientation}
+    label={label}
+    className={cx(
+      orientation === 'vertical' ? 'flex-col flex-nowrap' : undefined,
+      className,
+    )}
+  >
+    {children}
+  </CanvasControlGroup>
 );

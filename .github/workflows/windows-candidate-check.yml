@@ -1,0 +1,160 @@
+name: Recheck immutable Windows Setup candidate
+
+on:
+  push:
+    branches: [codex/windows-launch-boundary]
+    paths:
+      - .github/workflows/windows-candidate-check.yml
+      - scripts/desktop/ci_windows_candidate.py
+  workflow_dispatch:
+    inputs:
+      upgrade121:
+        description: Recheck released121 to immutable122 with a positive synthetic prepared plan
+        type: boolean
+        default: false
+      candidate_run_id:
+        description: Original full production build run
+        required: true
+        default: '38792163331'
+      candidate_commit:
+        description: Exact product source commit
+        required: true
+        default: '8002239d037a71da122199f65dd01e16f4ff5799'
+      setup_sha256:
+        description: Exact original Setup SHA256
+        required: true
+        default: b806e3f684e412111c3cf67f43928a5ee7bdbd7ab931fb856b5cae5a89692d6f
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recheck:
+    if: github.event_name == 'workflow_dispatch' && !inputs.upgrade121
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Prepare locked verification dependencies
+        run: |
+          . ./scripts/windows-env.ps1
+          $ErrorActionPreference = 'Stop'
+          $inputs = Get-Content tools/autocad-bridge/windows-ci-inputs.json -Raw | ConvertFrom-Json
+          $python = (Get-Command python).Source
+          & $python -m pip install --disable-pip-version-check ('uv==' + $inputs.uv)
+          if ($LASTEXITCODE -ne 0) { throw 'uv installation failed' }
+          $env:UV_PYTHON_DOWNLOADS = 'never'
+          . ./scripts/windows-env.ps1
+          & $python -m uv sync --project apps/api --locked --group dev --python $python
+          if ($LASTEXITCODE -ne 0) { throw 'Locked API dependencies failed' }
+          . ./scripts/windows-env.ps1
+          & $python -m uv pip install --python apps/api/.venv/Scripts/python.exe -r tools/autocad-bridge/desktop/build-requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned CArchiveReader installation failed' }
+      - name: Verify original build and unchanged production source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run_id }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          CANDIDATE_SHA: ${{ inputs.setup_sha256 }}
+        run: |
+          . ./scripts/windows-env.ps1
+          & ./apps/api/.venv/Scripts/python.exe scripts/desktop/ci_windows_candidate.py --candidate-run-id $env:CANDIDATE_RUN --candidate-commit $env:CANDIDATE_COMMIT --setup-sha256 $env:CANDIDATE_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate provenance/source check failed' }
+      - name: Exercise sealed Microsoft machine prerequisite separately
+        run: |
+          . ./scripts/windows-env.ps1
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'apps/api'
+          & ./apps/api/.venv/Scripts/python.exe scripts/desktop/windows_prerequisite_smoke.py --product .runtime/autocad-bridge/ci-product
+          if ($LASTEXITCODE -ne 0) { throw 'Microsoft machine prerequisite failed' }
+      - name: Diagnose actual ordinary-user installation and installed API
+        run: |
+          . ./scripts/windows-env.ps1
+          $root = Join-Path $env:GITHUB_WORKSPACE '.runtime/autocad-bridge/ci-product'
+          $product = Get-Content (Join-Path $root 'deliverable/product-build-receipt.json') -Raw | ConvertFrom-Json
+          if ($product.PSObject.Properties['native_wizard'] -and $product.native_wizard) {
+            & ./tools/autocad-bridge/ci-windows-product-install.ps1 -SetupPath (Join-Path $root ('deliverable/' + $product.setup)) -SetupReceipt (Join-Path $root 'evidence/wizard-build-receipt.json') -BuildPython (Join-Path $env:GITHUB_WORKSPACE 'apps/api/.venv/Scripts/python.exe') -OutputDirectory '.runtime/autocad-bridge/ci-product/install-smoke' -HelperScript scripts/desktop/windows_wizard_smoke.py -TimeoutSeconds 1200
+          } else {
+            & ./tools/autocad-bridge/ci-windows-product-install.ps1 -SetupPath (Join-Path $root ('deliverable/' + $product.setup)) -SetupReceipt (Join-Path $root 'evidence/setup-build-receipt.json') -BuildPython (Join-Path $env:GITHUB_WORKSPACE 'apps/api/.venv/Scripts/python.exe') -OutputDirectory '.runtime/autocad-bridge/ci-product/install-smoke'
+          }
+      - name: Bind successful acceptance to original immutable Setup
+        run: |
+          . ./scripts/windows-env.ps1
+          $root = Join-Path $env:GITHUB_WORKSPACE '.runtime/autocad-bridge/ci-product'
+          $product = Get-Content (Join-Path $root 'deliverable/product-build-receipt.json') -Raw | ConvertFrom-Json
+          $report = Get-Content (Join-Path $root 'install-smoke/user-checks/install-ci-receipt.json') -Raw | ConvertFrom-Json
+          $setupBuild = Get-Content (Join-Path $root 'evidence/setup-build-receipt.json') -Raw | ConvertFrom-Json
+          $machine = Get-Content (Join-Path $root 'evidence/machine-webview2-upgrade.json') -Raw | ConvertFrom-Json
+          $source = Get-Content (Join-Path $root 'evidence/candidate-recheck-source.json') -Raw | ConvertFrom-Json
+          $native = $product.PSObject.Properties['native_wizard'] -and $product.native_wizard
+          $machineSetupSha = if ($native) { $product.backend_sha256 } else { $product.sha256 }
+          if ($report.passed -ne $true -or $report.setup_sha256 -ne $product.sha256 -or $report.source_manifest_sha256 -ne $product.source_manifest_sha256) { throw 'Install receipt does not match immutable Setup' }
+          if ($native) {
+            if ($report.native_wizard_completed -ne $true -or $report.finish_launched_installed_application -ne $true -or $report.native_update_preserved_database -ne $true -or $report.native_uninstall_preserved_database -ne $true) { throw 'Native lifecycle is incomplete' }
+          } elseif ($report.distribution_manifest_sha256 -ne $setupBuild.distribution_manifest_sha256) { throw 'Legacy installed manifest differs' }
+          if ($machine.passed -ne $true -or $machine.sealed_payload_bytes_verified -ne $true -or $machine.git_commit -ne $product.git_commit -or $machine.setup_sha256 -ne $machineSetupSha) { throw 'Machine prerequisite does not match original product' }
+          if ($source.candidate_code_git -ne $product.git_commit -or $source.verification_git -ne $env:GITHUB_SHA -or $source.setup_sha256 -ne $product.sha256 -or $source.production_source_bytes_unchanged -ne $true) { throw 'Candidate QA/source binding failed' }
+          $reportName = if ($native) { 'wizard-checks.json' } else { 'installation-checks.json' }
+          Copy-Item -LiteralPath (Join-Path $root 'install-smoke/user-checks/install-ci-receipt.json') -Destination (Join-Path $root ('deliverable/' + $reportName))
+          Copy-Item -LiteralPath (Join-Path $root 'evidence/machine-webview2-upgrade.json') -Destination (Join-Path $root 'deliverable/machine-prerequisite-checks.json')
+          Copy-Item -LiteralPath (Join-Path $root 'evidence/candidate-recheck-source.json') -Destination (Join-Path $root 'deliverable/candidate-recheck-source.json')
+      - name: Preserve bounded candidate diagnostics and receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-candidate-diagnostics-${{ github.sha }}
+          path: |
+            .runtime/autocad-bridge/ci-product/evidence/candidate-recheck-source.json
+            .runtime/autocad-bridge/ci-product/evidence/machine-webview2-upgrade.json
+            .runtime/autocad-bridge/ci-product/evidence/setup-build-receipt.json
+            .runtime/autocad-bridge/ci-product/deliverable/product-build-receipt.json
+            .runtime/autocad-bridge/ci-product/install-smoke/*.json
+            .runtime/autocad-bridge/ci-product/install-smoke/*.log
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/install-ci-receipt.json
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.stdout.log
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.stderr.log
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.png
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.log
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Preserve accepted original Setup and bounded evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-product-${{ github.sha }}
+          path: |
+            .runtime/autocad-bridge/ci-product/deliverable/
+            .runtime/autocad-bridge/ci-product/evidence/*.json
+            .runtime/autocad-bridge/ci-product/evidence/*.log
+            .runtime/autocad-bridge/ci-product/evidence/*.xml
+            .runtime/autocad-bridge/ci-product/evidence/BuildEvidence/*.json
+            .runtime/autocad-bridge/ci-product/install-smoke/*.json
+            .runtime/autocad-bridge/ci-product/install-smoke/*.log
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/install-ci-receipt.json
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.stdout.log
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.stderr.log
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.png
+            .runtime/autocad-bridge/ci-product/install-smoke/user-checks/*.log
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+
+  upgrade121:
+    if: github.event_name == 'workflow_dispatch' && inputs.upgrade121
+    permissions:
+      contents: write
+    uses: ./.github/workflows/windows-121-upgrade-check.yml

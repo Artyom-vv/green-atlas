@@ -1,6 +1,6 @@
 import type { FC } from 'react';
 import type { PlanObject, ValidationIssue } from '@green/api-client';
-import { Crosshair, Lock } from 'lucide-react';
+import { Crosshair, Lock, X } from 'lucide-react';
 import { IconButton, InlineMessage } from '@green/ui';
 import type { GrowthHorizon } from '@/entities/planting-forecast';
 import { EditorPanel } from '@/shared/ui/inspector';
@@ -18,6 +18,7 @@ export interface ObjectInspectorProps {
   onSpecies: () => void;
   onDelete: () => void;
   onFit?: () => void;
+  onClearSelection?: () => void;
   onMove?: () => void;
   onLock?: (locked: boolean) => void;
   editable?: boolean;
@@ -32,6 +33,7 @@ export const ObjectInspector: FC<ObjectInspectorProps> = ({
   onSpecies,
   onDelete,
   onFit,
+  onClearSelection,
   onMove,
   onLock,
   editable = true,
@@ -43,6 +45,9 @@ export const ObjectInspector: FC<ObjectInspectorProps> = ({
         <p className="m-0 text-xs text-neutral-600">Ничего не выбрано</p>
       </EditorPanel>
     );
+  const problems = selectionProblems([object], issues);
+  const showStatus =
+    object.status !== 'warning' || issues === undefined || problems.length > 0;
   const status =
     object.status === 'error'
       ? 'Есть нарушение'
@@ -54,14 +59,24 @@ export const ObjectInspector: FC<ObjectInspectorProps> = ({
     <EditorPanel
       title="Выбрано 1"
       headerActions={
-        onFit ? (
-          <IconButton
-            variant="ghost"
-            icon={Crosshair}
-            label="К выделению"
-            onClick={onFit}
-          />
-        ) : undefined
+        <>
+          {onFit && (
+            <IconButton
+              variant="ghost"
+              icon={Crosshair}
+              label="К выделению"
+              onClick={onFit}
+            />
+          )}
+          {onClearSelection && (
+            <IconButton
+              variant="ghost"
+              icon={X}
+              label="Снять выделение"
+              onClick={onClearSelection}
+            />
+          )}
+        </>
       }
     >
       <section className="grid gap-3" aria-label="Выбранная посадка">
@@ -72,15 +87,17 @@ export const ObjectInspector: FC<ObjectInspectorProps> = ({
           </p>
         </div>
         <dl className="m-0 grid gap-2 text-xs [&_dd]:m-0 [&_dt]:text-neutral-600 [&>div]:flex [&>div]:flex-wrap [&>div]:justify-between [&>div]:gap-2">
-          <div>
-            <dt>Проверка</dt>
-            <dd
-              data-severity={object.status}
-              className="data-[severity=error]:text-error data-[severity=warning]:text-warning-strong"
-            >
-              {status}
-            </dd>
-          </div>
+          {showStatus && (
+            <div>
+              <dt>Проверка</dt>
+              <dd
+                data-severity={object.status}
+                className="data-[severity=error]:text-error data-[severity=warning]:text-warning-strong"
+              >
+                {status}
+              </dd>
+            </div>
+          )}
           <div>
             <dt>Закреплено</dt>
             <dd>{object.locked ? 'Да' : 'Нет'}</dd>
@@ -107,7 +124,7 @@ export const ObjectInspector: FC<ObjectInspectorProps> = ({
           onLock={onLock ? () => onLock(!object.locked) : undefined}
         />
       )}
-      <SelectionIssues problems={selectionProblems([object], issues)} />
+      <SelectionIssues problems={problems} />
       <EditorGrowth
         objects={[object]}
         value={growthHorizon}

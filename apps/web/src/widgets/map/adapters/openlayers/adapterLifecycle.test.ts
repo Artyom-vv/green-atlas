@@ -6,18 +6,21 @@ import Polygon from 'ol/geom/Polygon';
 import VectorSource from 'ol/source/Vector';
 import { DrawEvent } from 'ol/interaction/Draw';
 import type { PlanObject } from '@green/api-client';
-import { ViewportFeatureCache } from './ViewportFeatureCache';
+import { ViewportFeatureCache } from './geometry/ViewportFeatureCache';
 import {
   loadViewportGeometry,
   type LoadViewportGeometryOptions,
-} from './loadViewportGeometry';
-import { attachDrawing, type AttachDrawingOptions } from './attachDrawing';
+} from './geometry/loadViewportGeometry';
+import {
+  attachDrawing,
+  type AttachDrawingOptions,
+} from './interactions/attachDrawing';
 import {
   attachTranslation,
   type AttachTranslationOptions,
-} from './attachTranslation';
-import { syncPlanFeatures } from './planFeatures';
-import * as geometryScheduler from './scheduleGeometryWork';
+} from './interactions/attachTranslation';
+import { syncPlanFeatures } from './overlays/planFeatures';
+import * as geometryScheduler from './geometry/scheduleGeometryWork';
 
 const frames = new globalThis.Map<number, FrameRequestCallback>();
 let frameId = 0;
@@ -231,6 +234,7 @@ describe('OpenLayers adapter boundaries', () => {
       translateInteractionRef: { current: null },
       translatingSelectionRef: { current: false },
       pendingTranslationRef: { current: false },
+      spacePanRef: { current: false },
       planLayerRef: { current: null },
       callbackRef: {
         current: {

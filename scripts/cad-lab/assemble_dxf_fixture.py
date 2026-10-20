@@ -19,10 +19,10 @@ from ezdxf import xref
 from ezdxf.lldxf import const
 from ezdxf.entities.acis import Body
 from ezdxf.sections.acdsdata import new_acds_data_section
-from app.dxf_import.acis_lookup import indexed_acis_lookup
-from app.cad_import.package_contracts import ReferenceOverride
-from app.cad_import.reference_overrides import ReferenceOverrides
-from app.cad_import.references import PackagePaths
+from app.dxf_import.legacy.entities.acis_lookup import indexed_acis_lookup
+from app.cad_import.archive.package_contracts import ReferenceOverride
+from app.cad_import.references.overrides import ReferenceOverrides
+from app.cad_import.references.resolve import PackagePaths
 from pydantic import TypeAdapter
 
 

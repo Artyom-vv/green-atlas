@@ -4,6 +4,21 @@ import { brushToolBindings } from './brushToolBindings';
 import { recommendationToolBindings } from './recommendationToolBindings';
 
 describe('workspace placement bindings', () => {
+  it('checks the live draft before applying, including changes made before rerender', () => {
+    const isCurrent = vi.fn().mockReturnValue(false);
+    const change = { id: 'checked', can_apply: true };
+    const options = {
+      previewPattern: { isCurrent },
+      patternPreview: { change_set: change },
+      applyChanges: { mutate: vi.fn() },
+    } as unknown as Parameters<typeof patternToolBindings>[0];
+    const action = patternToolBindings(options).onApply!;
+    action();
+    expect(options.applyChanges.mutate).not.toHaveBeenCalled();
+    isCurrent.mockReturnValue(true);
+    action();
+    expect(options.applyChanges.mutate).toHaveBeenCalledExactlyOnceWith(change);
+  });
   it('routes drawing cancellation through the zone owner without clearing placement fields', () => {
     const options = {
       placementAreaDrawing: true,
@@ -38,7 +53,7 @@ describe('workspace placement bindings', () => {
     expect(options.editor.setTool).toHaveBeenCalledWith('select');
   });
 
-  it('reverses the row without mutating the existing axis and resets both previews', () => {
+  it('reverses the row without mutating the existing axis and preserves the checked pattern', () => {
     const axis = {
       type: 'LineString',
       coordinates: [
@@ -49,7 +64,7 @@ describe('workspace placement bindings', () => {
     const options = {
       rowAxis: axis,
       setRowAxis: vi.fn(),
-      previewPattern: { reset: vi.fn() },
+      previewPattern: { edit: vi.fn() },
       previewChanges: { reset: vi.fn() },
     } as unknown as Parameters<typeof patternToolBindings>[0];
     patternToolBindings(options).onReverseAxis?.();
@@ -64,7 +79,7 @@ describe('workspace placement bindings', () => {
       [1, 2],
       [3, 4],
     ]);
-    expect(options.previewPattern.reset).toHaveBeenCalledTimes(1);
+    expect(options.previewPattern.edit).toHaveBeenCalledTimes(1);
     expect(options.previewChanges.reset).toHaveBeenCalledTimes(1);
   });
 
@@ -74,7 +89,7 @@ describe('workspace placement bindings', () => {
       mapViewport: { current: { abortRowDrawing: () => events.push('abort') } },
       setRowInputMode: vi.fn(() => events.push('mode')),
       setRowDrawingPoints: vi.fn(),
-      previewPattern: { reset: () => events.push('pattern') },
+      previewPattern: { edit: () => events.push('pattern') },
       previewChanges: { reset: () => events.push('changes') },
     } as unknown as Parameters<typeof patternToolBindings>[0];
     patternToolBindings(options).onAxisModeChange?.('draw');
@@ -83,7 +98,7 @@ describe('workspace placement bindings', () => {
     expect(options.setRowDrawingPoints).toHaveBeenCalledWith(0);
   });
 
-  it('sends both recommendation branches through the same project version and map transition', () => {
+  it('sends a manual recommendation through the current project version and map transition', () => {
     const options = {
       sceneOpen: true,
       changeMapMode: vi.fn(),
@@ -96,25 +111,14 @@ describe('workspace placement bindings', () => {
       max_sites: 40,
       zone_ids: ['west'],
     });
-    actions.onScreenPreview?.({
-      max_sites: null,
-      screen_side: 'perimeter',
-      zone_ids: ['west'],
-    });
     expect(options.changeMapMode).toHaveBeenNthCalledWith(1, '2d');
-    expect(options.changeMapMode).toHaveBeenNthCalledWith(2, '2d');
     expect(options.previewRecommendation.mutate).toHaveBeenNthCalledWith(1, {
       profile: 'balanced',
       max_sites: 40,
       zone_ids: ['west'],
       base_plan_version: 7,
     });
-    expect(options.previewRecommendation.mutate).toHaveBeenNthCalledWith(2, {
-      max_sites: null,
-      screen_side: 'perimeter',
-      zone_ids: ['west'],
-      base_plan_version: 7,
-    });
+    expect(options.previewRecommendation.mutate).toHaveBeenCalledOnce();
   });
 
   it('cancels recommendations once and returns to selection without changing the draft', () => {

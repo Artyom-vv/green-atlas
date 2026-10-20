@@ -1,1 +1,1 @@
-"""Reproducible release packages for a saved planting-plan revision."""
+"""Воспроизводимый комплект выпуска для сохранённой ревизии плана посадок."""

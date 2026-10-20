@@ -2,11 +2,23 @@ import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChangeSetPreview, PlanMutationResult } from '@green/api-client';
-import { commitPlanChange } from '../api/commitPlanChange';
+import {
+  ApiClientError,
+  type ChangeSetPreview,
+  type PlanMutationResult,
+} from '@green/api-client';
+import {
+  commitPlanChange,
+  readPlanChangeReceipt,
+  readCommittedProject,
+} from '../api/commitPlanChange';
 import { usePlanChangeCommit } from './usePlanChangeCommit';
 
-vi.mock('../api/commitPlanChange', () => ({ commitPlanChange: vi.fn() }));
+vi.mock('../api/commitPlanChange', () => ({
+  commitPlanChange: vi.fn(),
+  readPlanChangeReceipt: vi.fn(),
+  readCommittedProject: vi.fn(),
+}));
 const preview = {
   id: 'preview-1',
   digest: 'digest',
@@ -14,6 +26,8 @@ const preview = {
   can_apply: true,
 } as ChangeSetPreview;
 const response = {
+  change_set_id: 'preview-1',
+  plan_version: 2,
   plan: { version: 2 },
   state_version: 3,
   added_ids: ['new'],
@@ -34,6 +48,179 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => vi.resetAllMocks());
 
 describe('change-set commit', () => {
+  it.each([
+    ['lost response', new TypeError('connection lost')],
+    [
+      'server internal error',
+      new ApiClientError('INTERNAL_ERROR', 'Ошибка сервиса'),
+    ],
+  ])(
+    'resolves %s through its exact receipt and a current Project without another write',
+    async (_label, error) => {
+      vi.mocked(commitPlanChange).mockRejectedValue(error);
+      vi.mocked(readPlanChangeReceipt).mockResolvedValue({
+        status: 'applied',
+        receipt: {
+          project_id: 'a',
+          change_set_id: preview.id,
+          digest: preview.digest,
+          base_plan_version: 1,
+          base_state_version: 1,
+          state_version: 3,
+          plan_version: 2,
+          status: 'applied',
+          added_ids: [],
+          updated_ids: [],
+          deleted_ids: [],
+        },
+      });
+      vi.mocked(readCommittedProject).mockResolvedValue({
+        id: 'a',
+        name: 'Saved',
+        status: 'editing',
+        map_ready: true,
+        resume_kind: 'workspace',
+        prepared_state: 'available',
+        geometry_version: 1,
+        state_version: 3,
+        plan: {
+          planning_horizon_year: 20,
+          id: 'plan',
+          version: 2,
+          objects: [],
+          issues: [],
+        },
+      } as Awaited<ReturnType<typeof readCommittedProject>>);
+      const onCommitted = vi.fn();
+      const { result } = renderHook(
+        () =>
+          usePlanChangeCommit({
+            projectId: 'a',
+            stateVersion: 1,
+            preview,
+            onCommitted,
+            refresh: async () => undefined,
+          }),
+        { wrapper },
+      );
+      act(() => result.current.mutate());
+      await waitFor(() => expect(result.current.phase).toBe('idle'));
+      expect(readPlanChangeReceipt).toHaveBeenCalledWith('a', preview, 1);
+      expect(commitPlanChange).toHaveBeenCalledOnce();
+      expect(onCommitted).toHaveBeenCalledOnce();
+      act(() => result.current.mutate());
+      expect(commitPlanChange).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    ['lost response', new TypeError('connection lost')],
+    [
+      'server internal error',
+      new ApiClientError('INTERNAL_ERROR', 'Ошибка сервиса'),
+    ],
+  ])(
+    'keeps %s with a missing receipt unknown and retry only rereads the receipt',
+    async (_label, error) => {
+      vi.mocked(commitPlanChange).mockRejectedValue(error);
+      vi.mocked(readPlanChangeReceipt).mockResolvedValue({
+        status: 'not_found',
+        receipt: null,
+      });
+      const { result } = renderHook(
+        () =>
+          usePlanChangeCommit({
+            projectId: 'a',
+            stateVersion: 1,
+            preview,
+            onCommitted: vi.fn(),
+            refresh: async () => undefined,
+          }),
+        { wrapper },
+      );
+      act(() => result.current.mutate());
+      await waitFor(() => expect(result.current.writeOutcome).toBe('unknown'));
+      act(() => {
+        result.current.reset();
+        result.current.mutate();
+        result.current.retryRefresh();
+      });
+      await waitFor(() =>
+        expect(readPlanChangeReceipt).toHaveBeenCalledTimes(2),
+      );
+      expect(result.current.writeOutcome).toBe('unknown');
+      expect(commitPlanChange).toHaveBeenCalledOnce();
+      expect(readCommittedProject).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['BAD_REQUEST', 'NOT_FOUND'])(
+    'treats %s as a confirmed refusal without looking for a committed receipt',
+    async (code) => {
+      const error = new ApiClientError(code, 'Изменение отклонено');
+      vi.mocked(commitPlanChange).mockRejectedValue(error);
+      const onCommitted = vi.fn();
+      const refresh = vi.fn();
+      const { result } = renderHook(
+        () =>
+          usePlanChangeCommit({
+            projectId: 'a',
+            stateVersion: 1,
+            preview,
+            onCommitted,
+            refresh,
+          }),
+        { wrapper },
+      );
+      act(() => result.current.mutate());
+      await waitFor(() => expect(result.current.phase).toBe('failed'));
+      expect(result.current.error).toBe(error);
+      expect(result.current.writeOutcome).toBe('idle');
+      expect(result.current.needsRefresh).toBe(false);
+      expect(commitPlanChange).toHaveBeenCalledOnce();
+      expect(readPlanChangeReceipt).not.toHaveBeenCalled();
+      expect(readCommittedProject).not.toHaveBeenCalled();
+      expect(onCommitted).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not trust a receipt for another command or source revision', async () => {
+    vi.mocked(commitPlanChange).mockRejectedValue(
+      new TypeError('connection lost'),
+    );
+    vi.mocked(readPlanChangeReceipt).mockResolvedValue({
+      status: 'applied',
+      receipt: {
+        project_id: 'a',
+        change_set_id: preview.id,
+        digest: 'different',
+        base_plan_version: 1,
+        base_state_version: 1,
+        state_version: 3,
+        plan_version: 2,
+        status: 'applied',
+        added_ids: [],
+        updated_ids: [],
+        deleted_ids: [],
+      },
+    });
+    const { result } = renderHook(
+      () =>
+        usePlanChangeCommit({
+          projectId: 'a',
+          stateVersion: 1,
+          preview,
+          onCommitted: vi.fn(),
+          refresh: async () => undefined,
+        }),
+      { wrapper },
+    );
+    act(() => result.current.mutate());
+    await waitFor(() => expect(result.current.phase).toBe('unknown'));
+    expect(result.current.committedPreviewId).toBeUndefined();
+    expect(readCommittedProject).not.toHaveBeenCalled();
+  });
   it('does not roll a newer cached project back to a late commit receipt', async () => {
     let finish!: (result: PlanMutationResult) => void;
     vi.mocked(commitPlanChange).mockImplementation(

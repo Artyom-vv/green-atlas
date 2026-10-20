@@ -1,1 +1,1 @@
-"""Small, manual-plan domain rules independent of the DXF adapters."""
+"""Предметные правила и сценарии плана посадок независимо от CAD-адаптеров."""

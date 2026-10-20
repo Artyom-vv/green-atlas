@@ -1,7 +1,10 @@
-"""Scene reads only load source data; the projection is independently testable."""
+"""Чтение сцены по проекту и каталогу видов; чистая сборка представления проверяется
+независимо от хранилища.
+"""
 
 from collections.abc import Callable
 
+from app.projects.contracts import Project
 from app.projects.ports import ProjectReader
 from app.scene.contracts import SceneSnapshot
 from app.scene.domain import build_scene, validate_horizon
@@ -17,6 +20,8 @@ class SceneApplication:
 
     def get_scene(self, project_id: str, horizon_year: int) -> SceneSnapshot:
         validate_horizon(horizon_year)
-        return build_scene(
-            self.repository.get(project_id), horizon_year, species=self.species
-        )
+        return self.from_project(self.repository.get(project_id), horizon_year)
+
+    def from_project(self, project: Project, horizon_year: int) -> SceneSnapshot:
+        """Использует снимок публикации без повторной загрузки большого CAD-проекта."""
+        return build_scene(project, horizon_year, species=self.species)

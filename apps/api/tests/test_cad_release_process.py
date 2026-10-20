@@ -10,8 +10,8 @@ import pytest
 
 from app.exporting.cad_contracts import CadPlant
 from app.exporting.cad_process import write_cad_release
-from app.native_query.process import WORKER_BINARY, WORKER_ID
-from app.native_query.process_contracts import (
+from app.native_query.transport.job_files import WORKER_BINARY, WORKER_ID
+from app.native_query.transport.process_contracts import (
     CadPackageFile,
     NativeInputPackage,
     NativeQueryProcessConfig,

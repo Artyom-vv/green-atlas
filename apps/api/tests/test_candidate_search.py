@@ -4,11 +4,11 @@ from unittest.mock import patch
 
 from test_placement_allocation import application
 
-from app.geometry.domain import PositionAdvisory, PositionViolation
-from app.planning.candidate_search import search_candidates
-from app.planning.change_contracts import PlanObjectAddOperation
-from app.planning.pattern_contracts import FillPatternRequest
-from app.planning.patterns import generate_fill
+from app.geometry.checking.domain import PositionAdvisory, PositionViolation
+from app.planning.search.candidate_search import search_candidates
+from app.planning.changes.contracts import PlanObjectAddOperation
+from app.planning.patterns.contracts import FillPatternRequest
+from app.planning.patterns.generators import generate_fill
 
 
 def operation(x, y=50):
@@ -109,7 +109,7 @@ def test_search_continues_after_120_rejections_and_returns_partial_result():
 
 def test_time_limit_returns_already_accepted_positions_without_claiming_capacity():
     app, project = application()
-    with patch("app.planning.candidate_search.SEARCH_BATCH_SIZE", 1):
+    with patch("app.planning.search.candidate_search.SEARCH_BATCH_SIZE", 1):
         result = search_candidates(
             project,
             [operation(40), operation(50)],
@@ -129,7 +129,7 @@ def test_provider_failure_is_not_a_rejected_candidate_or_applicable_preview():
 
     app, project = application()
     with patch(
-        "app.planning.candidate_search.prepare_positions",
+        "app.planning.search.candidate_search.prepare_positions",
         side_effect=RuntimeError("AutoCAD offline"),
     ):
         with pytest.raises(RuntimeError, match="AutoCAD offline"):
@@ -140,8 +140,8 @@ def test_spacing_rejections_do_not_query_cad_again_or_skip_later_free_candidate(
     app, project = application()
     points = [operation(40)] * 200 + [operation(60)]
     with (
-        patch("app.planning.candidate_search.SEARCH_BATCH_SIZE", 1),
-        patch("app.planning.candidate_search.prepare_positions") as prepare,
+        patch("app.planning.search.candidate_search.SEARCH_BATCH_SIZE", 1),
+        patch("app.planning.search.candidate_search.prepare_positions") as prepare,
     ):
         result = search_candidates(project, points, app.manual.evaluation, 2, {}, 6)
     assert result.stop_reason == "target_reached"
@@ -154,7 +154,7 @@ def test_spacing_rejections_do_not_query_cad_again_or_skip_later_free_candidate(
 
 def test_first_cad_batch_is_proportional_to_missing_plants():
     app, project = application()
-    with patch("app.planning.candidate_search.prepare_positions") as prepare:
+    with patch("app.planning.search.candidate_search.prepare_positions") as prepare:
         search_candidates(project, [operation(30 + i * 10) for i in range(100)],
                           app.manual.evaluation, 10, {}, 6)
     assert len(prepare.call_args_list[0].args[2]) == 20
@@ -173,7 +173,7 @@ def test_unknown_probe_leaves_its_neighbour_available_for_the_next_batch():
 def test_disconnected_tiny_pocket_gets_a_candidate_before_random_sampling():
     from shapely.geometry import MultiPolygon, Point, box
 
-    from app.planning.patterns import _poisson_candidates
+    from app.planning.patterns.generators import _poisson_candidates
     pockets = [box(0, 0, 100, 100), box(200, 200, 200.01, 200.01)]
     candidates = _poisson_candidates(MultiPolygon(pockets), 5, 20, 47, alternatives=True)
     assert all(any(pocket.covers(Point(c.x, c.y)) for c in candidates[:2]) for pocket in pockets)

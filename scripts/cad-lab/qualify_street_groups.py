@@ -14,7 +14,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
 from app.cad_import.policy import ConversionPolicy
-from app.cad_import.process import run_converter
+from app.cad_import.legacy.process import run_converter
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES
 from prepare_audit_group import main as prepare_group
 

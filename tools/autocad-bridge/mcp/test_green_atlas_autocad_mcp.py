@@ -117,12 +117,31 @@ def test_transport_uses_packaged_plugin_version() -> None:
     root = Path(__file__).resolve().parents[1]
     with (root / "native/Info.plist").open("rb") as stream:
         assert PLUGIN_VERSION == plistlib.load(stream)["CFBundleShortVersionString"]
-    assert PLUGIN_VERSION == ET.parse(root / "PackageContents.xml").getroot().attrib["AppVersion"]
-    assert f'kPluginVersion = "{PLUGIN_VERSION}"' in (root / "native/bridge_config.h").read_text()
+    assert (
+        f'kPluginVersion = "{PLUGIN_VERSION}"'
+        in (root / "native/bridge_config.h").read_text()
+    )
+
+
+def test_distribution_uses_desktop_package_version() -> None:
+    root = Path(__file__).resolve().parents[1]
+    with (root / "desktop/Info.plist").open("rb") as stream:
+        package_version = plistlib.load(stream)["CFBundleShortVersionString"]
+    assert (
+        package_version
+        == ET.parse(root / "PackageContents.xml").getroot().attrib["AppVersion"]
+    )
+    for plist in ("desktop/Launcher-Info.plist", "installer/macos/Info.plist"):
+        with (root / plist).open("rb") as stream:
+            assert (
+                package_version == plistlib.load(stream)["CFBundleShortVersionString"]
+            )
 
 
 @pytest.mark.parametrize("reported", [PLUGIN_VERSION, "0.1.28"])
-def test_dead_process_is_not_reported_as_version_mismatch(tmp_path, monkeypatch, reported) -> None:
+def test_dead_process_is_not_reported_as_version_mismatch(
+    tmp_path, monkeypatch, reported
+) -> None:
     (tmp_path / "status.json").write_text(
         json.dumps({"ready": True, "plugin_version": reported, "pid": 42})
     )
@@ -139,7 +158,9 @@ def test_dead_process_is_not_reported_as_version_mismatch(tmp_path, monkeypatch,
     assert "version mismatch" not in result["reason"]
 
 
-def test_inactive_plugin_is_not_reported_as_version_mismatch(tmp_path, monkeypatch) -> None:
+def test_inactive_plugin_is_not_reported_as_version_mismatch(
+    tmp_path, monkeypatch
+) -> None:
     (tmp_path / "status.json").write_text(
         json.dumps({"ready": False, "plugin_version": PLUGIN_VERSION, "pid": 42})
     )

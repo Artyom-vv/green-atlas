@@ -1,4 +1,5 @@
 import type { MapTool, SelectionMode } from '@/entities/editor';
+import type { PlanComparisonMode } from '@/entities/editor/model/planComparison';
 import { type LiveBrushSettings } from '@/entities/planting';
 import type {
   RowAxis,
@@ -24,10 +25,11 @@ import type {
   PlanObject,
   PatternPreview,
   PlantingZoneAssignment,
-  ZoneChangePreview,
+  ValidationIssue,
 } from '@green/api-client';
 
 export interface MapViewportOptions {
+  planComparison?: PlanComparisonMode;
   rowResultReady?: boolean;
   rowAxis?: RowAxis;
   rowSettings?: RowSketchSettings;
@@ -39,10 +41,15 @@ export interface MapViewportOptions {
   renderMode?: CadAppearanceMode;
   cadSource?: MapCadSource;
   onCadRenderState?: (state: CadRenderState) => void;
+  onGeometryRenderState?: (
+    geometry: Record<string, unknown> | undefined,
+    ready: boolean,
+  ) => void;
   geometry?: Record<string, unknown>;
   geometryRevision?: number;
   initialExtent?: MapExtent;
   objects: PlanObject[];
+  planIssues?: readonly ValidationIssue[];
   growthHorizon?: number;
   draftPlantingZones?: PlantingZoneAssignment[];
   hiddenLayerNames?: string[];
@@ -55,7 +62,6 @@ export interface MapViewportOptions {
   searchDomains?: PatternPreview['search_domains'];
   onProbeCoordinate?: (coordinate: [number, number]) => void;
   changePreview?: ChangeSetPreview;
-  zoneChangePreview?: ZoneChangePreview;
   changeDraft?: PlanChangeSetDraft;
   liveMoveValidation?: MoveLiveValidation;
   tool: MapTool;

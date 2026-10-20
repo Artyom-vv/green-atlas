@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Button,
+  ActionRow,
   DataTable,
   Dialog,
   Disclosure,
@@ -32,9 +33,9 @@ export function SourceReadIssues({
   });
   return (
     <>
-      <Button variant="secondary" onClick={() => setOpen(true)}>
+      <ActionRow onClick={() => setOpen(true)}>
         Объекты без расчётной геометрии
-      </Button>
+      </ActionRow>
       {open && (
         <Dialog
           open
@@ -57,9 +58,16 @@ export function SourceReadIssues({
                 Это пропуски чтения, а не неподтверждённые слои
               </p>
               {!query.data.items.length ? (
-                <p>Непрочитанных объектов в отчёте нет</p>
+                <p className="m-0 text-sm leading-5 text-neutral-600">
+                  Непрочитанных объектов в отчёте нет
+                </p>
               ) : (
-                <DataTable>
+                <DataTable layout="fixed" className="[&_td]:align-top">
+                  <colgroup>
+                    <col className="w-1/4" />
+                    <col className="w-1/4" />
+                    <col className="w-1/2" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Объект</th>
@@ -74,15 +82,15 @@ export function SourceReadIssues({
                           <div>
                             {TYPE_NAMES[item.entity_type] ?? item.entity_type}
                           </div>
-                          <code className="text-xs text-neutral-500">
+                          <code className="font-mono text-xs leading-4 wrap-anywhere text-neutral-500">
                             {item.route}
                           </code>
                         </td>
-                        <td className="text-xs wrap-anywhere">{item.layer}</td>
+                        <td className="wrap-anywhere">{item.layer}</td>
                         <td>
-                          <div>{item.reason}</div>
+                          <div className="wrap-anywhere">{item.reason}</div>
                           <Disclosure variant="plain" title="Ответ AutoCAD">
-                            <code className="text-xs wrap-anywhere">
+                            <code className="font-mono text-xs leading-4 wrap-anywhere">
                               {item.detail}
                             </code>
                           </Disclosure>

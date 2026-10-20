@@ -1,4 +1,6 @@
-"""Compatibility exports; wire models belong to their domain modules."""
+"""Совместимые реэкспорты API-моделей; определения и ответственность остаются в
+предметных модулях.
+"""
 
 from app.dxf_import.contracts import (
     DxfImportResult,
@@ -11,7 +13,7 @@ from app.dxf_import.evidence_contracts import (
     DataPassport,
     DataPassportEntry,
 )
-from app.dxf_import.layer_contracts import (
+from app.dxf_import.layers.contracts import (
     Layer,
     LayerKind,
     LayerMapping,
@@ -43,7 +45,7 @@ from app.operations.contracts import (
     OperationStatus,
     ProjectOperation,
 )
-from app.planning.change_contracts import (
+from app.planning.changes.contracts import (
     ChangeSetCandidateResult,
     ChangeSetPreview,
     PlanChangeOperation,
@@ -62,8 +64,9 @@ from app.planning.contracts import (
     PlanObjectCreate,
     PlanObjectsDeleteRequest,
     PlanObjectUpdate,
+    PlanPlanningHorizonUpdate,
 )
-from app.planning.pattern_contracts import (
+from app.planning.patterns.contracts import (
     BrushPreview,
     BrushPreviewRequest,
     BrushStroke,
@@ -77,7 +80,7 @@ from app.planning.pattern_contracts import (
     PlacementMaskRequest,
     RowPatternRequest,
 )
-from app.planning.recommendation_contracts import (
+from app.planning.recommendation.contracts import (
     EffectEstimate,
     EvidenceAssessment,
     RecommendationExplanation,
@@ -168,6 +171,7 @@ __all__ = [
     "PlanObjectCreate",
     "PlacementCheckRequest",
     "PlanObjectUpdate",
+    "PlanPlanningHorizonUpdate",
     "PlanObjectAddOperation",
     "PlanObjectUpdateOperation",
     "PlanObjectDeleteOperation",

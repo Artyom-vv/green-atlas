@@ -4,9 +4,6 @@ import { Button, FormActions } from '@green/ui';
 export interface RecommendationFooterProps {
   guided: boolean;
   step: number;
-  textEntry: boolean;
-  buildingScreen: boolean;
-  interpreting: boolean;
   loading?: boolean;
   calculating: boolean;
   canContinue: boolean;
@@ -17,9 +14,6 @@ export interface RecommendationFooterProps {
 export const RecommendationFooter: FC<RecommendationFooterProps> = ({
   guided,
   step,
-  textEntry,
-  buildingScreen,
-  interpreting,
   loading,
   calculating,
   canContinue,
@@ -40,29 +34,19 @@ export const RecommendationFooter: FC<RecommendationFooterProps> = ({
     ) : (
       <>
         <Button variant="secondary" disabled={loading} onClick={onBack}>
-          {guided && step
-            ? interpreting
-              ? 'Отменить разбор'
-              : 'Назад'
-            : 'Отмена'}
+          {guided && step ? 'Назад' : 'Отмена'}
         </Button>
         <Button
           variant="primary"
-          loading={loading || interpreting}
-          disabled={!canContinue || interpreting}
+          loading={loading}
+          disabled={!canContinue}
           onClick={onContinue}
         >
           {guided && !step
             ? 'Выбрать задачу'
-            : textEntry
-              ? interpreting
-                ? 'Разбираем задачу'
-                : 'Разобрать задачу'
-              : buildingScreen
-                ? 'Показать на карте'
-                : guided
-                  ? 'Проверить места'
-                  : 'Показать'}
+            : guided
+              ? 'Проверить места'
+              : 'Показать'}
         </Button>
       </>
     )}

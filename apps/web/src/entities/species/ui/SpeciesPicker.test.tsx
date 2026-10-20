@@ -133,9 +133,15 @@ describe('SpeciesPicker', () => {
       'true',
     );
     // Missing value must not equal a reference-only row's missing profile ID.
-    expect(screen.getByRole('heading', { name: sorbus.common_name })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Выбрать растение' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Сведения: Ель сербская' })).not.toHaveAttribute('aria-current');
+    expect(
+      screen.getByRole('heading', { name: sorbus.common_name }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Выбрать растение' }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Сведения: Ель сербская' }),
+    ).not.toHaveAttribute('aria-current');
     fireEvent.click(
       screen.getByRole('button', { name: 'Сведения: Ель сербская' }),
     );
@@ -164,9 +170,7 @@ describe('SpeciesPicker', () => {
     expect(list).not.toContainElement(confirm);
     fireEvent.change(search, { target: { value: 'нет такой породы' } });
     expect(confirm).toBeDisabled();
-    expect(
-      screen.getByText('Растения не найдены'),
-    ).toBeVisible();
+    expect(screen.getByText('Растения не найдены')).toBeVisible();
     fireEvent.change(search, { target: { value: 'SORBUS' } });
     fireEvent.click(
       screen.getByRole('button', { name: 'Сведения: Рябина обыкновенная' }),

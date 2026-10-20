@@ -178,6 +178,22 @@ def test_snapshot_keeps_geometry_provenance_and_partial_coverage(
     ) == (6, 3, 2, 1)
     assert (summary["loops"], summary["region_sampled_points"]) == (2, 10)
     assert not Path(result["path"] + ".tmp").exists()
+    facts = result["transfer_facts"]
+    assert facts["capture_mode"] == snapshot["capture_mode"]
+    assert facts["plugin_version"] == snapshot["plugin_version"]
+    assert facts["source"] == {
+        key: snapshot["source"][key] for key in ("path", "sha256")
+    }
+    assert facts["summary"] == {
+        key: summary[key]
+        for key in (
+            "unresolved_instances", "cyclic_block_references", "unexpanded_minsert_blocks"
+        )
+    }
+    assert facts["xref_dependencies"] == [
+        {"status": dependency["status"]} for dependency in snapshot["xref_dependencies"]
+    ]
+    assert not {"coverage", "regions", "points", "paths"}.intersection(facts)
 
 
 @pytest.mark.parametrize("cancel_at", range(1, 8))

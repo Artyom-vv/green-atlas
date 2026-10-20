@@ -1,6 +1,56 @@
 import { createEditorStore, applySelection } from '@/entities/editor';
+import type { PlanViewState } from './planViewState';
 import { describe, expect, it } from 'vitest';
 describe('editor session', () => {
+  it('retains only the forecast when leaving the workspace and isolates it from another project', () => {
+    const store = createEditorStore('a');
+    store.getState().setGrowthHorizon(23);
+    store.getState().setTool('brush');
+    store.getState().setPanel('zones');
+    store.getState().setVisibility({ layer: false });
+    store.getState().select(['plant']);
+    store.getState().showScene();
+    store.getState().resetWorkspace();
+    expect(store.getState()).toMatchObject({
+      growthHorizon: 23,
+      tool: 'select',
+      panel: null,
+      selectedIds: [],
+      visibility: {},
+      scenePhase: 'unmounted',
+    });
+    expect(createEditorStore('b').getState().growthHorizon).toBe(0);
+    expect(createEditorStore('a').getState().growthHorizon).toBe(0);
+  });
+  it('keeps a warm scene and its activation camera in the mounted project only', () => {
+    const first = createEditorStore('a');
+    const second = createEditorStore('b');
+    const view: PlanViewState = {
+      center: [80, 20],
+      resolution: 0.5,
+      rotation: 0.2,
+      viewport: [800, 600],
+    };
+    first.getState().hideScene();
+    expect(first.getState().scenePhase).toBe('unmounted');
+    first.getState().showScene(view);
+    expect(first.getState()).toMatchObject({
+      scenePhase: 'visible',
+      sceneInitialViewState: view,
+    });
+    first.getState().hideScene();
+    first.getState().reset();
+    expect(first.getState()).toMatchObject({
+      scenePhase: 'hidden',
+      sceneInitialViewState: view,
+    });
+    first.getState().showScene();
+    expect(first.getState().sceneInitialViewState).toBe(view);
+    expect(second.getState()).toMatchObject({
+      scenePhase: 'unmounted',
+      sceneInitialViewState: undefined,
+    });
+  });
   it('opens the source layers tab without closing the inspector or changing another project', () => {
     const store = createEditorStore('a');
     const other = createEditorStore('b');
@@ -47,7 +97,7 @@ describe('editor session', () => {
     const second = createEditorStore('b');
     expect(first.getState().visibility).not.toBe(second.getState().visibility);
     first.getState().setPanel('zones');
-    first.getState().setIdeRightTab('assistant');
+    first.getState().setIdeRightTab('tool');
     first.getState().setLeftOpen(false);
     first.getState().setRightOpen(false);
     first.getState().setResultsOpen(true);
@@ -105,7 +155,7 @@ describe('editor session', () => {
     const store = createEditorStore('a');
     const actions = store.getState();
     actions.setPanel('zones');
-    actions.setIdeRightTab('assistant');
+    actions.setIdeRightTab('tool');
     actions.setLeftOpen(false);
     actions.setRightOpen(false);
     actions.setResultsOpen(true);

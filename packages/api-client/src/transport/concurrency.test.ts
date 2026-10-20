@@ -28,6 +28,13 @@ describe('project snapshot ownership', () => {
     '/plan/brush/preview',
     '/building-screen/preview',
     '/species/shortlist',
+    '/scene-renders',
+    '/scene-render-preparations',
+    '/location/suggestions',
+    '/location/resolve',
+    '/location/alignment',
+    '/location/apply',
+    '/scene-renders/job/cancel',
   ])('keeps %s read-only after a committed edit', (suffix) => {
     const versions = seededVersions();
     versions.observe(write, headers('8'), { state_version: 8, plan: {} });
@@ -40,15 +47,20 @@ describe('project snapshot ownership', () => {
     expect(versions.headers(write).get('If-Match')).toBe('"8"');
   });
 
-  it.each(['/plan/history', '/map-features', '/plan/scene', '/operations/job'])(
-    'does not adopt the version of a delayed read projection %s',
-    (suffix) => {
-      const versions = seededVersions();
-      versions.observe(write, headers('8'), {});
-      versions.observe(requestScope(projectPath + suffix), headers('6'), {});
-      expect(versions.headers(write).get('If-Match')).toBe('"8"');
-    },
-  );
+  it.each([
+    '/plan/history',
+    '/map-features',
+    '/plan/scene',
+    '/operations/job',
+    '/scene-renders/job',
+    '/scene-render-preparations/job',
+    '/location',
+  ])('does not adopt the version of a delayed read projection %s', (suffix) => {
+    const versions = seededVersions();
+    versions.observe(write, headers('8'), {});
+    versions.observe(requestScope(projectPath + suffix), headers('6'), {});
+    expect(versions.headers(write).get('If-Match')).toBe('"8"');
+  });
 
   it.each([undefined, '', '0', '-1', 'NaN', '1.5'])(
     'preserves the known version when a projection header is %s',
@@ -58,17 +70,6 @@ describe('project snapshot ownership', () => {
       expect(versions.headers(write).get('If-Match')).toBe('"7"');
     },
   );
-
-  it('learns a conversation confirmation without attaching If-Match', () => {
-    const versions = seededVersions();
-    const confirm = requestScope(
-      `${projectPath}/conversations/chat/proposals/proposal/confirm`,
-      'POST',
-    );
-    expect(versions.headers(confirm).get('If-Match')).toBeNull();
-    versions.observe(confirm, headers('8'), { state_version: 8, plan: {} });
-    expect(versions.headers(write).get('If-Match')).toBe('"8"');
-  });
 
   it('preserves an explicit snapshot and the caller headers', () => {
     const versions = seededVersions();

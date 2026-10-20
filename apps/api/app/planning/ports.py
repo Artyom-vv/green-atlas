@@ -1,15 +1,19 @@
+"""Порты генерации кандидатов и общей проверки и применения изменений по одному снимку
+проекта.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.planning.change_contracts import (
+from app.planning.changes.contracts import (
     ChangeSetPreview,
     PlanChangeSetApplyRequest,
     PlanChangeSetDraft,
     PlanMutationResult,
 )
-from app.planning.pattern_contracts import BrushPreviewRequest, PatternPreviewRequest
+from app.planning.patterns.contracts import BrushPreviewRequest, PatternPreviewRequest
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 
@@ -43,5 +47,9 @@ class ChangeSetPreviewPort(Protocol):
 
 class ManualChangeSetPort(ChangeSetPreviewPort, Protocol):
     def apply_change_set(
-        self, project_id: str, payload: PlanChangeSetApplyRequest
+        self,
+        project_id: str,
+        payload: PlanChangeSetApplyRequest,
+        *,
+        snapshot: Project | None = None,
     ) -> PlanMutationResult: ...

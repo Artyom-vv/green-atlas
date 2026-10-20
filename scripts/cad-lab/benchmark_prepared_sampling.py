@@ -14,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps/api"))
 from shapely import from_wkb
 from shapely.geometry import MultiPolygon, Point, Polygon, box, shape
-from app.planning import patterns
+from app.planning.patterns import generators as patterns
 
 
 def main(output: Path):

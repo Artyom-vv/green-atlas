@@ -1,17 +1,26 @@
+"""Ожидаемая ревизия проекта из If-Match и проверка конфликтов в контексте текущего
+изменения.
+"""
+
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
 
-
-_expected_project_version: ContextVar[int | None] = ContextVar("expected_project_version", default=None)
+_expected_project_version: ContextVar[int | None] = ContextVar(
+    "expected_project_version", default=None
+)
 
 
 class ProjectVersionConflict(RuntimeError):
-    def __init__(self, project_id: str, expected_version: int, current_version: int) -> None:
+    def __init__(
+        self, project_id: str, expected_version: int, current_version: int
+    ) -> None:
         self.project_id = project_id
         self.expected_version = expected_version
         self.current_version = current_version
-        super().__init__("Проект изменён в другой вкладке. Обновите данные перед повтором действия.")
+        super().__init__(
+            "Проект изменён в другой вкладке. Обновите данные перед повтором действия."
+        )
 
 
 def parse_if_match(value: str | None) -> int | None:
@@ -26,7 +35,9 @@ def parse_if_match(value: str | None) -> int | None:
     try:
         version = int(normalized)
     except ValueError as error:
-        raise ValueError('If-Match должен содержать версию проекта, например "12"') from error
+        raise ValueError(
+            'If-Match должен содержать версию проекта, например "12"'
+        ) from error
     if version < 1:
         raise ValueError("Версия проекта должна быть положительным числом")
     return version

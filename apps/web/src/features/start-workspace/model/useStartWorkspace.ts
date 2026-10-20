@@ -1,7 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query';
-import type { PlantingZoneAssignment, Project } from '@green/api-client';
+import {
+  isUnsentLocalRequest,
+  type PlantingZoneAssignment,
+  type Project,
+} from '@green/api-client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { startWorkspaceApi } from '../api/startWorkspace';
+import {
+  acknowledgeProjectWrite,
+  validateAcknowledgedProjectRead,
+} from '@/entities/project/model/acknowledgedRead';
 
 type StartPhase =
   'idle' | 'saving' | 'starting' | 'refreshing' | 'recovery' | 'ready';
@@ -15,6 +23,7 @@ interface StartAttempt {
   notified: boolean;
   writing: boolean;
   unresolved: boolean;
+  sent: boolean;
   onCommitted: (project: Project) => void;
   refresh: () => Promise<void>;
 }
@@ -93,6 +102,10 @@ export function useStartWorkspace({
     );
   const finish = async (attempt: StartAttempt, result: Project) => {
     attempt.completed = result;
+    acknowledgeProjectWrite(client, attempt.projectId, {
+      stateVersion: result.state_version,
+      planVersion: result.plan?.version,
+    });
     const effective = cache(result) ?? result;
     publish(attempt, 'refreshing');
     if (current(attempt) && !attempt.notified) {
@@ -106,7 +119,11 @@ export function useStartWorkspace({
   const read = async (attempt: StartAttempt) => {
     publish(attempt, 'refreshing');
     try {
-      const observed = await startWorkspaceApi.readProject(attempt.projectId);
+      const observed = validateAcknowledgedProjectRead(
+        client,
+        attempt.projectId,
+        await startWorkspaceApi.readProject(attempt.projectId),
+      );
       const actual = cache(observed) ?? observed;
       if (actual.plan) {
         await finish(attempt, actual);
@@ -167,6 +184,7 @@ export function useStartWorkspace({
       notified: false,
       writing: true,
       unresolved: false,
+      sent: true,
       onCommitted,
       refresh,
     };
@@ -204,6 +222,8 @@ export function useStartWorkspace({
         });
         await finish(attempt, result);
       } catch (error) {
+        if (!attempt.completed && isUnsentLocalRequest(error))
+          attempt.sent = false;
         attempt.unresolved = true;
         publish(attempt, 'recovery', error);
         await read(attempt);
@@ -218,6 +238,17 @@ export function useStartWorkspace({
     shown?.phase === 'starting' ||
     shown?.phase === 'refreshing';
   return {
+    writeOutcome:
+      shown?.phase === 'saving' || shown?.phase === 'starting'
+        ? ('writing' as const)
+        : shown?.phase === 'refreshing' || shown?.phase === 'recovery'
+          ? attempts.current.get(projectId)?.completed
+            ? ('confirmed' as const)
+            : attempts.current.get(projectId)?.sent
+              ? ('unknown' as const)
+              : ('idle' as const)
+          : ('idle' as const),
+    readRecovery: shown?.phase === 'refreshing' || shown?.phase === 'recovery',
     mutate,
     isPending: pending,
     blocked: pending || shown?.phase === 'recovery',

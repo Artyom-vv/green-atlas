@@ -45,14 +45,14 @@ export const ReleaseFiles: FC<ReleaseFilesProps> = ({
       {release.plan_version !== plan.version && (
         <InlineMessage tone="warning">
           Этот пакет содержит версию {release.plan_version}. Текущий план —
-          версия {plan.version}. Для актуальных файлов соберите новый пакет.
+          версия {plan.version}. Для актуальных файлов соберите новый пакет
         </InlineMessage>
       )}
       {geometryVersion !== undefined &&
         release.geometry_version !== geometryVersion && (
           <InlineMessage tone="warning">
             После создания пакета изменились участки или исходная геометрия. Для
-            актуальных файлов соберите новый пакет.
+            актуальных файлов соберите новый пакет
           </InlineMessage>
         )}
       <ReleaseDownloads

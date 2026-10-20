@@ -21,7 +21,8 @@ void collectRegionInstances(const AcDbObjectId& recordId,
                             std::vector<NativePoint>& points,
                             std::vector<EntityCoverage>& coverage,
                             ExternalDatabaseCache& externalDatabases,
-                            RegionTraversalDiagnostics& diagnostics);
+                            RegionTraversalDiagnostics& diagnostics,
+                            bool annotationContext = false);
 
 void collectBlockInstance(AcDbBlockReference* blockReference,
                             const AcGeMatrix3d& accumulatedTransform,
@@ -36,7 +37,8 @@ void collectBlockInstance(AcDbBlockReference* blockReference,
                             std::vector<NativePoint>& points,
                             std::vector<EntityCoverage>& coverage,
                             ExternalDatabaseCache& externalDatabases,
-                            RegionTraversalDiagnostics& diagnostics);
+                            RegionTraversalDiagnostics& diagnostics,
+                            bool annotationContext = false);
 
 void collectEntityGeometry(AcDbEntity* entity,
     const AcGeMatrix3d& accumulatedTransform,

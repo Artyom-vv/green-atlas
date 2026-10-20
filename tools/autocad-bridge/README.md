@@ -1,5 +1,30 @@
 # Green Atlas AutoCAD bridge
 
+## Current distribution workflow
+
+The complete Windows x64 candidate is built with `build-windows-product.ps1`.
+The complete Mac candidate is built with `scripts/desktop/build_macos_product.py`:
+
+```sh
+OBJECTARX_SDK_ROOT=/absolute/mac-sdk \
+  /absolute/qualified-python scripts/desktop/build_macos_product.py \
+  --output output/new-mac-build \
+  --node-store /absolute/node_modules/.pnpm
+```
+
+The Mac build requires a clean committed checkout and the pinned API/build
+environment. It builds the native plugins, embedded API, compiled Web, desktop
+and per-user installer, with source seals, dependency notices, frozen-code and
+resource verification. This workflow deliberately uses ad-hoc signatures;
+Developer ID and notarization remain separate distribution steps. The arm64
+deployment target is macOS 14, whose execution still needs a matching test Mac.
+Historical platform/Windows status in the dated sections below is superseded
+by the current build recipes and their acceptance receipts.
+
+Installation acceptance uses an explicitly created private qualification root;
+it never chooses the current user's installation or workspace by default. See
+[the Mac installer module](../../docs/obsidian/03%20Модули/Установщик%20macOS%20и%20изолированная%20приёмка.md).
+
 ## Current direction — 23 September
 
 Read [the authoritative development contract](../../docs/architecture/autocad-contract.md)

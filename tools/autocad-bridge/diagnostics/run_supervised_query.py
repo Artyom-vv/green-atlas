@@ -11,8 +11,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.native_query.contracts import NativeObjectQuery
-from app.native_query.process import run_native_query
-from app.native_query.process_contracts import (
+from app.native_query.transport.process import run_native_query
+from app.native_query.transport.process_contracts import (
     CadPackageFile, NativeInputPackage, NativeQueryProcessConfig,
 )
 from run_direct_queries import CORE, digest

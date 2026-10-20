@@ -26,6 +26,7 @@ export const WorkspaceSelectionInspector: FC<
   setDeleteSelectionOpen,
   selectedObjects,
   issues,
+  editor,
 }) => {
   const mapMode: ObjectInspectorProps['mapMode'] = sceneOpen ? '3d' : '2d';
   const beginTransform = (tool: 'move' | 'copy') => {
@@ -33,6 +34,7 @@ export const WorkspaceSelectionInspector: FC<
     activateTool(tool);
   };
   const common = {
+    onClearSelection: () => editor.clearSelection(),
     mapMode,
     growthHorizon,
     onGrowthHorizon: setGrowthHorizon,

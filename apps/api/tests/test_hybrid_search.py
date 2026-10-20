@@ -7,10 +7,10 @@ from shapely.geometry import Point, Polygon, mapping, shape
 from test_native_live_provider import rectangle
 from test_native_live_provider import setup as native_setup
 
-from app.dxf_import.layer_contracts import LayerKind
-from app.native_query.hybrid_domain import CONFIG
-from app.native_query.hybrid_geometry import HybridGeometry
-from app.native_query.live_inventory import InventoryObject, QueryObject
+from app.dxf_import.layers.contracts import LayerKind
+from app.native_query.live.live_inventory import InventoryObject, QueryObject
+from app.native_query.search.hybrid_domain import CONFIG
+from app.native_query.search.hybrid_geometry import HybridGeometry
 
 setup = native_setup
 
@@ -30,6 +30,57 @@ def populate(project):
         feature("BB", "Здания", rectangle(0, -10, 10, 10)),
         feature("CC", "Дорога", rectangle(20, -10, 25, 10)),
     ]
+
+
+@pytest.mark.parametrize("linear", [False, True])
+@pytest.mark.parametrize(
+    "mode", ["valid", "missing", "accuracy", "invalid", "area_mismatch", "source"]
+)
+def test_uncached_projection_preserves_admission_and_default_search_cache(
+    setup, linear, mode
+):
+    engine, _, project = setup
+    populate(project)
+    features = project.geometry.feature_collection["features"]
+    if mode == "missing":
+        features.pop(1)
+    elif mode == "accuracy":
+        features[1]["properties"].pop("source_sampling_tolerance_m")
+    elif mode == "invalid":
+        features[1]["geometry"] = {
+            "type": "Polygon",
+            "coordinates": [[(0, 0), (10, 10), (0, 10), (10, 0), (0, 0)]],
+        }
+    elif mode == "area_mismatch":
+        features[1]["properties"]["source_native_area_units2"] = 900
+    item = QueryObject(
+        routes=("BB",), layer="Здания", bounds=(0, -10, 10, 10), curve=True,
+        error="native error" if mode == "source" else "",
+    )
+    before = project.model_dump_json()
+    cached = HybridGeometry(engine, project, require_accuracy=True)
+    uncached = HybridGeometry(
+        engine, project, require_accuracy=True, cache_projections=False
+    )
+    first = cached.get(item, linear=linear)
+    assert cached.get(item, linear=linear) is first
+    assert len(cached.cache) == 1
+    for _ in range(2):
+        actual = uncached.get(item, linear=linear)
+        assert uncached.cache == {}
+        assert actual is not first
+        assert (actual.reason, actual.detail, actual.tolerance_m) == (
+            first.reason, first.detail, first.tolerance_m
+        )
+        assert tuple(g.wkb for g in actual.geometries) == tuple(
+            g.wkb for g in first.geometries
+        )
+    assert first.reason == {
+        "valid": "", "missing": "projection_missing",
+        "accuracy": "projection_accuracy_missing", "invalid": "projection_invalid",
+        "area_mismatch": "projection_area_mismatch", "source": "source_object",
+    }[mode]
+    assert project.model_dump_json() == before
 
 
 def domain(engine, project, work=None):
@@ -105,7 +156,7 @@ def test_source_area_is_not_inferred_from_unknown_layer_and_network_facts_do_not
 def test_resume_uses_object_progress_and_never_exposes_unprocessed_area(setup):
     engine, _, project = setup
     populate(project)
-    with patch("app.native_query.hybrid_domain.CONFIG", CONFIG.model_copy(update={"batch_objects": 1, "yield_seconds": 1e-12})):
+    with patch("app.native_query.search.hybrid_domain.CONFIG", CONFIG.model_copy(update={"batch_objects": 1, "yield_seconds": 1e-12})):
         one, two, three = [domain(engine, project) for _ in range(3)]
     assert [v["ga_search_domain"]["processed_objects"] for v in (one, two, three)] == [1, 2, 3]
     assert shape(one).is_empty and shape(two).is_empty
@@ -125,6 +176,38 @@ def test_masks_reused_between_zones_but_invalidated_by_rules_and_roles(setup):
     assert changed["ga_search_domain"]["cache_hits"] == 0
 
 
+@pytest.mark.parametrize("budget", ["coordinates", "bytes"])
+def test_mask_weight_budget_preserves_holes_and_oversized_result(setup, monkeypatch, budget):
+    from app.native_query.search import hybrid_domain
+    from shapely import get_num_coordinates
+
+    engine, _, project = setup
+    populate(project)
+    project.geometry.feature_collection["features"][1]["geometry"] = mapping(
+        Polygon([(0, -10), (10, -10), (10, 10), (0, 10)],
+                holes=[[(1, -8), (1, 8), (9, 8), (9, -8)]])
+    )
+    engine.assert_current(project)
+    search = hybrid_domain.HybridSearch(engine, project)
+    item = next(item for item in engine._objects if item.routes == ("BB",))
+    baseline, _ = search.mask(engine, item, "shrub", 0.5, 0, 0)
+    assert len(baseline.geometry.interiors) == 1
+    limit_name = "MAX_CACHED_MASK_COORDINATES" if budget == "coordinates" else "MAX_CACHED_MASK_WKB_BYTES"
+    monkeypatch.setattr(hybrid_domain, limit_name, 1)
+    bounded = hybrid_domain.HybridSearch(engine, project)
+    for _ in range(3):
+        result, cache_hit = bounded.mask(engine, item, "shrub", 0.5, 0, 0)
+        assert result.geometry.wkb == baseline.geometry.wkb
+        assert not cache_hit and not bounded.masks
+    monkeypatch.setattr(hybrid_domain, limit_name, int(get_num_coordinates(baseline.geometry)) if budget == "coordinates" else len(baseline.geometry.wkb))
+    bounded.mask(engine, item, "shrub", 0.5, 0, 0)
+    next_item = next(item for item in engine._objects if item.routes == ("CC",))
+    bounded.mask(engine, next_item, "shrub", 0.5, 0, 0)
+    assert bounded._mask_coordinates <= hybrid_domain.MAX_CACHED_MASK_COORDINATES
+    assert bounded._mask_bytes <= hybrid_domain.MAX_CACHED_MASK_WKB_BYTES
+    assert len(bounded.masks) <= 1
+
+
 def test_readable_line_is_retained_and_missing_unlocated_object_is_reported(setup):
     engine, _, project = setup
     populate(project)
@@ -140,8 +223,8 @@ def test_readable_line_is_retained_and_missing_unlocated_object_is_reported(setu
 
 
 def test_completed_disk_cache_still_checks_session(setup, tmp_path):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
-    from app.native_query.live_provider import LiveNativeGeometryEngine
+    from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     engine, client, project = setup
     populate(project)
@@ -156,19 +239,19 @@ def test_completed_disk_cache_still_checks_session(setup, tmp_path):
 
 
 def test_new_search_revision_does_not_reuse_old_completed_masks(setup, tmp_path):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
-    from app.native_query.live_provider import LiveNativeGeometryEngine
+    from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     engine, client, project = setup
     populate(project)
     engine._domain_checkpoints = DomainCheckpointStore(tmp_path)
-    with patch("app.native_query.hybrid_domain.REVISION", "previous-mask-rules"):
+    with patch("app.native_query.search.hybrid_domain.REVISION", "previous-mask-rules"):
         domain(engine, project)
     restarted = LiveNativeGeometryEngine(engine.session, client, inventory=engine.inventory)
     restarted._domain_checkpoints = engine._domain_checkpoints
     # A saved result would bypass mask construction. Reusing CAD geometry is OK;
     # reusing masks built with a different interpretation of layers is not.
-    from app.native_query.hybrid_domain import HybridSearch
+    from app.native_query.search.hybrid_domain import HybridSearch
     with patch.object(HybridSearch, "mask", autospec=True, side_effect=HybridSearch.mask) as mask:
         result = domain(restarted, project)
     assert mask.call_count == 3
@@ -252,14 +335,14 @@ def test_stale_display_face_is_not_reused(setup):
 
 @pytest.mark.parametrize("on_disk", [True, False])
 def test_interleaved_zones_do_not_lose_progress_when_lru_is_full(setup, tmp_path, on_disk):
-    from app.native_query.domain_checkpoint import DomainCheckpointStore
+    from app.native_query.search.domain_checkpoint import DomainCheckpointStore
 
     engine, _, project = setup
     populate(project)
     engine._domain_checkpoints = DomainCheckpointStore(tmp_path) if on_disk else None
     zones = [rectangle(-12, -4, 40, 4), rectangle(-11, -3, 39, 3)]
     config = CONFIG.model_copy(update={"batch_objects": 1, "yield_seconds": 1e-12, "cached_domains": 1})
-    with patch("app.native_query.hybrid_domain.CONFIG", config):
+    with patch("app.native_query.search.hybrid_domain.CONFIG", config):
         for processed in (1, 2, 3):
             for work in zones:
                 result = domain(engine, project, work)

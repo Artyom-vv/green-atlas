@@ -12,56 +12,92 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "apps" / "api"))
-
-from app.agent_memory import TaskPatch, TaskState
-from app.agent_planning import prepare_placement
-from app.composition import create_runtime
-from app.planning.change_contracts import PlanChangeSetApplyRequest
 
 
 def main() -> int:
+    sys.path.insert(0, str(ROOT / "apps" / "api"))
+    from app.automatic_placement import (
+        MAX_AUTOMATIC_PLACEMENT_COUNT,
+        AutomaticPlacementRequest,
+        preview_automatic_placement,
+    )
+    from app.composition import create_runtime
+    from app.planning.changes.contracts import PlanChangeSetApplyRequest
+
     parser = argparse.ArgumentParser(description="Проверка автопосадки на Кустанайской")
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--project-id")
     parser.add_argument("--zone-id")
     parser.add_argument("--kind", choices=("tree", "shrub", "mixed"), default="shrub")
-    parser.add_argument("--near", choices=("building", "road", "area"), default="building")
+    parser.add_argument(
+        "--near", choices=("building", "road", "area"), default="building"
+    )
     parser.add_argument("--count", type=int, default=8)
-    parser.add_argument("--list", action="store_true", help="Показать проекты и участки")
+    parser.add_argument(
+        "--list", action="store_true", help="Показать проекты и участки"
+    )
     parser.add_argument("--apply", action="store_true", help="Сохранить после проверки")
-    parser.add_argument("--confirm-project-id", help="Для сохранения в рабочий проект повторите его ID")
+    parser.add_argument(
+        "--confirm-project-id", help="Для сохранения в рабочий проект повторите его ID"
+    )
     args = parser.parse_args()
 
+    if not 1 <= args.count <= MAX_AUTOMATIC_PLACEMENT_COUNT:
+        parser.error(f"Количество должно быть от 1 до {MAX_AUTOMATIC_PLACEMENT_COUNT}")
     database = args.database.resolve()
     if not database.is_file():
         parser.error("База проекта не найдена")
-    if args.count < 1 or args.count > 500:
-        parser.error("Количество должно быть от 1 до 500")
-    if args.apply and (not args.project_id or args.confirm_project_id != args.project_id):
-        parser.error("Для сохранения укажите --project-id и повторите его в --confirm-project-id")
+    if args.apply and (
+        not args.project_id or args.confirm_project_id != args.project_id
+    ):
+        parser.error(
+            "Для сохранения укажите --project-id и повторите его в --confirm-project-id"
+        )
 
     runtime = create_runtime(database)
     projects = runtime.application.list_projects()
     if args.list:
-        print(json.dumps({"projects": [
-            {"id": item.id, "name": item.name,
-             "map_ready": bool(detail.map_ready),
-             "zones": [{"id": zone.id, "label": zone.label}
-                       for zone in detail.planting_zones]}
-            for item in projects
-            for detail in [runtime.application.get(item.id, lightweight=True)]
-        ]}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "projects": [
+                        {
+                            "id": item.id,
+                            "name": item.name,
+                            "map_ready": bool(detail.map_ready),
+                            "zones": [
+                                {"id": zone.id, "label": zone.label}
+                                for zone in detail.planting_zones
+                            ],
+                        }
+                        for item in projects
+                        for detail in [
+                            runtime.application.get(item.id, lightweight=True)
+                        ]
+                    ]
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
-    project = next((item for item in projects if item.id == args.project_id), None)
-    if project is None:
+    summary = next((item for item in projects if item.id == args.project_id), None)
+    if summary is None:
         if not args.project_id and len(projects) == 1:
-            project = projects[0]
+            summary = projects[0]
         else:
-            print(json.dumps({"projects": [{"id": item.id, "name": item.name}
-                                            for item in projects]}, ensure_ascii=False))
+            print(
+                json.dumps(
+                    {
+                        "projects": [
+                            {"id": item.id, "name": item.name} for item in projects
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            )
             parser.error("Укажите --project-id из списка")
-    project = runtime.application.get(project.id)
+    project = runtime.application.get(summary.id)
     if not project.map_ready or project.plan is None:
         parser.error("Подготовьте карту и план проекта через AutoCAD и Green Atlas")
     zones = {zone.id for zone in project.planting_zones}
@@ -69,39 +105,46 @@ def main() -> int:
         print(json.dumps({"zones": sorted(zones)}, ensure_ascii=False))
         parser.error("Укажите --zone-id из списка")
 
-    arrangement = {"building": "building_contour", "road": "road_edges",
-                   "area": "area"}[args.near]
     before = project.plan.model_dump_json()
-    task = TaskState().amended(TaskPatch(
-        operation="place", scope="zones", zone_ids=[args.zone_id],
-        plant_kind=args.kind, quantity=args.count, quantity_mode="target",
-        arrangement=arrangement, species_mode="automatic",
-    ), "demo")
-    result = prepare_placement(runtime.application, project.id, task)
-    change = result.get("change_set") or {}
-    if runtime.application.get(project.id).plan.model_dump_json() != before:
+    result = preview_automatic_placement(
+        runtime.application,
+        project.id,
+        AutomaticPlacementRequest(
+            base_plan_version=project.plan.version,
+            zone_id=args.zone_id,
+            plant_kind=args.kind,
+            target_count=args.count,
+            near=args.near,
+        ),
+    )
+    change = result.change_set
+    unchanged = runtime.application.get(project.id).plan
+    if unchanged is None or unchanged.model_dump_json() != before:
         raise RuntimeError("Предпросмотр изменил сохранённый план")
-    additions = change.get("additions", [])
+    additions = change.additions if change else []
     report = {
         "project_id": project.id,
         "zone_id": args.zone_id,
         "near": args.near,
         "kind": args.kind,
         "requested": args.count,
-        "found": result["found"],
-        "can_apply": bool(change.get("can_apply")),
-        "species": sorted({item["species_revision_id"] for item in additions}),
+        "found": result.found,
+        "can_apply": bool(change and change.can_apply),
+        "species": result.species_revision_ids,
         "saved": False,
     }
-    if args.apply and change.get("can_apply") and additions:
+    if args.apply and change and change.can_apply and additions:
         receipt = runtime.application.apply_change_set(
             project.id,
             PlanChangeSetApplyRequest(
-                preview_id=change["id"], digest=change["digest"],
-                base_plan_version=change["base_plan_version"],
+                preview_id=change.id,
+                digest=change.digest,
+                base_plan_version=change.base_plan_version,
             ),
         )
         reopened = create_runtime(database).application.get(project.id)
+        if reopened.plan is None:
+            raise RuntimeError("План не найден после повторного открытия")
         persisted = {item.id for item in reopened.plan.objects}
         if not set(receipt.added_ids) <= persisted:
             raise RuntimeError("Посадки не найдены после повторного открытия")

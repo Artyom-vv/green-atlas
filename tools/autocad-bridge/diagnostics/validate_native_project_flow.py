@@ -10,31 +10,31 @@ import json
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from app.cad_bridge.compiler import compile_live_document
 from app.cad_bridge.provider import (
     _native_shape,
-    build_dxf_import_from_snapshot,
-    build_dxf_import_from_snapshot_path,
+    build_project_from_snapshot,
 )
-from app.cad_intake.worker import _read_snapshot
-from app.dxf_import.assembly import assemble_imported_project
 from app.dxf_import.capacity import SourceGeometryCapacity
-from app.dxf_import.editor_source import open_source_editor
-from app.dxf_import.layer_contracts import (
+from app.dxf_import.layers.contracts import (
     BoundaryCandidate,
     BoundaryCandidateStatus,
     LayerKind,
 )
+from app.dxf_import.source.editor_source import open_source_editor
 from app.dxf_import.units import DXF_UNIT_FACTORS
-from app.geometry.adapters import ShapelyGeometryEngine
-from app.geometry.domain import PositionChecker
-from app.planning.pattern_contracts import FillPatternRequest
-from app.planning.patterns import generate_fill
+from app.geometry.checking.adapters import ShapelyGeometryEngine
+from app.geometry.checking.domain import PositionChecker
+from app.operations.progress import WorkProgress
+from app.planning.patterns.contracts import FillPatternRequest
+from app.planning.patterns.generators import generate_fill
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
 from diagnostic_native_building import inject_diagnostic_native_building
 from shapely.geometry import mapping, shape
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import polygonize, unary_union
 from validate_closure_candidate import validated_candidate
 
@@ -143,8 +143,8 @@ def main() -> None:
         help="Compare a signed native area proposal before/after unsaved approval",
     )
     parser.add_argument(
-        "--live-capture", action="store_true",
-        help="Admit the native live-document capture exactly as the local app does",
+        "--live-capture", action="store_true", required=True,
+        help="Required: admit the native live-document capture exactly as the local app does",
     )
     args = parser.parse_args()
     if args.native_site_candidate_report and args.site_layer:
@@ -170,83 +170,65 @@ def main() -> None:
         source_bytes = args.source.read_bytes()
         digest = hashlib.sha256(source_bytes).hexdigest()
         result["source_sha256"] = digest
-        if args.live_capture:
-            capture_bytes = args.snapshot.read_bytes()
-            snapshot = compile_live_document(
-                capture_bytes, autocad_version="2027.0.1", target="macos-x86_64"
-            )
-            if snapshot.source.live_capture.original_disk_sha256 != digest:
-                raise ValueError("Live capture does not match the original DWG bytes")
-            result["snapshot_payload_sha256"] = snapshot.summary.payload_sha256
-            result["snapshot_plugin_version"] = snapshot.extraction.plugin_version
-            result["native_unresolved_instances"] = snapshot.summary.unresolved
-            result["native_area_proposals"] = [
-                {
-                    "id": proposal.id,
-                    "source_handle": proposal.source.handle,
-                    "source_instance_chain": proposal.source.instance_chain,
-                    "source_layer": proposal.layer,
-                    "closure_gap_wcs_xy_units": proposal.closure_gap_wcs_xy_units,
-                    "native_area_units2": proposal.preview.native_area_units2,
-                    "content_sha256": proposal.content_sha256,
-                    "active_for_calculation": False,
-                }
-                for proposal in snapshot.area_proposals or []
-            ]
-            result["missing_references"] = sorted({
-                (record.unresolved_reference.block_name,
-                 record.unresolved_reference.stored_path)
-                for record in snapshot.coverage
-                if record.unresolved_reference is not None
-            })
-            imported = build_dxf_import_from_snapshot(
-                snapshot,
-                source_sha256=hashlib.sha256(capture_bytes).hexdigest(),
-                dxf_version="AutoCAD live snapshot",
-                capacity=SourceGeometryCapacity.process_bounded(),
-            )
-            project_source_bytes = capture_bytes
-        else:
-            inventory = _read_snapshot(args.snapshot, args.output.parent / "scratch")
-            result["snapshot_payload_sha256"] = inventory.summary.payload_sha256
-            result["snapshot_plugin_version"] = inventory.extraction.plugin_version
-            result["native_unresolved_instances"] = inventory.summary.unresolved
-            result["missing_references"] = list(inventory.missing_references)
-            imported = build_dxf_import_from_snapshot_path(
-                args.snapshot,
-                source=inventory.source,
-                extraction=inventory.extraction,
-                dependencies=inventory.dependencies,
-                summary=inventory.summary,
-                source_sha256=digest,
-                scratch_root=args.output.parent / "scratch",
-                capacity=SourceGeometryCapacity.process_bounded(),
-                verified_dependencies={
-                    item.path: item.sha256 for item in inventory.dependencies
-                },
-            )
-            project_source_bytes = source_bytes
-        result["imported_features"] = len(
-            imported.geometry.feature_collection["features"]
+        capture_bytes = args.snapshot.read_bytes()
+        snapshot = compile_live_document(
+            capture_bytes, autocad_version="2027.0.1", target="macos-x86_64"
         )
-        result["imported_layers"] = len(imported.layers)
+        assert snapshot.source.live_capture is not None
+        if snapshot.source.live_capture.original_disk_sha256 != digest:
+            raise ValueError("Live capture does not match the original DWG bytes")
+        result["snapshot_payload_sha256"] = snapshot.summary.payload_sha256
+        result["snapshot_plugin_version"] = snapshot.extraction.plugin_version
+        result["native_unresolved_instances"] = snapshot.summary.unresolved
+        result["native_area_proposals"] = [
+            {
+                "id": proposal.id,
+                "source_handle": proposal.source.handle,
+                "source_instance_chain": proposal.source.instance_chain,
+                "source_layer": proposal.layer,
+                "closure_gap_wcs_xy_units": proposal.closure_gap_wcs_xy_units,
+                "native_area_units2": proposal.preview.native_area_units2,
+                "content_sha256": proposal.content_sha256,
+                "active_for_calculation": False,
+            }
+            for proposal in snapshot.area_proposals or []
+        ]
+        result["missing_references"] = sorted({
+            (record.unresolved_reference.block_name,
+             record.unresolved_reference.stored_path)
+            for record in snapshot.coverage
+            if record.unresolved_reference is not None
+        })
+        project = build_project_from_snapshot(
+            Project(name="Read-only diagnostic"),
+            snapshot,
+            filename=args.source.name,
+            imported_at=datetime.now(UTC).isoformat(),
+            source_sha256=hashlib.sha256(capture_bytes).hexdigest(),
+            source_size=len(capture_bytes),
+            capacity=SourceGeometryCapacity.process_bounded(),
+        )
+        assert project.source_geometry is not None
+        assert project.source_file is not None
+        imported_features = project.source_geometry.feature_collection["features"]
+        result["imported_features"] = len(imported_features)
+        result["imported_layers"] = len(project.layers)
         result["boundary_candidates"] = [
             {
                 "layer": layer.source_name,
                 **layer.boundary_candidate.model_dump(mode="json"),
             }
-            for layer in imported.layers
+            for layer in project.layers
             if layer.boundary_candidate is not None
         ]
-        result["imported_bounds"] = imported.bounds
-        imported_features = imported.geometry.feature_collection["features"]
-        # The import assembly may retain this list by reference. A later
+        result["imported_bounds"] = project.source_file.bounds
+        # The project retains this list by reference. A later
         # diagnostic-only candidate must never be counted as a source object.
         source_backed_features = list(imported_features)
         result["feature_kinds"] = dict(
             Counter(
                 feature["properties"]["kind"]
-                for feature in imported.geometry.feature_collection["features"]
+                for feature in imported_features
             )
         )
         result["site_border_features"] = [
@@ -257,13 +239,13 @@ def main() -> None:
                 "bounds": list(shape(feature["geometry"]).bounds),
                 "area_m2": shape(feature["geometry"]).area,
             }
-            for feature in imported.geometry.feature_collection["features"]
+            for feature in imported_features
             if feature["properties"]["kind"] == "site_border"
         ]
         result["building_geometry_types"] = dict(
             Counter(
                 feature["geometry"]["type"]
-                for feature in imported.geometry.feature_collection["features"]
+                for feature in imported_features
                 if feature["properties"]["kind"] == "building"
             )
         )
@@ -321,14 +303,14 @@ def main() -> None:
         result["road_geometry_types"] = dict(
             Counter(
                 feature["geometry"]["type"]
-                for feature in imported.geometry.feature_collection["features"]
+                for feature in imported_features
                 if feature["properties"]["kind"] == "road"
             )
         )
         result["existing_green_geometry_types"] = dict(
             Counter(
                 feature["geometry"]["type"]
-                for feature in imported.geometry.feature_collection["features"]
+                for feature in imported_features
                 if feature["properties"]["kind"] == "existing_green"
             )
         )
@@ -337,27 +319,22 @@ def main() -> None:
                 "source_name": layer.source_name,
                 "unsupported_geometry_types": layer.unsupported_geometry_types,
             }
-            for layer in imported.layers
+            for layer in project.layers
             if not layer.geometry_complete
         ]
         result["mapping_review_layers"] = [
             layer.source_name
-            for layer in imported.layers
+            for layer in project.layers
             if layer.mapping_review_required and not layer.mapping_confirmed
         ]
-        result["warnings"] = imported.warnings
-        project = assemble_imported_project(
-            Project(name="Read-only diagnostic"),
-            args.source.name,
-            project_source_bytes,
-            imported,
-            datetime.now(UTC).isoformat(),
-        )
+        result["warnings"] = project.source_file.warnings
         if args.native_site_candidate_report:
             result["diagnostic_native_site_candidate"] = inject_diagnostic_native_site(
                 project, args.native_site_candidate_report, digest
             )
         editor = open_source_editor(project)
+        assert editor.geometry is not None
+        assert editor.source_review is not None
         result["editor_map_ready"] = editor.map_ready
         result["editor_features"] = len(editor.geometry.feature_collection["features"])
         result["editor_source_review_issues"] = dict(
@@ -389,7 +366,7 @@ def main() -> None:
                     layer.mapping_confirmed = True
             project.source_file.accept_partial_geometry = True
 
-            candidate_polygon = None
+            candidate_polygon: BaseGeometry | None = None
             candidate_point = None
             if args.simulate_area_proposal:
                 matches = [
@@ -445,7 +422,7 @@ def main() -> None:
                 }
                 project.geometry = None
 
-            def progress(update) -> None:
+            def progress(update: WorkProgress) -> None:
                 if update.fraction is None or update.fraction > 0.8:
                     print(update.stage, flush=True)
 
@@ -492,8 +469,8 @@ def main() -> None:
                         added_building_areas
                     ).area,
                 }
-            building_center_checks = Counter()
-            building_center_misses = []
+            building_center_checks: Counter[str] = Counter()
+            building_center_misses: list[dict[str, Any]] = []
             for feature in source_backed_features:
                 if (
                     feature["properties"]["kind"] != "building"

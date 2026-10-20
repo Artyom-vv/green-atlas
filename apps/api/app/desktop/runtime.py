@@ -1,9 +1,5 @@
-"""Private child process of the desktop app; not an end-user command.
-
-The parent must capture stdout as a private pipe: the single readiness record
-contains a per-launch session token for its WebView. No token is written to a
-URL, disk, access log or shared service configuration. No browser is launched.
-Frozen packaging/worker dispatch is a separate acceptance gate.
+"""Приватный дочерний API-процесс desktop-оболочки; готовность и одноразовый токен
+передаются только по закрытому каналу.
 """
 
 from __future__ import annotations
@@ -14,6 +10,7 @@ import json
 import os
 import secrets
 import socket
+from contextlib import ExitStack
 from pathlib import Path
 
 import uvicorn
@@ -24,7 +21,10 @@ from app.desktop.web import create_desktop_web
 
 def configure_local_storage(directory: Path) -> Path:
     directory = directory.absolute()
-    if any(path.is_symlink() for path in (directory, *directory.parents)):
+    if any(
+        path.is_symlink() or (os.name == "nt" and path.is_junction())
+        for path in (directory, *directory.parents)
+    ):
         raise ValueError("Desktop storage must not be behind a symbolic link")
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     if not directory.is_dir():
@@ -32,7 +32,7 @@ def configure_local_storage(directory: Path) -> Path:
     os.environ["GREEN_ATLAS_DB_PATH"] = str(directory / "projects.sqlite3")
     os.environ["GREEN_ATLAS_CAD_INTAKE_PATH"] = str(directory / "cad-intake")
     os.environ["GREEN_ATLAS_CAD_ROOTS_JSON"] = "{}"
-    # Never inherit a previous developer/remote bridge destination or credentials.
+    # Не наследуем прежний адрес developer/remote bridge и его учётные данные.
     for key in (
         "GREEN_ATLAS_BRIDGE_ORIGIN",
         "GREEN_ATLAS_BRIDGE_PROXY_KEY",
@@ -42,46 +42,103 @@ def configure_local_storage(directory: Path) -> Path:
     return directory
 
 
+def parse_listen_port(value: str) -> int:
+    """Приватное намерение перезапуска задаёт точный непривилегированный порт без
+    запасного выбора.
+    """
+    if (
+        len(value) > 5
+        or not value.isascii()
+        or not value.isdecimal()
+        or not 1024 <= int(value) <= 65535
+    ):
+        raise argparse.ArgumentTypeError("Expected a numeric port from 1024 to 65535")
+    return int(value)
+
+
+def bind_loopback_listener(port: int | None) -> socket.socket:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        if os.name == "nt":
+            exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+            if not isinstance(exclusive, int):
+                raise RuntimeError("Windows requires exclusive loopback port ownership")
+            listener.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        else:
+            # SO_REUSEADDR разрешает TIME_WAIT закрытого соединения, а не занятого listener.
+            # SO_REUSEPORT позволил бы разделить активный порт и здесь запрещён.
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", port if port is not None else 0))
+    except BaseException:
+        listener.close()
+        raise
+    return listener
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Green Atlas private desktop runtime")
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--web-dir", type=Path, required=True)
     parser.add_argument("--ticket-root", type=Path)
     parser.add_argument("--cad-worker", type=Path)
+    parser.add_argument("--listen-port", type=parse_listen_port)
     args = parser.parse_args()
-    data_root = configure_local_storage(args.data_dir)
-    # Desktop uses OpenAI or exact-input packaged proposals, never a local
-    # developer's Codex session as an implicit dependency.
-    os.environ.setdefault("GREEN_ATLAS_LAYER_MODEL_PROVIDER", "auto")
-    os.environ["GREEN_ATLAS_LAYER_RECOGNITION_PRESETS"] = str(
-        args.web_dir.parent / "LayerRecognition"
-    )
-    if args.cad_worker:
-        os.environ["GREEN_ATLAS_CAD_RELEASE_WORKER"] = str(args.cad_worker.absolute())
-    if not (args.web_dir / "index.html").is_file():
-        parser.error("Built desktop UI is missing from the application package")
-    lease = WorkspaceLease(data_root)
-    atexit.register(lease.close)
-    # Configure process-owned persistence before constructing the existing API.
-    from app.composition import get_runtime
-    from app.desktop.handoff import LocalHandoff
-    from app.main import app
+    # Занимаем порт до открытия хранилища: конфликт перезапуска не меняет
+    # рабочую среду и адрес уже открытого документа.
+    with ExitStack() as owned:
+        listener = bind_loopback_listener(args.listen_port)
+        owned.callback(listener.close)
+        data_root = configure_local_storage(args.data_dir)
+        # Desktop использует OpenAI или предложение для точного пакетного входа;
+        # локальный сеанс Codex разработчика не становится скрытой зависимостью.
+        os.environ.setdefault("GREEN_ATLAS_LAYER_MODEL_PROVIDER", "auto")
+        os.environ["GREEN_ATLAS_LAYER_RECOGNITION_PRESETS"] = str(
+            args.web_dir.parent / "LayerRecognition"
+        )
+        if args.cad_worker:
+            os.environ["GREEN_ATLAS_CAD_RELEASE_WORKER"] = str(
+                args.cad_worker.absolute()
+            )
+        if not (args.web_dir / "index.html").is_file():
+            parser.error("Built desktop UI is missing from the application package")
+        lease = WorkspaceLease(data_root)
+        owned.callback(lease.close)
+        # Аварийный обычный выход и завершение сервера используют одного владельца.
+        atexit.register(owned.close)
+        owned.callback(atexit.unregister, owned.close)
+        # До сборки API настраиваем хранилище, принадлежащее этому процессу.
+        from app.composition import close_runtime, get_runtime
+        from app.desktop.handoff import LocalHandoff
+        from app.main import app
 
-    handoff = (
-        LocalHandoff(get_runtime(), args.ticket_root) if args.ticket_root else None
-    )
+        # После handoff закрываются renderer/recognition и БД; lease освобождается последним.
+        owned.callback(close_runtime)
 
-    secret = secrets.token_urlsafe(32)
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-        listener.bind(("127.0.0.1", 0))
+        handoff = (
+            LocalHandoff(get_runtime(), args.ticket_root) if args.ticket_root else None
+        )
+
+        if handoff:
+            owned.callback(handoff.close)
+
+        secret = secrets.token_urlsafe(32)
         port = listener.getsockname()[1]
         origin = f"http://127.0.0.1:{port}"
+
+        def request_shutdown() -> None:
+            server.should_exit = True
+
         desktop = create_desktop_web(
-            app, args.web_dir, origin=origin, secret=secret, handoff=handoff
+            app,
+            args.web_dir,
+            origin=origin,
+            secret=secret,
+            handoff=handoff,
+            shutdown=request_shutdown,
         )
 
         class DesktopServer(uvicorn.Server):
-            async def startup(self, sockets=None):
+            async def startup(self, sockets: list[socket.socket] | None = None) -> None:
                 await super().startup(sockets=sockets)
                 if self.started:
                     print(
@@ -107,12 +164,7 @@ def main() -> int:
                 log_level="warning",
             )
         )
-        try:
-            server.run(sockets=[listener])
-        finally:
-            if handoff:
-                handoff.close()
-            lease.close()
+        server.run(sockets=[listener])
     return 0
 
 

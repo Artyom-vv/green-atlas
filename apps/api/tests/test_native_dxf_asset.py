@@ -5,18 +5,19 @@ from pathlib import Path
 
 import ezdxf
 import pytest
+from application_factory import save_legacy_dxf_fixture
 from fastapi.testclient import TestClient
 
-from app.composition import Runtime, create_runtime, get_application
 from app.cad_bridge.contracts import CadSnapshotProvenance
+from app.composition import Runtime, create_runtime, get_application
 from app.dxf_import.contracts import ImportMode
-from app.dxf_import.encoding import (
+from app.dxf_import.legacy.encoding import (
     DECODE_VALIDATION_CHUNK_BYTES,
     DeclaredDxfEncoding,
     DxfTextEncoding,
     validate_text_encoding,
 )
-from app.dxf_import.native_application import BINARY_DXF_SIGNATURE
+from app.dxf_import.native.asset_application import BINARY_DXF_SIGNATURE
 from app.main import app
 from app.projects.contracts import Project
 from app.projects.source_contracts import SourceContentInfo
@@ -55,7 +56,9 @@ def native_source(
         document.write(text)
         content = text.getvalue().encode("utf-8")
     project = runtime.project_repository.create(Project(name="Native DXF"))
-    return runtime.application.import_dxf(project.id, "исходник.dxf", content), content
+    return save_legacy_dxf_fixture(
+        runtime.application, project.id, "исходник.dxf", content
+    ), content
 
 
 def root(project: Project) -> str:
@@ -110,7 +113,7 @@ def test_metadata_and_download_never_read_full_project(
     assert response.status_code == 200
     metadata_queries = list(statements)
     assert any(
-        "length(source)" in item and "substr(source" in item
+        "length(" in item.lower() and "substr(" in item.lower()
         for item in metadata_queries
     )
     assert not any("SELECT source FROM" in item for item in metadata_queries)
@@ -120,14 +123,22 @@ def test_metadata_and_download_never_read_full_project(
     assert all("SELECT payload" not in item for item in statements)
 
 
-def test_existing_autocad_project_opens_without_reimport(runtime: Runtime, client: TestClient) -> None:
+def test_existing_autocad_project_opens_without_reimport(
+    runtime: Runtime, client: TestClient
+) -> None:
     project, content = native_source(runtime)
+    assert project.source_file is not None
     project.source_file.dxf_version = "AutoCAD 2027"
     project.source_file.cad_snapshot_provenance = CadSnapshotProvenance(
         schema_="green-atlas.autocad-snapshot/1",
-        source_sha256=sha256(content).hexdigest(), payload_sha256="a" * 64,
-        autocad_version="2027", plugin_version="0.1.28", target="macos-arm64",
-        source_instances=1, native_geometry=1, unresolved_instances=0,
+        source_sha256=sha256(content).hexdigest(),
+        payload_sha256="a" * 64,
+        autocad_version="2027",
+        plugin_version="0.1.28",
+        target="macos-arm64",
+        source_instances=1,
+        native_geometry=1,
+        unresolved_instances=0,
     )
     runtime.project_repository.save(project)
     response = client.get(root(project) + "/asset")
@@ -138,8 +149,11 @@ def test_existing_autocad_project_opens_without_reimport(runtime: Runtime, clien
     assert client.get(response.json()["file_url"]).status_code == 409
 
 
-def test_actual_dxf_format_mismatch_is_still_rejected(runtime: Runtime, client: TestClient) -> None:
+def test_actual_dxf_format_mismatch_is_still_rejected(
+    runtime: Runtime, client: TestClient
+) -> None:
     project, _ = native_source(runtime)
+    assert project.source_file is not None
     project.source_file.dxf_version = "AC1009"
     runtime.project_repository.save(project)
     assert client.get(root(project) + "/asset").status_code == 409
@@ -151,7 +165,9 @@ def test_stale_url_never_serves_replaced_source(
     project, content = native_source(runtime)
     old_url = client.get(root(project) + "/asset").json()["file_url"]
     replacement = content + b"\n"
-    runtime.application.import_dxf(project.id, "replacement.dxf", replacement)
+    save_legacy_dxf_fixture(
+        runtime.application, project.id, "replacement.dxf", replacement
+    )
     assert client.get(old_url).status_code == 409
     assert client.get(root(project) + "/download").content == replacement
 
@@ -167,6 +183,9 @@ def test_blob_mismatch_is_rejected_before_any_range_body(
         with runtime.project_repository._connection:
             runtime.project_repository._connection.execute(
                 "UPDATE projects SET source=NULL WHERE id=?", (project.id,)
+            )
+            runtime.project_repository._connection.execute(
+                "DELETE FROM project_sources WHERE project_id=?", (project.id,)
             )
     else:
         runtime.project_repository.save_source(project.id, broken)
@@ -264,10 +283,10 @@ def test_if_range_mismatch_returns_whole_verified_source(
     assert response.status_code == 200 and response.content == content
 
 
-def test_lightweight_metadata_inspection_works_in_memory() -> None:
-    from app.projects.adapters import InMemoryProjectRepository
+def test_lightweight_metadata_inspection_works_in_sqlite_memory() -> None:
+    from app.projects.adapters import SqliteProjectRepository
 
-    repository = InMemoryProjectRepository()
+    repository = SqliteProjectRepository(":memory:")
     project = repository.create(Project(name="Memory"))
     assert repository.get_source_info(project.id, prefix_bytes=3) is None
     repository.save_source(project.id, b"abcdef")
@@ -293,7 +312,9 @@ def test_legacy_declared_codec_preserves_bytes_and_labels(
     document.write(stream)
     content = stream.getvalue().encode(codec)
     created = runtime.project_repository.create(Project(name="Legacy codec"))
-    project = runtime.application.import_dxf(created.id, "legacy.dxf", content)
+    project = save_legacy_dxf_fixture(
+        runtime.application, created.id, "legacy.dxf", content
+    )
     assert project.source_geometry is not None
     assert any(
         feature["properties"].get("source_text") == annotation
@@ -323,7 +344,9 @@ def test_unresolved_legacy_codec_keeps_ordinary_download(
     )
     content = text.encode("ascii")
     created = runtime.project_repository.create(Project(name="Unresolved codec"))
-    project = runtime.application.import_dxf(created.id, "legacy.dxf", content)
+    project = save_legacy_dxf_fixture(
+        runtime.application, created.id, "legacy.dxf", content
+    )
     assert client.get(root(project) + "/asset").status_code == 409
     assert client.get(root(project) + "/download").content == content
 
@@ -339,7 +362,9 @@ def test_declared_modern_utf8_with_fallback_bytes_is_rejected_for_gpu(
     # Its success must not authorise the browser to silently replace characters.
     content = stream.getvalue().encode("cp1251")
     created = runtime.project_repository.create(Project(name="Recovered input"))
-    project = runtime.application.import_dxf(created.id, "recovered.dxf", content)
+    project = save_legacy_dxf_fixture(
+        runtime.application, created.id, "recovered.dxf", content
+    )
     asset = client.get(root(project) + "/asset").json()
     assert asset["file_encoding"] == "utf-8"
     assert (

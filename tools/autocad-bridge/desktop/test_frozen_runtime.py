@@ -1,9 +1,8 @@
-"""Opt-in relocated frozen runtime checks; requires a real native AutoCAD ticket."""
+"""Проверка перенесённого runtime; CAD-сценарий требует отдельного native ticket."""
 
 import hashlib
 import json
 import os
-import selectors
 import shutil
 import sqlite3
 import subprocess
@@ -11,8 +10,32 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Thread
 
 import pytest
+
+
+def ready_line(process: subprocess.Popen[str], timeout: float = 30) -> str:
+    """Windows pipe не является socket: читаем ready с отдельным ограниченным ожиданием."""
+    stream = process.stdout
+    assert stream is not None
+    records: Queue[str | Exception] = Queue(maxsize=1)
+
+    def read() -> None:
+        try:
+            records.put(stream.readline())
+        except (OSError, ValueError) as error:
+            records.put(error)
+
+    Thread(target=read, daemon=True).start()
+    try:
+        value = records.get(timeout=timeout)
+    except Empty:
+        pytest.fail("Runtime не объявил готовность за отведённое время")
+    if isinstance(value, Exception):
+        raise value
+    return value
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +48,12 @@ def frozen(tmp_path_factory):
     root = tmp_path_factory.mktemp("relocated-desktop").resolve()
     bundle = root / "runtime"
     shutil.copytree(source.parent, bundle, symlinks=True)
-    env = dict(os.environ, PATH="/usr/bin:/bin")
+    if os.name == "nt":
+        system = Path(os.environ["SystemRoot"])
+        clean_path = os.pathsep.join(map(str, (system / "System32", system)))
+    else:
+        clean_path = "/usr/bin:/bin"
+    env = dict(os.environ, PATH=clean_path)
     for key in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "CONDA_PREFIX"):
         env.pop(key, None)
     return bundle / source.name, root, env
@@ -37,6 +65,17 @@ def frozen(tmp_path_factory):
         "species/data/source-profiles.json",
         "species/data/moscow-assortment.json",
         "regulations/placement_rules.json",
+        "regulations/references.json",
+        "shared/messages.ru.json",
+        "cad_bridge/probe_diagnostics.json",
+        "dxf_import/layers/recognition_catalog.json",
+        "shared/storage-config.json",
+        "rendering/blender_worker.py",
+        "rendering/render_style.py",
+        "rendering/lawn_instances.py",
+        "rendering/lawn_scatter.py",
+        "rendering/preview_asset_worker.py",
+        "rendering/native_style.json",
     ],
 )
 def test_frozen_runtime_includes_catalog_resources(frozen, relative_path):
@@ -82,10 +121,7 @@ def test_relocated_runtime_without_python_path(frozen):
             text=True,
         )
         try:
-            with selectors.DefaultSelector() as events:
-                events.register(process.stdout, selectors.EVENT_READ)
-                assert events.select(timeout=30), "Frozen runtime did not start"
-                line = process.stdout.readline()
+            line = ready_line(process)
             if not line:
                 log.seek(0)
                 pytest.fail(log.read()[-4000:])
@@ -98,12 +134,38 @@ def test_relocated_runtime_without_python_path(frozen):
             assert denied.value.code == 403
             with opener.open(
                 urllib.request.Request(
+                    origin + "/_desktop/health",
+                    headers={"X-Green-Atlas-Local-Session": secret},
+                ),
+                timeout=10,
+            ) as response:
+                assert response.status == 200
+                assert json.load(response) == {
+                    "service": "green-atlas-desktop",
+                    "protocol": 1,
+                }
+            with opener.open(
+                urllib.request.Request(
                     origin + "/api/projects",
                     headers={"X-Green-Atlas-Local-Session": secret},
                 ),
                 timeout=10,
             ) as response:
                 assert json.load(response) == []
+            with pytest.raises(urllib.error.HTTPError) as invalid:
+                opener.open(
+                    urllib.request.Request(
+                        origin + "/api/projects",
+                        data=json.dumps({"name": []}).encode(),
+                        headers={
+                            "X-Green-Atlas-Local-Session": secret,
+                            "Content-Type": "application/json",
+                        },
+                    ),
+                    timeout=10,
+                )
+            assert invalid.value.code == 422
+            assert json.load(invalid.value)["field_errors"]["name"] == ["Введите текст"]
             assert (root / "data/projects.sqlite3").is_file()
             if ticket:
 
@@ -132,43 +194,79 @@ def test_relocated_runtime_without_python_path(frozen):
                 assert len(projects) == 1
                 project_id = projects[0]["id"]
                 transfer = json.loads(ticket.read_bytes())
-                if transfer["schema"] in {"green-atlas.transfer/2", "green-atlas.transfer/4"}:
+                if transfer["schema"] in {
+                    "green-atlas.transfer/2",
+                    "green-atlas.transfer/4",
+                    "green-atlas.transfer/5",
+                }:
                     project = api(f"/api/projects/{project_id}")
                     assert project["import_status"]["mode"] == "autocad_live"
-                    assert project["source_file"]["content_sha256"] == transfer["manifest"]["files"][0]["sha256"]
+                    assert (
+                        project["source_file"]["content_sha256"]
+                        == transfer["manifest"]["files"][0]["sha256"]
+                    )
                     assert project["layers"]
+                    if transfer["schema"] == "green-atlas.transfer/5":
+                        retained = Path(
+                            project["source_file"]["native_session"]["snapshot_path"]
+                        )
+                        assert retained.is_relative_to(
+                            root / "data/projects.sqlite3.cad-archives"
+                        )
+                        assert (
+                            hashlib.sha256(retained.read_bytes()).hexdigest()
+                            == transfer["manifest"]["files"][0]["sha256"]
+                        )
+                        assert retained.with_name("host.dwg").is_file()
                     if presets:
-                        assert all(not item["mapping_confirmed"] for item in project["layers"])
-                        recognition = api(f"/api/projects/{project_id}/source-layer-review")
-                        assert recognition["status"] == "completed", recognition["message"]
+                        assert all(
+                            not item["mapping_confirmed"] for item in project["layers"]
+                        )
+                        recognition = api(
+                            f"/api/projects/{project_id}/source-layer-review"
+                        )
+                        assert recognition["status"] == "completed", recognition[
+                            "message"
+                        ]
                         assert recognition["provider"] == "openai/gpt-6-luna"
                         assert recognition["processed_count"] == len(project["layers"])
                         assert "Сохранённые" in recognition["message"]
-                    (root / "live-handoff-acceptance.json").write_text(json.dumps({
-                        "project_id": project_id,
-                        "scope": "isolated frozen runtime storage, not GUI acceptance",
-                        "plugin_version": transfer["plugin_version"],
-                        "status": handoff["status"],
-                        "layer_count": len(project["layers"]),
-                        "source_sha256": project["source_file"]["content_sha256"],
-                    }, indent=2))
-                else:
-                    operation_path = f"/api/projects/{project_id}/operations/latest?kind=inspect_cad_package"
-                    operation = api(operation_path)
-                    while (
-                        operation["status"] in {"queued", "running"}
-                        and time.monotonic() < deadline
-                    ):
-                        time.sleep(0.1)
-                        operation = api(operation_path)
-                    assert operation["status"] == "completed", operation
+                    (root / "live-handoff-acceptance.json").write_text(
+                        json.dumps(
+                            {
+                                "project_id": project_id,
+                                "scope": "isolated frozen runtime storage, not GUI acceptance",
+                                "plugin_version": transfer["plugin_version"],
+                                "status": handoff["status"],
+                                "layer_count": len(project["layers"]),
+                                "source_sha256": project["source_file"][
+                                    "content_sha256"
+                                ],
+                            },
+                            indent=2,
+                        )
+                    )
                 assert api("/_desktop/handoffs", {"ticket": str(ticket)}) == handoff
                 assert len(api("/api/projects")) == 1
             log.flush()
             log.seek(0)
             assert secret not in log.read()
+            shutdown = urllib.request.Request(
+                origin + "/_desktop/shutdown",
+                data=b"{}",
+                headers={
+                    "X-Green-Atlas-Local-Session": secret,
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with opener.open(shutdown, timeout=10) as response:
+                assert response.status == 202
+                assert json.load(response) == {"state": "stopping"}
+            assert process.wait(timeout=10) == 0
         finally:
-            process.terminate()
+            if process.poll() is None:
+                process.terminate()
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -178,7 +276,7 @@ def test_relocated_runtime_without_python_path(frozen):
 
 
 def test_relocated_runtime_saves_automatic_planting(frozen):
-    """Opt-in Kustanayskaya control uses the exact installed runtime binary."""
+    """Opt-in prepared control uses the exact relocated runtime binary."""
     source = os.environ.get("GREEN_ATLAS_PREPARED_DB")
     project_id = os.environ.get("GREEN_ATLAS_PREPARED_PROJECT_ID")
     if not source or not project_id:
@@ -186,8 +284,25 @@ def test_relocated_runtime_saves_automatic_planting(frozen):
     binary, root, env = frozen
     data = root / "prepared-data"
     data.mkdir()
-    with sqlite3.connect(source) as original, sqlite3.connect(data / "projects.sqlite3") as copy:
+    with (
+        sqlite3.connect(
+            Path(source).absolute().as_uri() + "?mode=ro", uri=True
+        ) as original,
+        sqlite3.connect(data / "projects.sqlite3") as copy,
+    ):
         original.backup(copy)
+    # The DB and immutable prepared inputs are one local workspace. A missing
+    # sidecar must never be filled by an implicit live CAD query in this test.
+    prepared_source = Path(str(source) + ".prepared-geometry")
+    assert prepared_source.is_dir(), "The positive control has no prepared geometry"
+    shutil.copytree(
+        prepared_source,
+        data / "projects.sqlite3.prepared-geometry",
+        ignore=shutil.ignore_patterns("domains"),
+    )
+    geometry_source = Path(str(source) + ".geometry")
+    if geometry_source.is_dir():
+        shutil.copytree(geometry_source, data / "projects.sqlite3.geometry")
     web = root / "prepared-web"
     web.mkdir()
     (web / "index.html").write_text("<title>Isolated planting control</title>")
@@ -198,20 +313,21 @@ def test_relocated_runtime_saves_automatic_planting(frozen):
     def launch():
         process = subprocess.Popen(
             [str(binary), "--data-dir", str(data), "--web-dir", str(web)],
-            cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cwd=root,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
         )
-        with selectors.DefaultSelector() as events:
-            events.register(process.stdout, selectors.EVENT_READ)
-            assert events.select(timeout=30), "Frozen runtime did not start"
-            line = process.stdout.readline()
+        line = ready_line(process)
         assert line, process.stderr.read()[-4000:]
         receipt = json.loads(line)
 
-        def api(path, payload=None):
+        def api(path, payload=None, method=None):
             request = urllib.request.Request(
                 receipt["origin"] + path,
                 data=json.dumps(payload).encode() if payload is not None else None,
+                method=method,
                 headers={
                     "X-Green-Atlas-Local-Session": receipt["session_token"],
                     "Content-Type": "application/json",
@@ -227,20 +343,95 @@ def test_relocated_runtime_saves_automatic_planting(frozen):
     try:
         project = api(path)
         assert project["map_ready"] and project["planting_zones"]
+        assert project["resume_kind"] == "workspace"
+        assert project["prepared_state"] == "available"
+        if project["plan"] is None:
+            project = api(path + "/plan/manual", {})
+        layer = next(
+            item
+            for item in project["layers"]
+            if item.get("mapped_kind") == "utility" and item.get("utility_context")
+        )
+        reviewer = "Isolated local restart control"
+        physical = data / "projects.sqlite3.prepared-geometry"
+
+        def physical_hashes():
+            hashes = {}
+            for file in physical.glob("*.json"):
+                with file.open("rb") as stream:
+                    hashes[file.name] = hashlib.file_digest(
+                        stream, "sha256"
+                    ).hexdigest()
+            return hashes
+
+        physical_before = physical_hashes()
+        geometry_version = project["geometry_version"]
+        project = api(
+            path + "/layer-mappings",
+            {
+                "mappings": [
+                    {
+                        "layer_id": layer["id"],
+                        "kind": layer["mapped_kind"],
+                        "category": layer.get("category"),
+                        "visible": layer["visible"],
+                        "confirmed": layer.get("mapping_confirmed"),
+                        "utility_axis_bindings": layer.get("utility_axis_bindings", []),
+                        "utility_context": {
+                            **layer["utility_context"],
+                            "confirmed_by": reviewer,
+                        },
+                    }
+                ]
+            },
+            method="PUT",
+        )
+        assert project["map_ready"] and project["geometry_version"] == geometry_version
+        assert physical_hashes() == physical_before
+        reviewer_basis = project["plan"]["validation_basis"]
         before = len(project["plan"]["objects"])
-        preview = api(path + "/plan/automatic/preview", {
-            "base_plan_version": project["plan"]["version"],
-            "zone_id": project["planting_zones"][0]["id"],
-            "near": "area", "plant_kind": "auto", "target_count": 8,
-        })
+        preview = api(
+            path + "/plan/automatic/preview",
+            {
+                "base_plan_version": project["plan"]["version"],
+                "zone_id": os.environ.get(
+                    "GREEN_ATLAS_PREPARED_ZONE_ID", project["planting_zones"][0]["id"]
+                ),
+                "near": "area",
+                "plant_kind": os.environ.get("GREEN_ATLAS_PREPARED_PLANT_KIND", "auto"),
+                "target_count": 8,
+            },
+        )
         assert preview["found"] > 0 and preview["change_set"]["can_apply"], preview
         change = preview["change_set"]
-        saved = api(path + "/plan/change-sets/apply", {
-            "preview_id": change["id"], "digest": change["digest"],
-            "base_plan_version": change["base_plan_version"],
-        })
+        saved = api(
+            path + "/plan/change-sets/apply",
+            {
+                "preview_id": change["id"],
+                "digest": change["digest"],
+                "base_plan_version": change["base_plan_version"],
+            },
+        )
         assert len(saved["added_ids"]) == preview["found"]
         assert len(saved["plan"]["objects"]) == before + preview["found"]
+        basis = saved["plan"]["validation_basis"]
+        assert all(
+            basis[key]
+            for key in ("geometry_digest", "calculation_digest", "evidence_digest")
+        )
+        assert basis["geometry_digest"] == reviewer_basis["geometry_digest"]
+        assert basis["calculation_digest"] == reviewer_basis["calculation_digest"]
+        history = api(path + "/plan/history")
+        assert history["undo_target_id"] == change["id"]
+        undone = api(path + "/plan/history/undo", {})
+        assert len(undone["plan"]["objects"]) == before
+        assert undone["plan"]["version"] > saved["plan"]["version"]
+        assert api(path + "/plan/history")["redo_target_id"] == change["id"]
+        redone = api(path + "/plan/history/redo", {})
+        assert redone["plan"]["objects"] == saved["plan"]["objects"]
+        assert redone["plan"]["version"] > undone["plan"]["version"]
+        basis = redone["plan"]["validation_basis"]
+        assert physical_hashes() == physical_before
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -251,116 +442,37 @@ def test_relocated_runtime_saves_automatic_planting(frozen):
     try:
         reopened = api(path)
         assert len(reopened["plan"]["objects"]) == before + preview["found"]
-        assert {item["id"] for item in reopened["plan"]["objects"]} >= set(saved["added_ids"])
+        assert reopened["plan"]["objects"] == saved["plan"]["objects"]
+        assert {item["id"] for item in reopened["plan"]["objects"]} >= set(
+            saved["added_ids"]
+        )
+        assert reopened["plan"]["validation_basis"] == basis
+        reopened_layer = next(
+            item for item in reopened["layers"] if item["id"] == layer["id"]
+        )
+        assert reopened_layer["utility_context"]["confirmed_by"] == reviewer
+        history = api(path + "/plan/history")
+        assert any(entry["id"] == change["id"] for entry in history["entries"])
+        from urllib.parse import urlencode
+
+        receipt = api(
+            path
+            + f"/plan/change-sets/{change['id']}/receipt?"
+            + urlencode(
+                {
+                    "digest": change["digest"],
+                    "base_plan_version": change["base_plan_version"],
+                    "base_state_version": project["state_version"],
+                }
+            )
+        )
+        assert receipt["status"] == "applied"
+        assert receipt["receipt"]["added_ids"] == saved["added_ids"]
     finally:
         process.terminate()
         process.wait(timeout=10)
         process.stdout.close()
         process.stderr.close()
-
-
-def test_frozen_native_compiler_uses_real_prepared_ticket(frozen):
-    configured = os.environ.get("GREEN_ATLAS_NATIVE_TICKET")
-    if not configured:
-        pytest.skip(
-            "Set GREEN_ATLAS_NATIVE_TICKET to an AutoCAD-produced positive control"
-        )
-    ticket_path = Path(configured)
-    ticket = json.loads(ticket_path.read_bytes())
-    if ticket["schema"] in {"green-atlas.transfer/2", "green-atlas.transfer/4"}:
-        pytest.skip("Live tickets use the import worker exercised by the frozen handoff test")
-    binary, root, env = frozen
-    package = root / "package"
-    package.mkdir()
-    for file in ticket["manifest"]["files"]:
-        assert Path(file["name"]).name == file["name"]
-        source = ticket_path.parent / file["name"]
-        assert source.stat().st_size == file["bytes"]
-        assert hashlib.sha256(source.read_bytes()).hexdigest() == file["sha256"]
-        shutil.copyfile(source, package / file["name"])
-    probe = json.loads(
-        (
-            package / (ticket["manifest"]["entry"] + ".green-atlas.geometry.json")
-        ).read_bytes()
-    )
-    assert probe["summary"]["native"] > 0, (
-        "This must be a positive native geometry control, not an empty prior ticket"
-    )
-    task = package / "compile-request.json"
-    task.write_text(
-        json.dumps(
-            {
-                "directory": str(package),
-                "manifest": ticket["manifest"],
-                "producer": ticket["producer"],
-                "plugin_version": ticket["plugin_version"],
-                "root_id": "upload-" + "a" * 32,
-            }
-        )
-    )
-    result = subprocess.run(
-        [str(binary), "--worker", "app.cad_delivery.compile_worker", str(task)],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert json.loads((package / "bridge-report.json").read_bytes()) == {"failures": []}
-    upload = json.loads((package / "upload.json").read_bytes())
-    assert len(upload["snapshots"]) == 1
-    snapshot = package / upload["snapshots"][0]["path"]
-    assert snapshot.stat().st_size > 0
-    assert (
-        hashlib.sha256(snapshot.read_bytes()).hexdigest()
-        == upload["snapshots"][0]["sha256"]
-    )
-    assert (
-        "session_token" not in result.stdout
-    )  # worker did not restart the main server
-
-    # The next production worker must consume this snapshot in the frozen bundle,
-    # not fall back to Python or report an empty successful import.
-    inspection = root / "source-package.json"
-    work = root / "inspection-request.json"
-    entry = next(
-        file
-        for file in ticket["manifest"]["files"]
-        if file["name"] == ticket["manifest"]["entry"]
-    )
-    work.write_text(
-        json.dumps(
-            {
-                "root": str(package),
-                "cache": str(root / "cache"),
-                "output": str(inspection),
-                "request": {
-                    "root_id": "upload-" + "a" * 32,
-                    "entry": entry["name"],
-                    "entry_sha256": entry["sha256"],
-                },
-            }
-        )
-    )
-    result = subprocess.run(
-        [str(binary), "--worker", "app.cad_intake.worker", str(work)],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    passport = json.loads(inspection.read_bytes())
-    assert passport["status"] == "requires_review"
-    assert len(passport["drawings"]) == 1
-    assert passport["drawings"][0]["status"] == "readable", passport["drawings"][0][
-        "message"
-    ]
-    assert passport["drawings"][0]["source_sha256"] == entry["sha256"]
 
 
 def test_frozen_unknown_worker_never_launches_runtime(frozen):

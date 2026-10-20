@@ -18,6 +18,7 @@ interface SpeciesAssignmentCatalogProps extends Pick<
 > {
   shortlist?: SpeciesShortlistItem[];
   previewing?: boolean;
+  onCancel: () => void;
 }
 export const SpeciesAssignmentCatalog: FC<SpeciesAssignmentCatalogProps> = ({
   shortlist,
@@ -27,6 +28,8 @@ export const SpeciesAssignmentCatalog: FC<SpeciesAssignmentCatalogProps> = ({
 }) => (
   <SpeciesCatalog
     {...props}
+    compact
+    cancelDisabled={previewing}
     loading={loading}
     loadingMessage="Загружаем подборку для выбранных посадок"
     species={(shortlist ?? []).map((item) => item.species)}

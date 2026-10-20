@@ -1,236 +1,84 @@
-from dataclasses import dataclass
-from datetime import UTC, datetime
+"""Домен истории плана: снимки изменений, курсор отмены и точные квитанции.
+
+Запросы SQLAlchemy выполняются на соединении репозитория проектов, чтобы
+изменение плана, его ревизия, история и квитанция коммитились вместе.
+"""
+
 import json
+from collections.abc import Callable
+from datetime import UTC, datetime
 from threading import RLock
 from uuid import uuid4
 
-from app.planning.contracts import Plan
+from sqlalchemy import delete, insert, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.schema import CreateIndex, CreateTable
+
 from app.history.contracts import PlanHistoryEntry, PlanHistoryState
+from app.planning.contracts import Plan
 from app.planting_zones.contracts import PlantingZoneAssignment
-from app.projects.contracts import Project, ProjectStatus
 from app.projects.adapters import SqliteProjectRepository
-from app.projects.concurrency import ProjectVersionConflict, advance_expected_project_version, expected_project_version
+from app.projects.contracts import Project, ProjectStatus
+from app.shared.sqlite_sql import sqlite_sql
+from app.shared.storage_schema import (
+    PLAN_CHANGE_RECEIPTS as receipts,
+)
+from app.shared.storage_schema import (
+    PLAN_CHANGES as changes,
+)
+from app.shared.storage_schema import (
+    PLAN_CHANGES_INDEX,
+)
+from app.shared.storage_schema import (
+    PLAN_HISTORY_CURSORS as cursors,
+)
+from app.validation.contracts import CalculationInputBasis
 
-
-@dataclass
-class _Snapshot:
-    label: str
-    planting_zones: list[PlantingZoneAssignment]
-    plan: Plan | None
-    status: ProjectStatus
-    id: str = ""
-    created_at: str = ""
-
-
-class InMemoryProjectHistory:
-    """Bounded, per-project history of the editable project state."""
-
-    def __init__(self, limit: int = 50) -> None:
-        self.limit = limit
-        self._undo: dict[str, list[_Snapshot]] = {}
-        self._redo: dict[str, list[_Snapshot]] = {}
-        self._lock = RLock()
-
-    def _snapshot(self, project: Project, label: str) -> _Snapshot:
-        # History begins only after the manual plan has been opened and is
-        # cleared before every operation that can replace geometry (import,
-        # recalculation or a new set of planting zones). Re-copying a large
-        # DXF-derived feature collection for each tree click therefore adds
-        # memory pressure without making any undo state more correct.
-        return _Snapshot(
-            label=label,
-            planting_zones=[zone.model_copy(deep=True) for zone in project.planting_zones],
-            plan=project.plan.model_copy(deep=True) if project.plan else None,
-            status=project.status,
-            id=str(uuid4()),
-            created_at=datetime.now(UTC).isoformat(),
-        )
-
-    def _restore(self, project: Project, snapshot: _Snapshot) -> Project:
-        if project.planting_zones != snapshot.planting_zones:
-            raise ValueError("История плана относится к прежним участкам. Обновите историю перед отменой или повтором.")
-        project.planting_zones = [zone.model_copy(deep=True) for zone in snapshot.planting_zones]
-        project.plan = snapshot.plan.model_copy(deep=True) if snapshot.plan else None
-        project.status = snapshot.status
-        return project
-
-    def clear(self, project_id: str) -> None:
-        with self._lock:
-            self._undo.pop(project_id, None)
-            self._redo.pop(project_id, None)
-
-    def rebase_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> None:
-        """Keep plan undo/redo valid after an independently managed area rename."""
-        with self._lock:
-            for snapshot in [*self._undo.get(project_id, []), *self._redo.get(project_id, [])]:
-                snapshot.planting_zones = [zone.model_copy(deep=True) for zone in zones]
-
-    def record(self, project: Project, label: str) -> PlanHistoryState:
-        with self._lock:
-            undo = self._undo.setdefault(project.id, [])
-            undo.append(self._snapshot(project, label))
-            if len(undo) > self.limit:
-                del undo[:-self.limit]
-            self._redo.pop(project.id, None)
-            return self.state(project.id)
-
-    def state(self, project_id: str) -> PlanHistoryState:
-        with self._lock:
-            undo = self._undo.get(project_id, [])
-            redo = self._redo.get(project_id, [])
-            entries = [
-                PlanHistoryEntry(id=item.id, ordinal=index + 1, label=item.label, created_at=item.created_at, applied=True)
-                for index, item in enumerate(undo)
-            ] + [
-                PlanHistoryEntry(id=item.id, ordinal=len(undo) + index + 1, label=item.label, created_at=item.created_at, applied=False)
-                for index, item in enumerate(reversed(redo))
-            ]
-            return PlanHistoryState(
-                can_undo=bool(undo),
-                can_redo=bool(redo),
-                undo_label=undo[-1].label if undo else None,
-                redo_label=redo[-1].label if redo else None,
-                entries=list(reversed(entries)),
-            )
-
-    def undo(self, project: Project) -> Project:
-        with self._lock:
-            undo = self._undo.get(project.id, [])
-            if not undo:
-                raise ValueError("Нет изменений для отмены")
-            snapshot = undo[-1]
-            redo = self._redo.setdefault(project.id, [])
-            current = self._snapshot(project, snapshot.label)
-            current.id = snapshot.id
-            current.created_at = snapshot.created_at
-            restored = self._restore(project, snapshot)
-            undo.pop()
-            redo.append(current)
-            return restored
-
-    def redo(self, project: Project) -> Project:
-        with self._lock:
-            redo = self._redo.get(project.id, [])
-            if not redo:
-                raise ValueError("Нет изменений для повтора")
-            snapshot = redo[-1]
-            undo = self._undo.setdefault(project.id, [])
-            current = self._snapshot(project, snapshot.label)
-            current.id = snapshot.id
-            current.created_at = snapshot.created_at
-            restored = self._restore(project, snapshot)
-            redo.pop()
-            undo.append(current)
-            return restored
+BasisReader = Callable[[Project], CalculationInputBasis | None]
 
 
 class SqliteProjectHistory:
-    """Durable plan history committed with the project in one transaction."""
+    """Постоянная история плана фиксируется вместе с проектом одной транзакцией."""
 
-    durable = True
-
-    def __init__(self, repository: SqliteProjectRepository, limit: int = 50) -> None:
+    def __init__(
+        self,
+        repository: SqliteProjectRepository,
+        limit: int = 50,
+        *,
+        basis_reader: BasisReader | None = None,
+    ) -> None:
         self.repository = repository
         self.limit = limit
         self._lock: RLock = repository._lock
+        # История использует уже настроенное соединение проекта и ту же транзакцию.
         self._connection = repository._connection
+        self.basis_reader = basis_reader
         with self._lock, self._connection:
-            self._connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS plan_changes (
-                    project_id TEXT NOT NULL,
-                    ordinal INTEGER NOT NULL,
-                    change_set_id TEXT NOT NULL,
-                    label TEXT NOT NULL,
-                    before_payload TEXT NOT NULL,
-                    after_payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (project_id, ordinal),
-                    UNIQUE (project_id, change_set_id)
+            for table in (changes, cursors, receipts):
+                self._connection.execute(
+                    *sqlite_sql(CreateTable(table, if_not_exists=True))
                 )
-                """
-            )
             self._connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS plan_history_cursors (
-                    project_id TEXT PRIMARY KEY,
-                    cursor INTEGER NOT NULL DEFAULT 0
-                )
-                """
+                *sqlite_sql(CreateIndex(PLAN_CHANGES_INDEX, if_not_exists=True))
             )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_plan_changes_project ON plan_changes (project_id, ordinal)"
-            )
-            self._connection.execute("""
-                CREATE TABLE IF NOT EXISTS plan_change_receipts (
-                    project_id TEXT NOT NULL, change_set_id TEXT NOT NULL,
-                    payload TEXT NOT NULL, status TEXT NOT NULL,
-                    PRIMARY KEY(project_id, change_set_id)
-                )
-            """)
+
+    def set_basis_reader(self, basis_reader: BasisReader | None) -> None:
+        with self._lock:
+            self.basis_reader = basis_reader
 
     def receipt(self, project_id: str, change_set_id: str) -> dict | None:
         with self._lock:
             row = self._connection.execute(
-                "SELECT payload, status FROM plan_change_receipts WHERE project_id=? AND change_set_id=?",
-                (project_id, change_set_id)).fetchone()
-            return {**json.loads(row["payload"]), "status": row["status"]} if row else None
-
-    @staticmethod
-    def _snapshot_payload(project: Project) -> str:
-        return json.dumps(
-            {
-                "planting_zones": [zone.model_dump(mode="json") for zone in project.planting_zones],
-                "plan": project.plan.model_dump(mode="json") if project.plan else None,
-                "status": project.status.value,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-
-    @staticmethod
-    def _restore(project: Project, payload: str) -> Project:
-        value = json.loads(payload)
-        zones = [PlantingZoneAssignment.model_validate(item) for item in value["planting_zones"]]
-        if project.planting_zones != zones:
-            raise ValueError("История плана относится к прежним участкам. Обновите историю перед отменой или повтором.")
-        project.planting_zones = zones
-        project.plan = Plan.model_validate(value["plan"]) if value["plan"] is not None else None
-        project.status = ProjectStatus(value["status"])
-        return project
-
-    def _cursor(self, project_id: str) -> int:
-        row = self._connection.execute(
-            "SELECT cursor FROM plan_history_cursors WHERE project_id = ?", (project_id,)
-        ).fetchone()
-        return int(row["cursor"]) if row is not None else 0
-
-    def _save_project(self, project: Project) -> Project:
-        original_version = project.state_version
-        expected = expected_project_version() or original_version or 1
-        row = self._connection.execute(
-            "SELECT state_version FROM projects WHERE id = ?", (project.id,)
-        ).fetchone()
-        if row is None:
-            raise KeyError(f"Project {project.id} not found")
-        current = int(row["state_version"])
-        if current != expected:
-            raise ProjectVersionConflict(project.id, expected, current)
-        project.state_version = expected + 1
-        project.updated_at = datetime.now(UTC).isoformat()
-        payload, projection = self.repository._payloads(project)
-        cursor = self._connection.execute(
-            "UPDATE projects SET payload=?, projection=?, updated_at=?, state_version=? WHERE id=? AND state_version=?",
-            (payload, projection, project.updated_at, project.state_version, project.id, expected),
-        )
-        if cursor.rowcount == 0:
-            latest = self._connection.execute(
-                "SELECT state_version FROM projects WHERE id = ?", (project.id,)
+                *sqlite_sql(
+                    select(receipts.c.payload, receipts.c.status).where(
+                        receipts.c.project_id == project_id,
+                        receipts.c.change_set_id == change_set_id,
+                    )
+                )
             ).fetchone()
-            if latest is None:
-                raise KeyError(f"Project {project.id} not found")
-            raise ProjectVersionConflict(project.id, expected, int(latest["state_version"]))
-        return project
+            return (
+                {**json.loads(row["payload"]), "status": row["status"]} if row else None
+            )
 
     def commit(
         self,
@@ -239,75 +87,110 @@ class SqliteProjectHistory:
         label: str,
         change_set_id: str | None = None,
         receipt: dict | None = None,
+        *,
+        plan_only: bool = False,
     ) -> Project:
-        original_version = project.state_version
-        original_updated_at = project.updated_at
-        try:
-            with self._lock, self._connection:
-                cursor = self._cursor(project.id)
-                self._connection.execute(
-                    "DELETE FROM plan_changes WHERE project_id = ? AND ordinal > ?",
-                    (project.id, cursor),
-                )
-                saved = self._save_project(project)
-                if receipt is not None:
-                    if not change_set_id:
-                        raise ValueError("A receipt requires a change set id")
-                    payload = {**receipt, "state_version": saved.state_version,
-                               "plan_version": saved.plan.version if saved.plan else None,
-                               "committed_at": datetime.now(UTC).isoformat()}
-                    self._connection.execute(
-                        "INSERT INTO plan_change_receipts VALUES (?, ?, ?, 'applied')",
-                        (project.id, change_set_id, json.dumps(payload, ensure_ascii=False, allow_nan=False)))
-                ordinal = cursor + 1
-                self._connection.execute(
-                    """
-                    INSERT INTO plan_changes (
-                        project_id, ordinal, change_set_id, label,
-                        before_payload, after_payload, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        project.id,
-                        ordinal,
-                        change_set_id or str(uuid4()),
-                        label,
-                        self._snapshot_payload(before),
-                        self._snapshot_payload(saved),
-                        datetime.now(UTC).isoformat(),
-                    ),
-                )
-                self._connection.execute(
-                    """
-                    INSERT INTO plan_history_cursors (project_id, cursor) VALUES (?, ?)
-                    ON CONFLICT(project_id) DO UPDATE SET cursor=excluded.cursor
-                    """,
-                    (project.id, ordinal),
-                )
-                floor = max(0, ordinal - self.limit)
-                if floor:
-                    self._connection.execute(
-                        "DELETE FROM plan_changes WHERE project_id = ? AND ordinal <= ?",
-                        (project.id, floor),
+        with self.repository.revision_transaction(project):
+            cursor = self._cursor(project.id)
+            self._connection.execute(
+                *sqlite_sql(
+                    delete(changes).where(
+                        changes.c.project_id == project.id, changes.c.ordinal > cursor
                     )
-            advance_expected_project_version(saved.state_version)
-            return saved
-        except Exception:
-            project.state_version = original_version
-            project.updated_at = original_updated_at
-            raise
+                )
+            )
+            # Только владелец плановых команд может обещать отсутствие правок
+            # координат. Generic history commit сохраняет прежний полный writer.
+            retain_geometry = (
+                plan_only
+                and project.geometry is before.geometry
+                and project.source_geometry is before.source_geometry
+            )
+            saved = (
+                self.repository._write_plan(project)
+                if retain_geometry
+                else self.repository._write_project(project)
+            )
+            if receipt is not None:
+                if not change_set_id:
+                    raise ValueError("A receipt requires a change set id")
+                payload = {
+                    **receipt,
+                    "state_version": saved.state_version,
+                    "plan_version": saved.plan.version if saved.plan else None,
+                    "committed_at": datetime.now(UTC).isoformat(),
+                }
+                self._connection.execute(
+                    *sqlite_sql(
+                        insert(receipts).values(
+                            project_id=project.id,
+                            change_set_id=change_set_id,
+                            payload=json.dumps(
+                                payload, ensure_ascii=False, allow_nan=False
+                            ),
+                            status="applied",
+                        )
+                    )
+                )
+            ordinal = cursor + 1
+            self._connection.execute(
+                *sqlite_sql(
+                    insert(changes).values(
+                        project_id=project.id,
+                        ordinal=ordinal,
+                        change_set_id=change_set_id or str(uuid4()),
+                        label=label,
+                        before_payload=self._snapshot_payload(before),
+                        after_payload=self._snapshot_payload(saved),
+                        created_at=datetime.now(UTC).isoformat(),
+                    )
+                )
+            )
+            position = sqlite_insert(cursors).values(
+                project_id=project.id, cursor=ordinal
+            )
+            self._connection.execute(
+                *sqlite_sql(
+                    position.on_conflict_do_update(
+                        index_elements=[cursors.c.project_id],
+                        set_={"cursor": position.excluded.cursor},
+                    )
+                )
+            )
+            floor = max(0, ordinal - self.limit)
+            if floor:
+                self._connection.execute(
+                    *sqlite_sql(
+                        delete(changes).where(
+                            changes.c.project_id == project.id,
+                            changes.c.ordinal <= floor,
+                        )
+                    )
+                )
+        return saved
 
     def clear(self, project_id: str) -> None:
         with self._lock, self._connection:
-            self._connection.execute("DELETE FROM plan_changes WHERE project_id = ?", (project_id,))
-            self._connection.execute("DELETE FROM plan_history_cursors WHERE project_id = ?", (project_id,))
+            self._connection.execute(
+                *sqlite_sql(delete(changes).where(changes.c.project_id == project_id))
+            )
+            self._connection.execute(
+                *sqlite_sql(delete(cursors).where(cursors.c.project_id == project_id))
+            )
 
-    def rebase_planting_zones(self, project_id: str, zones: list[PlantingZoneAssignment]) -> None:
+    def rebase_planting_zones(
+        self, project_id: str, zones: list[PlantingZoneAssignment]
+    ) -> None:
         serialized = [zone.model_dump(mode="json") for zone in zones]
         with self._lock, self._connection:
             rows = self._connection.execute(
-                "SELECT ordinal, before_payload, after_payload FROM plan_changes WHERE project_id = ?",
-                (project_id,),
+                *sqlite_sql(
+                    select(
+                        changes.c.ordinal,
+                        changes.c.before_payload,
+                        changes.c.after_payload,
+                    ).where(changes.c.project_id == project_id)
+                )
             ).fetchall()
             for row in rows:
                 before = json.loads(str(row["before_payload"]))
@@ -315,41 +198,58 @@ class SqliteProjectHistory:
                 before["planting_zones"] = serialized
                 after["planting_zones"] = serialized
                 self._connection.execute(
-                    "UPDATE plan_changes SET before_payload = ?, after_payload = ? WHERE project_id = ? AND ordinal = ?",
-                    (
-                        json.dumps(before, ensure_ascii=False, separators=(",", ":")),
-                        json.dumps(after, ensure_ascii=False, separators=(",", ":")),
-                        project_id,
-                        int(row["ordinal"]),
-                    ),
+                    *sqlite_sql(
+                        update(changes)
+                        .where(
+                            changes.c.project_id == project_id,
+                            changes.c.ordinal == int(row["ordinal"]),
+                        )
+                        .values(
+                            before_payload=json.dumps(
+                                before, ensure_ascii=False, separators=(",", ":")
+                            ),
+                            after_payload=json.dumps(
+                                after, ensure_ascii=False, separators=(",", ":")
+                            ),
+                        )
+                    )
                 )
-
-    def record(self, project: Project, label: str) -> PlanHistoryState:
-        del project, label
-        raise RuntimeError("SqliteProjectHistory.record must be committed through commit()")
 
     def state(self, project_id: str) -> PlanHistoryState:
         with self._lock:
             cursor = self._cursor(project_id)
             undo = self._connection.execute(
-                "SELECT label FROM plan_changes WHERE project_id = ? AND ordinal = ?",
-                (project_id, cursor),
+                *sqlite_sql(
+                    select(changes.c.label, changes.c.change_set_id).where(
+                        changes.c.project_id == project_id, changes.c.ordinal == cursor
+                    )
+                )
             ).fetchone()
             redo = self._connection.execute(
-                "SELECT label FROM plan_changes WHERE project_id = ? AND ordinal = ?",
-                (project_id, cursor + 1),
+                *sqlite_sql(
+                    select(changes.c.label, changes.c.change_set_id).where(
+                        changes.c.project_id == project_id,
+                        changes.c.ordinal == cursor + 1,
+                    )
+                )
             ).fetchone()
             rows = self._connection.execute(
-                """
-                SELECT ordinal, change_set_id, label, created_at
-                FROM plan_changes
-                WHERE project_id = ?
-                ORDER BY ordinal DESC
-                LIMIT 20
-                """,
-                (project_id,),
+                *sqlite_sql(
+                    select(
+                        changes.c.ordinal,
+                        changes.c.change_set_id,
+                        changes.c.label,
+                        changes.c.created_at,
+                    )
+                    .where(changes.c.project_id == project_id)
+                    .order_by(changes.c.ordinal.desc())
+                    .limit(20)
+                )
             ).fetchall()
         return PlanHistoryState(
+            cursor_ordinal=cursor,
+            undo_target_id=str(undo["change_set_id"]) if undo is not None else None,
+            redo_target_id=str(redo["change_set_id"]) if redo is not None else None,
             can_undo=undo is not None,
             can_redo=redo is not None,
             undo_label=str(undo["label"]) if undo is not None else None,
@@ -367,57 +267,152 @@ class SqliteProjectHistory:
         )
 
     def undo(self, project: Project) -> Project:
-        original_version = project.state_version
-        original_updated_at = project.updated_at
-        try:
-            with self._lock, self._connection:
-                cursor = self._cursor(project.id)
-                row = self._connection.execute(
-                    "SELECT before_payload FROM plan_changes WHERE project_id = ? AND ordinal = ?",
-                    (project.id, cursor),
-                ).fetchone()
-                if row is None:
-                    raise ValueError("Нет изменений для отмены")
-                self._restore(project, str(row["before_payload"]))
-                saved = self._save_project(project)
-                self._connection.execute(
-                    "UPDATE plan_change_receipts SET status='undone' WHERE project_id=? AND change_set_id IN (SELECT change_set_id FROM plan_changes WHERE project_id=? AND ordinal=?)",
-                    (project.id, project.id, cursor))
-                self._connection.execute(
-                    "UPDATE plan_history_cursors SET cursor = ? WHERE project_id = ?",
-                    (cursor - 1, project.id),
+        with self.repository.revision_transaction(project):
+            cursor = self._cursor(project.id)
+            row = self._connection.execute(
+                *sqlite_sql(
+                    select(changes.c.before_payload).where(
+                        changes.c.project_id == project.id, changes.c.ordinal == cursor
+                    )
                 )
-            advance_expected_project_version(saved.state_version)
-            return saved
-        except Exception:
-            project.state_version = original_version
-            project.updated_at = original_updated_at
-            raise
+            ).fetchone()
+            if row is None:
+                raise ValueError("Нет изменений для отмены")
+            self._restore(project, str(row["before_payload"]))
+            # _restore меняет только план, статус и проверенные прежние зоны.
+            saved = self.repository._write_plan(project)
+            self._connection.execute(
+                *sqlite_sql(
+                    update(receipts)
+                    .where(
+                        receipts.c.project_id == project.id,
+                        receipts.c.change_set_id.in_(
+                            select(changes.c.change_set_id).where(
+                                changes.c.project_id == project.id,
+                                changes.c.ordinal == cursor,
+                            )
+                        ),
+                    )
+                    .values(status="undone")
+                )
+            )
+            self._connection.execute(
+                *sqlite_sql(
+                    update(cursors)
+                    .where(cursors.c.project_id == project.id)
+                    .values(cursor=cursor - 1)
+                )
+            )
+        return saved
 
     def redo(self, project: Project) -> Project:
-        original_version = project.state_version
-        original_updated_at = project.updated_at
-        try:
-            with self._lock, self._connection:
-                cursor = self._cursor(project.id)
-                row = self._connection.execute(
-                    "SELECT after_payload FROM plan_changes WHERE project_id = ? AND ordinal = ?",
-                    (project.id, cursor + 1),
-                ).fetchone()
-                if row is None:
-                    raise ValueError("Нет изменений для повтора")
-                self._restore(project, str(row["after_payload"]))
-                saved = self._save_project(project)
-                self._connection.execute(
-                    "UPDATE plan_change_receipts SET status='applied' WHERE project_id=? AND change_set_id IN (SELECT change_set_id FROM plan_changes WHERE project_id=? AND ordinal=?)",
-                    (project.id, project.id, cursor + 1))
-                self._connection.execute(
-                    "UPDATE plan_history_cursors SET cursor = ? WHERE project_id = ?",
-                    (cursor + 1, project.id),
+        with self.repository.revision_transaction(project):
+            cursor = self._cursor(project.id)
+            row = self._connection.execute(
+                *sqlite_sql(
+                    select(changes.c.after_payload).where(
+                        changes.c.project_id == project.id,
+                        changes.c.ordinal == cursor + 1,
+                    )
                 )
-            advance_expected_project_version(saved.state_version)
-            return saved
-        except Exception:
-            project.state_version = original_version
-            project.updated_at = original_updated_at
-            raise
+            ).fetchone()
+            if row is None:
+                raise ValueError("Нет изменений для повтора")
+            self._restore(project, str(row["after_payload"]))
+            saved = self.repository._write_plan(project)
+            self._connection.execute(
+                *sqlite_sql(
+                    update(receipts)
+                    .where(
+                        receipts.c.project_id == project.id,
+                        receipts.c.change_set_id.in_(
+                            select(changes.c.change_set_id).where(
+                                changes.c.project_id == project.id,
+                                changes.c.ordinal == cursor + 1,
+                            )
+                        ),
+                    )
+                    .values(status="applied")
+                )
+            )
+            self._connection.execute(
+                *sqlite_sql(
+                    update(cursors)
+                    .where(cursors.c.project_id == project.id)
+                    .values(cursor=cursor + 1)
+                )
+            )
+        return saved
+
+    @staticmethod
+    def _snapshot_payload(project: Project) -> str:
+        return json.dumps(
+            {
+                "planting_zones": [
+                    zone.model_dump(mode="json") for zone in project.planting_zones
+                ],
+                "plan": project.plan.model_dump(mode="json") if project.plan else None,
+                "status": project.status.value,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    def _restore(self, project: Project, payload: str) -> Project:
+        value = json.loads(payload)
+        zones = [
+            PlantingZoneAssignment.model_validate(item)
+            for item in value["planting_zones"]
+        ]
+        if project.planting_zones != zones:
+            raise ValueError(
+                "История плана относится к прежним участкам. Обновите историю перед отменой или повтором."
+            )
+        project.planting_zones = zones
+        previous_version = project.plan.version if project.plan else 0
+        project.plan = (
+            Plan.model_validate(value["plan"]) if value["plan"] is not None else None
+        )
+        _advance_restored_plan(project, previous_version)
+        project.status = ProjectStatus(value["status"])
+        _invalidate_restored_basis(project, self.basis_reader)
+        return project
+
+    def _cursor(self, project_id: str) -> int:
+        row = self._connection.execute(
+            *sqlite_sql(
+                select(cursors.c.cursor).where(cursors.c.project_id == project_id)
+            )
+        ).fetchone()
+        return int(row["cursor"]) if row is not None else 0
+
+
+def _advance_restored_plan(project: Project, previous_version: int) -> None:
+    if project.plan is None:
+        return
+    # Восстановление является новой правкой; старая версия предпросмотра не переиспользуется.
+    project.plan.version = previous_version + 1
+    if project.plan.validation_basis is not None:
+        project.plan.validation_basis = project.plan.validation_basis.model_copy(
+            update={"plan_version": project.plan.version}
+        )
+
+
+def _invalidate_restored_basis(
+    project: Project, basis_reader: BasisReader | None
+) -> None:
+    plan = project.plan
+    if plan is None or plan.validation_basis is None:
+        return
+    stored = plan.validation_basis
+    current = basis_reader(project) if basis_reader else None
+    if (
+        current is None
+        or stored.geometry_version != project.geometry_version
+        or stored.geometry_digest != current.geometry_digest
+        or stored.calculation_digest != current.calculation_digest
+        or stored.evidence_digest != current.evidence_digest
+    ):
+        # Замечания остаются историческими. Восстановление объектов само по себе
+        # не делает проверку действующей при неизвестном расчётном основании.
+        plan.validation_basis = None

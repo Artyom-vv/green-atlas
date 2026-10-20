@@ -13,8 +13,12 @@ describe('PlacementWorkspace', () => {
         manual={<input aria-label="Состав посадок" defaultValue="40" />}
       />,
     );
-    expect(screen.getByRole('textbox', { name: 'Состав посадок' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Подобрать автоматически' })).toBeNull();
+    expect(
+      screen.getByRole('textbox', { name: 'Состав посадок' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Подобрать автоматически' }),
+    ).toBeNull();
     expect(screen.queryByRole('button', { name: 'Способ подбора' })).toBeNull();
   });
 
@@ -28,9 +32,13 @@ describe('PlacementWorkspace', () => {
     const draft = screen.getByRole('textbox', { name: 'Черновик состава' });
     fireEvent.change(draft, { target: { value: '72' } });
     rerender(<PlacementWorkspace {...props} open={false} />);
-    expect(screen.getByLabelText('Размещение посадок')).toHaveAttribute('inert');
+    expect(screen.getByLabelText('Размещение посадок')).toHaveAttribute(
+      'inert',
+    );
     rerender(<PlacementWorkspace {...props} />);
-    expect(screen.getByRole('textbox', { name: 'Черновик состава' })).toBe(draft);
+    expect(screen.getByRole('textbox', { name: 'Черновик состава' })).toBe(
+      draft,
+    );
     expect(draft).toHaveValue('72');
   });
 
@@ -39,7 +47,9 @@ describe('PlacementWorkspace', () => {
     const { rerender } = render(
       <PlacementWorkspace open onClose={onClose} manual={<p>Настройки</p>} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Свернуть размещение' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Свернуть размещение' }),
+    );
     expect(onClose).toHaveBeenCalledOnce();
     rerender(
       <PlacementWorkspace
@@ -49,6 +59,8 @@ describe('PlacementWorkspace', () => {
         manual={<p>Настройки</p>}
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Свернуть размещение' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Свернуть размещение' }),
+    ).toBeNull();
   });
 });

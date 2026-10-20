@@ -1,2 +1,1 @@
-"""Versioned regulatory evidence used by validation and release snapshots."""
-
+"""Домен нормативных оснований: версии правил, источники и трассы проверок."""

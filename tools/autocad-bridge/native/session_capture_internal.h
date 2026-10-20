@@ -1,8 +1,10 @@
 #pragma once
+#include "filesystem_utf8.h"
 #include "AcString.h"
 #include "dbents.h"
 #include "dbsymtb.h"
 #include "file_io.h"
+#include "semantic_evidence.h"
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -32,8 +34,8 @@ inline std::string quote(const std::string& text) {
     return "\"" + ga::bridge::jsonEscape(text) + "\"";
 }
 inline void publish(const fs::path& path, const std::string& text) {
-    if (fs::exists(path) || !ga::bridge::writeAtomicText(path.string(), text))
-        throw std::runtime_error("capture publication failed: " + path.filename().string());
+    if (fs::exists(path) || !ga::bridge::writeAtomicText(ga::bridge::utf8Path(path), text))
+        throw std::runtime_error("capture publication failed: " + ga::bridge::utf8Path(path.filename()));
 }
 struct Link {
     AcDbObjectId sourceId;
@@ -50,11 +52,16 @@ struct Unit {
     std::vector<Link> links;
 };
 struct Instance {
-    std::string route, type, layer, unavailable;
+    std::string route, type, authoredLayer, effectiveLayer, unavailable;
     std::vector<AcDbObjectId> chain;
     AcGeMatrix3d transform;
+    bool semanticEligible = false;
+    // Most CAD instances contain no annotation. Keep their catalogue row small;
+    // the bounded authored value is allocated only for supported text classes.
+    std::unique_ptr<SemanticValue> semantic;
 };
-std::vector<Instance> captureInstances(AcDbDatabase& source);
+std::vector<Instance> captureInstances(AcDbDatabase& source, bool withSemantics = false);
 std::string instanceReceipt(const std::vector<Instance>& instances,
-                            const std::vector<Unit>& units);
+                            const std::vector<Unit>& units,
+                            SemanticCatalogue& semantics);
 }

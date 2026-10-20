@@ -4,9 +4,9 @@ import {
   SCENE_QUALITY_BUDGET,
   SCENE_RENDER_TARGETS,
   SCENE_TELEMETRY_ATTRIBUTES,
-} from '../src/domain-ui/scene/sceneRenderContract';
-import { SCENE_RESOURCE_DIAGNOSTICS_LABEL } from '../src/domain-ui/SceneResourceDiagnostics';
-import { PLAN_VIEW_STATE_ATTRIBUTES } from '../src/domain-ui/planViewState';
+} from '../src/widgets/scene/model/sceneRenderContract';
+import { SCENE_RESOURCE_DIAGNOSTICS_LABEL } from '../src/widgets/scene/ui/SceneResourceDiagnostics';
+import { PLAN_VIEW_STATE_ATTRIBUTES } from '../src/entities/editor/model/planViewState';
 import { createSceneProject } from './support/createSceneProject';
 import { exerciseSceneViewCycles, readPlanViewState, readSceneTelemetry, waitForSettledPlanViewState } from './support/sceneTelemetry';
 

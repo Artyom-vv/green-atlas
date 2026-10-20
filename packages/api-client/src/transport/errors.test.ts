@@ -22,6 +22,7 @@ describe('HTTP error compatibility', () => {
         message: error.message,
         fieldErrors: error.field_errors,
         details: error.details,
+        status: 409,
       });
     },
   );
@@ -34,10 +35,21 @@ describe('HTTP error compatibility', () => {
     );
     expect(detail.message).toBe('Укажите участок');
     expect(detail.code).toBe('HTTP_ERROR');
+    expect(detail.status).toBe(422);
     const proxy = await responseError(
       new Response('<h1>Bad gateway</h1>', { status: 502 }),
     );
     expect(proxy.message).toBe('Ошибка запроса: 502');
     expect(proxy.fieldErrors).toEqual({});
+    expect(proxy.status).toBe(502);
+  });
+
+  it('keeps existing manually constructed errors compatible without a response status', () => {
+    const error = new ApiClientError('LOCAL_ERROR', 'Local validation failed', {
+      count: ['Required'],
+    });
+    expect(error.status).toBeUndefined();
+    expect(error.fieldErrors).toEqual({ count: ['Required'] });
+    expect(error.details).toEqual({});
   });
 });

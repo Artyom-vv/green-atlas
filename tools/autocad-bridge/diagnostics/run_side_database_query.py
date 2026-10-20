@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.native_query.contracts import NativeObjectQuery
-from app.native_query.protocol import decode_reply, encode_request
+from app.native_query.transport.protocol import decode_reply, encode_request
 from run_direct_queries import CORE, digest, quoted, run_core
 from run_product_query_batch import stage_package
 

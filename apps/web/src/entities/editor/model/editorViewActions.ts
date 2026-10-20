@@ -3,6 +3,10 @@ import type { EditorSession } from './editorStore';
 import type { EditorViewState, StateUpdate } from './editorTypes';
 
 export interface EditorViewActions {
+  setGrowthHorizon: (horizon: number) => void;
+  setPlanComparison: (mode: EditorViewState['planComparison']) => void;
+  showScene: (viewState?: EditorViewState['sceneInitialViewState']) => void;
+  hideScene: (viewState?: EditorViewState['sceneInitialViewState']) => void;
   setResourcesTab: (tab: EditorViewState['resourcesTab']) => void;
   openSourceLayers: () => void;
   setPanel: (update: StateUpdate<EditorViewState['panel']>) => void;
@@ -31,6 +35,18 @@ export function createEditorViewActions(
   set: StoreApi<EditorSession>['setState'],
 ): EditorViewActions {
   return {
+    setGrowthHorizon: (growthHorizon) => set({ growthHorizon }),
+    setPlanComparison: (planComparison) => set({ planComparison }),
+    showScene: (viewState) =>
+      set((state) => ({
+        scenePhase: 'visible',
+        sceneInitialViewState: viewState ?? state.sceneInitialViewState,
+      })),
+    hideScene: (viewState) =>
+      set((state) => ({
+        scenePhase: state.scenePhase === 'unmounted' ? 'unmounted' : 'hidden',
+        sceneInitialViewState: viewState ?? state.sceneInitialViewState,
+      })),
     setResourcesTab: (resourcesTab) => set({ resourcesTab }),
     openSourceLayers: () => set({ resourcesTab: 'layers', leftOpen: true }),
     setPanel: (update) =>

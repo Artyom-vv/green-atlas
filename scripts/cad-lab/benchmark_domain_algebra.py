@@ -17,8 +17,8 @@ from time import monotonic
 from shapely.geometry import GeometryCollection, box, shape
 from shapely.ops import unary_union
 
-from app.native_query.calculation_rules import calculation_rule, effective_category
-from app.native_query.derived_faces import LINE_CATEGORIES
+from app.native_query.policy.calculation_rules import calculation_rule, effective_category
+from app.native_query.preparation.derived_faces import LINE_CATEGORIES
 from app.projects.contracts import Project
 
 

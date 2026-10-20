@@ -27,7 +27,7 @@ sys.path.insert(0, str(root / 'apps/api'))
 
 import ezdxf
 from ezdxf.sections.acdsdata import acis_entity_handle, is_acis_data
-from app.dxf_import import adapters
+from app.dxf_import.legacy import reader as adapters
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.geometry.geojson_size import coordinate_count
 

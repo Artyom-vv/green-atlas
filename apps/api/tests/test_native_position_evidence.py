@@ -1,22 +1,106 @@
 """Reason provenance and read-only probes; analytic oracle, not CAD acceptance."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_native_live_provider import StubNative
 from test_native_live_provider import setup as native_setup
 
-from app.native_query.contracts import NativeObjectMeasurement, NativePointMeasurement
-from app.native_query.group_measurement import measure_group_curves
-from app.native_query.live_inventory import QueryObject, query_objects
-from app.native_query.live_rules import MeasuredObstacle
-from app.native_query.position_evidence import failure_reason
+from app.geometry.ports import PositionRejected
+from app.native_query.contracts import (
+    NativeObjectMeasurement,
+    NativeObjectQuery,
+    NativePointMeasurement,
+)
+from app.native_query.live.live_client import LiveSession
+from app.native_query.live.live_inventory import QueryObject, query_objects
+from app.native_query.measurement.group_measurement import measure_group_curves
+from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+from app.native_query.policy.live_rules import MeasuredObstacle
+from app.native_query.policy.position_evidence import failure_reason
+from app.projects.contracts import Project
 
 setup = native_setup
+NativeSetup = tuple[LiveNativeGeometryEngine, StubNative, Project]
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+def test_position_refusal_preserves_geometric_result_without_exception_text(
+    setup: NativeSetup, prepared: bool
+) -> None:
+    if prepared:
+        from test_prepared_geometry import local
+
+        engine, _, project = local(setup)
+    else:
+        engine, _, project = setup
+    violation = engine.position_violation(project, 5, 0, 0.5, "shrub")
+    assert violation is not None
+    assert violation.code == "NATIVE_OCCUPIED"
+    assert violation.source_feature_ids == ("BB",)
+    with pytest.raises(PositionRejected) as rejected:
+        engine.validate_position(project, 5, 0, 0.5, "shrub")
+    assert rejected.value.violation == violation
+    assert rejected.value.args == ()
+
+
+def test_answer_without_object_measurement_keeps_addressed_unknown_placement(
+    setup: NativeSetup,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.composition import create_runtime
+    from app.planning.contracts import PlacementCheckRequest
+
+    engine, _, project = setup
+    incomplete_rows = tuple(
+        MeasuredObstacle(
+            row.item,
+            None,
+            NativePointMeasurement(
+                point_index=0,
+                status=0,
+                membership="unknown",
+                distance_units=None,
+                error="",
+            ),
+        )
+        if row.item.layer == "Здания"
+        else row
+        for row in engine._rows(project, 5, 0, 0.5)
+    )
+
+    def rows_for(
+        current: Project, x: float, y: float, radius: float
+    ) -> tuple[MeasuredObstacle, ...]:
+        return incomplete_rows
+
+    monkeypatch.setattr(engine, "_rows", rows_for)
+    advisory = engine.placement_advisory_detail(project, 5, 0, 0.5, "shrub")
+    assert advisory.code == "NATIVE_LOCAL_UNKNOWN"
+    assert advisory.source_layer == "Здания"
+    assert advisory.source_feature_ids == ("BB",)
+
+    runtime = create_runtime(tmp_path / "project.sqlite3", geometry_engine=engine)
+    try:
+        runtime.project_repository.create(project)
+        before = runtime.application.get(project.id).model_dump()
+        result = runtime.application.manual.check_placement(
+            project.id, PlacementCheckRequest(kind="shrub", x=5, y=0, radius=0.5)
+        )
+        assert result.status == "unknown"
+        assert result.code == "NATIVE_LOCAL_UNKNOWN"
+        assert result.source_layer == "Здания"
+        assert result.source_feature_ids == ["BB"]
+        assert runtime.application.get(project.id).model_dump() == before
+    finally:
+        runtime.close()
 
 
 def test_existing_placement_endpoint_can_explain_rejection_without_plan_writes(
-    setup, tmp_path
-):
+    setup: NativeSetup, tmp_path: Path
+) -> None:
     from app.composition import create_runtime
     from app.planning.contracts import PlacementCheckRequest
 
@@ -36,6 +120,7 @@ def test_existing_placement_endpoint_can_explain_rejection_without_plan_writes(
             ),
         )
         assert result.status == "blocked"
+        assert result.geometry_evidence is not None
         assert result.geometry_evidence.state == "excluded"
         assert result.geometry_evidence.causes[0].source_feature_ids == ["BB"]
         assert runtime.application.get(project.id).model_dump() == before
@@ -54,7 +139,9 @@ def test_existing_placement_endpoint_can_explain_rejection_without_plan_writes(
         runtime.close()
 
 
-def test_explains_all_nearby_causes_and_does_not_mutate_project(setup):
+def test_explains_all_nearby_causes_and_does_not_mutate_project(
+    setup: NativeSetup,
+) -> None:
     engine, _, project = setup
     before = project.model_dump()
     # Between building and road: crown intersects both; preserve both causes
@@ -68,7 +155,9 @@ def test_explains_all_nearby_causes_and_does_not_mutate_project(setup):
     assert project.model_dump() == before
 
 
-def test_missing_confirmation_is_not_claimed_to_be_an_autocad_error(setup):
+def test_missing_confirmation_is_not_claimed_to_be_an_autocad_error(
+    setup: NativeSetup,
+) -> None:
     engine, client, project = setup
     project.layers[1].mapping_confirmed = False
     result = engine.explain_position(project, 8, 0, 0.5, "shrub")
@@ -78,7 +167,7 @@ def test_missing_confirmation_is_not_claimed_to_be_an_autocad_error(setup):
     assert all(t.route != "BB" for q in client.calls for t in q.targets)
 
 
-def test_clear_point_and_stale_identity(setup):
+def test_clear_point_and_stale_identity(setup: NativeSetup) -> None:
     engine, client, project = setup
     result = engine.explain_position(project, 50, 0, 0.5, "shrub")
     assert result.state == "available" and not result.causes
@@ -94,7 +183,9 @@ def test_clear_point_and_stale_identity(setup):
         ("", "measurement_missing"),
     ],
 )
-def test_inventory_and_transport_failures_are_distinct(setup, error, expected):
+def test_inventory_and_transport_failures_are_distinct(
+    setup: NativeSetup, error: str, expected: str
+) -> None:
     _, _, project = setup
     row = MeasuredObstacle(
         QueryObject(
@@ -110,7 +201,9 @@ def test_inventory_and_transport_failures_are_distinct(setup, error, expected):
     assert failure_reason(row, project.layers[1])[0] == expected
 
 
-def test_group_limit_is_explicit_and_does_not_construct_an_invalid_curve_target(setup):
+def test_group_limit_is_explicit_and_does_not_construct_an_invalid_curve_target(
+    setup: NativeSetup,
+) -> None:
     _, _, project = setup
     row = MeasuredObstacle(
         QueryObject(
@@ -130,14 +223,16 @@ def test_group_limit_is_explicit_and_does_not_construct_an_invalid_curve_target(
     assert failure_reason(row, project.layers[1])[0] == "measurement_missing"
 
 
-def test_area_failure_keeps_curve_measurements_but_never_certifies_interior(setup):
+def test_area_failure_keeps_curve_measurements_but_never_certifies_interior(
+    setup: NativeSetup,
+) -> None:
     engine, client, project = setup
     items = [
         i.model_copy(update={"layer": "Здания"}) if i.route == "CC" else i
         for i in engine.inventory.objects
     ]
     inventory = engine.inventory.model_copy(update={"objects": tuple(items)})
-    from app.native_query.live_inventory import InventoryGroup
+    from app.native_query.live.live_inventory import InventoryGroup
 
     inventory = inventory.model_copy(
         update={
@@ -165,7 +260,9 @@ def test_area_failure_keeps_curve_measurements_but_never_certifies_interior(setu
     assert any(c.code == "object_interior" for c in inside.causes)
 
 
-def test_one_failed_member_does_not_invent_distance_for_the_group(setup):
+def test_one_failed_member_does_not_invent_distance_for_the_group(
+    setup: NativeSetup,
+) -> None:
     engine, _, _ = setup
     group = QueryObject(
         routes=("AA", "BB"),
@@ -176,7 +273,7 @@ def test_one_failed_member_does_not_invent_distance_for_the_group(setup):
         error="open native endpoint chain",
     )
 
-    def measure(session, query):
+    def measure(session: LiveSession, query: NativeObjectQuery) -> SimpleNamespace:
         return SimpleNamespace(
             objects=tuple(
                 NativeObjectMeasurement(
@@ -208,9 +305,9 @@ def test_one_failed_member_does_not_invent_distance_for_the_group(setup):
     assert result.answers[0].status != 0
 
 
-def test_member_error_never_enters_readable_group_path(setup):
+def test_member_error_never_enters_readable_group_path(setup: NativeSetup) -> None:
     engine, _, _ = setup
-    from app.native_query.live_inventory import InventoryGroup
+    from app.native_query.live.live_inventory import InventoryGroup
 
     objects = tuple(
         i.model_copy(update={"error": "unreadable", "layer": "Здания"})

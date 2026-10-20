@@ -13,6 +13,8 @@ export interface ResizeHandleProps {
   min: number;
   max: number;
   reverse?: boolean;
+  /** Paint the full boundary while retaining the wider pointer target. */
+  appearance?: 'grip' | 'boundary';
   step?: number;
   onChange: (value: number) => void;
   onReset: () => void;
@@ -26,6 +28,7 @@ export const ResizeHandle: FC<ResizeHandleProps> = ({
   min,
   max,
   reverse = false,
+  appearance = 'grip',
   step = DEFAULT_RESIZE_STEP,
   onChange,
   onReset,
@@ -36,7 +39,7 @@ export const ResizeHandle: FC<ResizeHandleProps> = ({
     orientation === 'vertical' ? event.clientX : event.clientY;
   const update = (next: number) =>
     onChange(Math.round(Math.max(min, Math.min(max, next))));
-  const styles = resizeHandle({ orientation });
+  const styles = resizeHandle({ orientation, appearance });
   return (
     <div
       role="separator"

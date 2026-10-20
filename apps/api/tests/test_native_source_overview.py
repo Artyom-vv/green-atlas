@@ -3,13 +3,14 @@ from xml.etree import ElementTree as ET
 
 from app.dxf_import.contracts import ImportMode, ImportStatus
 from app.geometry.contracts import GeometrySnapshot
-from app.geometry.query_adapters import IndexedGeometryQuery
+from app.geometry.viewport.query_adapters import IndexedGeometryQuery
 from app.projects.contracts import Project
 
 
 def test_overview_declares_semantics_without_closing_open_lines():
     from shapely.geometry import LineString, Polygon
-    from app.geometry.source_overview import source_overview
+
+    from app.geometry.viewport.source_overview import source_overview
 
     result = source_overview([
         ({'properties': {'source_layer': 'Газон', 'kind': 'lawn'}},
@@ -26,7 +27,8 @@ def test_overview_declares_semantics_without_closing_open_lines():
 def test_overview_keeps_simple_segments_and_rings_without_topology_work(monkeypatch):
     from shapely.geometry import LineString, Point, Polygon
     from shapely.geometry.base import BaseGeometry
-    from app.geometry.source_overview import _display_paths
+
+    from app.geometry.viewport.source_overview import _display_paths
 
     def unexpected(*_args, **_kwargs):
         raise AssertionError('simple display geometry must not call GEOS simplify')
@@ -66,7 +68,7 @@ def test_picking_budget_does_not_erase_unmapped_native_context():
 def test_overview_preserves_holes_and_separate_entities_not_derived_constraints():
     from shapely.geometry import LineString, Polygon
 
-    from app.geometry.source_overview import source_overview
+    from app.geometry.viewport.source_overview import source_overview
     polygon = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)],
                       holes=[[(2, 2), (2, 4), (4, 4), (4, 2)]])
     feature = {'properties': {'source_layer': 'original', 'kind': 'building'}}
@@ -83,7 +85,7 @@ def test_overview_preserves_holes_and_separate_entities_not_derived_constraints(
 def test_overview_reuses_paths_but_frames_the_current_viewport(monkeypatch):
     from shapely.geometry import LineString
 
-    import app.geometry.source_overview as module
+    import app.geometry.viewport.source_overview as module
 
     original = module._source_drawing
     calls = []
@@ -110,7 +112,7 @@ def test_overview_reuses_paths_but_frames_the_current_viewport(monkeypatch):
 def test_overview_cache_is_bounded_and_discarded_with_geometry_revision():
     from shapely.geometry import LineString
 
-    import app.geometry.source_overview as module
+    import app.geometry.viewport.source_overview as module
 
     candidates = [({'properties': {'source_layer': 'Здание', 'kind': 'building'}},
                    LineString([(0, 0), (10, 10)]))]
@@ -143,16 +145,48 @@ def test_overview_cache_is_bounded_and_discarded_with_geometry_revision():
     assert query.cached_project_count == 0
 
 
+def test_oversized_overview_reuses_refusal_without_retaining_svg(monkeypatch):
+    from shapely.geometry import LineString
+
+    import app.geometry.viewport.source_overview as module
+
+    candidates = [({'properties': {'source_layer': 'Сети', 'kind': 'utility'}},
+                   LineString([(0, 0), (10, 10)]))]
+    original = module._source_drawing
+    calls = []
+
+    def observed(items, resolution, cache=None):
+        calls.append(resolution)
+        return original(items, resolution, cache)
+
+    monkeypatch.setattr(module, '_source_drawing', observed)
+    monkeypatch.setattr(module, 'MAX_SVG_BYTES', 100)
+    cache = module.SourceOverviewCache(max_bytes=256, max_entries=1)
+    first = cache.render(candidates, (-1, -1, 11, 11), 1, b'same')
+    expected = module.source_overview(candidates, (-2, -2, 12, 12), 1)
+    calls.clear()
+    second = cache.render(candidates, (-2, -2, 12, 12), 1, b'same')
+    assert first['error'] == 'overview_byte_budget'
+    assert first['svg'] is None and first['complete'] is False
+    assert second == expected
+    assert calls == []
+    assert next(iter(cache._drawings.values()))['body'] == ''
+    assert cache._bytes <= cache.max_bytes
+    # Иное основание не получает отказ от предыдущего источника.
+    cache.render(candidates, (-1, -1, 11, 11), 1, b'changed')
+    assert calls == [1]
+
+
 def test_overlapping_pan_only_prepares_new_paths_and_matches_uncached_output(monkeypatch):
     from shapely.geometry import LineString
 
-    import app.geometry.source_overview as module
+    import app.geometry.viewport.source_overview as module
     original = module._display_paths
     calls = []
 
-    def observed(geometry, resolution):
+    def observed(geometry, resolution, **options):
         calls.append(id(geometry))
-        return original(geometry, resolution)
+        return original(geometry, resolution, **options)
 
     monkeypatch.setattr(module, '_display_paths', observed)
     features = [({'properties': {'source_layer': 'Сети', 'kind': 'utility'}},

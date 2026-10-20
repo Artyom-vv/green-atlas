@@ -27,8 +27,15 @@ describe('operation error read recovery', () => {
     const onPrepare = vi.fn();
     const onClose = vi.fn();
     const onReload = vi.fn();
-    render(<OperationErrorDialog open error={new Error('Требуется расчёт')}
-      onPrepare={onPrepare} onClose={onClose} onReload={onReload} />);
+    render(
+      <OperationErrorDialog
+        open
+        error={new Error('Требуется расчёт')}
+        onPrepare={onPrepare}
+        onClose={onClose}
+        onReload={onReload}
+      />,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Подготовить расчёт' }));
     expect(onPrepare).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);

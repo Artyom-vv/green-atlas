@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from app.cad_import.boundary_contracts import DrawingBoundaryCatalog
-from app.cad_intake.asset_contracts import CadAssetUnavailable
-from app.cad_intake.asset_files import ASSET_CHUNK_BYTES, asset_chunks
-from app.cad_intake.asset_response import CadAssetResponse
-from app.cad_intake.config import AllowedCadRoot
+from app.cad_import.boundary.contracts import DrawingBoundaryCatalog
+from app.cad_intake.assets.contracts import CadAssetUnavailable
+from app.cad_intake.assets.files import ASSET_CHUNK_BYTES, asset_chunks
+from app.cad_intake.assets.response import CadAssetResponse
+from app.cad_intake.inspection.config import AllowedCadRoot
 from app.operations.contracts import OperationKind, OperationStatus
 from tests.cad_asset_fixtures import fixture_asset
 

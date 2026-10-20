@@ -1,7 +1,7 @@
 import pytest
 
 from app.contracts import RowPatternRequest
-from app.planning.patterns import generate_row
+from app.planning.patterns.generators import generate_row
 
 
 @pytest.mark.parametrize("count", [2, 5, 6])

@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Project } from '@green/api-client';
+import { isUnsentLocalRequest, type Project } from '@green/api-client';
+import {
+  acknowledgeProjectWrite,
+  validateAcknowledgedProjectRead,
+} from '@/entities/project/model/acknowledgedRead';
+import {
+  captureHistoryCommand,
+  historyGoalMatches,
+  type HistoryCommandContext,
+} from './historyProof';
 import {
   historyCommands,
   readHistorySnapshot,
@@ -22,6 +31,8 @@ interface HistoryAttempt {
   action: HistoryCommand;
   submittedAt: number;
   receipt?: Project;
+  sent: boolean;
+  context?: HistoryCommandContext;
   notified: boolean;
 }
 
@@ -49,10 +60,10 @@ export function usePlanHistoryCommands({
       setStates((current) => ({ ...current, [value.projectId]: value })),
     [],
   );
-  useEffect(() => {
+  useLayoutEffect(() => {
     owner.current = projectId;
   }, [projectId]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
@@ -72,6 +83,7 @@ export function usePlanHistoryCommands({
         const { project, history } = await readHistorySnapshot(
           attempt.projectId,
         );
+        validateAcknowledgedProjectRead(client, attempt.projectId, project);
         const cached = client.getQueryData<Project>([
           'workspace-project',
           attempt.projectId,
@@ -93,8 +105,17 @@ export function usePlanHistoryCommands({
               : previous,
         );
         client.setQueryData(['plan-history', attempt.projectId], history);
+        if (
+          attempt.sent &&
+          !attempt.receipt &&
+          (!attempt.context ||
+            !historyGoalMatches(attempt.context, project, history))
+        )
+          throw new Error(
+            'Результат команды истории пока не подтверждён. Перечитайте проект. Повтор команды не выполняется.',
+          );
         if (current()) {
-          if (!attempt.notified) {
+          if (attempt.sent && !attempt.notified) {
             attempt.notified = true;
             onCommitted();
           }
@@ -126,16 +147,65 @@ export function usePlanHistoryCommands({
         action,
         submittedAt: Date.now(),
         notified: false,
+        sent: false,
       };
       active.current.set(projectId, attempt);
-      setState({ ...attempt, phase: 'writing' });
-      void historyCommands[action](projectId)
-        .then(async (receipt) => {
+      setState({ ...attempt, phase: 'refreshing' });
+      void (async () => {
+        try {
+          const snapshot = await readHistorySnapshot(projectId);
+          validateAcknowledgedProjectRead(client, projectId, snapshot.project);
+          const cached = client.getQueryData<Project>([
+            'workspace-project',
+            projectId,
+          ]);
+          if (cached && cached.state_version > snapshot.project.state_version)
+            throw new Error(
+              'Рабочая версия истории устарела. Повторите чтение проекта.',
+            );
+          attempt.context = captureHistoryCommand(
+            projectId,
+            snapshot.project,
+            snapshot.history,
+            action,
+          );
+        } catch (recoveryError) {
+          if (mounted.current)
+            setState({ ...attempt, phase: 'recovery', recoveryError });
+          return;
+        }
+        // A pure preflight read does not block leaving. Its late answer must
+        // never start a new write for a departed document or project.
+        if (
+          !mounted.current ||
+          owner.current !== projectId ||
+          active.current.get(projectId) !== attempt
+        ) {
+          if (active.current.get(projectId) === attempt)
+            active.current.delete(projectId);
+          if (mounted.current)
+            setState({
+              projectId,
+              phase: 'idle',
+              submittedAt: attempt.submittedAt,
+            });
+          return;
+        }
+        attempt.sent = true;
+        if (mounted.current) setState({ ...attempt, phase: 'writing' });
+        try {
+          const receipt = await historyCommands[action](projectId, {
+            expectedStateVersion: attempt.context.stateVersion,
+          });
           if (receipt.id !== projectId)
             throw new Error(
               'Сервер вернул другой проект. Требуется проверить историю.',
             );
           attempt.receipt = receipt;
+          acknowledgeProjectWrite(client, projectId, {
+            stateVersion: receipt.state_version,
+            planVersion: receipt.plan?.version,
+          });
           client.setQueryData<Project>(
             ['workspace-project', projectId],
             (previous) =>
@@ -144,11 +214,13 @@ export function usePlanHistoryCommands({
                 : previous,
           );
           await synchronize(attempt);
-        })
-        .catch(async () => {
+        } catch (error: unknown) {
+          if (!attempt.receipt && isUnsentLocalRequest(error))
+            attempt.sent = false;
           // Includes publication failures after a known receipt. Neither path writes again.
           await synchronize(attempt);
-        });
+        }
+      })();
     },
     [client, projectId, synchronize, setState],
   );
@@ -177,6 +249,18 @@ export function usePlanHistoryCommands({
     submittedAt: visible.action === action ? visible.submittedAt : 0,
   });
   return {
+    writeOutcome:
+      visible.phase === 'writing'
+        ? ('writing' as const)
+        : visible.phase === 'idle'
+          ? ('idle' as const)
+          : active.current.get(projectId)?.receipt
+            ? ('confirmed' as const)
+            : active.current.get(projectId)?.sent
+              ? ('unknown' as const)
+              : ('idle' as const),
+    readRecovery:
+      visible.phase === 'refreshing' || visible.phase === 'recovery',
     undoChange: command('undo'),
     redoChange: command('redo'),
     blocked: visible.phase !== 'idle',

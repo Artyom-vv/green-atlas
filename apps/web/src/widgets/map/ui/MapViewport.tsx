@@ -6,6 +6,7 @@ import type { MapViewportOptions } from '../model/mapViewportOptions';
 import type { MapViewportHandle } from '../model/mapContracts';
 import { mapViewport } from './mapViewportVariants';
 import { preventMapLookup } from '../lib/preventMapLookup';
+import { growthHorizonLabel } from '@/entities/planting-forecast';
 import '../adapters/openlayers/openlayers.css';
 
 export interface MapViewportProps extends MapViewportOptions {
@@ -22,15 +23,16 @@ export const MapViewport: FC<MapViewportProps> = ({ ref, ...options }) => {
     },
     [onCadRenderState],
   );
-  const { targetRef, helpId, growthOverlaySummary } = useOpenLayersViewport(
-    { ...options, onCadRenderState: handleCadState },
-    ref,
-  );
+  const { targetRef, helpId, growthOverlaySummary, tool } =
+    useOpenLayersViewport(
+      { ...options, onCadRenderState: handleCadState },
+      ref,
+    );
   useEffect(() => {
     const target = targetRef.current;
     if (target) return preventMapLookup(target);
   }, [targetRef]);
-  const { tool, growthHorizon, brushStrokes } = options;
+  const { growthHorizon, brushStrokes } = options;
   return (
     <>
       <div
@@ -54,7 +56,7 @@ export const MapViewport: FC<MapViewportProps> = ({ ref, ...options }) => {
           aria-label="Прогнозный слой карты"
         >
           {growthOverlaySummary
-            ? `Прогноз посадок: ${growthHorizon ? `через ${growthHorizon} лет` : 'сейчас'}`
+            ? `Прогноз посадок: ${growthHorizonLabel(growthHorizon ?? 0)}`
             : 'Прогнозный слой недоступен'}
         </span>
       </div>

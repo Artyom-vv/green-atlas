@@ -1,1 +1,1 @@
-"""Observable background operations for long-running project calculations."""
+"""Наблюдаемые фоновые операции длительной подготовки и расчёта проекта."""

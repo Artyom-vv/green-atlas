@@ -7,7 +7,6 @@ export interface WorkspaceToolCancelDialogProps extends Pick<
   | 'pendingTool'
   | 'discardZoneDrawing'
   | 'setPendingTool'
-  | 'assistant'
   | 'previewPattern'
   | 'previewRecommendation'
   | 'previewBrush'
@@ -31,7 +30,6 @@ export const WorkspaceToolCancelDialogPropsFor = (
   pendingTool: model.pendingTool,
   discardZoneDrawing: model.discardZoneDrawing,
   setPendingTool: model.setPendingTool,
-  assistant: model.assistant,
   previewPattern: model.previewPattern,
   previewRecommendation: model.previewRecommendation,
   previewBrush: model.previewBrush,
@@ -53,7 +51,6 @@ export const WorkspaceToolCancelDialog: FC<WorkspaceToolCancelDialogProps> = ({
   pendingTool,
   discardZoneDrawing,
   setPendingTool,
-  assistant,
   previewPattern,
   previewRecommendation,
   previewBrush,
@@ -85,7 +82,6 @@ export const WorkspaceToolCancelDialog: FC<WorkspaceToolCancelDialogProps> = ({
             onClick={() => {
               if (!pendingTool) return;
               discardZoneDrawing();
-              assistant.discard();
               previewPattern.cancel();
               previewRecommendation.cancel();
               previewBrush.cancel();

@@ -11,9 +11,9 @@ from collections import Counter
 from pathlib import Path
 from time import monotonic
 
-from app.native_query.calculation_rules import calculation_rule
-from app.native_query.live_client import LiveQueryClient
-from app.native_query.live_provider import LiveNativeGeometryEngine
+from app.native_query.policy.calculation_rules import calculation_rule
+from app.native_query.live.live_client import LiveQueryClient
+from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
 from app.projects.contracts import Project
 from app.regulations.placement_config import PLACEMENT_RULES_REVISION
 from shapely.geometry import Point, shape
@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--spatial-windows", action="store_true", help="Benchmark bounded transport windows")
     args = parser.parse_args()
     if args.spatial_windows:
-        import app.native_query.live_provider as provider
+        import app.native_query.measurement.live_provider as provider
         provider.SINGLE_WINDOW_POINT_LIMIT = 0
     with sqlite3.connect(args.database.resolve().as_uri() + "?mode=ro", uri=True) as connection:
         payload = connection.execute("SELECT payload FROM projects WHERE id=?", (args.project,)).fetchone()

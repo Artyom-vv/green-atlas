@@ -20,8 +20,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
 
-from app.dxf_import.adapters import EzdxfReader
-from app.dxf_import.layer_contracts import LayerKind
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.dxf_import.layers.contracts import LayerKind
 from app.dxf_import.limits import MAX_DXF_CONTENT_BYTES
 from app.geometry.geojson_size import coordinate_count
 

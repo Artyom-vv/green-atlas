@@ -8,7 +8,7 @@ import type {
 import { DOCK_STRIP_HEIGHT } from './dockLayout';
 
 const dockStrip = tv({
-  base: 'flex h-(--dock-strip-height) min-h-(--dock-strip-height) min-w-0 shrink-0 items-center gap-1 px-2',
+  base: 'flex h-(--dock-strip-height) min-h-(--dock-strip-height) min-w-0 shrink-0 items-center gap-1 p-2',
   variants: {
     edge: {
       top: 'border-t border-neutral-200',

@@ -3,7 +3,7 @@ from pathlib import Path
 import ezdxf
 import pytest
 
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 
 
 @pytest.mark.parametrize("version,encoding", [("R2000", "cp1251"), ("R2018", "utf8")])

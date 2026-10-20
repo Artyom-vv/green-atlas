@@ -1,4 +1,4 @@
-import { acquirePlantAssetLibrary } from './plantAssets';
+import { acquirePlantAssetLibrary, PlantAssetLibrary } from './plantAssets';
 import {
   createSceneRenderer,
   SceneController,
@@ -10,6 +10,7 @@ export interface SceneSessionOptions extends Omit<
   SceneControllerOptions,
   'canvas' | 'assetLibrary' | 'renderer'
 > {
+  nativeModels?: boolean;
   onReady: (controller: SceneController) => void;
   onError: (message: string) => void;
 }
@@ -49,13 +50,21 @@ export function createSceneSession(
     options.onError('Не удалось загрузить 3D-сцену. 2D-план сохранён.');
   };
   try {
-    lease = acquirePlantAssetLibrary('/assets/plant-models/manifest.json', {
-      renderer,
-    });
+    if (options.nativeModels) {
+      const library = new PlantAssetLibrary();
+      lease = {
+        library: Promise.resolve(library),
+        release: () => library.dispose(),
+      };
+    } else {
+      lease = acquirePlantAssetLibrary('/assets/plant-models/manifest.json', {
+        renderer,
+      });
+    }
     void lease.library
       .then((assetLibrary) => {
         if (!live) return;
-        if (!assetLibrary.loadedModelCount())
+        if (!options.nativeModels && !assetLibrary.loadedModelCount())
           throw new Error('No reviewed plant models could be loaded');
         controller = new SceneController({
           ...options,

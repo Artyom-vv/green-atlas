@@ -1,6 +1,9 @@
+// Домен передачи AutoCAD: меню, подтверждения, файлы и запуск локального приложения.
 #import <AppKit/AppKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <CommonCrypto/CommonDigest.h>
 #include <dlfcn.h>
+#include <chrono>
 #include "delivery_ui.h"
 #import "../connector/macos/LocalPath.h"
 
@@ -16,23 +19,25 @@ static GAOpenMenuTarget* menuTarget;
 static NSMenuItem* rootMenuItem;
 static NSPanel* progressPanel;
 static NSTextField* progressLabel;
+static NSTextField* progressDetail;
+static NSProgressIndicator* progressBar;
+static std::string progressPhase;
+static std::chrono::steady_clock::time_point progressUpdated;
 
 namespace gaDelivery {
-static NSView* sourceFacts(const std::vector<SourceNotice>& facts) {
-    NSMutableArray* rows = [NSMutableArray new];
+constexpr unsigned long long kMaxCaptureDisplayBytes = 2ULL * 1024 * 1024 * 1024;
+constexpr NSUInteger kMaximumCaptureFiles = 4096;
+constexpr NSUInteger kCaptureReceiptFiles = 3;
+constexpr std::size_t kMaximumTransferFactsBytes = 1024 * 1024;
+constexpr NSUInteger kMaximumNativeTransferFiles =
+    kMaximumCaptureFiles + kCaptureReceiptFiles;
+// Текстовые факты выводит штатный NSAlert, который сам рассчитывает их размер.
+static NSString* sourceFacts(const std::vector<SourceNotice>& facts) {
+    NSMutableArray<NSString*>* rows = [NSMutableArray new];
     for (const auto& fact : facts) {
-        NSTextField* label = [NSTextField wrappingLabelWithString:text(fact.label)];
-        label.textColor = NSColor.secondaryLabelColor;
-        NSTextField* value = [NSTextField wrappingLabelWithString:text(fact.value)];
-        value.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightMedium];
-        [rows addObject:@[label, value]];
+        [rows addObject:[NSString stringWithFormat:@"%@: %@", text(fact.label), text(fact.value)]];
     }
-    NSGridView* grid = [NSGridView gridViewWithViews:rows];
-    grid.rowSpacing = 10;
-    grid.columnSpacing = 20;
-    grid.xPlacement = NSGridCellPlacementLeading;
-    [grid.widthAnchor constraintEqualToConstant:380].active = YES;
-    return grid;
+    return [rows componentsJoinedByString:@"\n"];
 }
 void installMenu(void (*command)()) {
     if (!NSApp.mainMenu) return;
@@ -57,11 +62,11 @@ void removeMenu() {
 bool confirmPreparation(bool modified) {
     NSAlert* alert = [NSAlert new];
     alert.messageText = @"Открыть в Green Atlas";
-    alert.informativeText = @"";
-    alert.accessoryView = sourceFacts({
+    alert.informativeText = sourceFacts({
         {"Источник", modified ? "С несохранёнными изменениями" : "Открытый чертёж"},
         {"Подосновы", "Загруженные в AutoCAD"},
         {"Исходный файл", "Без изменений"},
+        {"Состояние AutoCAD", "После создания копии чертёж может отмечаться изменённым"},
     });
     [alert addButtonWithTitle:@"Открыть"];
     [alert addButtonWithTitle:@"Отмена"];
@@ -71,8 +76,7 @@ bool confirmLivePartial(const std::vector<SourceNotice>& issues) {
     NSAlert* alert = [NSAlert new];
     alert.alertStyle = NSAlertStyleWarning;
     alert.messageText = @"Есть замечания к исходнику";
-    alert.informativeText = @"";
-    alert.accessoryView = sourceFacts(issues);
+    alert.informativeText = sourceFacts(issues);
     [alert addButtonWithTitle:@"Открыть доступные данные"];
     [alert addButtonWithTitle:@"Вернуться в AutoCAD"];
     return [alert runModal] == NSAlertFirstButtonReturn;
@@ -116,19 +120,58 @@ void error(const std::string& message) {
 }
 void stage(const std::string& message) {
     if (!progressPanel) {
-        progressPanel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 450, 92)
+        progressPanel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 520, 124)
             styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
         progressPanel.title = @"Green Atlas";
         progressLabel = [NSTextField wrappingLabelWithString:@""];
-        progressLabel.frame = NSMakeRect(20, 20, 410, 50);
+        progressLabel.font = [NSFont systemFontOfSize:15 weight:NSFontWeightSemibold];
+        progressLabel.frame = NSMakeRect(24, 72, 472, 28);
         [progressPanel.contentView addSubview:progressLabel];
+        progressDetail = [NSTextField labelWithString:@""];
+        progressDetail.textColor = NSColor.secondaryLabelColor;
+        progressDetail.frame = NSMakeRect(24, 28, 472, 20);
+        [progressPanel.contentView addSubview:progressDetail];
+        progressBar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 57, 472, 6)];
+        progressBar.style = NSProgressIndicatorStyleBar;
+        progressBar.indeterminate = YES;
+        progressBar.usesThreadedAnimation = YES;
+        [progressPanel.contentView addSubview:progressBar];
+        [progressBar startAnimation:nil];
         [progressPanel center]; [progressPanel orderFront:nil];
     }
     progressLabel.stringValue = text(message);
-    // Do not pump an event loop: AutoCAD database calls must not be re-entered.
+    progressDetail.stringValue = @"";
+    // Прямой показ не обрабатывает события и не вызывает повторный вход в CAD.
+    [progressPanel.contentView displayIfNeeded];
     [progressPanel display];
+    [CATransaction flush];
 }
-void endStage() { [progressPanel orderOut:nil]; progressPanel = nil; progressLabel = nil; }
+void progress(const std::string& phase, std::size_t processed) {
+    const auto now = std::chrono::steady_clock::now();
+    if (phase == progressPhase && now - progressUpdated < std::chrono::milliseconds(100)) return;
+    progressPhase = phase;
+    progressUpdated = now;
+    const char* label = phase == "collecting" ? "Читаем объекты"
+        : phase == "inventory" ? "Получаем свойства объектов"
+        : phase == "serializing_coverage" ? "Сохраняем перечень объектов"
+        : phase == "serializing_paths" ? "Сохраняем геометрию отображения"
+        : phase == "archive_instances" ? "Сохраняем свойства экземпляров"
+        : phase == "archive_copy" ? "Создаём копии чертежа и подоснов"
+        : phase == "archive_files" ? "Сохраняем чертёж и подосновы"
+        : "Сохраняем снимок чертежа";
+    stage(label);
+    if (processed) progressDetail.stringValue = [NSString stringWithFormat:@"Обработано: %lu",
+        (unsigned long)processed];
+    [progressPanel.contentView displayIfNeeded];
+    [progressPanel display];
+    [CATransaction flush];
+}
+void endStage() {
+    [progressBar stopAnimation:nil];
+    [progressPanel orderOut:nil];
+    progressPanel = nil; progressLabel = nil; progressDetail = nil; progressBar = nil;
+    progressPhase.clear();
+}
 
 std::string createStaging() {
     NSFileManager* files = NSFileManager.defaultManager;
@@ -164,14 +207,35 @@ static NSDictionary* fileEntry(NSURL* url, NSString* kind) {
     return @{@"name":url.lastPathComponent, @"kind":kind, @"bytes":@(total), @"sha256":hash};
 }
 
+static NSDictionary* liveCaptureFileEntry(NSURL* url) {
+    NSDictionary* attributes = [NSFileManager.defaultManager attributesOfItemAtPath:url.path error:nil];
+    if ([attributes[NSFileSize] unsignedLongLongValue] > kMaxCaptureDisplayBytes) return nil;
+    return fileEntry(url, @"live_capture");
+}
+
 static NSMutableDictionary* readProbe(NSURL* probe) {
     NSDictionary* attributes = [NSFileManager.defaultManager attributesOfItemAtPath:probe.path error:nil];
     if (![attributes[NSFileType] isEqual:NSFileTypeRegular]
-        || [attributes[NSFileSize] unsignedLongLongValue] > 768ULL*1024*1024
+        || [attributes[NSFileSize] unsignedLongLongValue] > kMaxCaptureDisplayBytes
         || !GALocalDirectPath(probe)) return nil;
     NSData* raw = [NSData dataWithContentsOfURL:probe options:NSDataReadingMappedIfSafe error:nil];
     id object = raw ? [NSJSONSerialization JSONObjectWithData:raw options:NSJSONReadingMutableContainers error:nil] : nil;
     return [object isKindOfClass:NSMutableDictionary.class] ? object : nil;
+}
+
+// Сводка приходит только из текущего нативного захвата и связана с полным SHA.
+static NSDictionary* liveProbe(NSURL* capture, const std::string& facts,
+                               NSDictionary* captureEntry = nil) {
+    if (facts.empty()) return readProbe(capture);
+    if (facts.size() > kMaximumTransferFactsBytes) return nil;
+    NSData* data = [text(facts) dataUsingEncoding:NSUTF8StringEncoding];
+    id envelope = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if (![envelope isKindOfClass:NSDictionary.class]
+        || ![envelope[@"probe"] isKindOfClass:NSDictionary.class]) return nil;
+    NSDictionary* entry = captureEntry ?: liveCaptureFileEntry(capture);
+    if (!entry || [entry[@"bytes"] unsignedLongLongValue] > kMaxCaptureDisplayBytes
+        || ![entry[@"sha256"] isEqual:envelope[@"snapshot_sha256"]]) return nil;
+    return envelope[@"probe"];
 }
 
 std::vector<std::string> probeIssues(const std::string& directory) {
@@ -195,9 +259,10 @@ std::vector<std::string> probeIssues(const std::string& directory) {
     return issues;
 }
 
-std::vector<SourceNotice> liveProbeIssues(const std::string& directory) {
+std::vector<SourceNotice> liveProbeIssues(const std::string& directory,
+                                        const std::string& transferFacts) {
     NSURL* root = [NSURL fileURLWithPath:text(directory) isDirectory:YES];
-    NSDictionary* probe = readProbe([root URLByAppendingPathComponent:@"Drawing.autocad.json"]);
+    NSDictionary* probe = liveProbe([root URLByAppendingPathComponent:@"Drawing.autocad.json"], transferFacts);
     if (!probe) return {{"Чтение снимка", "Ошибка"}};
     NSDictionary* summary = probe[@"summary"];
     NSDictionary* source = probe[@"source"];
@@ -226,21 +291,22 @@ std::vector<SourceNotice> liveProbeIssues(const std::string& directory) {
 }
 
 std::string writeLiveTicket(const std::string& directory, const std::string& version,
-                            const std::string& autocadVersion, const std::string& liveSession) {
+                            const std::string& autocadVersion, const std::string& liveSession,
+                            const std::string& transferFacts) {
     NSURL* root = [NSURL fileURLWithPath:text(directory) isDirectory:YES];
     NSURL* capture = [root URLByAppendingPathComponent:@"Drawing.autocad.json"];
     NSURL* destination = [root URLByAppendingPathComponent:@"transfer.gatransfer"];
     if ([NSFileManager.defaultManager fileExistsAtPath:destination.path]) return {};
-    NSDictionary* probe = readProbe(capture);
+    NSDictionary* captureEntry = liveCaptureFileEntry(capture);
+    if (!captureEntry || [captureEntry[@"bytes"] unsignedLongLongValue] > kMaxCaptureDisplayBytes)
+        return {};
+    NSDictionary* probe = liveProbe(capture, transferFacts, captureEntry);
     NSDictionary* source = probe[@"source"];
     NSString* original = source[@"path"];
     if (![probe[@"capture_mode"] isEqual:@"live_document"]
         || ![probe[@"plugin_version"] isEqual:text(version)]
         || ![original isKindOfClass:NSString.class] || !original.length
         || ![source[@"sha256"] isKindOfClass:NSString.class]) return {};
-    NSDictionary* captureEntry = fileEntry(capture, @"live_capture");
-    if (!captureEntry || [captureEntry[@"bytes"] unsignedLongLongValue] > 768ULL*1024*1024)
-        return {};
     // The path is context, not the live geometry source, but a stale disk hash
     // would make its provenance misleading. Never silently substitute disk data.
     NSDictionary* diskEntry = fileEntry([NSURL fileURLWithPath:original], @"source_context");
@@ -263,6 +329,32 @@ std::string writeLiveTicket(const std::string& directory, const std::string& ver
             || ![session[@"snapshot_sha256"] isEqual:captureEntry[@"sha256"]]) return {};
         ticket[@"schema"] = @"green-atlas.transfer/4";
         ticket[@"live_session"] = session;
+        if (version == "0.1.46" || version == "0.1.47" || version == "0.1.48") {
+            NSURL* native = [root URLByAppendingPathComponent:@"Native" isDirectory:YES];
+            NSMutableArray* files = [NSMutableArray new];
+            NSArray* names = [NSFileManager.defaultManager contentsOfDirectoryAtPath:native.path error:nil];
+            if (names.count < 3 || names.count > kMaximumNativeTransferFiles) return {};
+            for (NSString* name in names) {
+                NSDictionary* entry = fileEntry([native URLByAppendingPathComponent:name], @"native_capture");
+                if (!entry) return {};
+                NSMutableDictionary* row = [entry mutableCopy];
+                [row removeObjectForKey:@"kind"];
+                row[@"name"] = [@"Native/" stringByAppendingString:name];
+                [files addObject:row];
+            }
+            for (NSString* name in @[@"Drawing.autocad.json", @"Drawing.autocad.json.inventory.json"]) {
+                // Один файл отображения связывает оба каталога передачи одним SHA.
+                NSDictionary* entry = [name isEqual:@"Drawing.autocad.json"]
+                    ? captureEntry : fileEntry([root URLByAppendingPathComponent:name], @"capture_input");
+                if (!entry) return {};
+                NSMutableDictionary* row = [entry mutableCopy];
+                [row removeObjectForKey:@"kind"];
+                row[@"name"] = name;
+                [files addObject:row];
+            }
+            ticket[@"schema"] = @"green-atlas.transfer/5";
+            ticket[@"native_session"] = @{@"entry":@"Native/session.json", @"files":files};
+        }
     }
     NSData* data = [NSJSONSerialization dataWithJSONObject:ticket options:NSJSONWritingPrettyPrinted error:nil];
     if (!data) return {};
@@ -307,7 +399,8 @@ std::string writeTicket(const std::string& directory, const std::string& version
     return destination.path.UTF8String;
 }
 
-bool launchConnector(const std::string& ticket) {
+bool launchConnector(const std::string& ticket, std::string* detail) {
+    (void)detail;
     Dl_info image{};
     if (!dladdr((void*)&launchConnector, &image) || !image.dli_fname) return false;
     // ...package/Contents/MacOS/GreenAtlasBridge.bundle/Contents/MacOS/binary

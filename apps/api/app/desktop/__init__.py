@@ -1,1 +1,3 @@
-"""Local desktop composition; not installed on the public web service."""
+"""Локальная оболочка и запуск API Green Atlas; приватные desktop-каналы не входят в
+публичный веб-сервис.
+"""

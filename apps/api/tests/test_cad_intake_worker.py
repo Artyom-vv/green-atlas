@@ -1,3 +1,5 @@
+"""Retained process cancellation, persisted CAD DTO and asset-path guards."""
+
 import json
 import sys
 from pathlib import Path
@@ -5,53 +7,32 @@ from pathlib import Path
 import psutil
 import pytest
 
-from app.cad_import.contracts import DrawingInspection
-from app.cad_import.package_contracts import (
+from app.cad_import.archive.package_contracts import (
     PackageDrawing,
     PackageReference,
     SourcePackage,
 )
+from app.cad_import.contracts import DrawingInspection
+from app.cad_import.legacy.process import run_converter
 from app.cad_import.policy import ConversionPolicy
-from app.cad_import.process import run_converter
+from app.cad_intake.assets.passport import make_passport
 from app.cad_intake.contracts import CadDrawingEntry, CadIntakeRequest
-from app.cad_intake.passport import make_passport
-from app.cad_intake.worker import InspectionWork, execute
+from app.cad_intake.inspection.config import AllowedCadRoot, CadIntakeConfig
+from app.cad_intake.inspection.paths import CadDiscovery
 from app.operations.progress import OperationCancelled
 
 
-def test_changed_fingerprint_fails_before_converter(tmp_path):
-    root = tmp_path / "source"
-    root.mkdir()
-    (root / "entry.dxf").write_bytes(b"changed")
-    request = CadIntakeRequest(
-        root_id="official", entry="entry.dxf", entry_sha256="a" * 64
-    )
-    with pytest.raises(ValueError, match="изменился"):
-        execute(
-            InspectionWork(
-                root=root,
-                cache=tmp_path / "cache",
-                converter=tmp_path / "missing.exe",
-                output=tmp_path / "manifest.json",
-                request=request,
-            )
-        )
-    assert not (tmp_path / "manifest.json").exists()
-
-
-def test_request_rejects_duplicate_independent_entries():
+def test_saved_request_rejects_duplicate_independent_entries() -> None:
     with pytest.raises(ValueError, match="выбирается один раз"):
         CadIntakeRequest(
             root_id="official",
             entry="entry.dxf",
             entry_sha256="a" * 64,
-            additional_entries=[
-                CadDrawingEntry(path="entry.dxf", sha256="a" * 64)
-            ],
+            additional_entries=[CadDrawingEntry(path="entry.dxf", sha256="a" * 64)],
         )
 
 
-def test_cancelled_worker_stops_its_process_tree(tmp_path):
+def test_cancelled_local_process_stops_its_process_tree(tmp_path: Path) -> None:
     output = tmp_path / "pids.json"
     program = (
         "import json,os,subprocess,sys,time;from pathlib import Path;"
@@ -61,7 +42,7 @@ def test_cancelled_worker_stops_its_process_tree(tmp_path):
     )
     pids: list[int] = []
 
-    def cancel():
+    def cancel() -> None:
         if output.exists():
             try:
                 pids.extend(json.loads(output.read_text()))
@@ -81,7 +62,7 @@ def test_cancelled_worker_stops_its_process_tree(tmp_path):
     assert all(not psutil.pid_exists(pid) for pid in pids)
 
 
-def test_public_passport_redacts_absolute_xrefs_and_worker_diagnostics():
+def test_public_passport_redacts_absolute_xrefs_and_worker_diagnostics() -> None:
     package = SourcePackage(
         root="D:/private/originals",
         entry="main.dwg",
@@ -123,29 +104,66 @@ def test_public_passport_redacts_absolute_xrefs_and_worker_diagnostics():
     assert "private" not in passport.model_dump_json()
     assert passport.drawings[0].normalized_sha256 == "c" * 64
     assert passport.references[0].requested_path == "reference.dwg"
-    assert passport.drawings[0].inspection.xrefs["BLOCK"] == "reference.dwg"
+    inspection = passport.drawings[0].inspection
+    assert inspection is not None and inspection.xrefs["BLOCK"] == "reference.dwg"
 
 
-def test_discovery_rejects_symlink_leaving_root(tmp_path):
-    from app.cad_intake.config import AllowedCadRoot, CadIntakeConfig
-    from app.cad_intake.paths import CadDiscovery
-
+@pytest.fixture
+def discovery(tmp_path: Path) -> CadDiscovery:
     root = tmp_path / "root"
     root.mkdir()
-    outside = tmp_path / "private.dxf"
-    outside.write_bytes(b"private")
-    link = root / "link.dxf"
-    try:
-        link.symlink_to(outside)
-    except OSError:
-        pytest.skip("Host has no symlink privilege")
-    discovery = CadDiscovery(
+    return CadDiscovery(
         CadIntakeConfig(
             (AllowedCadRoot("official", "Root", root),),
             tmp_path / "cache",
-            Path("converter"),
+            None,
         )
     )
-    with pytest.raises(ValueError, match="пределы"):
-        discovery.fingerprint("official", "link.dxf")
-    assert discovery.directory("official").entries == []
+
+
+@pytest.mark.parametrize(
+    "case,message",
+    [
+        ("outside_symlink", "пределы"),
+        ("traversal", "относительный"),
+        ("absolute", "относительный"),
+        ("wrong_extension", "DWG или DXF"),
+        ("missing", "недоступен"),
+        ("directory", "DWG или DXF"),
+    ],
+)
+def test_discovery_resolve_rejects_unsafe_or_unavailable_drawings(
+    tmp_path: Path, discovery: CadDiscovery, case: str, message: str
+) -> None:
+    root = tmp_path / "root"
+    outside = tmp_path / "private.dxf"
+    outside.write_bytes(b"private")
+    path = "missing.dxf"
+    if case == "outside_symlink":
+        path = "link.dxf"
+        try:
+            (root / path).symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("Host has no symlink privilege")
+    elif case == "traversal":
+        path = "../private.dxf"
+    elif case == "absolute":
+        path = str(outside)
+    elif case == "wrong_extension":
+        path = "drawing.txt"
+        (root / path).write_bytes(b"not CAD")
+    elif case == "directory":
+        path = "directory.dwg"
+        (root / path).mkdir()
+    with pytest.raises(ValueError, match=message):
+        discovery.resolve("official", path, drawing=True)
+
+
+@pytest.mark.parametrize("path", ["nested/plan.DWG", "nested/plan.dxf"])
+def test_discovery_resolve_accepts_in_root_drawings(
+    tmp_path: Path, discovery: CadDiscovery, path: str
+) -> None:
+    source = tmp_path / "root" / path
+    source.parent.mkdir()
+    source.write_bytes(b"synthetic drawing")
+    assert discovery.resolve("official", path, drawing=True) == source.resolve()

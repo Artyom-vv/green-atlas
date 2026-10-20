@@ -1,23 +1,12 @@
-"""One draft-level limitation instead of repeating it for every planting."""
+"""Домен проверки сетей: одно объяснение общих пробелов для чернового плана.
+
+Индивидуальные трассы проверок сохраняются; общий текст не дублируется в посадках.
+"""
 
 from collections.abc import Iterable
 
 from app.regulations.trace_contracts import PlantingRuleTrace
-
-NETWORK_REVIEW_LABELS = {
-    "GEOMETRY_RULE_ASSUMPTION": "расстояния проверены по доступной геометрии с допущениями о характеристиках сети",
-    "NO_NETWORK_FEATURES": "сети отсутствуют в модели",
-    "NETWORK_CONTEXT_UNKNOWN": "тип сети не подтверждён",
-    "NETWORK_SOURCE_UNCONFIRMED": "источник сети не подтверждён",
-    "NETWORK_INSTALLATION_UNSUPPORTED": "способ прокладки не охвачен правилами",
-    "NETWORK_AXIS_EXTENT_UNKNOWN": "наружный размер сети неизвестен",
-    "NETWORK_REFERENCE_UNSUPPORTED": "способ измерения не подтверждён",
-    "NETWORK_FOOTPRINT_UNCONFIRMED": "занятый сетью контур не подтверждён",
-    "NETWORK_SHRUB_DISTANCE_UNSPECIFIED": "отступ кустарника не установлен",
-    "NETWORK_CROWN_CLEARANCE_UNRESOLVED": "увеличение отступа для кроны не установлено",
-    "NETWORK_SOURCE_INCOMPLETE": "исходные сети покрыты не полностью",
-    "GEOMETRY_NOT_READY": "расчётная геометрия не готова",
-}
+from app.shared.messages import has_message, message
 
 
 def network_review_reason(traces: Iterable[PlantingRuleTrace | None]) -> str | None:
@@ -33,6 +22,8 @@ def network_review_reason(traces: Iterable[PlantingRuleTrace | None]) -> str | N
     if not codes:
         return None
     labels = [
-        NETWORK_REVIEW_LABELS.get(code, "проверка не завершена") for code in codes
+        message(key if has_message(key) else "network.review.unfinished")
+        for code in codes
+        for key in (f"network.review.{code}",)
     ]
-    return "Инженерные сети: " + "; ".join(labels) + ". Доступен черновик."
+    return message("network.review.summary", {"reasons": "; ".join(labels)})

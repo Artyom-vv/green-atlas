@@ -20,6 +20,9 @@ export interface SpeciesCatalogProps {
   showSelection?: boolean;
   itemStatuses?: Readonly<Record<string, CatalogItemStatus>>;
   loadingMessage?: string;
+  compact?: boolean;
+  onCancel?: () => void;
+  cancelDisabled?: boolean;
 }
 
 export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
@@ -34,6 +37,9 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
   showSelection,
   itemStatuses,
   loadingMessage = 'Загружаем растения',
+  compact = false,
+  onCancel,
+  cancelDisabled,
 }) => {
   const library = usePlantCatalog();
   const [localQuery, setQuery] = useState('');
@@ -65,10 +71,11 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
       : filter === 'rejected'
         ? rejected
         : searched;
-  const selected =
-    filtered.find((e) => e.id === focused) ??
-    filtered.find((e) => e.profile?.id === selectedRevision) ??
-    filtered[0];
+  const selected = loading
+    ? undefined
+    : (filtered.find((e) => e.id === focused) ??
+      filtered.find((e) => e.profile?.id === selectedRevision) ??
+      filtered[0]);
   const status = selected?.profile
     ? itemStatuses?.[selected.profile.id]
     : undefined;
@@ -132,11 +139,15 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
                     label: 'Для выбора',
                     count: suitable.length,
                   },
-                  {
-                    id: 'rejected' as const,
-                    label: 'Отклонённые',
-                    count: rejected.length,
-                  },
+                  ...(!compact || rejected.length
+                    ? [
+                        {
+                          id: 'rejected' as const,
+                          label: 'Отклонённые',
+                          count: rejected.length,
+                        },
+                      ]
+                    : []),
                 ]
               : []),
             { id: 'all' as const, label: 'Все', count: searched.length },
@@ -153,12 +164,20 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
               {item.label} ({item.count})
             </Button>
           ))}
-          <span className="ml-auto text-xs text-neutral-600" role="status">
+          <span
+            className={compact ? 'sr-only' : 'ml-auto text-xs text-neutral-600'}
+            role="status"
+          >
             {loading ? loadingMessage : `Найдено ${filtered.length}`}
           </span>
         </div>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-md border border-neutral-200 @min-[640px]/catalog:grid-cols-[minmax(280px,1fr)_minmax(0,1.1fr)]">
+      <div
+        className={cx(
+          'grid min-h-0 flex-1 grid-cols-1 overflow-hidden @min-[640px]/catalog:grid-cols-[minmax(280px,1fr)_minmax(0,1.1fr)]',
+          !compact && 'rounded-md border border-neutral-200',
+        )}
+      >
         <ScrollArea
           className={cx(
             'min-h-0 @min-[640px]/catalog:block',
@@ -182,7 +201,9 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
                     selected?.id === item.id && 'bg-blue-100 hover:bg-blue-100',
                   )}
                   aria-pressed={selected?.id === item.id}
-                  aria-current={item.profile?.id === selectedRevision ? 'true' : undefined}
+                  aria-current={
+                    item.profile?.id === selectedRevision ? 'true' : undefined
+                  }
                   aria-label={`Сведения: ${item.name}`}
                   aria-description={[
                     item.profile?.scientific_name,
@@ -194,11 +215,18 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
                     setFocused(item.id);
                     setDetailsOpen(true);
                   }}
-                  endIcon={item.profile?.id === selectedRevision ? <Check /> : undefined}
+                  endIcon={
+                    item.profile?.id === selectedRevision ? (
+                      <Check />
+                    ) : undefined
+                  }
                   content={
                     <span className="grid min-w-0 flex-1 gap-1">
                       {item.profile ? (
-                        <SpeciesSummary species={item.profile} />
+                        <SpeciesSummary
+                          species={item.profile}
+                          compact={compact}
+                        />
                       ) : (
                         <>
                           <strong className="text-sm font-medium">
@@ -275,6 +303,7 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
             }}
           >
             <SpeciesInspector
+              compact={compact}
               showHeading={false}
               species={selected?.profile}
               entry={selected?.entry}
@@ -293,16 +322,33 @@ export const SpeciesCatalog: FC<SpeciesCatalogProps> = ({
           </ScrollArea>
         </section>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-3">
-        <span className="min-w-0 text-xs text-neutral-600">
-          {selected?.profile
-            ? selected.profile.common_name
-            : selected
-              ? 'Для этого вида пока нет расчётного профиля'
-              : showSelection && value
-                ? species.find((s) => s.id === value)?.common_name
-                : 'Выберите растение'}
-        </span>
+      <div
+        className={cx(
+          'flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-neutral-200',
+          compact ? '-mx-4 p-4' : 'pt-3',
+        )}
+      >
+        {onCancel && (
+          <Button variant="ghost" disabled={cancelDisabled} onClick={onCancel}>
+            Отмена
+          </Button>
+        )}
+        {compact && !selected && showSelection && value && (
+          <span className="mr-auto text-xs text-neutral-600">
+            {species.find((item) => item.id === value)?.common_name}
+          </span>
+        )}
+        {!compact && (
+          <span className="mr-auto min-w-0 text-xs text-neutral-600">
+            {selected?.profile
+              ? selected.profile.common_name
+              : selected
+                ? 'Для этого вида пока нет расчётного профиля'
+                : showSelection && value
+                  ? species.find((s) => s.id === value)?.common_name
+                  : 'Выберите растение'}
+          </span>
+        )}
         <Button
           variant="primary"
           disabled={!canSelect}

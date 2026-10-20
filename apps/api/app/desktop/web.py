@@ -1,22 +1,24 @@
-"""Same-origin API and built UI for the desktop shell, with a private session.
-
-The native parent seeds an HttpOnly cookie in its own web view. No login page,
-URL credential, fixed port or public trust-proxy identity is needed here.
-This is an outer boundary: the normal web API keeps its existing behaviour.
+"""Локальный API и собранный UI одного происхождения; доступ WebView подтверждается
+приватной сессионной cookie.
 """
 
 from __future__ import annotations
 
 import hmac
+from collections.abc import Callable
 from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
 from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+if TYPE_CHECKING:
+    from app.desktop.handoff import LocalHandoff
 
 SESSION_COOKIE = "green_atlas_local_session"
 SESSION_HEADER = "x-green-atlas-local-session"
@@ -53,7 +55,7 @@ class DesktopSession:
             secret,
         )
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "lifespan":
             return await self.app(scope, receive, send)
         if scope["type"] == "websocket":
@@ -106,10 +108,11 @@ class DesktopWeb:
             raise ValueError("The desktop package is missing its built web interface")
         self.files = StaticFiles(directory=self.root, follow_symlink=False)
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
         if scope["type"] == "lifespan" or path == "/api" or path.startswith("/api/"):
-            async def send_uncached(message):
+
+            async def send_uncached(message: Message) -> None:
                 if message["type"] == "http.response.start":
                     headers = [
                         (name, value)
@@ -129,7 +132,7 @@ class DesktopWeb:
             return await JSONResponse({"code": "NOT_FOUND"}, status_code=404)(
                 scope, receive, send
             )
-        # Only actual SPA routes get the document; missing assets keep their 404.
+        # Документ получают только SPA-маршруты; отсутствующие ресурсы сохраняют ответ 404.
         if path == "/" or path == "/projects" or path.startswith("/projects/"):
             return await FileResponse(
                 self.root / "index.html", headers={"Cache-Control": "no-store"}
@@ -143,11 +146,17 @@ class DesktopWeb:
 
 
 def create_desktop_web(
-    api: ASGIApp, web_root: Path, *, origin: str, secret: str, handoff=None
-):
+    api: ASGIApp,
+    web_root: Path,
+    *,
+    origin: str,
+    secret: str,
+    handoff: LocalHandoff | None = None,
+    shutdown: Callable[[], None] | None = None,
+) -> DesktopSession:
     from app.desktop.control import DesktopControl
 
     web = DesktopWeb(api, web_root)
     return DesktopSession(
-        DesktopControl(web, handoff) if handoff else web, origin=origin, secret=secret
+        DesktopControl(web, handoff, shutdown=shutdown), origin=origin, secret=secret
     )

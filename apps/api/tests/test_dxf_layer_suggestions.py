@@ -4,14 +4,14 @@ import ezdxf
 import pytest
 from shapely.geometry import box, mapping
 
-from app.dxf_import.adapters import EzdxfReader
-from app.dxf_import.layer_contracts import (
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.dxf_import.layers.contracts import (
     BoundaryCandidateStatus,
     LayerKind,
     LayerSuggestionConfidence,
 )
-from app.dxf_import.layer_suggestions import suggest_layer_kind
-from app.geometry.adapters import ShapelyGeometryEngine
+from app.dxf_import.layers.suggestions import suggest_layer_kind
+from app.geometry.checking.adapters import ShapelyGeometryEngine
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.planting_zones.domain import validate_planting_zones
 from app.projects.contracts import Project

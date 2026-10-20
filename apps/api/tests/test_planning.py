@@ -2,10 +2,24 @@ from math import hypot
 
 from shapely.geometry import Point, shape
 
-from app.contracts import BrushPreviewRequest, FillPatternRequest, GeometrySnapshot, GrowthEnvelopeForecast, PlacementMaskRequest, Plan, PlanObject, PlantingZoneAssignment, Project
-from app.geometry.domain import PositionChecker
+from app.contracts import (
+    BrushPreviewRequest,
+    FillPatternRequest,
+    GeometrySnapshot,
+    GrowthEnvelopeForecast,
+    PlacementMaskRequest,
+    Plan,
+    PlanObject,
+    PlantingZoneAssignment,
+    Project,
+)
+from app.geometry.checking.domain import PositionChecker
 from app.planning.domain import PlantSpacingIndex
-from app.planning.patterns import generate_brush, generate_fill, generate_mask
+from app.planning.patterns.generators import (
+    generate_brush,
+    generate_fill,
+    generate_mask,
+)
 from app.species.catalog import get_species, growth_forecasts
 from app.validation.adapters import RuleBasedPlanValidator
 
@@ -36,7 +50,7 @@ def forecast(radius: float) -> list[GrowthEnvelopeForecast]:
 
 def test_spacing_uses_mature_crowns_when_species_is_known() -> None:
     first = PlanObject(kind="tree", x=0, y=0, radius=1.6, canopy_forecast=forecast(6))
-    index = PlantSpacingIndex([first])
+    index = PlantSpacingIndex([first], planning_horizon_year=20)
 
     assert index.respects(PlanObject(kind="tree", x=12, y=0, radius=1.6, canopy_forecast=forecast(6))) is False
     assert index.respects(PlanObject(kind="tree", x=14, y=0, radius=1.6, canopy_forecast=forecast(6))) is True
@@ -44,7 +58,7 @@ def test_spacing_uses_mature_crowns_when_species_is_known() -> None:
 
 def test_dense_group_can_close_canopies_without_disabling_external_spacing() -> None:
     first = PlanObject(kind="tree", x=0, y=0, radius=1.6, canopy_forecast=forecast(6), group_ids=["grove"], spacing_policy="canopy")
-    index = PlantSpacingIndex([first])
+    index = PlantSpacingIndex([first], planning_horizon_year=20)
 
     assert index.respects(PlanObject(kind="tree", x=7, y=0, radius=1.6, canopy_forecast=forecast(6), group_ids=["grove"], spacing_policy="canopy")) is True
     assert index.respects(PlanObject(kind="tree", x=7, y=0, radius=1.6, canopy_forecast=forecast(6), group_ids=["other"], spacing_policy="canopy")) is False

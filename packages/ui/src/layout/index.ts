@@ -1,4 +1,5 @@
 export * from './ActionBar';
+export * from './ActionRow';
 export * from './Disclosure';
 export * from './ResizeHandle';
 export * from './StepProgress';

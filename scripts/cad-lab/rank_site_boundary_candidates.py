@@ -15,7 +15,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 from shapely import union_all
 from shapely.errors import GeometryTypeError, GEOSException
 from shapely.geometry import GeometryCollection, mapping, shape

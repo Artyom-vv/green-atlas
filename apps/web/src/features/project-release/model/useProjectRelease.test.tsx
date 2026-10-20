@@ -16,6 +16,7 @@ const request: ReleaseCreateRequest = { mode: 'draft', scene_horizon: 20 };
 
 function release(projectId = 'project-1', id = 'release-1'): ReleasePackage {
   return {
+    planning_horizon_year: 20,
     id,
     project_id: projectId,
     plan_version: 7,
@@ -76,6 +77,33 @@ afterEach(() => {
 });
 
 describe('useProjectRelease', () => {
+  it.each([false, true])(
+    'retains the release draft and truthfully reports runtime request_sent=%s',
+    async (sent) => {
+      const error = new ApiClientError(
+        'LOCAL_RUNTIME_UNAVAILABLE',
+        'runtime stopped',
+        {},
+        { request_sent: sent },
+      );
+      const create = vi.spyOn(api, 'createRelease').mockRejectedValue(error);
+      const { result } = renderHook(
+        () => useProjectRelease('project-1', { initialHorizon: 20 }),
+        { wrapper: wrapper() },
+      );
+      act(() => result.current.createRelease.mutate());
+      await waitFor(() =>
+        expect(result.current.createRelease.error).toBe(error),
+      );
+      expect(result.current.submissionUnknown).toBe(sent);
+      expect(result.current.writeOutcome).toBe(sent ? 'unknown' : 'idle');
+      expect(result.current.hasDraft).toBe(true);
+      expect(result.current.form.sceneHorizon).toBe(20);
+      act(() => result.current.createRelease.reset());
+      expect(create).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('restores an authoritative server package using only a saved release ID', async () => {
     window.localStorage.setItem(releaseKey('project-1'), 'release-1');
     const saved = release();
@@ -370,24 +398,47 @@ describe('useProjectRelease', () => {
 });
 
 describe('release receipt boundaries', () => {
-  it('reports a definitive server refusal without claiming the outcome is unknown', async () => {
-    const refusal = new ApiClientError(
-      'BAD_REQUEST',
-      'Модуль выпуска AutoCAD не установлен',
-    );
-    const create = vi.spyOn(api, 'createRelease').mockRejectedValue(refusal);
-    const view = renderHook(
-      () => useProjectRelease('project-1', { initialHorizon: 20 }),
-      { wrapper: wrapper() },
-    );
-    act(() => view.result.current.createRelease.mutate());
-    await waitFor(() =>
-      expect(view.result.current.createRelease.error).toBe(refusal),
-    );
-    expect(view.result.current.submissionUnknown).toBe(false);
-    expect(view.result.current.hasDraft).toBe(true);
-    expect(create).toHaveBeenCalledTimes(1);
-  });
+  it.each(['BAD_REQUEST', 'NOT_FOUND'])(
+    'permits a corrected release after the confirmed %s refusal',
+    async (code) => {
+      const refusal = new ApiClientError(
+        code,
+        'Модуль выпуска AutoCAD не установлен',
+      );
+      const create = vi
+        .spyOn(api, 'createRelease')
+        .mockRejectedValueOnce(refusal)
+        .mockResolvedValueOnce(release());
+      const view = renderHook(
+        () => useProjectRelease('project-1', { initialHorizon: 20 }),
+        { wrapper: wrapper() },
+      );
+      act(() => view.result.current.createRelease.mutate());
+      await waitFor(() =>
+        expect(view.result.current.createRelease.error).toBe(refusal),
+      );
+      expect(view.result.current.submissionUnknown).toBe(false);
+      expect(view.result.current.hasDraft).toBe(true);
+      expect(create).toHaveBeenCalledTimes(1);
+      act(() => {
+        view.result.current.updateForm({
+          ...view.result.current.form,
+          sceneHorizon: 12,
+        });
+        view.result.current.createRelease.reset();
+        view.result.current.createRelease.mutate();
+      });
+      await waitFor(() =>
+        expect(view.result.current.release?.id).toBe('release-1'),
+      );
+      expect(create).toHaveBeenLastCalledWith('project-1', {
+        mode: 'draft',
+        scene_horizon: 12,
+      });
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(view.result.current.submissionUnknown).toBe(false);
+    },
+  );
 
   it('persists the receipt before publication failure and recovers with GET without another POST', async () => {
     const client = new QueryClient({
@@ -418,27 +469,49 @@ describe('release receipt boundaries', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps a lost create outcome explicit and never replays it on restoration or reset', async () => {
-    const create = vi
-      .spyOn(api, 'createRelease')
-      .mockRejectedValue(new Error('response lost'));
-    const view = renderHook(
-      () => useProjectRelease('project-1', { initialHorizon: 20 }),
-      { wrapper: wrapper() },
-    );
-    act(() => view.result.current.createRelease.mutate());
-    await waitFor(() =>
-      expect(view.result.current.submissionUnknown).toBe(true),
-    );
-    act(() => view.result.current.createRelease.reset());
-    expect(create).toHaveBeenCalledTimes(1);
-    view.unmount();
-    resetReleaseDraftMemory();
-    const restored = renderHook(() => useProjectRelease('project-1'), {
-      wrapper: wrapper(),
-    });
-    expect(restored.result.current.submissionUnknown).toBe(true);
-    expect(restored.result.current.form.sceneHorizon).toBe(20);
-    expect(create).toHaveBeenCalledTimes(1);
-  });
+  it.each([
+    ['lost response', new Error('response lost')],
+    [
+      'server internal error',
+      new ApiClientError('INTERNAL_ERROR', 'Ошибка сервиса'),
+    ],
+  ])(
+    'retains %s through reset and remount and requires an explicit new draft before another write',
+    async (_label, error) => {
+      const load = vi.spyOn(api, 'getRelease');
+      const create = vi
+        .spyOn(api, 'createRelease')
+        .mockRejectedValueOnce(error)
+        .mockResolvedValueOnce(release());
+      const view = renderHook(
+        () => useProjectRelease('project-1', { initialHorizon: 20 }),
+        { wrapper: wrapper() },
+      );
+      act(() => view.result.current.createRelease.mutate());
+      await waitFor(() =>
+        expect(view.result.current.submissionUnknown).toBe(true),
+      );
+      act(() => view.result.current.createRelease.reset());
+      act(() => view.result.current.createRelease.mutate());
+      expect(view.result.current.submissionUnknown).toBe(true);
+      expect(create).toHaveBeenCalledTimes(1);
+      view.unmount();
+      resetReleaseDraftMemory();
+      const restored = renderHook(() => useProjectRelease('project-1'), {
+        wrapper: wrapper(),
+      });
+      expect(restored.result.current.submissionUnknown).toBe(true);
+      expect(restored.result.current.form.sceneHorizon).toBe(20);
+      act(() => restored.result.current.createRelease.mutate());
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(load).not.toHaveBeenCalled();
+      act(() => restored.result.current.clearDraft());
+      expect(restored.result.current.submissionUnknown).toBe(false);
+      act(() => restored.result.current.createRelease.mutate());
+      await waitFor(() =>
+        expect(restored.result.current.release?.id).toBe('release-1'),
+      );
+      expect(create).toHaveBeenCalledTimes(2);
+    },
+  );
 });

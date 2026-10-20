@@ -3,8 +3,9 @@ from fastapi.testclient import TestClient
 from test_autocad_live_import import live_area_probe, live_bytes
 
 from app.composition import get_application
+from app.dxf_import.layers.categories import CATEGORIES
 from app.main import app
-from app.native_query.live_inventory import LiveInventory, query_objects
+from app.native_query.live.live_inventory import LiveInventory, query_objects
 from app.planning.contracts import Plan, PlanObject
 from app.planting_zones.contracts import PlantingZoneAssignment
 
@@ -44,7 +45,7 @@ def test_post_plan_decisions_preserve_work_and_count_only_real_transitions():
 
     recognition = client.get(url + '/source-layer-review')
     assert recognition.status_code == 200, recognition.text
-    assert len(recognition.json()['categories']) == 46
+    assert len(recognition.json()['categories']) == len(CATEGORIES)
     mappings = [{'layer_id': item['id'], 'kind': item['mapped_kind'], 'confirmed': True,
                  **({'category': 'pavilion'} if item['source_name'] == record.layer else {})}
                 for item in changed['layers']]

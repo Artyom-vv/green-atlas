@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from app.composition import create_runtime
-from app.native_query.live_runtime import LiveBinding, binding_path
+from app.native_query.live.live_runtime import LiveBinding, binding_path
 
 
 def main():

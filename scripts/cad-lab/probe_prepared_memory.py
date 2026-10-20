@@ -17,10 +17,10 @@ import psutil
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
 
-from app.dxf_import.adapters import EzdxfReader
-from app.dxf_import.assembly import assemble_imported_project
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.dxf_import.source.assembly import assemble_imported_project
 from app.dxf_import.capacity import SourceGeometryCapacity
-from app.dxf_import.editor_source import open_source_editor
+from app.dxf_import.source.editor_source import open_source_editor
 from app.projects.contracts import Project
 
 

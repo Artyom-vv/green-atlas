@@ -8,9 +8,9 @@ from pydantic import ValidationError
 from test_native_live_provider import setup as native_setup
 
 from app.native_query.contracts import NativeObjectQuery, NativeTarget
-from app.native_query.derived_faces import active_faces, face_targets
-from app.native_query.live_inventory import LiveInventory
-from app.native_query.protocol import encode_request
+from app.native_query.preparation.derived_faces import active_faces, face_targets
+from app.native_query.live.live_inventory import LiveInventory
+from app.native_query.transport.protocol import encode_request
 
 setup = native_setup
 
@@ -114,7 +114,7 @@ def test_derived_identity_rejects_wrong_members_and_missing_policy(setup):
         LiveInventory.model_validate(data)
 
 
-def test_protocol_addresses_two_faces_of_same_original_separately(setup):
+def test_protocol_addresses_two_faces_of_same_original_separately(setup, tmp_path):
     engine, _, _ = setup
     inventory = with_faces(engine)
     target = face_targets(inventory.faces)[0].target(area=True)
@@ -126,7 +126,7 @@ def test_protocol_addresses_two_faces_of_same_original_separately(setup):
         targets=(target, NativeTarget(route="BB", capability="curve")),
         points=((0, 0, 0),),
     )
-    encoded = encode_request(query, Path("/tmp/face-reply.json")).decode()
+    encoded = encode_request(query, tmp_path / "face-reply.json").decode()
     assert "BB face_1 0\nBB curve 0" in encoded
     with pytest.raises(ValidationError):
         NativeTarget(route="BB", capability="curve", face_id=1)
@@ -161,8 +161,8 @@ def test_repeated_map_calculation_does_not_duplicate_derived_faces(setup):
 def test_assembled_source_routes_leave_unresolved_review_even_with_source_snapshot(
     setup,
 ):
-    from app.dxf_import.object_context import area_members
-    from app.dxf_import.object_review import unresolved_paths
+    from app.dxf_import.review.context import area_members
+    from app.dxf_import.review.objects import unresolved_paths
 
     engine, _, project = setup
     with_faces(engine)
@@ -190,7 +190,7 @@ def test_assembled_source_routes_leave_unresolved_review_even_with_source_snapsh
 
 
 def test_native_face_can_be_revoked_without_dropping_source_curve(setup):
-    from app.native_query.face_review import NativeFaceDecision, change_face_decision
+    from app.native_query.preparation.face_review import NativeFaceDecision, change_face_decision
 
     engine, _, project = setup
     with_faces(engine)
@@ -215,7 +215,7 @@ def test_native_face_can_be_revoked_without_dropping_source_curve(setup):
 
 
 def test_old_mapping_symbol_names_do_not_generate_filled_faces(setup):
-    from app.native_query.derived_faces import area_layers
+    from app.native_query.preparation.derived_faces import area_layers
 
     engine, _, project = setup
     building = project.layers[1]
@@ -230,7 +230,7 @@ def test_old_mapping_symbol_names_do_not_generate_filled_faces(setup):
 
 
 def test_prepare_faces_is_cached_by_layer_selection_not_plan_version(setup):
-    from app.native_query.face_contracts import FacePreparation
+    from app.native_query.preparation.face_contracts import FacePreparation
 
     engine, client, project = setup
     inventory = with_faces(engine)

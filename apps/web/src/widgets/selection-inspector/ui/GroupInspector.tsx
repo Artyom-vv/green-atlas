@@ -1,6 +1,6 @@
 import type { FC } from 'react';
 import type { PlanObject, ValidationIssue } from '@green/api-client';
-import { Crosshair, Lock } from 'lucide-react';
+import { Crosshair, Lock, X } from 'lucide-react';
 import { IconButton, InlineMessage } from '@green/ui';
 import type { GrowthHorizon } from '@/entities/planting-forecast';
 import { EditorPanel } from '@/shared/ui/inspector';
@@ -20,6 +20,7 @@ export interface GroupInspectorProps {
   onCopy: () => void;
   onMove?: () => void;
   onFit?: () => void;
+  onClearSelection?: () => void;
   onLock: (locked: boolean) => void;
   onDelete: () => void;
 }
@@ -33,6 +34,7 @@ export const GroupInspector: FC<GroupInspectorProps> = ({
   onCopy,
   onMove,
   onFit,
+  onClearSelection,
   onLock,
   onDelete,
   mapMode = '2d',
@@ -46,14 +48,24 @@ export const GroupInspector: FC<GroupInspectorProps> = ({
     <EditorPanel
       title={`Выбрано ${objects.length}`}
       headerActions={
-        onFit ? (
-          <IconButton
-            variant="ghost"
-            icon={Crosshair}
-            label="К выделению"
-            onClick={onFit}
-          />
-        ) : undefined
+        <>
+          {onFit && (
+            <IconButton
+              variant="ghost"
+              icon={Crosshair}
+              label="К выделению"
+              onClick={onFit}
+            />
+          )}
+          {onClearSelection && (
+            <IconButton
+              variant="ghost"
+              icon={X}
+              label="Снять выделение"
+              onClick={onClearSelection}
+            />
+          )}
+        </>
       }
     >
       <section className="grid gap-3" aria-label="Состав выделения">

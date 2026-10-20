@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 import time
 
-from app.dxf_import.adapters import EzdxfReader
-from app.geometry.adapters import ShapelyGeometryEngine
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.geometry.checking.adapters import ShapelyGeometryEngine
 from app.projects.contracts import Project
 
 

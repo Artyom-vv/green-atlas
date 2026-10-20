@@ -12,11 +12,12 @@ export interface EditorSessionActions extends EditorViewActions {
   select: (ids: string[], mode?: SelectionMode) => void;
   clearSelection: () => void;
   reset: () => void;
+  resetWorkspace: () => void;
 }
 
 export type EditorSession = EditorSessionState & EditorSessionActions;
 
-/** A mounted project owns one store. Server data and form drafts stay outside. */
+/** The current project owns one store. Server data and form drafts stay outside. */
 export function createEditorStore(projectId: string) {
   const initial: EditorSessionState = {
     ...EDITOR_VIEW_DEFAULTS,
@@ -35,6 +36,13 @@ export function createEditorStore(projectId: string) {
       })),
     clearSelection: () => set({ selectedIds: [] }),
     reset: () => set({ tool: 'select', selectedIds: [] }),
+    // The forecast outlives source review; other views belong to the workspace.
+    resetWorkspace: () =>
+      set((state) => ({
+        ...initial,
+        visibility: {},
+        growthHorizon: state.growthHorizon,
+      })),
   }));
 }
 

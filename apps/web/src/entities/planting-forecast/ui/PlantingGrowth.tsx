@@ -22,6 +22,7 @@ export const EditorGrowth: FC<PlantingGrowthProps> = ({
   ).length;
   return (
     <GrowthHorizonControl
+      label="Просмотр роста"
       forecasts={objects}
       value={value}
       onChange={onChange}

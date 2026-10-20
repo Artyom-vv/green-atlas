@@ -92,7 +92,7 @@ const SpeciesAssignmentForm: FC<SpeciesAssignmentPanelProps> = ({
         className="@container/inspector flex min-h-0 flex-1 flex-col rounded-none border-0 text-xs text-neutral-800"
       >
         <div
-          className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4"
+          className={`flex min-h-0 min-w-0 flex-1 flex-col gap-3 px-4 pt-4 ${browsing ? '' : 'pb-4'}`}
           ref={contentRef}
         >
           <div className="grid shrink-0 gap-4">
@@ -123,6 +123,7 @@ const SpeciesAssignmentForm: FC<SpeciesAssignmentPanelProps> = ({
               query={query}
               onQueryChange={setQuery}
               showSelection={Boolean(selected)}
+              onCancel={onCancel}
               onChange={(id) => {
                 prepareDetails();
                 form.setValue('revisionId', id, { shouldDirty: true });
@@ -144,17 +145,19 @@ const SpeciesAssignmentForm: FC<SpeciesAssignmentPanelProps> = ({
             </ScrollArea>
           )}
         </div>
-        <footer className="shrink-0 border-t border-neutral-200 p-4">
-          <SpeciesAssignmentFooter
-            objects={objects}
-            previewing={previewing}
-            loading={loading}
-            error={error}
-            onAssign={onAssign}
-            onCancel={onCancel}
-            showingDetails={Boolean(showingDetails)}
-          />
-        </footer>
+        {!browsing && (
+          <footer className="shrink-0 border-t border-neutral-200 p-4">
+            <SpeciesAssignmentFooter
+              objects={objects}
+              previewing={previewing}
+              loading={loading}
+              error={error}
+              onAssign={onAssign}
+              onCancel={onCancel}
+              showingDetails={Boolean(showingDetails)}
+            />
+          </footer>
+        )}
       </Surface>
     </ControlProvider>
   );

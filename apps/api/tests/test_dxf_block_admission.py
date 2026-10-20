@@ -5,7 +5,7 @@ import pytest
 from ezdxf.math import Vec2
 from ezdxf.render.mleader import ConnectionSide
 
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.dxf_import.capacity import SourceCapacityExceeded, SourceGeometryCapacity
 
 

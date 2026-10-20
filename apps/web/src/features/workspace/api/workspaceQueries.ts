@@ -1,16 +1,15 @@
 import {
   api,
+  ApiClientError,
   type PlantingZoneAssignment,
   type Project,
 } from '@green/api-client';
 import { queryOptions } from '@tanstack/react-query';
+import { savedProjectQuery } from '@/entities/project/api/savedProjectQuery';
+import { projectSourceIdentity } from '@/entities/project/model/useProjectWrite';
 
 export const workspaceProjectQuery = (projectId: string) =>
-  queryOptions({
-    queryKey: ['workspace-project', projectId],
-    queryFn: () => api.getProject(projectId, false),
-    enabled: Boolean(projectId),
-  });
+  savedProjectQuery(projectId);
 
 export const workspaceHistoryQuery = (projectId: string, enabled: boolean) =>
   queryOptions({
@@ -27,6 +26,10 @@ export const workspaceSpeciesQuery = () =>
     staleTime: Number.POSITIVE_INFINITY,
   });
 
+const sceneRequestRefused = (error: unknown) =>
+  error instanceof ApiClientError &&
+  (error.status === 409 || error.status === 422);
+
 export const workspaceSceneQuery = (
   projectId: string,
   project: Project | undefined,
@@ -40,9 +43,29 @@ export const workspaceSceneQuery = (
       project?.plan?.version,
       project?.geometry_version,
       horizon,
+      projectSourceIdentity(project),
     ],
-    queryFn: ({ signal }) => api.getPlanScene(projectId, horizon, signal),
-    enabled: Boolean(active && project?.map_ready),
+    queryFn: async ({ signal }) => {
+      const view = await api.getSceneView(
+        projectId,
+        { horizon_year: horizon },
+        { signal },
+      );
+      return {
+        ...view.scene,
+        displayEnvironment: view.environment,
+      } as import('@green/api-client').SceneSnapshot & {
+        displayEnvironment: import('@green/api-client').SceneRenderPreparation;
+      };
+    },
+    // A refused version stays visible with its explicit retry action. Toggling
+    // modes, focus and reconnect must not repeat the same expensive failure.
+    enabled: (query) =>
+      Boolean(
+        active && project?.map_ready && !sceneRequestRefused(query.state.error),
+      ),
+    retry: (failureCount, error) =>
+      failureCount < 1 && !sceneRequestRefused(error),
     placeholderData: (previous, query) =>
       query?.queryKey[1] === projectId ? previous : undefined,
     staleTime: Number.POSITIVE_INFINITY,

@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it } from 'vitest';
 import type { Layer } from '@green/api-client';
 import { MapLegend } from './MapLegend';
@@ -25,7 +26,8 @@ it('uses distinct lawn/building/pavement fills and the same palette in the rende
     MAP_DESIGN_PALETTE.utility[1],
   );
 });
-it('shows only mapped visible classes and never calls lawn a planting allowance', () => {
+it('показывает видимые классы и закрывается с клавиатуры с возвратом фокуса', async () => {
+  const user = userEvent.setup();
   render(
     <MapLegend
       layers={
@@ -36,9 +38,14 @@ it('shows only mapped visible classes and never calls lawn a planting allowance'
       }
     />,
   );
-  expect(screen.getByText('Газоны')).toBeInTheDocument();
+  const trigger = screen.getByRole('button', { name: 'Легенда' });
+  expect(screen.queryByText('Газоны')).not.toBeInTheDocument();
+  await user.click(trigger);
+  expect(await screen.findByText('Газоны')).toBeVisible();
   expect(screen.queryByText('Здания')).not.toBeInTheDocument();
-  expect(
-    screen.getByText('Допустимые места показывает расчёт.'),
-  ).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await waitFor(() =>
+    expect(screen.queryByText('Газоны')).not.toBeInTheDocument(),
+  );
+  expect(trigger).toHaveFocus();
 });

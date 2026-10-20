@@ -1,15 +1,39 @@
+#include "filesystem_utf8.h"
+#include <filesystem>
 #include "snapshot_writer.h"
 #include "bridge_config.h"
 #include "operation_control.h"
 #include "file_io.h"
+#include "compact_json.h"
 #include <cstdio>
 #include <fstream>
 #include <functional>
 #include <iomanip>
+#include <sstream>
 
 namespace ga::bridge {
 
 namespace {
+class TemporarySnapshot {
+public:
+    explicit TemporarySnapshot(const std::string& path) : path_(path) {}
+    TemporarySnapshot(const TemporarySnapshot&) = delete;
+    TemporarySnapshot& operator=(const TemporarySnapshot&) = delete;
+    ~TemporarySnapshot() {
+#ifdef _WIN32
+        std::error_code error;
+        if(created_) std::filesystem::remove(ga::bridge::nativePath(path_),error);
+#else
+        if (created_) std::remove(path_.c_str());
+#endif
+    }
+    void created() { created_ = true; }
+    void published() { created_ = false; }
+private:
+    const std::string& path_;
+    bool created_ = false;
+};
+
 bool writeRegionRecord(std::ostream& output, const RegionTopology& region,
                        const NativeAreaProposal* proposal,
                        const std::function<bool()>& cancelled) {
@@ -94,18 +118,22 @@ ExportResult writeTopologySnapshot(const SnapshotMetadata& metadata,
     const std::string outputPath = destination.empty()
         ? sourcePath + ".green-atlas.geometry.json" : destination;
     const std::string temporaryPath = outputPath + ".tmp";
-    std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
-    if (!output) {
+    TemporarySnapshot temporary(temporaryPath);
+    std::ofstream file(ga::bridge::nativePath(temporaryPath), std::ios::binary | std::ios::trunc);
+    if (!file) {
         result.error = "topology sidecar cannot be created";
         return result;
     }
+    temporary.created();
+    CompactJsonBuffer compact(*file.rdbuf());
+    std::ostream output(&compact);
     const auto abortSerializationIfCancelled = [&]() {
         if (!operationCancelled()) return false;
-        output.close();
-        std::remove(temporaryPath.c_str());
+        file.close();
         result.error = "native topology export cancelled";
         return true;
     };
+    if (abortSerializationIfCancelled()) return result;
 
     output << std::setprecision(17);
     output << "{\n"
@@ -142,9 +170,14 @@ ExportResult writeTopologySnapshot(const SnapshotMetadata& metadata,
     output << "  ],\n"
            << "  \"coverage\": [";
 
+    reportOperationProgress("serializing_coverage", 0);
+
     for (std::size_t coverageIndex = 0;
          coverageIndex < coverage.size(); ++coverageIndex) {
-        if (coverageIndex % 10000 == 0 && abortSerializationIfCancelled()) return result;
+        if (coverageIndex % 10000 == 0) {
+            if (abortSerializationIfCancelled()) return result;
+            reportOperationProgress("serializing_coverage", coverageIndex);
+        }
         const EntityCoverage& record = coverage[coverageIndex];
         output << (coverageIndex == 0 ? "\n" : ",\n")
                << "    {\"handle\": \"" << jsonEscape(record.handle)
@@ -211,8 +244,12 @@ ExportResult writeTopologySnapshot(const SnapshotMetadata& metadata,
     if (!traversal.areaProposalRejections.empty()) output << '\n';
     output << "  ],\n"
            << "  \"paths\": [";
+    reportOperationProgress("serializing_paths", 0);
     for (std::size_t pathIndex = 0; pathIndex < paths.size(); ++pathIndex) {
-        if (pathIndex % 1000 == 0 && abortSerializationIfCancelled()) return result;
+        if (pathIndex % 1000 == 0) {
+            if (abortSerializationIfCancelled()) return result;
+            reportOperationProgress("serializing_paths", pathIndex);
+        }
         const NativePath& path = paths[pathIndex];
         output << (pathIndex == 0 ? "\n" : ",\n")
                << "    {\"handle\": \"" << jsonEscape(path.handle)
@@ -301,19 +338,43 @@ ExportResult writeTopologySnapshot(const SnapshotMetadata& metadata,
               "\"nonzero DBMOD means the saved source differs from the live capture\", "
               "\"adaptive chord checks require independent admission verification\"]\n"
            << "}\n";
-    output.close();
+    if (abortSerializationIfCancelled()) return result;
+    output.flush();
+    file.close();
 
-    if (!output || std::rename(temporaryPath.c_str(), outputPath.c_str()) != 0) {
-        std::remove(temporaryPath.c_str());
+#ifdef _WIN32
+    std::error_code publishError;
+    if(output && file) std::filesystem::rename(ga::bridge::nativePath(temporaryPath),ga::bridge::nativePath(outputPath),publishError);
+    if (!output || !file || publishError) {
+#else
+    if (!output || !file || std::rename(temporaryPath.c_str(), outputPath.c_str()) != 0) {
+#endif
         result.error = "topology sidecar could not be published atomically";
         return result;
     }
+    temporary.published();
 
     result.success = true;
     result.path = outputPath;
     result.error.clear();
-
-
+    std::ostringstream facts;
+    facts << "{\"plugin_version\":\"" << kPluginVersion
+        << "\",\"capture_mode\":\""
+        << (metadata.sideDatabaseCapture ? "side_database_dxf" : "live_document")
+        << "\",\"source\":{\"path\":\"" << jsonEscape(sourcePath)
+        << "\",\"sha256\":\"" << sourceHash << "\"},\"summary\":{"
+        << "\"unresolved_instances\":" << coverageStatusCounts["unresolved"]
+        << ",\"cyclic_block_references\":" << traversal.cyclicBlockReferences
+        << ",\"unexpanded_minsert_blocks\":" << traversal.unexpandedMInsertBlocks
+        << "},\"xref_dependencies\":[";
+    bool first = true;
+    for (const auto& [handle, dependency] : traversal.xrefDependencies) {
+        facts << (first ? "" : ",") << "{\"status\":\""
+            << jsonEscape(dependency.status) << "\"}";
+        first = false;
+    }
+    facts << "]}";
+    result.transferFacts = facts.str();
     return result;
 }
 

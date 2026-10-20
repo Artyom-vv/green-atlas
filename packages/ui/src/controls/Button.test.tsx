@@ -21,6 +21,26 @@ import {
 } from '../index';
 
 describe('Button', () => {
+  it('retains busy semantics and prevents repeat submission when a parent owns the indicator', () => {
+    const onClick = vi.fn();
+    render(
+      <Button
+        loading
+        loadingIndicator={false}
+        startIcon={<Plus />}
+        onClick={onClick}
+      >
+        Применить
+      </Button>,
+    );
+    const button = screen.getByRole('button', { name: 'Применить' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button.querySelector('.lucide-loader-circle')).toBeNull();
+    expect(button.querySelector('.lucide-plus')).not.toBeNull();
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
   it.each(['disabled', 'loading'] as const)(
     'blocks activation on an %s icon button and keeps its reason',
     (state) => {

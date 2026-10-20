@@ -10,7 +10,7 @@ from ezdxf import xref
 ROOT = Path(__file__).resolve().parents[2]
 LAB = ROOT/'.runtime/cad-roi-20260916'
 sys.path.insert(0, str(ROOT/'apps/api'))
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 
 began = time.monotonic()
 source = ezdxf.readfile(LAB/'large-block-roi-100m.dxf')

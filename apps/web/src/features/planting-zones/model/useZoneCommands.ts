@@ -7,7 +7,11 @@ import {
   useState,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Project } from '@green/api-client';
+import { isUnsentLocalRequest, type Project } from '@green/api-client';
+import {
+  acknowledgeProjectWrite,
+  validateAcknowledgedProjectRead,
+} from '@/entities/project/model/acknowledgedRead';
 import { readZoneProject, saveZoneSnapshot } from '../api/zoneCommands';
 import {
   captureZoneCommand,
@@ -40,6 +44,7 @@ interface ZoneSaveAttempt {
   writeError?: unknown;
   notified: boolean;
   reading: boolean;
+  sent: boolean;
   onCommitted: ZoneCommandsOptions['onCommitted'];
   refresh: ZoneCommandsOptions['refresh'];
 }
@@ -128,7 +133,11 @@ export function useZoneCommands(options: ZoneCommandsOptions) {
         } else {
           // A failed response is not evidence of a failed PUT. Read the actual state
           // without claiming that this command was committed, even if zones match.
-          project = await readZoneProject(projectId);
+          project = validateAcknowledgedProjectRead(
+            client,
+            projectId,
+            await readZoneProject(projectId),
+          );
           const cached = client.getQueryData<Project>([
             'workspace-project',
             projectId,
@@ -189,6 +198,7 @@ export function useZoneCommands(options: ZoneCommandsOptions) {
         submittedAt: Date.now(),
         notified: false,
         reading: false,
+        sent: false,
         onCommitted: captured.onCommitted,
         refresh: captured.refresh,
       };
@@ -211,6 +221,7 @@ export function useZoneCommands(options: ZoneCommandsOptions) {
         phase: 'writing',
         submittedAt: attempt.submittedAt,
       });
+      attempt.sent = true;
       void saveZoneSnapshot(context).then(
         async (receipt) => {
           if (
@@ -222,10 +233,15 @@ export function useZoneCommands(options: ZoneCommandsOptions) {
             );
           } else {
             attempt.receipt = receipt;
+            acknowledgeProjectWrite(client, context.projectId, {
+              stateVersion: receipt.state_version,
+              planVersion: receipt.plan?.version,
+            });
           }
           await synchronize(attempt);
         },
         async (error) => {
+          if (isUnsentLocalRequest(error)) attempt.sent = false;
           attempt.writeError = error;
           await synchronize(attempt);
         },
@@ -261,6 +277,18 @@ export function useZoneCommands(options: ZoneCommandsOptions) {
     submittedAt: visible.kind === kind ? visible.submittedAt : 0,
   });
   return {
+    writeOutcome:
+      visible.phase === 'writing'
+        ? ('writing' as const)
+        : visible.phase === 'idle'
+          ? ('idle' as const)
+          : visible.data
+            ? ('confirmed' as const)
+            : attempts.current.get(options.projectId)?.sent
+              ? ('unknown' as const)
+              : ('idle' as const),
+    readRecovery:
+      visible.phase === 'refreshing' || visible.phase === 'recovery',
     ...visible,
     isPending,
     blocked: visible.phase !== 'idle',

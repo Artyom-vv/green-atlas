@@ -1,9 +1,13 @@
 import type { ProjectSummary } from '@green/api-client';
 import { countLabel } from '@/shared/format/countLabel';
+import { projectResumeRoute, projectPreparationNotice } from './projectResume';
 
 export function projectState(project: ProjectSummary) {
   if (!project.source_name)
     return { title: 'Нужен исходник', detail: 'Откройте чертёж через AutoCAD' };
+  const preparationIssue = projectPreparationNotice(project);
+  if (preparationIssue)
+    return { title: 'Проверьте источник', detail: preparationIssue };
   if (!project.has_geometry)
     return { title: 'Проверьте источник', detail: 'Геометрия ещё не открыта' };
   if (!project.planting_zone_count)
@@ -17,9 +21,4 @@ export function projectState(project: ProjectSummary) {
   };
 }
 
-export function projectRoute(project: ProjectSummary) {
-  if (!project.source_name) return `/projects/${project.id}/import`;
-  if (!project.has_geometry && ['imported', 'mapped'].includes(project.status))
-    return `/projects/${project.id}/setup`;
-  return `/projects/${project.id}/workspace`;
-}
+export const projectRoute = projectResumeRoute;

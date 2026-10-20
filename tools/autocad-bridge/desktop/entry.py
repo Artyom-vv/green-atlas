@@ -1,4 +1,7 @@
-"""Bundled executable entry; workers must branch before creating a local server."""
+"""Вход автономного runtime: worker выбирается до создания локального API.
+
+Модуль запуска не владеет CAD-операциями или рабочими данными проекта.
+"""
 
 import multiprocessing
 import sys

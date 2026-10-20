@@ -1,5 +1,4 @@
 import type {
-  CadPackagePassport,
   CadPreviewRequest,
   Project,
   ProjectOperation,
@@ -77,54 +76,4 @@ export const previewProject: Project = {
     entity_count: 2,
     content_sha256: 'b'.repeat(64),
   },
-};
-export const boundaryPassport: CadPackagePassport = {
-  root_id: 'official',
-  entry: 'АПОТ.dwg',
-  manifest_sha256: 'c'.repeat(64),
-  status: 'blocked',
-  calculation_ready: false,
-  blockers: [],
-  references: [],
-  drawings: [
-    {
-      path: 'АПОТ.dwg',
-      source_sha256: 'a'.repeat(64),
-      normalized_sha256: 'b'.repeat(64),
-      source_bytes: 1000,
-      status: 'readable',
-      inspection: {
-        native_unresolved: 0,
-        dxf_version: 'AC1024',
-        units: 6,
-        modelspace_entities: { LWPOLYLINE: 2 },
-        layer_names: ['Граница'],
-        xrefs: {},
-        boundary_catalog: {
-          schema_version: 'green-atlas-boundary-catalog-v1',
-          truncated: false,
-          total_candidates: 2,
-          candidates: [
-            {
-              handle: '14651AD',
-              entity_type: 'LWPOLYLINE',
-              layer: 'Граница',
-              vertex_count: 4,
-              has_bulges: false,
-              available_for_preview: true,
-            },
-            {
-              handle: 'BAD',
-              entity_type: 'LWPOLYLINE',
-              layer: 'Наклонный контур',
-              vertex_count: 4,
-              has_bulges: false,
-              available_for_preview: false,
-              reason: 'Наклонная плоскость',
-            },
-          ],
-        },
-      },
-    },
-  ],
 };

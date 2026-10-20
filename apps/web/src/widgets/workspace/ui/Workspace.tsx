@@ -1,6 +1,10 @@
 import { errorMessage } from '@/shared/errors/errorMessage';
-import { AppHeader } from '@/shared/ui/AppHeader';
-import { InlineMessage, Progress } from '@green/ui';
+import { ProjectReadState } from '@/entities/project/ui/ProjectReadState';
+import { PROJECT_READ_MESSAGES } from '@/entities/project/config/projectRead';
+import { restartProjectRead } from '@/entities/project/api/savedProjectQuery';
+import { useLocalRuntime } from '@/shared/desktop/useLocalRuntime';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import type { FC } from 'react';
 import { useWorkspaceModel } from '../model/useWorkspaceModel';
 import { WorkspaceReadyView } from './WorkspaceReadyView';
@@ -9,20 +13,32 @@ interface WorkspaceProps {
 }
 export const Workspace: FC<WorkspaceProps> = ({ projectId }) => {
   const model = useWorkspaceModel(projectId);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const runtimeAvailable = useLocalRuntime();
   if (!model.project)
     return (
-      <div className="flex h-dvh min-h-0 flex-col">
-        <AppHeader />
-        <main className="m-auto w-[min(520px,calc(100%-40px))]">
-          {model.projectQuery.isLoading ? (
-            <Progress label="Загрузка рабочей области" />
-          ) : (
-            <InlineMessage tone="error">
-              {errorMessage(model.projectQuery.error)}
-            </InlineMessage>
-          )}
-        </main>
-      </div>
+      <ProjectReadState
+        key={projectId}
+        status={
+          model.projectQuery.isFetching || !runtimeAvailable
+            ? 'loading'
+            : model.projectQuery.isError
+              ? 'error'
+              : 'stopped'
+        }
+        projectName={PROJECT_READ_MESSAGES.opening}
+        loadingLabel={PROJECT_READ_MESSAGES.workspaceLoading}
+        errorMessage={
+          model.projectQuery.isError
+            ? errorMessage(model.projectQuery.error)
+            : undefined
+        }
+        onRetry={() =>
+          void restartProjectRead(queryClient, ['workspace-project', projectId])
+        }
+        onBack={() => navigate('/projects')}
+      />
     );
   return <WorkspaceReadyView model={{ ...model, project: model.project }} />;
 };

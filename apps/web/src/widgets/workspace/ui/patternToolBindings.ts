@@ -1,6 +1,6 @@
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
 import { rowSketchFrame } from '@/entities/planting';
-import type { PatternToolPanelProps } from '@/features/placement/ui/PatternToolPanel';
+import type { PatternToolPanelProps } from '@/features/placement/pattern/ui/PatternToolPanel';
 import type { PatternPreviewRequest } from '@green/api-client';
 
 export interface PatternBindingOptions extends Pick<
@@ -69,13 +69,17 @@ export function patternToolBindings(
     options.previewPattern.reset();
     options.previewChanges.reset();
   };
+  const editPreview = () => {
+    options.previewPattern.edit();
+    options.previewChanges.reset();
+  };
   return {
-    onCancelCalculation: () => options.previewPattern.reset(),
+    onCancelCalculation: () => options.previewPattern.cancel(),
     onAxisModeChange: (mode) => {
       options.mapViewport.current?.abortRowDrawing();
       options.setRowInputMode(mode);
       options.setRowDrawingPoints(0);
-      resetPreview();
+      editPreview();
     },
     onFinishAxis: () => options.mapViewport.current?.finishRowDrawing(),
     onFitAxis: () => {
@@ -90,7 +94,7 @@ export function patternToolBindings(
           ...options.rowAxis,
           coordinates: [...options.rowAxis.coordinates].reverse(),
         });
-      resetPreview();
+      editPreview();
     },
     onDrawZone: options.beginPlacementZoneDrawing,
     onPreview: (draft) => {
@@ -101,10 +105,13 @@ export function patternToolBindings(
       } as PatternPreviewRequest);
     },
     onApply: () => {
-      if (options.patternPreview?.change_set?.can_apply)
+      if (
+        options.previewPattern.isCurrent() &&
+        options.patternPreview?.change_set?.can_apply
+      )
         options.applyChanges.mutate(options.patternPreview.change_set);
     },
-    onResetPreview: resetPreview,
+    onResetPreview: editPreview,
     onCancel: () => {
       if (options.placementAreaDrawing) {
         options.cancelZoneDrawing();

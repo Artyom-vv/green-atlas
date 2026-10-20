@@ -1,9 +1,10 @@
 import type { ComponentPropsWithRef, FC, ReactNode } from 'react';
 import { tv } from 'tailwind-variants';
 import { cx } from '../foundations/utils';
+import { ControlProvider } from '../foundations/ControlProvider';
 
 const header = tv({
-  base: 'flex min-h-12 shrink-0 items-center justify-between gap-4 border-b border-neutral-200 px-4 py-1.5',
+  base: 'flex min-h-12 shrink-0 items-center justify-between gap-4 border-b border-neutral-200 p-2',
 });
 
 export interface SurfaceHeaderProps extends ComponentPropsWithRef<'header'> {
@@ -15,9 +16,11 @@ export const SurfaceHeader: FC<SurfaceHeaderProps> = ({
   className,
   ...props
 }) => (
-  <header className={cx(header(), className)} {...props}>
-    {children}
-  </header>
+  <ControlProvider size="compact">
+    <header className={cx(header(), className)} {...props}>
+      {children}
+    </header>
+  </ControlProvider>
 );
 
 export const PanelHeader = SurfaceHeader;

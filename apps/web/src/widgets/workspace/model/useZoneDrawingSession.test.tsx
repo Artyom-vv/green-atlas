@@ -11,7 +11,7 @@ import VectorSource from 'ol/source/Vector';
 import { useZoneDrawingSession } from '@/features/planting-zones/model/useZoneDrawingSession';
 import { manualWorkspaceWork } from '@/features/workspace/manualWorkspaceWork';
 import { createViewportHandle } from '@/widgets/map/adapters/openlayers/createViewportHandle';
-import { useWorkspaceKeyboard } from './useWorkspaceKeyboard';
+import { useWorkspaceKeyboard } from './navigation/useWorkspaceKeyboard';
 import {
   viewportDrawingBindings,
   type ViewportDrawingProps,
@@ -103,7 +103,6 @@ function setup() {
     useWorkspaceKeyboard({ blocked: false, onEscape: drawing.cancel });
     const guard = manualWorkspaceWork({
       tool,
-      placementPanelOpen: false,
       hasPlan: true,
       hasPreview: false,
       hasPendingZone: false,

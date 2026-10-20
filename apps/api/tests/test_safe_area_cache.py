@@ -3,7 +3,7 @@ from unittest.mock import patch
 from shapely.geometry import box, mapping, shape
 
 from app.contracts import GeometrySnapshot, PlantingZoneAssignment, Project
-from app.geometry.adapters import ShapelyGeometryEngine
+from app.geometry.checking.adapters import ShapelyGeometryEngine
 
 
 def project_with_zone():

@@ -25,28 +25,34 @@ def valid_snapshot() -> dict:
             "projection": "wcs-xy-planar",
             "requested_tolerance_m": 0.001,
         },
-        "coverage": [{
-            "identity": identity,
-            "entity_type": "REGION",
-            "layer": "BOUNDARY",
-            "status": "native",
-            "method": "AcBr loop traversal",
-            "geometry_ids": ["region-A12-10-2F"],
-        }],
-        "geometry": [{
-            "id": "region-A12-10-2F",
-            "identity": identity,
-            "kind": "region",
-            "loops": [{
-                "role": "outer",
-                "closed": True,
-                "coordinates": [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 0, 0]],
-            }],
-            "native_area_units2": 50,
-            "native_perimeter_units": 34.142,
-            "achieved_tolerance_m": 0.0005,
-            "content_sha256": "b" * 64,
-        }],
+        "coverage": [
+            {
+                "identity": identity,
+                "entity_type": "REGION",
+                "layer": "BOUNDARY",
+                "status": "native",
+                "method": "AcBr loop traversal",
+                "geometry_ids": ["region-A12-10-2F"],
+            }
+        ],
+        "geometry": [
+            {
+                "id": "region-A12-10-2F",
+                "identity": identity,
+                "kind": "region",
+                "loops": [
+                    {
+                        "role": "outer",
+                        "closed": True,
+                        "coordinates": [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 0, 0]],
+                    }
+                ],
+                "native_area_units2": 50,
+                "native_perimeter_units": 34.142,
+                "achieved_tolerance_m": 0.0005,
+                "content_sha256": "b" * 64,
+            }
+        ],
         "summary": {
             "source_instances": 1,
             "native": 1,
@@ -66,10 +72,21 @@ def test_accepts_complete_native_snapshot() -> None:
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        (lambda data: data["coverage"].append(deepcopy(data["coverage"][0])), "duplicate source instance"),
-        (lambda data: data["coverage"][0].update(geometry_ids=["missing"]), "missing geometry"),
+        (
+            lambda data: data["coverage"].append(deepcopy(data["coverage"][0])),
+            "duplicate source instance",
+        ),
+        (
+            lambda data: data["coverage"][0].update(geometry_ids=["missing"]),
+            "missing geometry",
+        ),
         (lambda data: data["summary"].update(native=0), "does not match coverage"),
-        (lambda data: data["geometry"][0]["loops"][0]["coordinates"].append([1, 1, 0]), "endpoints differ"),
+        (
+            lambda data: data["geometry"][0]["loops"][0]["coordinates"].append(
+                [1, 1, 0]
+            ),
+            "endpoints differ",
+        ),
     ],
 )
 def test_rejects_untrustworthy_snapshot(mutation, message: str) -> None:

@@ -1,4 +1,4 @@
-"""Pure placement growth projection, separate from terrain and CAD context."""
+"""Чистая проекция посадок и прогноза роста в сцену отдельно от рельефа и CAD-контекста."""
 
 from collections.abc import Callable
 
@@ -16,7 +16,7 @@ def _scene_growth_stage(
     horizon_year: int,
     scale: float | None,
 ) -> tuple[GrowthStage, EvidenceStatus]:
-    """Return a renderer variant band, never a fabricated biological age."""
+    """Выбирает группу вариантов отображения без выдуманного биологического возраста."""
 
     if horizon_year == 0:
         if size_class == "sapling":
@@ -76,9 +76,8 @@ def scene_plants(
         layout_radius = object_.layout_radius_m or object_.radius
         scale: float | None = None
         if horizon_year == 0:
-            # Keep the current planting footprint for an unassigned
-            # object, but use the same catalogue anchor as the 2D
-            # forecast when one is available.
+            # Для объекта без вида сохраняем текущий габарит посадки. При наличии
+            # каталожного прогноза используем ту же опору, что и в 2D.
             canopy_min = canopy.radius_min_m if canopy else layout_radius
             canopy_max = canopy.radius_max_m if canopy else layout_radius
             heights = INITIAL_HEIGHTS.get(object_.size_class)

@@ -1,10 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import {
+  IDE_WORKSPACE_RESULTS_TABS,
   ideWorkspaceLayout,
   readIdeWorkspacePreference,
 } from './ideWorkspaceLayout';
 
 describe('IDE workspace constraints', () => {
+  it('gives resources more room by default while retaining a readable map and inspector', () => {
+    const initial = ideWorkspaceLayout({ width: 1280, height: 800 });
+    const constrained = ideWorkspaceLayout({ width: 1180, height: 800 });
+    expect(initial).toMatchObject({
+      resourcesWidth: 260,
+      rightWidth: 300,
+      mapWidth: 720,
+    });
+    expect(constrained).toMatchObject({
+      resourcesWidth: 240,
+      rightWidth: 300,
+      mapWidth: 640,
+      resourcesExpanded: true,
+      rightExpanded: true,
+    });
+  });
+
   it('keeps the map usable at 1280 and 1024 without losing preferred sizes', () => {
     const preference = {
       resourcesWidth: 250,
@@ -18,7 +36,7 @@ describe('IDE workspace constraints', () => {
     expect(wide).toMatchObject({ resourcesWidth: 250, rightWidth: 420 });
     expect(medium.mapWidth).toBeGreaterThanOrEqual(640);
     expect(narrow).toMatchObject({
-      resourcesWidth: 40,
+      resourcesWidth: 48,
       resourcesAutoCollapsed: true,
       rightExpanded: true,
     });
@@ -42,9 +60,9 @@ describe('IDE workspace constraints', () => {
     );
     expect(result).toMatchObject({
       resourcesExpanded: true,
-      resourcesWidth: 220,
+      resourcesWidth: 260,
       rightAutoCollapsed: true,
-      rightWidth: 40,
+      rightWidth: 48,
     });
     expect(result.mapWidth).toBeGreaterThanOrEqual(640);
   });
@@ -61,11 +79,11 @@ describe('IDE workspace constraints', () => {
       },
     );
     expect(result).toMatchObject({
-      resourcesWidth: 40,
-      rightWidth: 40,
+      resourcesWidth: 48,
+      rightWidth: 48,
       resourcesAutoCollapsed: false,
       rightAutoCollapsed: false,
-      resultsTotalHeight: 40,
+      resultsTotalHeight: 48,
     });
   });
 
@@ -81,7 +99,11 @@ describe('IDE workspace constraints', () => {
           priority: 'right',
         },
       );
-      expect(height - result.resultsTotalHeight).toBeGreaterThanOrEqual(260);
+      // The fixed strip remains accessible even when the window itself cannot
+      // contain both it and the map's preferred 260px minimum.
+      expect(height - result.resultsTotalHeight).toBeGreaterThanOrEqual(
+        Math.min(260, height - IDE_WORKSPACE_RESULTS_TABS),
+      );
       expect(result.resultsHeight).toBeLessThanOrEqual(height * 0.45);
     }
   });

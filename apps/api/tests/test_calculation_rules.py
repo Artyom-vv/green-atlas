@@ -1,7 +1,7 @@
 import pytest
 
-from app.dxf_import.layer_contracts import Layer
-from app.native_query.calculation_rules import calculation_rule
+from app.dxf_import.layers.contracts import Layer
+from app.native_query.policy.calculation_rules import calculation_rule
 from app.regulations.placement_config import PLACEMENT_CONFIG, PlacementConfig
 
 

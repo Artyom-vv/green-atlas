@@ -1,23 +1,38 @@
-"""Shared interpolation for bounded biological forecast anchors."""
+"""Общая интерполяция ограниченных биологических прогнозов по заданным временным опорным
+значениям.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from math import isfinite
-from typing import Sequence
 
 from app.species.contracts import GrowthEnvelopeForecast
 
+ForecastAnchorSequence = Sequence[GrowthEnvelopeForecast] | None
+
+
+def calculation_growth_radii(
+    canopy: GrowthEnvelopeForecast, roots: GrowthEnvelopeForecast
+) -> tuple[float, float]:
+    """Выбирает рабочие габариты на уже выбранном горизонте плана.
+
+    Компоновка использует верхнюю границу кроны и нижнюю границу корней.
+    Это сценарное решение для размещения; исходный биологический диапазон
+    сохраняется, а нормативные отступы проверяются независимо.
+    """
+    return canopy.radius_max_m, roots.radius_min_m
+
 
 def forecast_at(
-    items: Sequence[GrowthEnvelopeForecast] | None,
+    items: ForecastAnchorSequence,
     year: int | float,
 ) -> GrowthEnvelopeForecast | None:
-    """Return a forecast at ``year`` without extrapolating beyond anchors.
+    """Интерполирует прогноз внутри опорного интервала, не продолжая его за границы.
 
-    Forecasts are stored as a small set of versioned anchor values. Years
-    between anchors are a transparent linear interpolation; years outside the
-    anchor interval have no forecast rather than silently reusing the nearest
-    value. The caller can then present that gap as missing data.
+    Версионированные опорные значения задают линейную интерполяцию. Вне их
+    интервала результат отсутствует: потребитель обязан показать пробел данных,
+    а не принять ближайшее известное значение за прогноз.
     """
 
     if not items or not isfinite(year):
@@ -41,11 +56,13 @@ def forecast_at(
     ratio = (year - lower.horizon_year) / (upper.horizon_year - lower.horizon_year)
     return lower.model_copy(
         update={
-            # API horizons are integer years; callers still may pass ``23.0``
-            # after query parsing, so normalize the interpolated label.
+            # Горизонт API задаётся целым годом; после разбора запроса число
+            # может прийти как 23.0, поэтому подпись приводится к целому.
             "horizon_year": int(year),
-            "radius_min_m": lower.radius_min_m + (upper.radius_min_m - lower.radius_min_m) * ratio,
-            "radius_max_m": lower.radius_max_m + (upper.radius_max_m - lower.radius_max_m) * ratio,
+            "radius_min_m": lower.radius_min_m
+            + (upper.radius_min_m - lower.radius_min_m) * ratio,
+            "radius_max_m": lower.radius_max_m
+            + (upper.radius_max_m - lower.radius_max_m) * ratio,
             "confidence": "low" if year > 10 else lower.confidence,
         }
     )

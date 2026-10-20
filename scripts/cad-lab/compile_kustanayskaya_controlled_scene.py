@@ -28,8 +28,7 @@ from shapely.ops import nearest_points, transform, unary_union
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
 
-from app.dxf_import.adapters import _hatch_polygon_geometry  # noqa: E402
-from app.dxf_import.polygons import hatch_geometry  # noqa: E402
+from app.dxf_import.legacy.entities.polygons import hatch_geometry  # noqa: E402
 DEFAULT_WORLD = ROOT / ".runtime/kustanayskaya-working-prototype-20260920/prototype-world.json"
 DEFAULT_SURFACES = ROOT / ".runtime/kustanayskaya-target-surfaces-20260920/authored-surfaces.geojson"
 DEFAULT_AUDIT = ROOT / ".runtime/kustanayskaya-target-surfaces-20260920/placement-audit/project-surface-placement-audit.json"
@@ -408,7 +407,7 @@ def main() -> None:
         for virtual in insert.virtual_entities():
             if virtual.dxftype() != "HATCH":
                 continue
-            extracted = hatch_geometry(virtual, 1.0, _hatch_polygon_geometry)
+            extracted = hatch_geometry(virtual, 1.0)
             if extracted is None:
                 continue
             geometry = dxf_geometry_to_world(shape(extracted)).intersection(scene_window)

@@ -1,4 +1,5 @@
 import type { ProjectOperation } from '@green/api-client';
+import { CLOCK_INTERVAL_MS, formatDuration } from '@/shared/time/duration';
 
 type OperationStatus = ProjectOperation['status'];
 
@@ -13,7 +14,7 @@ const RETRYABLE_STATUSES: readonly OperationStatus[] = [
   'interrupted',
 ];
 
-export const OPERATION_CLOCK_INTERVAL_MS = 1_000;
+export const OPERATION_CLOCK_INTERVAL_MS = CLOCK_INTERVAL_MS;
 
 export function operationActive(operation?: ProjectOperation | null): boolean {
   return Boolean(operation && ACTIVE_STATUSES.includes(operation.status));
@@ -21,12 +22,6 @@ export function operationActive(operation?: ProjectOperation | null): boolean {
 
 export function operationRetryable(operation: ProjectOperation): boolean {
   return RETRYABLE_STATUSES.includes(operation.status);
-}
-
-function formatDuration(milliseconds: number): string {
-  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
-  if (seconds < 60) return `${seconds} с`;
-  return `${Math.floor(seconds / 60)} мин ${seconds % 60} с`;
 }
 
 export function operationElapsed(

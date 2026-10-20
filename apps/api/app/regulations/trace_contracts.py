@@ -1,9 +1,15 @@
+"""Домен нормативных проверок: основание, измерение и объяснение одной посадки.
+
+Трасса сохраняет версию геометрии и источники правил; наличие трассы не означает
+полного нормативного согласования проекта.
+"""
+
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.geometry.axis_contracts import AxisDistanceEvidence
-from app.geometry.utility_contracts import UtilityContext
+from app.geometry.networks.axis_contracts import AxisDistanceEvidence
+from app.geometry.networks.utility_contracts import UtilityContext
 from app.regulations.network_rules import NETWORK_RULE_PACK
 
 

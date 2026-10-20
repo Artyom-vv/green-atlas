@@ -1,35 +1,61 @@
 import type { WorkspaceRecommendationToolProps } from './WorkspaceRecommendationTool.props';
+/** Рабочая область: выбор сценария подбора и видимое состояние его выполнения */
 import { recommendationToolBindings } from './recommendationToolBindings';
 import type { FC } from 'react';
 import { useState } from 'react';
 import { AutomaticPlacementPanel } from './AutomaticPlacementPanel';
+import { Button } from '@green/ui';
+import { PlacementToolSurface } from '@/shared/ui/TaskSurface';
+import { SearchDomainProgress } from '@/features/placement/inspection/ui/SearchDomainProgress';
 import {
   RecommendationPanel,
   RecommendationReviewPanel,
 } from '@/features/recommendation';
-import { errorMessage as message } from '@/shared/errors/errorMessage';
 export const WorkspaceRecommendationTool: FC<
   WorkspaceRecommendationToolProps
 > = (props) => {
   const [detailed, setDetailed] = useState(false);
   const {
     applyChanges,
-    buildingTargets,
     growthHorizon,
     previewChanges,
     previewRecommendation,
     project,
     recommendationForm,
-    recommendationOpen,
     recommendationPreview,
     selectPatternZones,
     selectedPatternZoneIds,
-    setBuildingScreenActive,
     setGrowthHorizon,
     speciesNames,
   } = props;
   if (!detailed || props.automaticPreview) {
-    return <AutomaticPlacementPanel {...props} onDetailed={() => setDetailed(true)} />;
+    return (
+      <AutomaticPlacementPanel
+        {...props}
+        onDetailed={() => setDetailed(true)}
+      />
+    );
+  }
+  if (previewRecommendation.isPending) {
+    return (
+      <PlacementToolSurface
+        title="Подбираем посадки"
+        showHeader={false}
+        footer={
+          <Button
+            variant="secondary"
+            onClick={() => previewRecommendation.cancel()}
+          >
+            Отменить
+          </Button>
+        }
+      >
+        <SearchDomainProgress
+          preview={previewRecommendation.progress}
+          running
+        />
+      </PlacementToolSurface>
+    );
   }
   return (
     <>
@@ -47,13 +73,6 @@ export const WorkspaceRecommendationTool: FC<
           onSelectedZoneIdsChange={selectPatternZones}
           zones={project.planting_zones ?? []}
           loading={previewRecommendation.isPending}
-          active={recommendationOpen}
-          onScreenMode={setBuildingScreenActive}
-          screenTargets={buildingTargets.data}
-          screenLoading={buildingTargets.isFetching}
-          screenError={
-            buildingTargets.error ? message(buildingTargets.error) : undefined
-          }
         />
       </div>
       {recommendationPreview && (

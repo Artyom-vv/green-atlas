@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Layer, LayerMapping } from '@green/api-client';
 import { BoundaryCandidatePicker } from './BoundaryCandidatePicker';
@@ -75,8 +81,59 @@ describe('BoundaryCandidatePicker', () => {
       />,
     );
     expect(
-      screen.getByRole('button', { name: /Граница заказа/ }),
+      screen.getByRole('radio', { name: /Граница заказа/ }),
     ).toBeDisabled();
+  });
+
+  it('retains recommendation metadata through selection and saving with a long name', () => {
+    const recommended = {
+      ...layers[1],
+      id: 'recommended',
+      source_name:
+        'Генплан|Граница проектирования территории благоустройства вдоль восточной стороны улицы',
+    };
+    const initial: Record<string, LayerMapping> = {
+      ...mappings,
+      recommended: {
+        layer_id: recommended.id,
+        kind: 'ignore',
+        visible: true,
+      },
+    };
+    const onChange = vi.fn();
+    const props = {
+      layers: [recommended, layers[1]],
+      mappings: initial,
+      onChange,
+    };
+    const { rerender } = render(<BoundaryCandidatePicker {...props} />);
+    const name = recommended.source_name.split('|')[1];
+    const radio = screen.getByRole('radio', { name });
+    const row = radio.closest('label')!;
+    const metadata = within(row).getByText('Рекомендуем');
+    const content = row.textContent;
+    expect(within(row).getByText(name)).toBeVisible();
+    expect(radio).not.toBeChecked();
+
+    fireEvent.click(radio);
+    const selected = onChange.mock.lastCall![0];
+    expect(selected.recommended).toMatchObject({
+      kind: 'site_border',
+      category: 'project_boundary',
+      confirmed: true,
+    });
+    rerender(<BoundaryCandidatePicker {...props} mappings={selected} />);
+    expect(radio).toBeChecked();
+    expect(row.textContent).toBe(content);
+    expect(within(row).getByText('Рекомендуем')).toBe(metadata);
+
+    rerender(
+      <BoundaryCandidatePicker {...props} mappings={selected} readOnly />,
+    );
+    expect(radio).toBeDisabled();
+    expect(row.textContent).toBe(content);
+    expect(within(row).getByText('Рекомендуем')).toBe(metadata);
+    expect(onChange).toHaveBeenCalledOnce();
   });
 
   it('offers only usable contours and replaces the previous site mapping', () => {
@@ -89,8 +146,8 @@ describe('BoundaryCandidatePicker', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: /Граница работ/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Граница заказа/ }));
+    expect(screen.queryByRole('radio', { name: /Граница работ/ })).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: /Граница заказа/ }));
     expect(onChange).toHaveBeenCalledWith({
       thin: mappings.thin,
       order: {
@@ -120,7 +177,7 @@ describe('BoundaryCandidatePicker', () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /Граница заказа/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Граница заказа/ }));
     const switched = onChange.mock.lastCall![0];
     expect(switched.thin).toEqual({
       ...initial.thin,
@@ -140,20 +197,25 @@ describe('BoundaryCandidatePicker', () => {
         onChange={onChange}
       />,
     );
-    expect(
-      screen.getByRole('button', { name: /Граница заказа/ }),
-    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('radio', { name: /Граница заказа/ })).toBeChecked();
   });
 
   it('explains why a named alternative work boundary is not offered', () => {
     const valid = {
-      ...layers[1], id: 'valid', source_name: 'Генплан|Граница работ',
+      ...layers[1],
+      id: 'valid',
+      source_name: 'Генплан|Граница работ',
     };
     const invalid = {
-      ...layers[0], id: 'invalid', source_name: 'Генплан|Граница проектирования',
+      ...layers[0],
+      id: 'invalid',
+      source_name: 'Генплан|Граница проектирования',
       boundary_candidate: {
-        status: 'unavailable' as const, basis: 'polygonized_linework',
-        area_m2: 0, inset_1_5m_area_m2: 0, component_count: 0,
+        status: 'unavailable' as const,
+        basis: 'polygonized_linework',
+        area_m2: 0,
+        inset_1_5m_area_m2: 0,
+        component_count: 0,
         issue: 'Нет замкнутой площади',
       },
     };
@@ -164,10 +226,15 @@ describe('BoundaryCandidatePicker', () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByText(/Граница проектирования \(Нет замкнутой площади\)/))
-      .toBeVisible();
-    expect(screen.queryByRole('button', { name: /Граница проектирования/ }))
-      .toBeNull();
+    expect(screen.getByText('Нет замкнутой площади')).not.toBeVisible();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Другие контуры работ (1)' }),
+    );
+    expect(screen.getByText('Граница проектирования')).toBeVisible();
+    expect(screen.getByText('Нет замкнутой площади')).toBeVisible();
+    expect(
+      screen.queryByRole('radio', { name: /Граница проектирования/ }),
+    ).toBeNull();
   });
 
   it('explains an existing invalid boundary and offers the usable replacement', () => {
@@ -184,8 +251,9 @@ describe('BoundaryCandidatePicker', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'После внутреннего отступа',
     );
-    expect(screen.getByRole('button', { name: /Граница заказа/ }))
-      .toHaveAttribute('aria-pressed', 'false');
+    expect(
+      screen.getByRole('radio', { name: /Граница заказа/ }),
+    ).not.toBeChecked();
   });
 
   it('lets the operator remove an invalid boundary when no usable contour exists', () => {
@@ -199,7 +267,9 @@ describe('BoundaryCandidatePicker', () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Не использовать эту границу' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Не использовать эту границу' }),
+    );
     expect(onChange).toHaveBeenCalledWith({
       thin: expect.objectContaining({ kind: 'ignore', confirmed: true }),
     });

@@ -26,6 +26,9 @@ code {
   font-weight: 400;
 }
 @media (max-width: 760px) {
+  html {
+    scrollbar-gutter: stable;
+  }
   body {
     overflow: auto;
   }

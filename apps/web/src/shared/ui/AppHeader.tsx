@@ -6,6 +6,7 @@ export interface AppHeaderProps {
   projectName?: string;
   leading?: ReactNode;
   endActions?: ReactNode;
+  variant?: 'default' | 'preparation';
 }
 
 /** Navigation for document pages; the workbench has its own EditorHeader. */
@@ -13,8 +14,12 @@ export const AppHeader: FC<AppHeaderProps> = ({
   projectName,
   leading,
   endActions,
+  variant = 'default',
 }) => (
-  <header className="relative z-30 grid min-h-13 w-full shrink-0 grid-cols-[1fr_minmax(0,2fr)_1fr] items-center gap-3 border-b border-neutral-200 bg-white px-6 py-2">
+  <header
+    data-layout={variant}
+    className="relative z-30 grid min-h-13 w-full shrink-0 grid-cols-[1fr_minmax(0,2fr)_1fr] items-center gap-3 border-b border-neutral-200 bg-white px-6 py-2 data-[layout=preparation]:min-h-14 data-[layout=preparation]:grid-cols-[144px_minmax(0,1fr)_auto] data-[layout=preparation]:gap-x-6 max-[939px]:data-[layout=preparation]:grid-cols-[auto_minmax(0,1fr)_auto]"
+  >
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       {leading === undefined ? (
         <Link
@@ -30,7 +35,7 @@ export const AppHeader: FC<AppHeaderProps> = ({
     <Text
       as="strong"
       variant="label"
-      className="min-w-0 truncate text-center text-sm"
+      className="min-w-0 truncate text-center text-sm [[data-layout=preparation]_&]:text-left"
     >
       {projectName ?? 'Новый проект озеленения'}
     </Text>

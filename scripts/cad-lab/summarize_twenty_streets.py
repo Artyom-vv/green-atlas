@@ -11,7 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
-from app.cad_import.references import path_key
+from app.cad_import.references.resolve import path_key
 
 
 def summarize(directory: Path, manifest_name: str = "manifest.json") -> dict:

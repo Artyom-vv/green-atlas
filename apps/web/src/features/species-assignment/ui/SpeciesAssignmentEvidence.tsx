@@ -8,8 +8,7 @@ export const SpeciesAssignmentEvidence: FC<SpeciesAssignmentEvidenceProps> = ({
   species,
 }) => (
   <>
-    {' '}
-    <Disclosure title="Размеры взрослого растения">
+    <Disclosure title="Размеры взрослого растения" variant="plain">
       <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-2 text-xs [&_dd]:m-0 [&_dt]:text-neutral-600">
         <dt>Высота</dt>
         <dd>
@@ -36,7 +35,7 @@ export const SpeciesAssignmentEvidence: FC<SpeciesAssignmentEvidenceProps> = ({
       </p>
     </Disclosure>
     {!!(species.evidence_note || species.source_urls.length) && (
-      <Disclosure title="Данные о породе и источники">
+      <Disclosure title="Данные о породе и источники" variant="plain">
         {species.evidence_note && (
           <p className="m-0 text-xs text-neutral-600">
             {species.evidence_note}

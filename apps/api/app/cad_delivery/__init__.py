@@ -1,1 +1,3 @@
-"""User-approved AutoCAD delivery. Separate from geometry interpretation."""
+"""Доставка подтверждённого захвата AutoCAD; передача отделена от интерпретации
+геометрии.
+"""

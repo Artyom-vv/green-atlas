@@ -18,11 +18,13 @@ def test_repository_cannot_add_legacy_import_edges():
 
 def test_new_reader_cannot_hide_in_relative_or_member_import():
     for source in (
-        "from . import adapters",
-        "from app.dxf_import import adapters",
-        "from .adapters import EzdxfReader",
+        "from . import reader",
+        "from app.dxf_import.legacy import reader",
+        "from .reader import EzdxfReader",
     ):
-        edges = python_edges(source, "app.dxf_import.new_reader", "new_reader.py")
+        edges = python_edges(
+            source, "app.dxf_import.legacy.new_reader", "new_reader.py"
+        )
         assert violations(edges, set())
 
 

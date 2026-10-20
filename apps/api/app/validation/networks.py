@@ -1,14 +1,17 @@
-"""Network evidence expressed through existing plan issues and release gating."""
+"""Сетевые свидетельства в общих замечаниях плана и проверках готовности финального
+выпуска.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from shapely.geometry import Point
 
-from app.geometry.domain import PositionChecker
-from app.geometry.network_trace import NETWORK_NOTES, network_rule_entries
+from app.geometry.checking.domain import PositionChecker
+from app.geometry.networks.network_trace import NETWORK_NOTES, network_rule_entries
+from app.geometry.preparation import calculation_scope
 from app.planning.contracts import PlanObject
 from app.projects.contracts import Project
 from app.regulations.trace_contracts import RuleTraceEntry
@@ -16,7 +19,7 @@ from app.species.rule_context import mature_crown_diameter
 from app.validation.contracts import ValidationIssue
 
 if TYPE_CHECKING:
-    from app.geometry.ports import GeometryEnginePort
+    from app.geometry.ports import GeometryEnginePort, GeometryRuleTracePort
 
 
 def object_network_issues(
@@ -34,9 +37,9 @@ def object_network_issues(
 def object_network_trace_issues(
     entries: Sequence[RuleTraceEntry], object_: PlanObject
 ) -> list[ValidationIssue]:
-    """Use provider measurements verbatim, without rebuilding network geometry."""
-    # One finding per object/rule/reason. Keep the closest failing context;
-    # individual layer evidence remains available in the full rule trace.
+    """Использует измерения провайдера без повторного построения геометрии сетей."""
+    # Одно замечание относится к объекту, правилу и причине. Сохраняем ближайший
+    # нарушающий контекст; свидетельства отдельных слоёв доступны в полной трассировке.
     findings: dict[tuple[str, str], RuleTraceEntry] = {}
     for entry in entries:
         if entry.obstacle_kind != "utility" or entry.status not in {
@@ -46,8 +49,8 @@ def object_network_trace_issues(
             continue
         key = (entry.rule_id or "network-source-evidence", entry.code)
         current = findings.get(key)
-        # Missing measurements cannot hide a measured failure. Compare
-        # distances only within the same severity, including a real zero.
+        # Недоступное измерение не скрывает измеренное нарушение. Расстояния
+        # сравниваются в пределах одной серьёзности, включая настоящий ноль.
         if current is None or _finding_priority(entry) < _finding_priority(current):
             findings[key] = entry
     return [
@@ -81,9 +84,9 @@ def _finding_priority(entry: RuleTraceEntry) -> tuple[bool, float]:
 
 
 def release_network_issues(
-    project: Project, *, geometry: GeometryEnginePort | None = None
+    project: Project, *, geometry: GeometryRuleTracePort | None = None
 ) -> list[ValidationIssue]:
-    """Re-evaluate evidence; the default is historical compatibility only."""
+    """Заново оценивает свидетельства; значение по умолчанию нужно для старых записей."""
     objects = project.plan.objects if project.plan else []
     if geometry is None:
         checker = PositionChecker(project)
@@ -93,30 +96,32 @@ def release_network_issues(
             for issue in object_network_issues(checker, object_)
         ]
     else:
-        issues = [
-            issue
-            for object_ in objects
-            for issue in object_network_trace_issues(
-                geometry.position_rule_trace(
-                    project,
-                    object_.x,
-                    object_.y,
-                    object_.kind,
-                    mature_crown_diameter(object_.species_revision_id),
-                ).entries,
-                object_,
-            )
-        ]
+        with calculation_scope(cast("GeometryEnginePort", geometry), project):
+            issues = [
+                issue
+                for object_ in objects
+                for issue in object_network_trace_issues(
+                    geometry.position_rule_trace(
+                        project,
+                        object_.x,
+                        object_.y,
+                        object_.kind,
+                        mature_crown_diameter(object_.species_revision_id),
+                    ).entries,
+                    object_,
+                )
+            ]
     return compact_missing_network_issues(issues, object_count=len(objects))
 
 
 def compact_missing_network_issues(
     issues: Sequence[ValidationIssue], *, object_count: int
 ) -> list[ValidationIssue]:
-    """Fold only shared missing inputs, after per-object status is derived.
+    """Объединяет только общие пробелы входных данных после определения статуса каждой
+    посадки.
 
-    The complete trace remains per planting. Object count comes from the plan,
-    so repeated compaction or mixed batch findings cannot double the summary.
+    Полная трасса сохраняется для каждой посадки. Число объектов берётся из плана,
+    поэтому повторное объединение или смешанные результаты пакета не удваивают итог.
     """
     result: list[ValidationIssue] = []
     missing: list[ValidationIssue] = []

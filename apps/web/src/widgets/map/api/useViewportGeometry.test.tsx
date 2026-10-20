@@ -59,6 +59,57 @@ afterEach(() => {
 });
 
 describe('viewport geometry request ownership', () => {
+  it('releases inactive viewport history while keeping the current view and pending placeholder', async () => {
+    const f = fixture();
+    const fetch = vi
+      .spyOn(sourceGeometry, 'readViewportGeometry')
+      .mockImplementation(async (_, extent) => snapshot(`window-${extent[0]}`));
+    const { result, unmount } = renderHook(
+      () => useViewportGeometry({ projectId: 'a', geometryVersion: 1 }),
+      { wrapper: f.wrapper },
+    );
+    for (let i = 0; i < 30; i++) {
+      act(() =>
+        result.current.onExtentChange([i * 200, 0, i * 200 + 100, 100], 1),
+      );
+      await advance();
+      await advance(1);
+      const retained = f.client
+        .getQueryCache()
+        .findAll({ queryKey: ['map-features'] });
+      expect(retained).toHaveLength(1);
+      expect(retained[0].state.data).toBe(result.current.delivery);
+    }
+    expect(fetch).toHaveBeenCalledTimes(30);
+    const previous = result.current.delivery;
+    const pending = deferred<GeometrySnapshot>();
+    fetch.mockReturnValueOnce(pending.promise);
+    act(() => result.current.onExtentChange(nextExtent, 1));
+    expect(result.current.pending).toBe(true);
+    expect(result.current.delivery).toBe(previous);
+    await advance();
+    await advance(1);
+    // Удаление старой query не сбрасывает уже показанную карту.
+    expect(
+      f.client.getQueryCache().findAll({ queryKey: ['map-features'] }),
+    ).toHaveLength(1);
+    expect(result.current.pending).toBe(true);
+    expect(result.current.query.isPlaceholderData).toBe(true);
+    expect(result.current.delivery).toBe(previous);
+    await act(async () => pending.resolve(snapshot('replacement')));
+    await advance(1);
+    expect(result.current.delivery?.feature_collection.marker).toBe(
+      'replacement',
+    );
+    expect(result.current.query.isPlaceholderData).toBe(false);
+    expect(result.current.pending).toBe(false);
+    unmount();
+    await advance(1);
+    expect(
+      f.client.getQueryCache().findAll({ queryKey: ['map-features'] }),
+    ).toHaveLength(0);
+  });
+
   it('does not fetch duplicate display geometry for CAD and resumes the current viewport on fallback', async () => {
     const f = fixture();
     const fetch = vi
@@ -84,6 +135,7 @@ describe('viewport geometry request ownership', () => {
     rerender({ enabled: false });
     expect(result.current.query.data).toBeDefined();
     expect(result.current.delivery).toBeUndefined();
+    expect(result.current.pending).toBe(false);
     expect(result.current.metadata).toBeUndefined();
   });
   const canonical = (version = 1, max = 0.75): GeometrySnapshot => ({
@@ -122,10 +174,13 @@ describe('viewport geometry request ownership', () => {
       act(() => result.current.onExtentChange(firstExtent, initial));
       await advance();
       await advance(1);
+      expect(result.current.pending).toBe(false);
       act(() => result.current.onExtentChange(firstExtent, inside));
+      expect(result.current.pending).toBe(false);
       await advance();
       expect(fetch).toHaveBeenCalledTimes(1);
       act(() => result.current.onExtentChange(firstExtent, outside));
+      expect(result.current.pending).toBe(true);
       await advance();
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(fetch.mock.calls[1][2]).toBe(outside);
@@ -204,6 +259,7 @@ describe('viewport geometry request ownership', () => {
       await advance();
       await advance(1);
       act(() => result.current.onExtentChange(extent, resolution));
+      expect(result.current.pending).toBe(true);
       await advance();
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(fetch.mock.calls[1][1]).toEqual(

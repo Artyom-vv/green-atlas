@@ -38,8 +38,7 @@ html = request('GET', '/').text
 for asset in re.findall(r'(?:src|href)="(/assets/[^"\s]+)"', html):
     request('GET', asset)
 request('GET', '/api/health')
-assert request('GET', '/api/planning-assistant/status').json()['available'] is False
-report['checks'].append('HTML, entry assets, health, intentionally disabled agent')
+report['checks'].append('HTML, entry assets, health')
 project = request('POST', '/api/projects', expected=201, json={'name': 'Демо — проверка сервера 11 сентября'}).json()
 pid = project['id']
 report['project_id'] = pid

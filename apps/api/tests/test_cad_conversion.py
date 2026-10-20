@@ -5,18 +5,38 @@ import ezdxf
 import psutil
 import pytest
 
-from app.cad_import import conversion
-from app.cad_import.cache import file_sha256, publish
+from app.cad_import.archive.cache import file_sha256, publish
 from app.cad_import.contracts import (
     CadConversion,
     CadConversionError,
+    CadConversionMemoryExceeded,
     ConverterIdentity,
     DrawingInspection,
 )
-from app.cad_import.conversion import LibreDwgConverter
-from app.cad_import.inspection import inspect_drawing
+from app.cad_import.legacy import conversion
+from app.cad_import.legacy.conversion import LibreDwgConverter
+from app.cad_import.legacy.dxf_inspection import DxfInspector
+from app.cad_import.legacy.inspection import inspect_drawing
+from app.cad_import.legacy.process import ProcessResult, run_converter
 from app.cad_import.policy import ConversionPolicy
-from app.cad_import.process import ProcessResult, run_converter
+
+
+def test_inspection_worker_runs_outside_api_with_no_pythonpath(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "source.dxf"
+    document = ezdxf.new("R2018")
+    document.modelspace().add_circle((10, 20), 2)
+    document.saveas(source)
+    before = file_sha256(source)
+
+    result = DxfInspector(tmp_path / "cache").inspect_dxf(source)
+
+    assert result.modelspace_entities == {"CIRCLE": 1}
+    assert file_sha256(source) == before
+    assert result.boundary_catalog is not None
 
 
 @pytest.fixture
@@ -105,13 +125,16 @@ def test_invalid_sources_rejected_before_process(
     assert not converter.cache.exists()
 
 
-def test_converter_process_timeout(tmp_path: Path) -> None:
+@pytest.mark.parametrize("memory_limit", [None, 2 * 1024**3])
+def test_converter_process_timeout(tmp_path: Path, memory_limit: int | None) -> None:
     with pytest.raises(CadConversionError, match="время"):
         run_converter(
             [sys.executable, "-c", "import time; time.sleep(30)"],
             tmp_path / "output.dxf",
             tmp_path / "process.log",
-            ConversionPolicy(timeout_seconds=0.2, poll_seconds=0.02),
+            ConversionPolicy(
+                timeout_seconds=0.2, poll_seconds=0.02, max_memory_bytes=memory_limit
+            ),
         )
 
 
@@ -135,15 +158,72 @@ def test_converter_process_memory_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "app.cad_import.process.ProcessTree.resident_bytes", lambda _: 1000
+        "app.cad_import.legacy.process.ProcessTree.resident_bytes", lambda _: 1000
     )
-    with pytest.raises(CadConversionError, match="памяти"):
+    with pytest.raises(CadConversionMemoryExceeded, match="памяти") as failure:
         run_converter(
             [sys.executable, "-c", "import time; time.sleep(30)"],
             tmp_path / "output.dxf",
             tmp_path / "process.log",
             ConversionPolicy(max_memory_bytes=500),
         )
+    assert failure.value.limit_bytes == 500
+    assert failure.value.peak_memory_bytes == 1000
+    assert "1000" in str(failure.value)
+
+
+def test_optional_memory_limit_retains_measurement_without_stopping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    measured_peak = 7 * 1024**3
+    monkeypatch.setattr(
+        "app.cad_import.legacy.process.ProcessTree.resident_bytes",
+        lambda _: measured_peak,
+    )
+    output = tmp_path / "output.txt"
+    result = run_converter(
+        [
+            sys.executable,
+            "-c",
+            "import sys,time; time.sleep(.1); open(sys.argv[1], 'w').write('ready')",
+            str(output),
+        ],
+        output,
+        tmp_path / "process.log",
+        ConversionPolicy(max_memory_bytes=None, poll_seconds=0.02),
+    )
+    assert output.read_text() == "ready"
+    assert result.exit_code == 0
+    assert result.peak_memory_bytes == measured_peak
+
+
+@pytest.mark.parametrize("memory_limit", [0, -1])
+def test_configured_memory_limit_must_be_positive(memory_limit: int) -> None:
+    with pytest.raises(ValueError, match="memory budget"):
+        ConversionPolicy(max_memory_bytes=memory_limit)
+
+
+def test_cancellation_still_stops_process_without_memory_limit(tmp_path: Path) -> None:
+    pid_file = tmp_path / "child.pid"
+
+    def cancel_after_start() -> None:
+        if pid_file.exists():
+            raise InterruptedError("Операция отменена")
+
+    with pytest.raises(InterruptedError, match="отменена"):
+        run_converter(
+            [
+                sys.executable,
+                "-c",
+                "import os,sys,time; open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(30)",
+                str(pid_file),
+            ],
+            pid_file,
+            tmp_path / "process.log",
+            ConversionPolicy(max_memory_bytes=None, poll_seconds=0.02),
+            check_cancelled=cancel_after_start,
+        )
+    assert not psutil.pid_exists(int(pid_file.read_text()))
 
 
 def test_dxf_inspection_preserves_external_reference(tmp_path: Path) -> None:
@@ -200,7 +280,7 @@ def test_memory_guard_counts_and_stops_python_descendants(tmp_path: Path) -> Non
     pid_file = tmp_path / "child.pid"
     child = "import time; allocation=bytearray(64*1024*1024); time.sleep(30)"
     parent = "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c',sys.argv[1]]); open(sys.argv[2],'w').write(str(p.pid)); time.sleep(30)"
-    with pytest.raises(CadConversionError, match="памяти"):
+    with pytest.raises(CadConversionMemoryExceeded, match="памяти") as failure:
         run_converter(
             [sys.executable, "-c", parent, child, str(pid_file)],
             pid_file,
@@ -209,8 +289,10 @@ def test_memory_guard_counts_and_stops_python_descendants(tmp_path: Path) -> Non
                 timeout_seconds=5, max_memory_bytes=64 * 1024 * 1024, poll_seconds=0.02
             ),
         )
+    assert failure.value.limit_bytes == 64 * 1024 * 1024
+    assert failure.value.peak_memory_bytes > failure.value.limit_bytes
     assert pid_file.exists(), (
-        "The budget must include the allocated child, not just the launcher"
+        "Лимит учитывает память дочернего процесса, а не только запускающего процесса"
     )
     pid = int(pid_file.read_text())
     assert (

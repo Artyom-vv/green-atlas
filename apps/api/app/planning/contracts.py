@@ -1,3 +1,7 @@
+"""План и объекты посадки, запросы ручных правок и результаты проверки; габарит
+размещения отделён от прогноза роста.
+"""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -6,6 +10,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, model_validator
 
 from app.geometry.evidence_contracts import GeometryEvidence
+from app.planning.config import DEFAULT_PLANNING_HORIZON_YEAR, PlanningHorizonYear
 from app.regulations.trace_contracts import PlantingRuleTrace
 from app.species.contracts import GrowthEnvelopeForecast
 from app.validation.contracts import PlanValidationBasis, ValidationIssue
@@ -33,10 +38,9 @@ class PlanObject(BaseModel):
 
     @model_validator(mode="after")
     def migrate_layout_radius(self) -> PlanObject:
-        # ``radius`` described the footprint used by the early manual editor.
-        # Preserve it for old clients and DXF exports, while making the
-        # layout meaning explicit. It must never be presented as an adult
-        # crown or root forecast.
+        # radius задавал габарит раннего ручного редактора. Сохраняем его для старых
+        # клиентов и DXF-выпуска с явным смыслом размещения; значение не выдаётся
+        # за прогноз взрослой кроны или корней.
         if self.layout_radius_m is None:
             self.layout_radius_m = self.radius
         return self
@@ -47,17 +51,22 @@ class Plan(BaseModel):
     objects: list[PlanObject] = Field(default_factory=list)
     issues: list[ValidationIssue] = Field(default_factory=list)
     version: int = Field(default=1, ge=1)
+    # Читаем прежние проекты без миграции; текущая проверка не использует это поле.
+    planning_horizon_year: PlanningHorizonYear = Field(
+        default=DEFAULT_PLANNING_HORIZON_YEAR,
+        description="Историческое значение; прогноз роста задаётся отдельным сценарием",
+    )
     validation_basis: PlanValidationBasis | None = None
 
     @model_validator(mode="after")
     def remove_obsolete_crown_advice(self) -> Plan:
-        """Migrate persisted false-positive crown notices on read.
+        """Удаляет при чтении сохранённые ложные предупреждения о широкой кроне.
 
-        Older plans stored a generic warning for every mature crown wider
-        than five metres. It was not a concrete conflict and the current
-        generator already uses the forecast envelope when choosing points.
-        Drop that legacy notice, including its orange object state, while
-        preserving any independent issue attached to the same object.
+        Старые планы содержали общее предупреждение для каждой взрослой кроны шире
+        пяти метров. Оно не указывало на конкретный конфликт; нынешний генератор уже
+        учитывает прогнозный габарит при выборе точек. Удаляет это устаревшее
+        замечание и вызванное им оранжевое состояние объекта, сохраняя его
+        независимые проблемы.
         """
         obsolete_object_ids = {
             issue.object_id
@@ -84,6 +93,13 @@ class Plan(BaseModel):
         return self
 
 
+class PlanPlanningHorizonUpdate(BaseModel):
+    """Устаревший DTO для чтения исторических сообщений; изменять горизонт плана нельзя."""
+
+    planning_horizon_year: PlanningHorizonYear
+    base_plan_version: int = Field(ge=1)
+
+
 class PlacementCheck(BaseModel):
     allowed: bool
     status: Literal["allowed", "blocked", "unknown"]
@@ -104,6 +120,7 @@ class PlacementCheck(BaseModel):
     plan_version: int | None = None
     geometry_version: int | None = None
     state_version: int | None = None
+    planning_horizon_year: PlanningHorizonYear = DEFAULT_PLANNING_HORIZON_YEAR
     rule_trace: PlantingRuleTrace | None = None
     geometry_evidence: GeometryEvidence | None = None
 
@@ -127,6 +144,7 @@ class PlanObjectCreate(BaseModel):
 class PlacementCheckRequest(PlanObjectCreate):
     """The same candidate as Add, optionally bound to the caller's snapshot."""
 
+    scenario_horizon_year: PlanningHorizonYear = DEFAULT_PLANNING_HORIZON_YEAR
     base_plan_version: int | None = Field(default=None, ge=1)
     geometry_version: int | None = Field(default=None, ge=0)
     state_version: int | None = Field(default=None, ge=1)

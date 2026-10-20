@@ -2,13 +2,15 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderWithoutProvider,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SceneSnapshot } from '@green/api-client';
+import type { SceneSnapshot, SceneRenderPreparation } from '@green/api-client';
 import {
   SCENE_ACCESSIBILITY_CONTRACT,
   SCENE_RESOURCE_TELEMETRY_ATTRIBUTES,
@@ -25,13 +27,36 @@ import {
   type SceneReviewHandle,
 } from '@/widgets/scene/ui/SceneReview';
 import { acquirePlantAssetLibrary } from '@/widgets/scene/adapters/three/plantAssets';
+import { MapViewSwitch } from '@/widgets/map/ui/MapViewSwitch';
 
+function render(
+  ui: Parameters<typeof renderWithoutProvider>[0],
+  options?: Parameters<typeof renderWithoutProvider>[1],
+) {
+  return renderWithoutProvider(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={new QueryClient()}>
+        {children}
+      </QueryClientProvider>
+    ),
+    ...options,
+  });
+}
 const sceneMocks = vi.hoisted(() => ({
+  environment: {
+    preparation: undefined as SceneRenderPreparation | undefined,
+    loading: false,
+    error: null as Error | null,
+    refresh: vi.fn(),
+  },
   rendererFactory: vi.fn((_canvas?: unknown) => ({
     dispose: vi.fn(),
     forceContextLoss: vi.fn(),
   })),
   controllers: [] as Array<{
+    updateEnvironment: ReturnType<typeof vi.fn>;
+    beginStreetPlacement: ReturnType<typeof vi.fn>;
+    cancelStreetPlacement: ReturnType<typeof vi.fn>;
     updateSnapshot: ReturnType<typeof vi.fn>;
     updateIssues: ReturnType<typeof vi.fn>;
     updateSelection: ReturnType<typeof vi.fn>;
@@ -42,6 +67,7 @@ const sceneMocks = vi.hoisted(() => ({
     updateWorkZones: ReturnType<typeof vi.fn>;
     setRelocateSelection: ReturnType<typeof vi.fn>;
     importPlanViewState: ReturnType<typeof vi.fn>;
+    refreshViewport: ReturnType<typeof vi.fn>;
     exportPlanViewState: ReturnType<typeof vi.fn>;
     selectFromScene: (objectId: string) => void;
     emitTelemetry: (telemetry: SceneRenderTelemetry) => void;
@@ -49,6 +75,10 @@ const sceneMocks = vi.hoisted(() => ({
     dispose: ReturnType<typeof vi.fn>;
   }>,
   assetLibrary: { dispose: vi.fn(), loadedModelCount: vi.fn(() => 4) },
+}));
+
+vi.mock('@/features/scene-render/model/useScenePreparation', () => ({
+  useScenePreparation: () => sceneMocks.environment,
 }));
 
 vi.mock('@/widgets/scene/adapters/three/plantAssets', () => ({
@@ -61,6 +91,14 @@ vi.mock('@/widgets/scene/adapters/three/plantAssets', () => ({
 vi.mock('@/widgets/scene/adapters/three/SceneController', () => ({
   createSceneRenderer: (canvas: unknown) => sceneMocks.rendererFactory(canvas),
   SceneController: class {
+    updateEnvironment = vi.fn().mockResolvedValue(true);
+    whenRendered = vi.fn().mockResolvedValue(true);
+    confirmStreetPlacement = vi.fn();
+    resetStreetPlacement = vi.fn();
+    levelStreetHorizon = vi.fn();
+    beginStreetPlacement = vi.fn();
+    cancelStreetPlacement = vi.fn();
+    exportRenderCamera = vi.fn();
     updateSnapshot = vi.fn();
     updateIssues = vi.fn();
     updateSelection = vi.fn();
@@ -72,6 +110,7 @@ vi.mock('@/widgets/scene/adapters/three/SceneController', () => ({
     zoom = vi.fn();
     setRelocateSelection = vi.fn();
     importPlanViewState = vi.fn();
+    refreshViewport = vi.fn();
     exportPlanViewState = vi.fn();
     selectFromScene: (objectId: string) => void;
     emitTelemetry: (telemetry: SceneRenderTelemetry) => void;
@@ -100,6 +139,7 @@ vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
 const snapshot = (horizonYear = 0): SceneSnapshot => ({
   plan_version: 4,
+  geometry_version: 0,
   horizon_year: horizonYear,
   coordinate_origin: [1000, 2000],
   georeference_status: 'local',
@@ -133,6 +173,10 @@ const snapshot = (horizonYear = 0): SceneSnapshot => ({
 });
 
 beforeEach(() => {
+  sceneMocks.environment.preparation = undefined;
+  sceneMocks.environment.loading = false;
+  sceneMocks.environment.error = null;
+  sceneMocks.environment.refresh.mockClear();
   resetSceneTelemetryRegistryForTests();
   sceneMocks.controllers.length = 0;
   sceneMocks.assetLibrary.dispose.mockClear();
@@ -148,6 +192,140 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('SceneReview', () => {
+  it('refreshes the drawing buffer when a prewarmed hidden viewer first becomes visible, without recreating it', async () => {
+    const props = {
+      snapshot: snapshot(),
+      horizon: 0,
+      selectedIds: [],
+      onSelect: vi.fn(),
+      onHorizon: vi.fn(),
+    };
+    const view = render(<SceneReview {...props} active={false} />);
+    await waitFor(() => expect(sceneMocks.controllers).toHaveLength(1));
+    const controller = sceneMocks.controllers[0];
+    expect(controller.refreshViewport).not.toHaveBeenCalled();
+    view.rerender(<SceneReview {...props} active />);
+    await waitFor(() =>
+      expect(controller.refreshViewport).toHaveBeenCalledOnce(),
+    );
+    expect(sceneMocks.controllers).toHaveLength(1);
+  });
+
+  it('retains the displayed lightweight scene until replacement models finish, without automatic render preparation', async () => {
+    const source = {
+      ...snapshot(),
+      project_id: 'kit',
+      content_sha256: 'a'.repeat(64),
+      geometry_version: 3,
+    };
+    const old = {
+      id: 'old',
+      sha256: 'b'.repeat(64),
+      project_id: 'kit',
+      scene_sha256: source.content_sha256,
+      geometry_version: 3,
+      plan_version: source.plan_version,
+      horizon_year: 0,
+      preview: { context_trees: [], meshes: [] },
+      summary: {
+        context_tree_count: 0,
+        map_building_count: 0,
+        osm_building_count: 0,
+        conditional_building_count: 0,
+        message: 'Готово',
+      },
+      provenance: {},
+    } as unknown as SceneRenderPreparation;
+    const props = {
+      snapshot: source,
+      horizon: 0,
+      selectedIds: [],
+      onHorizon: vi.fn(),
+      onSelect: vi.fn(),
+      displayEnvironment: old,
+    };
+    const view = render(<SceneReview {...props} />);
+    const region = screen.getByRole('region', {
+      name: 'Параметрический 3D-предпросмотр',
+    });
+    await waitFor(() =>
+      expect(region).toHaveAttribute('data-scene-preparation-id', 'old'),
+    );
+    const controller = sceneMocks.controllers[0];
+    let resolve!: (accepted: boolean) => void;
+    controller.updateEnvironment.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((accept) => {
+          resolve = accept;
+        }),
+    );
+    view.rerender(
+      <SceneReview {...props} displayEnvironment={{ ...old, id: 'new' }} />,
+    );
+    expect(region).toHaveAttribute('data-scene-preparation-id', 'old');
+    expect(
+      screen.queryByRole('progressbar', { name: 'Подготовка окружения' }),
+    ).not.toBeInTheDocument();
+    await act(async () => resolve(true));
+    await waitFor(() =>
+      expect(region).toHaveAttribute('data-scene-preparation-id', 'new'),
+    );
+    expect(sceneMocks.environment.refresh).not.toHaveBeenCalled();
+  });
+
+  it('composes the environment, render and spatial modes under one keyboard toolbar', async () => {
+    const onMode = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SceneReview
+          snapshot={{ ...snapshot(), project_id: 'toolbar-project' }}
+          horizon={0}
+          selectedIds={[]}
+          onHorizon={vi.fn()}
+          onSelect={vi.fn()}
+          viewControls={<MapViewSwitch embedded mode="3d" onChange={onMode} />}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(sceneMocks.controllers).toHaveLength(1));
+    const toolbar = screen.getByRole('toolbar', {
+      name: 'Сцена и изображение',
+    });
+    const controls = within(toolbar);
+    const environment = controls.getByRole('button', {
+      name: /^3D:/,
+    });
+    const renderAction = controls.getByRole('button', { name: 'Рендер' });
+    const twoD = controls.getByRole('button', { name: '2D' });
+    const threeD = controls.getByRole('button', { name: '3D' });
+    expect(environment.textContent).toBe('');
+    expect(renderAction.textContent).toBe('');
+    expect(renderAction).toBeDisabled();
+    expect(controls.queryByRole('toolbar')).not.toBeInTheDocument();
+    expect(controls.getAllByRole('button')).toEqual([
+      environment,
+      renderAction,
+      twoD,
+      threeD,
+    ]);
+    expect(threeD).toHaveAttribute('aria-pressed', 'true');
+    environment.focus();
+    fireEvent.keyDown(environment, { key: 'ArrowRight' });
+    expect(twoD).toHaveFocus();
+    fireEvent.keyDown(twoD, { key: 'ArrowRight' });
+    expect(threeD).toHaveFocus();
+    fireEvent.keyDown(threeD, { key: 'Home' });
+    expect(environment).toHaveFocus();
+    fireEvent.click(twoD);
+    expect(onMode).toHaveBeenCalledWith('2d');
+    fireEvent.click(environment);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Данные и управление 3D' }),
+      ).toBeVisible(),
+    );
+  });
+
   it('applies the latest roots setting when models finish loading', async () => {
     let resolveModels!: (value: typeof sceneMocks.assetLibrary) => void;
     vi.mocked(acquirePlantAssetLibrary).mockReturnValueOnce({
@@ -165,6 +343,7 @@ describe('SceneReview', () => {
         onSelect={vi.fn()}
       />,
     );
+    fireEvent.click(screen.getByRole('button', { name: /^3D:/ }));
     fireEvent.click(
       screen.getByRole('button', { name: 'Данные и управление 3D' }),
     );
@@ -240,10 +419,10 @@ describe('SceneReview', () => {
       <SceneReview {...props} snapshot={available} horizon={40} loading />,
     );
     expect(
-      screen.getByText('Обновляем прогноз').closest('[role="status"]'),
+      screen.getAllByText('Обновляем прогноз')[0].closest('[role="status"]'),
     ).toBeVisible();
     expect(
-      screen.getByText('На сцене: сейчас. Запрошено: через 40 лет.'),
+      screen.getByText('На сцене: сейчас. Запрошено: через 40 лет'),
     ).toBeVisible();
     expect(screen.getByRole('slider')).toHaveValue('40');
     expect(controller.updateSnapshot).toHaveBeenLastCalledWith(available, []);
@@ -254,7 +433,7 @@ describe('SceneReview', () => {
     expect(sceneMocks.controllers).toHaveLength(1);
   });
 
-  it('retains the displayed year beside a request error even when the assistant owns the slider', async () => {
+  it('retains the displayed year beside a request error when the workspace owns the slider', async () => {
     const available = snapshot(20);
     const props = {
       snapshot: available,
@@ -265,11 +444,11 @@ describe('SceneReview', () => {
       showGrowthControl: false,
     };
     const view = render(<SceneReview {...props} loading />);
-    await screen.findByText('На сцене: через 20 лет. Запрошено: через 40 лет.');
+    await screen.findByText('На сцене: через 20 лет. Запрошено: через 40 лет');
     view.rerender(<SceneReview {...props} error="Сеть недоступна" />);
     expect(screen.getByRole('alert')).toHaveTextContent('Сеть недоступна');
     expect(
-      screen.getByText('На сцене: через 20 лет. Запрошено: через 40 лет.'),
+      screen.getByText('На сцене: через 20 лет. Запрошено: через 40 лет'),
     ).toBeVisible();
     expect(screen.queryByText('Обновляем прогноз')).not.toBeInTheDocument();
     expect(screen.queryByRole('slider')).not.toBeInTheDocument();
@@ -341,6 +520,7 @@ describe('SceneReview', () => {
     expect(
       screen.queryByText(/Локальные координаты DXF/),
     ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^3D:/ }));
     fireEvent.click(
       screen.getByRole('button', { name: 'Данные и управление 3D' }),
     );
@@ -354,7 +534,7 @@ describe('SceneReview', () => {
         screen.queryByText('Загружаем модели растений'),
       ).not.toBeInTheDocument(),
     );
-    fireEvent.input(screen.getByRole('slider', { name: 'Горизонт прогноза' }), {
+    fireEvent.input(screen.getByRole('slider', { name: 'Прогноз роста' }), {
       target: { value: '20' },
     });
     expect(onHorizon).toHaveBeenCalledWith(20);
@@ -392,6 +572,7 @@ describe('SceneReview', () => {
     );
     expect(sceneMocks.controllers).toHaveLength(1);
 
+    fireEvent.click(screen.getByRole('button', { name: /^3D:/ }));
     fireEvent.click(
       screen.getByRole('button', { name: 'Данные и управление 3D' }),
     );
@@ -438,10 +619,11 @@ describe('SceneReview', () => {
     );
     expect(controller.setCameraMode).toHaveBeenNthCalledWith(1, 'overview');
     expect(controller.fitSelection).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: /^3D:/ }));
     fireEvent.click(
       screen.getByRole('button', { name: 'Данные и управление 3D' }),
     );
-    expect(screen.getByText(/Синий контур — выбор/)).toBeVisible();
+    expect(screen.getByText(/Синий контур обозначает выбор/)).toBeVisible();
     expect(
       screen.getByLabelText(SCENE_ACCESSIBILITY_CONTRACT.canvasLabel),
     ).toBeVisible();

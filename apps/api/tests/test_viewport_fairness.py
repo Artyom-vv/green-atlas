@@ -2,10 +2,10 @@ from collections import Counter
 
 import pytest
 
-import app.geometry.query_adapters as query_module
+import app.geometry.viewport.query_adapters as query_module
 from app.geometry.contracts import GeometrySnapshot
-from app.geometry.query_adapters import IndexedGeometryQuery
-from app.geometry.viewport_budget import feature_size
+from app.geometry.viewport.query_adapters import IndexedGeometryQuery
+from app.geometry.viewport.viewport_budget import feature_size
 from app.projects.contracts import Project
 
 EXTENT = (-1.0, -1.0, 100.0, 100.0)

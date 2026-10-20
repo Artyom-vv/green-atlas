@@ -1,3 +1,7 @@
+"""Объекты, CAD-контекст и свидетельства 3D-сцены с локальными координатами и границами
+прогнозов роста.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -104,6 +108,10 @@ class SceneEvidence(BaseModel):
 
 
 class SceneSnapshot(BaseModel):
+    project_id: str | None = None
+    geometry_version: int = Field(default=0, ge=0)
+    source_sha256: str | None = None
+    content_sha256: str | None = None
     plan_version: int = Field(ge=1)
     horizon_year: int = Field(ge=0, le=40)
     coordinate_origin: list[float] = Field(min_length=2, max_length=2)

@@ -77,8 +77,105 @@ describe('3D DXF context batching', () => {
     expect(context.group.children.map((child) => child.name).sort()).toEqual([
       'context-datum-base',
       'context-fill:building',
+      'context-fill:building_flat',
       'context-lines:building',
     ]);
+  });
+
+  it('gives ground covers priority over coincident flat building marks without altering their coordinates', () => {
+    const flat = buildingFeature(0);
+    const lawn: SceneContextLike = {
+      feature_id: 'lawn-overlap',
+      kind: 'lawn',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [1, 0],
+            [3, 0],
+            [3, 2],
+            [1, 2],
+            [1, 0],
+          ],
+        ],
+      },
+    };
+    const original = structuredClone([flat, lawn]);
+    // Input order must not decide the winner of coplanar fills.
+    for (const features of [
+      [flat, lawn],
+      [lawn, flat],
+    ]) {
+      const context = buildContextScene(features);
+      const footprint = context.group.getObjectByName(
+        'context-fill:building_flat',
+      ) as THREE.Mesh;
+      const cover = context.group.getObjectByName(
+        'context-fill:lawn',
+      ) as THREE.Mesh;
+      const datum = context.group.getObjectByName(
+        'context-datum-base',
+      ) as THREE.Mesh;
+      footprint.geometry.computeBoundingBox();
+      cover.geometry.computeBoundingBox();
+      expect(footprint.geometry.boundingBox!.min.x).toBe(0);
+      expect(footprint.geometry.boundingBox!.max.x).toBe(2);
+      expect(footprint.geometry.boundingBox!.min.z).toBe(-2);
+      expect(footprint.geometry.boundingBox!.max.z).toBeCloseTo(0);
+      expect(footprint.geometry.boundingBox!.min.y).toBeCloseTo(0.012);
+      expect(cover.geometry.boundingBox!.min.y).toBeCloseTo(0.012);
+      expect(footprint.geometry.boundingBox!.max.y).toBeCloseTo(
+        cover.geometry.boundingBox!.max.y,
+      );
+      expect((footprint.material as THREE.Material).depthWrite).toBe(false);
+      expect((cover.material as THREE.Material).depthWrite).toBe(true);
+      expect(datum.renderOrder).toBe(-2);
+      expect(footprint.renderOrder).toBe(-1);
+      expect(cover.renderOrder).toBeGreaterThan(footprint.renderOrder);
+      expect(footprint.castShadow).toBe(false);
+      expect(footprint.userData.sourceKind).toBe('building');
+      expect(context.flatBuildingCount).toBe(1);
+      expect(context.confirmedBuildingCount).toBe(0);
+      context.group.updateWorldMatrix(true, true);
+      const ray = new THREE.Raycaster(
+        new THREE.Vector3(0.5, 10, -1),
+        new THREE.Vector3(0, -1, 0),
+      );
+      expect(ray.intersectObject(footprint)).toHaveLength(1);
+      expect(ray.intersectObject(cover)).toHaveLength(0);
+      ray.set(new THREE.Vector3(1.5, 10, -1), new THREE.Vector3(0, -1, 0));
+      expect(ray.intersectObject(footprint).length).toBeGreaterThan(0);
+      expect(ray.intersectObject(cover).length).toBeGreaterThan(0);
+      disposeObjectTree(context.group);
+    }
+    expect([flat, lawn]).toEqual(original);
+  });
+
+  it('keeps known building volumes depth-writing and shadow-casting independently of flat marks', () => {
+    const context = buildContextScene([
+      buildingFeature(0),
+      buildingFeature(1, 18),
+      buildingFeature(2, 12, 'estimated'),
+    ]);
+    const flat = context.group.getObjectByName(
+      'context-fill:building_flat',
+    ) as THREE.Mesh;
+    const measured = context.group.getObjectByName(
+      'context-fill:building',
+    ) as THREE.Mesh;
+    measured.geometry.computeBoundingBox();
+    flat.geometry.computeBoundingBox();
+    expect((measured.material as THREE.Material).depthWrite).toBe(true);
+    expect(measured.castShadow).toBe(true);
+    expect(measured.renderOrder).toBe(1);
+    expect(measured.geometry.boundingBox!.min.y).toBeCloseTo(0);
+    expect(measured.geometry.boundingBox!.max.y).toBeCloseTo(18);
+    expect(flat.geometry.boundingBox!.min.y).toBeCloseTo(0.012);
+    expect((flat.material as THREE.Material).depthWrite).toBe(false);
+    expect(flat.castShadow).toBe(false);
+    expect(context.confirmedBuildingCount).toBe(2);
+    expect(context.flatBuildingCount).toBe(1);
+    disposeObjectTree(context.group);
   });
 
   it('keeps polygon fills aligned with DXF linework on the world Z axis', () => {

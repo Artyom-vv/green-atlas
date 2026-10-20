@@ -1,0 +1,107 @@
+{
+  "schema": "green-atlas.native-appearance/1",
+  "profile": "native_v1",
+  "lighting": "stable_daylight",
+  "tree_assets": {
+    "Tilia-europaea": [
+      "blends_280/deciduous/Tree_Tilia-europaea_A_summer.blend",
+      "blends_280/deciduous/Tree_Tilia-europaea_B_summer.blend"
+    ],
+    "Picea-abies": [
+      "blends_280/coniferous/Tree_Picea-abies_A_spring-summer-autumn.blend",
+      "blends_280/coniferous/Tree_Picea-abies_B_spring-summer-autumn.blend"
+    ],
+    "Betula-pendula": [
+      "blends_280/deciduous/Tree_Betula-pendula_A_summer.blend",
+      "blends_280/deciduous/Tree_Betula-pendula_B_summer.blend"
+    ],
+    "Acer-pseudoplatanus": [
+      "blends_280/deciduous/Tree_Acer-pseudoplatanus_A_summer.blend",
+      "blends_280/deciduous/Tree_Acer-pseudoplatanus_B_summer.blend"
+    ],
+    "Populus-tremuloides": [
+      "blends_280/deciduous/Tree_Populus-tremuloides_A_summer.blend",
+      "blends_280/deciduous/Tree_Populus-tremuloides_B_summer.blend"
+    ],
+    "Salix-babylonica": [
+      "blends_280/deciduous/Tree_Salix-babylonica_A_summer.blend",
+      "blends_280/deciduous/Tree_Salix-babylonica_B_summer.blend"
+    ],
+    "Prunus-cerasifera": [
+      "blends_280/deciduous/Tree_Prunus-cerasifera_A_summer.blend",
+      "blends_280/deciduous/Tree_Prunus-cerasifera_B_summer.blend"
+    ],
+    "Larix-decidua": [
+      "blends_280/coniferous/Tree_Larix-decidua_A_spring-summer-autumn.blend",
+      "blends_280/coniferous/Tree_Larix-decidua_B_spring-summer-autumn.blend"
+    ],
+    "Aesculus-hippocastanum": [
+      "blends_280/deciduous/Tree_Aesculus-hippocastanum_A_summer.blend"
+    ],
+    "Alnus-glutinosa": [
+      "blends_280/deciduous/Tree_Alnus-glutinosa_A_summer.blend"
+    ],
+    "Fraxinus-excelsior": [
+      "blends_280/deciduous/Tree_Fraxinus-excelsior_A_summer.blend"
+    ],
+    "Quercus-cerris": [
+      "blends_280/deciduous/Tree_Quercus-cerris_A_summer.blend"
+    ],
+    "Malus-domestica": [
+      "blends_280/deciduous/Tree_Malus-domestica_A_summer.blend"
+    ],
+    "Chamaecyparis-lawsoniana": [
+      "blends_280/coniferous/Tree_Chamaecyparis-lawsoniana_A_spring-summer-autumn.blend"
+    ],
+    "Acer-winter": [
+      "blends_280/deciduous/Tree_Acer-pseudoplatanus_A_winter.blend"
+    ]
+  },
+  "species_map": {
+    "Tilia": "Tilia-europaea",
+    "Picea": "Picea-abies",
+    "Betula": "Betula-pendula",
+    "Acer": "Acer-pseudoplatanus",
+    "Populus": "Populus-tremuloides",
+    "Salix": "Salix-babylonica",
+    "Prunus": "Prunus-cerasifera",
+    "Larix": "Larix-decidua",
+    "Aesculus": "Aesculus-hippocastanum",
+    "Alnus": "Alnus-glutinosa",
+    "Fraxinus": "Fraxinus-excelsior",
+    "Quercus": "Quercus-cerris",
+    "Malus": "Malus-domestica",
+    "Thuja": "Chamaecyparis-lawsoniana",
+    "Sorbus": "Malus-domestica",
+    "Crataegus": "Malus-domestica",
+    "Pyrus": "Malus-domestica"
+  },
+  "surrogate_genera": [
+    "Thuja",
+    "Sorbus",
+    "Crataegus",
+    "Pyrus"
+  ],
+  "shrub_asset": "blends_280/shrubs/Shrub_Syringa-vulgaris_A_spring-summer-autumn.blend",
+  "grass_assets": [
+    "blends_280/grass/Grass_Cut-grid_B_spring-summer.blend",
+    "blends_280/grass/Grass_Cut_A_spring-summer.blend"
+  ],
+  "materials": {
+    "road": {
+      "diffuse": "asphalt01_Diffuse.jpg",
+      "roughness": "asphalt01_Rough.jpg",
+      "normal_gl": "asphalt01_nor_gl.jpg"
+    },
+    "sidewalk": {
+      "diffuse": "concrete_Diffuse.jpg",
+      "roughness": "concrete_Rough.jpg",
+      "normal_gl": "concrete_nor_gl.jpg"
+    },
+    "lawn": {
+      "diffuse": "grass005/Grass005_2K-JPG_Color.jpg",
+      "roughness": "grass005/Grass005_2K-JPG_Roughness.jpg",
+      "normal_gl": "grass005/Grass005_2K-JPG_NormalGL.jpg"
+    }
+  }
+}

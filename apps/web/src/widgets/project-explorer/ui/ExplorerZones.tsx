@@ -27,17 +27,25 @@ export const ExplorerZones: FC<ExplorerZonesProps> = ({
   const selectedCount = zones.filter(
     (zone) => zone.id && selected.has(zone.id),
   ).length;
+  const countLabel = `Выбрано ${selectedCount} из ${zones.length} участков`;
   return (
     <Disclosure
       variant="plain"
+      headerVariant="inset"
+      stickyHeader
       defaultOpen
       label="Рабочие участки проекта"
       contentClassName="py-1"
       title={
         <span className="inline-flex flex-wrap items-center gap-2">
           Рабочие участки{' '}
-          <Text variant="caption" mono>
-            {selectedCount} / {zones.length}
+          <Text
+            variant="caption"
+            mono
+            title={zones.length ? countLabel : undefined}
+            aria-label={zones.length ? countLabel : undefined}
+          >
+            {zones.length ? `${selectedCount}/${zones.length}` : '0'}
           </Text>
         </span>
       }
@@ -51,19 +59,21 @@ export const ExplorerZones: FC<ExplorerZonesProps> = ({
         />
       }
     >
-      <ul className="m-0 grid list-none gap-1 p-0 pl-2">
+      <ul className="m-0 grid list-none gap-1 p-0">
         {zones.map((zone, index) => {
           const label = repeatedItemLabel(zones, zone);
           return (
             <li
               key={zone.id ?? `zone-${index}`}
               className={cx(
-                'rounded-control grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pl-1',
+                'rounded-control grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2',
                 Boolean(zone.id && selected.has(zone.id)) && 'bg-blue-100',
               )}
             >
               <Checkbox
-                label={label}
+                className="w-full min-w-0 px-2"
+                title={label}
+                label={<span className="block truncate">{label}</span>}
                 checked={Boolean(zone.id && selected.has(zone.id))}
                 disabled={selectionDisabled || !onSelectionChange || !zone.id}
                 onChange={(event) => {
@@ -86,11 +96,6 @@ export const ExplorerZones: FC<ExplorerZonesProps> = ({
             </li>
           );
         })}
-        {!zones.length && (
-          <li>
-            <Text variant="caption">Рабочие участки ещё не созданы</Text>
-          </li>
-        )}
       </ul>
     </Disclosure>
   );

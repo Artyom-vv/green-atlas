@@ -1,6 +1,6 @@
 import pytest
 
-from app.native_query.pilot_provider import NativePilotGeometryEngine
+from app.native_query.measurement.pilot_provider import NativePilotGeometryEngine
 from app.projects.contracts import Project
 
 

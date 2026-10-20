@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0" AppVersion="0.1.119"
+                    ProductCode="{AD229F45-E79B-4CB2-A250-63A3ABFD279B}"
+                    Name="Green Atlas Windows" Author="Green Atlas">
+  <CompanyDetails Name="Green Atlas" />
+  <RuntimeRequirements OS="Win64" Platform="AutoCAD" SeriesMin="R26.0"
+                       SeriesMax="R26.0" SupportPath="./Contents/Windows" />
+  <Components>
+    <ComponentEntry AppName="GreenAtlasBridge" AppVersion="0.1.48"
+                    AppDescription="Открыть текущий чертёж в Green Atlas"
+                    ModuleName="./Contents/Windows/GreenAtlasBridge.arx"
+                    AppType="Arx" LoadOnAutoCADStartup="True"
+                    LoadOnCommandInvocation="True">
+      <Commands GroupName="GREEN_ATLAS">
+        <Command Global="GAOPEN" Local="GAOPEN" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+</ApplicationPackage>

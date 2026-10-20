@@ -48,7 +48,7 @@ export function sceneSourceFacts(
           : 'Высоты не заданы',
     ],
     ['Рабочие участки', zoneCount],
-    ['Посадки', snapshot?.objects.length ?? 0],
+    ['Посадки', snapshot?.objects?.length ?? 0],
   ] as const;
 }
 

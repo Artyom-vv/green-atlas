@@ -6,8 +6,8 @@ import time
 from pathlib import Path
 
 from app.composition import create_runtime
-from app.native_query.live_client import LiveQueryClient
-from app.planning.pattern_contracts import FillPatternRequest
+from app.native_query.live.live_client import LiveQueryClient
+from app.planning.patterns.contracts import FillPatternRequest
 
 
 def main():

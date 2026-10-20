@@ -16,6 +16,7 @@ const base = {
 } as PlanObject;
 it('explains missing species without making up crown or root values', () => {
   render(<EditorGrowth objects={[base]} value={40} onChange={vi.fn()} />);
+  expect(screen.getByRole('slider', { name: 'Просмотр роста' })).toBeVisible();
   expect(screen.getByText(/Без породы: 1 из 1/)).toBeVisible();
   expect(screen.queryByText('Диаметр кроны')).not.toBeInTheDocument();
 });

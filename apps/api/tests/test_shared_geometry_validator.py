@@ -1,6 +1,8 @@
 """An injected geometry provider owns validation and release CAD evidence."""
 
 import json
+from collections.abc import Callable, Mapping
+from typing import Any, Literal, NoReturn, cast
 from unittest.mock import Mock, call
 
 import pytest
@@ -13,10 +15,14 @@ from app.exporting.contracts import (
     ReleaseCreateRequest,
 )
 from app.exporting.ports import DxfWriterPort, ExportProjectRepository
+from app.geometry.checking.domain import (
+    PositionAdvisory,
+    PositionChecker,
+    PositionViolation,
+)
+from app.geometry.checking.rule_trace import project_rule_traces
 from app.geometry.contracts import GeometrySnapshot
-from app.geometry.domain import PositionAdvisory, PositionChecker, PositionViolation
 from app.geometry.ports import GeometryEnginePort
-from app.geometry.rule_trace import project_rule_traces
 from app.planning.contracts import Plan, PlanObject
 from app.projects.contracts import Project
 from app.regulations.trace_contracts import (
@@ -26,6 +32,8 @@ from app.regulations.trace_contracts import (
     RuleTraceEntry,
 )
 from app.scene.contracts import SceneSnapshot
+from app.shared.error_messages import public_failure_message
+from app.shared.failures import DomainFailure, FailureReason
 from app.species.contracts import GrowthEnvelopeForecast
 from app.species.rule_context import mature_crown_diameter
 from app.validation.adapters import RuleBasedPlanValidator
@@ -36,7 +44,9 @@ from app.validation.networks import release_network_issues
 SHRUB = "spiraea-japonica@2026-08-28.1"
 
 
-def planting(id_="plant", x=0, **changes):
+def planting(id_: str = "plant", x: float = 0, **changes: Any) -> PlanObject:
+    changes.setdefault("canopy_forecast", [forecast(0.2)])
+    changes.setdefault("root_forecast", [forecast(0.2)])
     return PlanObject(
         id=id_,
         kind="shrub",
@@ -48,7 +58,7 @@ def planting(id_="plant", x=0, **changes):
     )
 
 
-def project_with(*objects):
+def project_with(*objects: PlanObject) -> Project:
     return Project(
         id="project",
         name="Shared provider",
@@ -62,7 +72,7 @@ def project_with(*objects):
     )
 
 
-def forecast(radius, year=20):
+def forecast(radius: float, year: int = 0) -> GrowthEnvelopeForecast:
     return GrowthEnvelopeForecast(
         horizon_year=year,
         radius_min_m=radius,
@@ -72,7 +82,7 @@ def forecast(radius, year=20):
     )
 
 
-def advisory(code):
+def advisory(code: str) -> PositionAdvisory:
     return PositionAdvisory(
         code=code,
         title=code,
@@ -81,7 +91,13 @@ def advisory(code):
     )
 
 
-def network_entry(status="failed", code="NETWORK_CLEARANCE_FAILED", **changes):
+def network_entry(
+    status: Literal[
+        "passed", "failed", "not_checked", "no_matching_obstacle"
+    ] = "failed",
+    code: str = "NETWORK_CLEARANCE_FAILED",
+    **changes: Any,
+) -> RuleTraceEntry:
     return RuleTraceEntry(
         obstacle_kind="utility",
         status=status,
@@ -91,7 +107,9 @@ def network_entry(status="failed", code="NETWORK_CLEARANCE_FAILED", **changes):
     )
 
 
-def fake_geometry(entries_by_x=None):
+def fake_geometry(
+    entries_by_x: Mapping[float, list[RuleTraceEntry]] | None = None,
+) -> Mock:
     """Port-shaped fake; its measurements do not come from project GeoJSON."""
     entries_by_x = entries_by_x or {}
     geometry = Mock(spec_set=GeometryEnginePort)
@@ -99,13 +117,19 @@ def fake_geometry(entries_by_x=None):
     geometry.placement_advisory_detail.return_value = None
     geometry.future_growth_advisory_detail.return_value = None
 
-    def trace(project, x, y, plant_kind, crown):
+    def trace(
+        project: Project,
+        x: float,
+        y: float,
+        plant_kind: Literal["tree", "shrub"],
+        crown: float | None,
+    ) -> PlantingRuleTrace:
         return PlantingRuleTrace(
             basis=RuleTraceBasis(
                 project_id=project.id,
                 state_version=project.state_version,
                 geometry_version=project.geometry_version,
-                plan_version=project.plan.version,
+                plan_version=cast(Plan, project.plan).version,
                 requirement_profile="fake",
                 registry_revision="fake",
             ),
@@ -121,8 +145,8 @@ def fake_geometry(entries_by_x=None):
 
 
 @pytest.fixture
-def forbid_legacy(monkeypatch):
-    def forbidden(*args, **kwargs):
+def forbid_legacy(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(*args: object, **kwargs: object) -> NoReturn:
         raise AssertionError("Shared validation must not use PositionChecker/GeoJSON")
 
     # Patching the class catches every imported alias, including providers.
@@ -130,12 +154,18 @@ def forbid_legacy(monkeypatch):
     monkeypatch.setattr(RuleBasedPlanValidator, "_position_checker", forbidden)
     monkeypatch.setattr("app.validation.networks.network_rule_entries", forbidden)
     monkeypatch.setattr("app.validation.networks.Point", forbidden)
-    monkeypatch.setattr("app.geometry.rule_trace.position_rule_trace", forbidden)
-    monkeypatch.setattr("app.geometry.rule_trace.network_rule_entries", forbidden)
-    monkeypatch.setattr("app.geometry.rule_trace.Point", forbidden)
+    monkeypatch.setattr(
+        "app.geometry.checking.rule_trace.position_rule_trace", forbidden
+    )
+    monkeypatch.setattr(
+        "app.geometry.checking.rule_trace.network_rule_entries", forbidden
+    )
+    monkeypatch.setattr("app.geometry.checking.rule_trace.Point", forbidden)
 
 
-def test_all_queries_use_the_supplied_provider_and_current_project(forbid_legacy):
+def test_all_queries_use_the_supplied_provider_and_current_project(
+    forbid_legacy: None,
+) -> None:
     objects = [
         planting("blocked", 0),
         planting("advised", 20),
@@ -146,7 +176,9 @@ def test_all_queries_use_the_supplied_provider_and_current_project(forbid_legacy
             root_forecast=[forecast(99, 10), forecast(3)],
         ),
         planting("clear", 60),
-        planting("incomplete-growth", 80, canopy_forecast=[forecast(2)]),
+        planting(
+            "incomplete-growth", 80, canopy_forecast=[forecast(2)], root_forecast=[]
+        ),
     ]
     project = project_with(*objects)
     geometry = fake_geometry()
@@ -167,27 +199,31 @@ def test_all_queries_use_the_supplied_provider_and_current_project(forbid_legacy
             advisory("SOURCE_GEOMETRY_PARTIAL") if x == 20 else None
         )
     )
-    geometry.future_growth_advisory_detail.return_value = advisory("NATIVE_GROWTH")
+    geometry.future_growth_advisory_detail.side_effect = lambda project, x, *args: (
+        advisory("NATIVE_GROWTH") if x == 40 else None
+    )
     validator = RuleBasedPlanValidator(geometry=geometry)
 
-    findings = validator.validate_plan(project, project.plan)
+    findings = validator.validate_plan(project, cast(Plan, project.plan))
 
     assert {i.code for i in findings} == {
         "NATIVE_OCCUPIED",
         "SOURCE_GEOMETRY_PARTIAL",
         "NATIVE_GROWTH",
+        "GROWTH_FORECAST_UNAVAILABLE",
     }
     assert [o.status for o in objects] == [
         "error",
         "warning",
         "warning",
         "valid",
-        "valid",
+        "error",
     ]
     assert {i.code: i.rule_id for i in findings} == {
         "NATIVE_OCCUPIED": "native-area",
         "SOURCE_GEOMETRY_PARTIAL": "source_review",
         "NATIVE_GROWTH": "growth_forecast",
+        "GROWTH_FORECAST_UNAVAILABLE": "growth_forecast",
     }
     blocked = next(i for i in findings if i.code == violation.code)
     assert (blocked.actual, blocked.required, blocked.description) == (
@@ -204,9 +240,12 @@ def test_all_queries_use_the_supplied_provider_and_current_project(forbid_legacy
     assert geometry.position_rule_trace.call_args_list == [
         call(project, o.x, o.y, o.kind, mature_crown_diameter(SHRUB)) for o in objects
     ]
-    geometry.future_growth_advisory_detail.assert_called_once_with(
-        project, 40, 4, 2, 3, "shrub"
-    )
+    assert geometry.future_growth_advisory_detail.call_args_list == [
+        call(project, 0, 4, 0.2, 0.2, "shrub"),
+        call(project, 20, 4, 0.2, 0.2, "shrub"),
+        call(project, 40, 4, 2, 3, "shrub"),
+        call(project, 60, 4, 0.2, 0.2, "shrub"),
+    ]
     assert {c[0] for c in geometry.mock_calls} == {
         "position_violation",
         "placement_advisory_detail",
@@ -220,20 +259,25 @@ def test_all_queries_use_the_supplied_provider_and_current_project(forbid_legacy
     reloaded = project.model_copy(deep=True)
     geometry.position_violation.side_effect = None
     geometry.placement_advisory_detail.side_effect = None
+    geometry.future_growth_advisory_detail.side_effect = None
     geometry.future_growth_advisory_detail.return_value = None
     geometry.reset_mock()
-    assert validator.validate_plan(reloaded, reloaded.plan) == []
-    assert all(o.status == "valid" for o in reloaded.plan.objects)
+    repeated = validator.validate_plan(reloaded, cast(Plan, reloaded.plan))
+    assert [issue.code for issue in repeated] == ["GROWTH_FORECAST_UNAVAILABLE"]
+    assert repeated[0].object_id == "incomplete-growth"
+    assert [o.status for o in cast(Plan, reloaded.plan).objects] == ["valid"] * 4 + [
+        "error"
+    ]
     assert all(c.args[0] is reloaded for c in geometry.mock_calls)
 
 
 def test_network_trace_preserves_unknown_and_failed_without_remeasurement(
-    forbid_legacy,
-):
+    forbid_legacy: None,
+) -> None:
     project = project_with(
         planting("unknown"), planting("failed", 20), planting("clear", 40)
     )
-    entries = {
+    entries: dict[float, list[RuleTraceEntry]] = {
         0: [network_entry("not_checked", "NETWORK_SOURCE_INCOMPLETE")],
         20: [
             network_entry(
@@ -254,7 +298,7 @@ def test_network_trace_preserves_unknown_and_failed_without_remeasurement(
         40: [network_entry("passed", "NETWORK_CLEARANCE_PASSED")],
     }
     findings = RuleBasedPlanValidator(geometry=fake_geometry(entries)).validate_plan(
-        project, project.plan
+        project, cast(Plan, project.plan)
     )
 
     assert len(findings) == 3
@@ -279,14 +323,18 @@ def test_network_trace_preserves_unknown_and_failed_without_remeasurement(
         "м",
     )
     assert failed.description == entries[20][0].note
-    assert [o.status for o in project.plan.objects] == ["warning", "error", "valid"]
+    assert [o.status for o in cast(Plan, project.plan).objects] == [
+        "warning",
+        "error",
+        "valid",
+    ]
     assert len({i.id for i in findings}) == len(findings)
 
 
 @pytest.mark.parametrize("reverse", [False, True])
 def test_network_dedup_keeps_failure_closest_measurement_and_primary_violation(
-    forbid_legacy, reverse
-):
+    forbid_legacy: None, reverse: bool
+) -> None:
     project = project_with(planting())
     entries = [
         network_entry(rule_id="primary", actual_distance_m=1.2, required_distance_m=2),
@@ -307,7 +355,7 @@ def test_network_dedup_keeps_failure_closest_measurement_and_primary_violation(
         suggested_action="Move",
     )
     findings = RuleBasedPlanValidator(geometry=geometry).validate_plan(
-        project, project.plan
+        project, cast(Plan, project.plan)
     )
 
     assert len(findings) == len({i.id for i in findings}) == 3
@@ -320,59 +368,63 @@ def test_network_dedup_keeps_failure_closest_measurement_and_primary_violation(
     assert (
         next(i for i in findings if i.rule_id == "primary").title == "Primary violation"
     )
-    assert project.plan.objects[0].status == "error"
+    assert cast(Plan, project.plan).objects[0].status == "error"
     geometry.placement_advisory_detail.assert_not_called()
 
 
-def test_missing_network_summary_and_finding_ids_are_stable(forbid_legacy):
+def test_missing_network_summary_and_finding_ids_are_stable(
+    forbid_legacy: None,
+) -> None:
     project = project_with(planting("a"), planting("b", 20))
-    entries = {
+    entries: dict[float, list[RuleTraceEntry]] = {
         x: [network_entry("not_checked", "NO_NETWORK_FEATURES")] for x in (0, 20)
     }
     entries[0].append(
         network_entry(rule_id="power", actual_distance_m=0.6, required_distance_m=0.7)
     )
     validator = RuleBasedPlanValidator(geometry=fake_geometry(entries))
-    first = validator.validate_plan(project, project.plan)
+    first = validator.validate_plan(project, cast(Plan, project.plan))
     assert len(first) == 2
     summary = next(i for i in first if i.code == "NO_NETWORK_FEATURES")
     failed = next(i for i in first if i.severity == "error")
     assert summary.object_id is None and summary.related_object_ids == []
     assert summary.actual is None and summary.x is None and summary.y is None
     assert "2" in summary.description
-    assert [o.status for o in project.plan.objects] == ["error", "warning"]
+    assert [o.status for o in cast(Plan, project.plan).objects] == ["error", "warning"]
 
-    project.plan.objects.reverse()
-    assert validator.validate_plan(project, project.plan) == first
+    cast(Plan, project.plan).objects.reverse()
+    assert validator.validate_plan(project, cast(Plan, project.plan)) == first
     entries[0][1].actual_distance_m = 0.5
-    changed = validator.validate_plan(project, project.plan)
+    changed = validator.validate_plan(project, cast(Plan, project.plan))
     updated = next(i for i in changed if i.id == failed.id)
     assert updated.actual == 0.5
     assert {i.id for i in changed} == {i.id for i in first}
-    project.plan.objects = [project.plan.objects[1]]
-    reduced = validator.validate_plan(project, project.plan)
+    cast(Plan, project.plan).objects = [cast(Plan, project.plan).objects[1]]
+    reduced = validator.validate_plan(project, cast(Plan, project.plan))
     assert "1" in next(i for i in reduced if i.id == summary.id).description
-    project.plan.objects.clear()
-    assert validator.validate_plan(project, project.plan) == []
+    cast(Plan, project.plan).objects.clear()
+    assert validator.validate_plan(project, cast(Plan, project.plan)) == []
 
 
-def test_spacing_and_species_warnings_remain_local_and_keep_their_ids(forbid_legacy):
+def test_spacing_and_species_warnings_remain_local_and_keep_their_ids(
+    forbid_legacy: None,
+) -> None:
     objects = [planting("b", 0.1), planting("a", 0)]
     objects[0].species_revision_id = None
     project = project_with(*objects)
     validator = RuleBasedPlanValidator(geometry=fake_geometry())
-    first = validator.validate_plan(project, project.plan)
+    first = validator.validate_plan(project, cast(Plan, project.plan))
     assert {i.code for i in first} == {"PLANT_SPACING", "SPECIES_UNASSIGNED"}
     spacing = next(i for i in first if i.code == "PLANT_SPACING")
     assert spacing.object_id == "a" and spacing.related_object_ids == ["a", "b"]
-    assert spacing.actual == 0.1 and spacing.required > spacing.actual
+    assert spacing.actual == 0.1 and cast(float, spacing.required) > spacing.actual
     assert all(o.status == "error" for o in objects)
-    project.plan.objects.reverse()
-    assert validator.validate_plan(project, project.plan) == first
+    cast(Plan, project.plan).objects.reverse()
+    assert validator.validate_plan(project, cast(Plan, project.plan)) == first
     objects[0].x = 0.05
     updated = next(
         i
-        for i in validator.validate_plan(project, project.plan)
+        for i in validator.validate_plan(project, cast(Plan, project.plan))
         if i.code == "PLANT_SPACING"
     )
     assert updated.id == spacing.id and updated.actual == 0.05
@@ -387,7 +439,9 @@ def test_spacing_and_species_warnings_remain_local_and_keep_their_ids(forbid_leg
         "future_growth_advisory_detail",
     ],
 )
-def test_provider_errors_propagate_without_fallback(forbid_legacy, method):
+def test_provider_errors_propagate_without_fallback(
+    forbid_legacy: None, method: str
+) -> None:
     project = project_with(
         planting(canopy_forecast=[forecast(2)], root_forecast=[forecast(3)])
     )
@@ -397,22 +451,24 @@ def test_provider_errors_propagate_without_fallback(forbid_legacy, method):
     validator = RuleBasedPlanValidator(geometry=geometry)
 
     with pytest.raises(RuntimeError) as caught:
-        validator.validate_plan(project, project.plan)
+        validator.validate_plan(project, cast(Plan, project.plan))
 
     assert caught.value is error
     assert not validator._position_checkers
 
 
 @pytest.mark.parametrize("options", [{}, {"geometry": None}])
-def test_default_validator_keeps_legacy_evidence_and_lru_cache(options):
+def test_default_validator_keeps_legacy_evidence_and_lru_cache(
+    options: dict[str, Any],
+) -> None:
     project = project_with(planting())
     validator = RuleBasedPlanValidator(2, **options)
-    first = validator.validate_plan(project, project.plan)
+    first = validator.validate_plan(project, cast(Plan, project.plan))
     assert [i.code for i in first] == ["NO_NETWORK_FEATURES"]
     checker = validator._position_checker(project)
     reloaded = project.model_copy(deep=True)
     assert validator._position_checker(reloaded) is checker
-    assert validator.validate_plan(reloaded, reloaded.plan) == first
+    assert validator.validate_plan(reloaded, cast(Plan, reloaded.plan)) == first
     reloaded.geometry_version += 1
     assert validator._position_checker(reloaded) is not checker
     second, third = Project(name="Second"), Project(name="Third")
@@ -424,25 +480,34 @@ def test_default_validator_keeps_legacy_evidence_and_lru_cache(options):
     assert list(validator._position_checkers) == [third.id]
 
 
-def test_legacy_and_injected_provider_give_distinct_results(monkeypatch):
+def test_legacy_and_injected_provider_give_distinct_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     project = project_with(planting())
     assert [
-        i.code for i in RuleBasedPlanValidator().validate_plan(project, project.plan)
+        i.code
+        for i in RuleBasedPlanValidator().validate_plan(
+            project, cast(Plan, project.plan)
+        )
     ] == ["NO_NETWORK_FEATURES"]
 
-    def forbidden(*args, **kwargs):
+    def forbidden(*args: object, **kwargs: object) -> NoReturn:
         raise AssertionError("The provider must own the query")
 
     monkeypatch.setattr(PositionChecker, "__init__", forbidden)
     geometry = fake_geometry({0: [network_entry("passed", "NETWORK_CLEARANCE_PASSED")]})
     assert (
-        RuleBasedPlanValidator(geometry=geometry).validate_plan(project, project.plan)
+        RuleBasedPlanValidator(geometry=geometry).validate_plan(
+            project, cast(Plan, project.plan)
+        )
         == []
     )
-    assert project.plan.objects[0].status == "valid"
+    assert cast(Plan, project.plan).objects[0].status == "valid"
 
 
-def test_project_traces_return_complete_provider_evidence_unchanged(forbid_legacy):
+def test_project_traces_return_complete_provider_evidence_unchanged(
+    forbid_legacy: None,
+) -> None:
     objects = [planting("shrub"), planting("tree", 20)]
     objects[1].kind = "tree"
     objects[1].species_revision_id = None
@@ -451,7 +516,7 @@ def test_project_traces_return_complete_provider_evidence_unchanged(forbid_legac
     project.geometry = None
     project.map_ready = False
     original_project = project.model_dump()
-    entries = {
+    entries: dict[float, list[RuleTraceEntry]] = {
         0: [
             RuleTraceEntry(
                 obstacle_kind="building",
@@ -504,13 +569,13 @@ def test_project_traces_return_complete_provider_evidence_unchanged(forbid_legac
 
 
 def test_release_network_evidence_uses_fresh_provider_trace_and_compacts_missing(
-    forbid_legacy,
-):
+    forbid_legacy: None,
+) -> None:
     project = project_with(
         planting("failed"), planting("unknown", 20), planting("clear", 40)
     )
     original_project = project.model_dump()
-    entries = {
+    entries: dict[float, list[RuleTraceEntry]] = {
         0: [
             network_entry(
                 rule_id="power", actual_distance_m=0.654321, required_distance_m=0.7
@@ -561,7 +626,7 @@ def test_release_network_evidence_uses_fresh_provider_trace_and_compacts_missing
         call.position_rule_trace(
             project, o.x, o.y, o.kind, mature_crown_diameter(SHRUB)
         )
-        for o in project.plan.objects
+        for o in cast(Plan, project.plan).objects
     ]
     assert project.model_dump() == original_project
 
@@ -571,13 +636,16 @@ def test_release_network_evidence_uses_fresh_provider_trace_and_compacts_missing
         entries[x] = [network_entry("passed", "NETWORK_CLEARANCE_PASSED")]
     geometry.reset_mock()
     assert release_network_issues(project, geometry=geometry) == []
-    assert geometry.position_rule_trace.call_count == len(project.plan.objects)
+    assert geometry.position_rule_trace.call_count == len(
+        cast(Plan, project.plan).objects
+    )
 
 
 @pytest.mark.parametrize("query", [release_network_issues, project_rule_traces])
 def test_release_queries_propagate_provider_error_after_partial_results(
-    forbid_legacy, query
-):
+    forbid_legacy: None,
+    query: Callable[..., list[ValidationIssue] | dict[str, PlantingRuleTrace]],
+) -> None:
     project = project_with(planting("first"), planting("second", 20))
     original_project = project.model_dump()
     geometry = fake_geometry(
@@ -586,10 +654,16 @@ def test_release_queries_propagate_provider_error_after_partial_results(
     error = RuntimeError("Native session lost on the second query")
     trace_factory = geometry.position_rule_trace.side_effect
 
-    def fail_second(project, x, y, kind, crown):
+    def fail_second(
+        project: Project,
+        x: float,
+        y: float,
+        kind: Literal["tree", "shrub"],
+        crown: float | None,
+    ) -> PlantingRuleTrace:
         if x == 20:
             raise error
-        return trace_factory(project, x, y, kind, crown)
+        return cast(PlantingRuleTrace, trace_factory(project, x, y, kind, crown))
 
     geometry.position_rule_trace.side_effect = fail_second
     with pytest.raises(RuntimeError) as caught:
@@ -605,8 +679,11 @@ def test_release_queries_propagate_provider_error_after_partial_results(
 )
 @pytest.mark.parametrize("has_plan", [False, True])
 def test_release_queries_with_no_objects_do_not_use_geometry(
-    forbid_legacy, query, expected, has_plan
-):
+    forbid_legacy: None,
+    query: Callable[..., list[ValidationIssue] | dict[str, PlantingRuleTrace]],
+    expected: object,
+    has_plan: bool,
+) -> None:
     project = project_with()
     if not has_plan:
         project.plan = None
@@ -616,7 +693,7 @@ def test_release_queries_with_no_objects_do_not_use_geometry(
 
 
 @pytest.mark.parametrize("options", [{}, {"geometry": None}])
-def test_release_queries_keep_legacy_default_evidence(options):
+def test_release_queries_keep_legacy_default_evidence(options: dict[str, Any]) -> None:
     project = project_with(planting())
     issues = release_network_issues(project, **options)
     assert len(issues) == 1 and issues[0].code == "NO_NETWORK_FEATURES"
@@ -631,13 +708,16 @@ def test_release_queries_keep_legacy_default_evidence(options):
 
 
 @pytest.mark.parametrize("query", [release_network_issues, project_rule_traces])
-def test_release_queries_use_falsey_explicit_provider(forbid_legacy, query):
+def test_release_queries_use_falsey_explicit_provider(
+    forbid_legacy: None,
+    query: Callable[..., list[ValidationIssue] | dict[str, PlantingRuleTrace]],
+) -> None:
     class FalseyProvider:
-        def __bool__(self):
+        def __bool__(self) -> bool:
             return False
 
-        def position_rule_trace(self, *args):
-            return geometry.position_rule_trace(*args)
+        def position_rule_trace(self, *args: object) -> PlantingRuleTrace:
+            return cast(PlantingRuleTrace, geometry.position_rule_trace(*args))
 
     project = project_with(planting())
     geometry = fake_geometry()
@@ -647,7 +727,7 @@ def test_release_queries_use_falsey_explicit_provider(forbid_legacy, query):
     )
 
 
-def export_application(project, geometry):
+def export_application(project: Project, geometry: Mock) -> ExportApplication:
     """Exercise release composition with all storage and CAD writes mocked."""
     project.source_file = SourceFile(
         name="source.dxf",
@@ -669,21 +749,24 @@ def export_application(project, geometry):
     )
     scene = Mock(
         return_value=SceneSnapshot(
-            plan_version=project.plan.version,
+            plan_version=cast(Plan, project.plan).version,
             horizon_year=20,
             coordinate_origin=[0, 0],
             note="test scene",
         )
     )
+    validation = PlanValidation(RuleBasedPlanValidator(geometry=fake_geometry()))
+    validation.refresh(project, cast(Plan, project.plan))
     return ExportApplication(
         repository=repository,
         writer=writer,
         scene=scene,
         geometry=geometry,
+        validation=validation,
     )
 
 
-def release_request(mode="final"):
+def release_request(mode: Literal["draft", "final"] = "final") -> ReleaseCreateRequest:
     return ReleaseCreateRequest(
         mode=mode,
         regulatory_basis=RegulatoryReleaseBasis(
@@ -704,27 +787,34 @@ def release_request(mode="final"):
     ],
 )
 def test_final_release_uses_provider_gate_despite_empty_persisted_issues(
-    forbid_legacy, status, code
-):
+    forbid_legacy: None,
+    status: Literal["passed", "failed", "not_checked", "no_matching_obstacle"],
+    code: str,
+) -> None:
     project = project_with(planting())
     geometry = fake_geometry({0: [network_entry(status, code)]})
     app = export_application(project, geometry)
-    assert project.plan.issues == []
+    assert cast(Plan, project.plan).issues == []
 
-    with pytest.raises(ValueError, match="инженерных сетей: 1$"):
+    with pytest.raises(DomainFailure) as failure:
         app.create_release(project.id, release_request())
+    assert failure.value.reason is FailureReason.RELEASE_FINAL_UNAVAILABLE
+    assert failure.value.params["release_checks"] == [
+        {"code": "network_checks", "count": 1}
+    ]
+    assert public_failure_message(failure.value).endswith("инженерных сетей: 1")
 
     geometry.position_rule_trace.assert_called_once_with(
         project, 0, 4, "shrub", mature_crown_diameter(SHRUB)
     )
-    app.writer.create.assert_not_called()
-    app.repository.publish_release.assert_not_called()
+    cast(Mock, app.writer.create).assert_not_called()
+    cast(Mock, app.repository.publish_release).assert_not_called()
 
 
 @pytest.mark.parametrize("mode,trace_calls", [("draft", 1), ("final", 2)])
 def test_release_manifest_contains_the_same_provider_evidence(
-    forbid_legacy, mode, trace_calls
-):
+    forbid_legacy: None, mode: Literal["draft", "final"], trace_calls: int
+) -> None:
     project = project_with(planting())
     geometry = fake_geometry(
         {
@@ -753,10 +843,10 @@ def test_release_manifest_contains_the_same_provider_evidence(
     package = app.create_release(project.id, release_request(mode))
 
     assert package.status == ("ready" if mode == "final" else "draft")
-    app.repository.publish_release.assert_called_once()
-    published_project, release_id, payload, files = (
-        app.repository.publish_release.call_args.args
-    )
+    cast(Mock, app.repository.publish_release).assert_called_once()
+    published_project, release_id, payload, files = cast(
+        Mock, app.repository.publish_release
+    ).call_args.args
     assert published_project is project and release_id == package.id
     assert json.loads(payload) == package.model_dump(mode="json")
     artifact = next(a for a in package.artifacts if a.kind == "manifest")
@@ -782,17 +872,20 @@ def test_release_manifest_contains_the_same_provider_evidence(
     ],
 )
 def test_release_provider_failure_never_publishes_or_falls_back(
-    forbid_legacy, mode, fail_on_call, writer_calls
-):
+    forbid_legacy: None,
+    mode: Literal["draft", "final"],
+    fail_on_call: int,
+    writer_calls: int,
+) -> None:
     project = project_with(planting())
     geometry = fake_geometry({0: [network_entry("passed", "NETWORK_CLEARANCE_PASSED")]})
     trace_factory = geometry.position_rule_trace.side_effect
     error = RuntimeError("Provider session unavailable")
 
-    def fail_at_stage(*args):
+    def fail_at_stage(*args: object) -> PlantingRuleTrace:
         if geometry.position_rule_trace.call_count == fail_on_call:
             raise error
-        return trace_factory(*args)
+        return cast(PlantingRuleTrace, trace_factory(*args))
 
     geometry.position_rule_trace.side_effect = fail_at_stage
     app = export_application(project, geometry)
@@ -801,22 +894,22 @@ def test_release_provider_failure_never_publishes_or_falls_back(
 
     assert caught.value is error
     assert geometry.position_rule_trace.call_count == fail_on_call
-    assert app.writer.create.call_count == writer_calls
-    app.repository.publish_release.assert_not_called()
+    assert cast(Mock, app.writer.create).call_count == writer_calls
+    cast(Mock, app.repository.publish_release).assert_not_called()
 
 
 @pytest.mark.parametrize("provider_fails", [False, True])
 def test_persisted_v4_validation_basis_advances_only_after_provider_recheck(
-    forbid_legacy, provider_fails
-):
+    forbid_legacy: None, provider_fails: bool
+) -> None:
     project = project_with(planting())
-    project.plan.validation_basis = PlanValidationBasis(
-        plan_version=project.plan.version,
+    cast(Plan, project.plan).validation_basis = PlanValidationBasis(
+        plan_version=cast(Plan, project.plan).version,
         geometry_version=project.geometry_version,
         validator_revision="rule-based-plan-v4-network-source-summary",
         objects_digest="a" * 64,
     )
-    project.plan.issues = [
+    cast(Plan, project.plan).issues = [
         ValidationIssue(
             code="STALE_EVIDENCE",
             severity="warning",
@@ -827,8 +920,10 @@ def test_persisted_v4_validation_basis_advances_only_after_provider_recheck(
     ]
     # Simulate persisted data without opening a repository or a database.
     reloaded = Project.model_validate_json(project.model_dump_json())
-    original_basis = reloaded.plan.validation_basis.model_copy()
-    original_issues = [i.model_copy() for i in reloaded.plan.issues]
+    original_basis = cast(
+        PlanValidationBasis, cast(Plan, reloaded.plan).validation_basis
+    ).model_copy()
+    original_issues = [i.model_copy() for i in cast(Plan, reloaded.plan).issues]
     geometry = fake_geometry(
         {0: [network_entry("not_checked", "NETWORK_SOURCE_INCOMPLETE")]}
     )
@@ -838,14 +933,21 @@ def test_persisted_v4_validation_basis_advances_only_after_provider_recheck(
         error = RuntimeError("Cannot validate this capture")
         geometry.position_violation.side_effect = error
         with pytest.raises(RuntimeError) as caught:
-            validation.refresh(reloaded, reloaded.plan)
+            validation.refresh(reloaded, cast(Plan, reloaded.plan))
         assert caught.value is error
-        assert reloaded.plan.validation_basis == original_basis
-        assert reloaded.plan.issues == original_issues
+        assert cast(Plan, reloaded.plan).validation_basis == original_basis
+        assert cast(Plan, reloaded.plan).issues == original_issues
     else:
-        validation.refresh(reloaded, reloaded.plan)
-        assert reloaded.plan.validation_basis.validator_revision == validator.revision
+        validation.refresh(reloaded, cast(Plan, reloaded.plan))
+        assert (
+            cast(
+                PlanValidationBasis, cast(Plan, reloaded.plan).validation_basis
+            ).validator_revision
+            == validator.revision
+        )
         assert validator.revision != original_basis.validator_revision
-        assert [i.code for i in reloaded.plan.issues] == ["NETWORK_SOURCE_INCOMPLETE"]
-        assert reloaded.plan.objects[0].status == "warning"
+        assert [i.code for i in cast(Plan, reloaded.plan).issues] == [
+            "NETWORK_SOURCE_INCOMPLETE"
+        ]
+        assert cast(Plan, reloaded.plan).objects[0].status == "warning"
     geometry.position_violation.assert_called_once_with(reloaded, 0, 4, 0.2, "shrub")

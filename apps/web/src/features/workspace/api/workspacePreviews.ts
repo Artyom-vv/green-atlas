@@ -1,3 +1,4 @@
+/** Рабочая область: типизированные запросы предпросмотра и продолжение подготовки */
 import {
   api,
   type BrushPreviewRequest,
@@ -6,8 +7,10 @@ import {
   type PatternPreview,
   type RecommendationRequest,
   type AutomaticPlacementRequest,
+  type AutomaticPlacementPreview,
+  type RecommendationPreview,
 } from '@green/api-client';
-import { completePatternPreview } from './completePatternPreview';
+import { completeSearchDomainPreview } from './completeSearchDomainPreview';
 import { PATTERN_PASS_RESPONSE_TIMEOUT_MS } from './patternPreviewPass';
 
 export const previewWorkspacePattern = (
@@ -16,7 +19,7 @@ export const previewWorkspacePattern = (
   signal: AbortSignal,
   publish?: (progress: PatternPreview) => void,
 ) =>
-  completePatternPreview(
+  completeSearchDomainPreview(
     (passSignal) => api.previewPlanPattern(projectId, request, passSignal),
     signal,
     publish,
@@ -33,13 +36,27 @@ export const previewWorkspaceAutomatic = (
   projectId: string,
   request: AutomaticPlacementRequest,
   signal: AbortSignal,
-) => api.previewAutomaticPlacement(projectId, request, signal);
+  publish?: (progress: AutomaticPlacementPreview) => void,
+) =>
+  completeSearchDomainPreview(
+    (passSignal) =>
+      api.previewAutomaticPlacement(projectId, request, passSignal),
+    signal,
+    publish,
+  );
 
 export const previewWorkspaceRecommendation = (
   projectId: string,
   request: RecommendationRequest | BuildingScreenRequest,
   signal: AbortSignal,
+  publish?: (progress: RecommendationPreview) => void,
 ) =>
-  'screen_side' in request
-    ? api.previewBuildingScreen(projectId, request, signal)
-    : api.previewRecommendation(projectId, request, signal);
+  completeSearchDomainPreview(
+    (passSignal) =>
+      'screen_side' in request
+        ? api.previewBuildingScreen(projectId, request, passSignal)
+        : api.previewRecommendation(projectId, request, passSignal),
+    signal,
+    publish,
+    PATTERN_PASS_RESPONSE_TIMEOUT_MS * Math.max(1, request.zone_ids.length),
+  );

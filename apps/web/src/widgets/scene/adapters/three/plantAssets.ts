@@ -9,6 +9,8 @@ export type PlantPrototypePart = {
   material: THREE.Material | THREE.Material[];
   castShadow: boolean;
   billboard: boolean;
+  /** Whole-tree far views: true is the top capture, false a street capture. */
+  overheadOnly?: boolean;
 };
 
 export type PlantPrototype = {

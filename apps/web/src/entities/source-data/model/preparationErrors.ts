@@ -1,4 +1,8 @@
-import { ApiClientError, type Layer, type LayerMapping } from '@green/api-client';
+import {
+  ApiClientError,
+  type Layer,
+  type LayerMapping,
+} from '@green/api-client';
 
 /** Resolve server field indices against the mapping order sent by this form. */
 export function preparationFieldErrors(
@@ -12,7 +16,9 @@ export function preparationFieldErrors(
     const index = /^mappings\.(\d+)(?:\.|$)/.exec(field)?.[1];
     const mapping = index === undefined ? undefined : submitted[Number(index)];
     const layer = layers.find((item) => item.id === mapping?.layer_id);
-    return messages.map((message) =>
-      `${layer?.source_name ?? field}: ${message.replace(/^Value error, /, '')}`);
+    return messages.map(
+      (message) =>
+        `${layer?.source_name ?? field}: ${message.replace(/^Value error, /, '')}`,
+    );
   });
 }

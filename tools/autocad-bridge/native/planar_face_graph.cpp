@@ -1,3 +1,4 @@
+// CAD-домен: выделяет замкнутые области из native-кривых и строит их отображение.
 #include "planar_faces_internal.h"
 #include "dbents.h"
 #include <algorithm>
@@ -87,11 +88,13 @@ std::set<int> bridges(Graph& graph,const std::function<bool()>& cancelled) {
     return result;
 }
 void displayEdge(Face& face,const Edge& edge,bool reverse) {
-    // LINE/ARC are the only primitives admitted by the face graph. Record the
-    // analytic sagitta, not a claimed zero tolerance for an arc approximation.
+    // Вершина в середине короткой дуги сохраняет площадь её отображения:
+    // дуга с хордой иначе превращается в две вершины и замыкание.
+    // Погрешность относится к отображению; расчёт использует исходные кривые.
     constexpr double kMaxDisplayAngle=0.05;
+    constexpr int kMinArcDisplaySegments=2;
     const auto* arc=AcDbArc::cast(edge.fragment.curve.get());
-    const int samples=arc?std::max(1,int(std::ceil(edge.length/arc->radius()/kMaxDisplayAngle))):1;
+    const int samples=arc?std::max(kMinArcDisplaySegments,int(std::ceil(edge.length/arc->radius()/kMaxDisplayAngle))):1;
     if(arc) {
         const double halfAngle=edge.length/arc->radius()/samples/2;
         face.samplingToleranceUnits=std::max(face.samplingToleranceUnits,

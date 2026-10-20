@@ -16,6 +16,7 @@ export function SpeciesInspector({
   reason,
   showHeading = true,
   reasonTone = 'neutral',
+  compact = false,
 }: {
   species?: SpeciesRevision;
   entry?: AssortmentEntry;
@@ -23,12 +24,11 @@ export function SpeciesInspector({
   reason?: string;
   showHeading?: boolean;
   reasonTone?: 'neutral' | 'warning';
+  compact?: boolean;
 }) {
   if (!species && !entry)
     return (
-      <p className="p-4 text-sm text-neutral-600">
-        Выберите растение в списке
-      </p>
+      <p className="p-4 text-sm text-neutral-600">Выберите растение в списке</p>
     );
   return (
     <div className="grid min-w-0 gap-5 p-4">
@@ -71,7 +71,9 @@ export function SpeciesInspector({
       {species ? (
         <>
           {speciesPhotos[species.species_id] && (
-            <SpeciesPhoto key={species.id} species={species} credits />
+            <div className={compact ? 'max-w-40 [&_img]:h-24' : undefined}>
+              <SpeciesPhoto key={species.id} species={species} credits />
+            </div>
           )}
           <dl
             aria-label="Размеры взрослого растения"

@@ -13,10 +13,10 @@ from pathlib import Path
 import psutil
 import pytest
 
-from app.native_query import process
 from app.native_query.contracts import PROTOCOL, NativeObjectQuery
-from app.native_query.process import run_native_query
-from app.native_query.process_contracts import (
+from app.native_query.transport import job_files, process
+from app.native_query.transport.process import run_native_query
+from app.native_query.transport.process_contracts import (
     CadPackageFile,
     NativeInputPackage,
     NativeQueryProcessConfig,
@@ -43,12 +43,12 @@ def setup_job(tmp_path, mode="ok", **options):
         targets=[{"route": "6E16/7BF", "capability": "area", "additional_routes": additional_routes}], points=[(1.0, 2.0, 0.0)],
     )
     worker = tmp_path / "GreenAtlasQuery.bundle"
-    binary = worker / process.WORKER_BINARY
+    binary = worker / job_files.WORKER_BINARY
     binary.parent.mkdir(parents=True)
     binary.write_bytes(b"curated worker, never executed by the fake Core")
     binary.chmod(0o700)
     (worker / "Contents/Info.plist").write_bytes(plistlib.dumps({
-        "CFBundleIdentifier": process.WORKER_ID,
+        "CFBundleIdentifier": job_files.WORKER_ID,
         "CFBundleExecutable": "GreenAtlasBridge",
         "CFBundleShortVersionString": "0.1.38",
     }))
@@ -113,10 +113,10 @@ def test_success_uses_private_copies_profile_and_imported_codec(tmp_path, monkey
         assert staged.read_bytes() == (package.root / item.path).read_bytes()
         assert not os.path.samefile(staged, package.root / item.path)
         assert staged.stat().st_nlink == 1
-    assert (job / "QueryWorker.dbx" / process.WORKER_BINARY).read_bytes() == (
-        config.worker_bundle / process.WORKER_BINARY
+    assert (job / "QueryWorker.dbx" / job_files.WORKER_BINARY).read_bytes() == (
+        config.worker_bundle / job_files.WORKER_BINARY
     ).read_bytes()
-    assert stat_mode(job / "QueryWorker.dbx" / process.WORKER_BINARY) == 0o700
+    assert stat_mode(job / "QueryWorker.dbx" / job_files.WORKER_BINARY) == 0o700
     assert receipt.diagnostic_output == (job / "native.json").read_bytes()
     assert receipt.log == (job / "core.log").read_bytes()
     assert b"fake Core diagnostic" in receipt.log

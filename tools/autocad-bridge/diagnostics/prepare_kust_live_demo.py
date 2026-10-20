@@ -9,8 +9,8 @@ import json
 from pathlib import Path
 
 from app.composition import create_runtime
-from app.dxf_import.layer_contracts import LayerMapping
-from app.native_query.live_runtime import LiveBinding, binding_path, save_binding
+from app.dxf_import.layers.contracts import LayerMapping
+from app.native_query.live.live_runtime import LiveBinding, binding_path, save_binding
 
 KUST_DXF_SHA = "36ec0f0db3a2ac88c575a9460283a2498504215a4b0daaf98aa5cb18fb2a0a8a"
 LINEAR_LAYERS = frozenset(

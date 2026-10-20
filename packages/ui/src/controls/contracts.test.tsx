@@ -14,6 +14,18 @@ import {
 } from '../index';
 
 describe('shared control contracts', () => {
+  it.each(['compact', 'default', 'large'] as const)(
+    'keeps the button line height after merging the %s density',
+    (controlSize) => {
+      render(<Button controlSize={controlSize}>Сохранить</Button>);
+      const button = screen.getByRole('button', { name: 'Сохранить' });
+      // text-sm/text-xs otherwise remove a preceding leading-4 in tv merging.
+      expect(button).toHaveClass('leading-4');
+      expect(button).toHaveClass('min-h-(--control-height)');
+      expect(button.className).not.toMatch(/(?:^|\s)h-/);
+    },
+  );
+
   it('replaces the label scaffold for a rich content slot while preserving button behavior', () => {
     const onClick = vi.fn();
     render(

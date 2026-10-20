@@ -1,0 +1,40 @@
+{
+  "schema": "green-atlas.autocad-region-topology-probe/1",
+  "complete": false,
+  "plugin_version": "0.1.47",
+  "capture_mode": "live_document",
+  "requested_tolerance_m": 0.0001,
+  "source": {
+    "path": "fixtures/Сцена \"1\".dwg",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "units_code": 6,
+    "metres_per_unit": 1,
+    "document_revision": "revision-1",
+    "database_modified_flags": 32,
+    "live_database_matches_disk": false
+  },
+  "xref_dependencies": [
+    {"record_handle": "X1", "block_name": "Подоснова", "stored_path": "../base.dwg", "resolved_path": "/package/base.dwg", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bytes": 42, "status": "resolved"}
+  ],
+  "coverage": [
+    {"handle": "A1", "entity_type": "AcDbHatch", "source_layer": "Здание", "layer": "Подоснова|Здание\"\\\n", "instance_chain": ["B1","MINSERT:B2:R1:C2"], "status": "native", "method": "hatch", "reason": null, "xref_dependency_id": null},
+    {"handle": "A2", "entity_type": "AcDbLine", "source_layer": "Сети", "layer": "Подоснова|Сети", "instance_chain": ["B1","MINSERT:B2:R1:C2"], "status": "native", "method": "curve", "reason": null, "xref_dependency_id": null},
+    {"handle": "A3", "entity_type": "AcDbPoint", "source_layer": "Деревья", "layer": "Подоснова|Деревья", "instance_chain": ["B1","MINSERT:B2:R1:C2"], "status": "native", "method": "point", "reason": null, "xref_dependency_id": null},
+    {"handle": "A4", "entity_type": "AcDbText", "source_layer": "Текст", "layer": "Текст", "instance_chain": [], "status": "context", "method": "annotation", "reason": "annotation only", "xref_dependency_id": null},
+    {"handle": "A5", "entity_type": "AcDbHatch", "source_layer": "Газон", "layer": "Газон", "instance_chain": [], "status": "unresolved", "method": "hatch", "reason": "test unresolved", "xref_dependency_id": null},
+    {"handle": "A6", "entity_type": "AcDbBlockReference", "source_layer": "0", "layer": "0", "instance_chain": [], "status": "context", "method": "xref", "reason": null, "xref_dependency_id": "xref/X1"}
+  ],
+  "regions": [
+    {"handle": "A1", "source_layer": "Здание", "layer": "Подоснова|Здание\"\\\n", "instance_chain": ["B1","MINSERT:B2:R1:C2"], "source_handles": [], "status": "native", "error_status": null, "native_area_units2": 11, "native_perimeter_units": 18, "loops": [{"role": "outer", "sampled_max_deviation_units": 0, "coordinates": [[0,0,0],[4,0,0],[4,3,0],[0,3,0],[0,0,0]]},{"role": "hole", "sampled_max_deviation_units": 0, "coordinates": [[1,1,0],[2,1,0],[2,2,0],[1,2,0],[1,1,0]]}]}
+  ],
+  "area_proposals": [  ],
+  "area_proposal_rejections": [  ],
+  "paths": [
+    {"handle": "A2", "source_layer": "Сети", "layer": "Подоснова|Сети", "instance_chain": ["B1","MINSERT:B2:R1:C2"], "status": "native", "error_status": null, "closed": false, "sampled_max_deviation_units": 1.0000000000000001e-05, "coordinates": [[0.12345678901234566,0,1],[5,8,1]]}
+  ],
+  "points": [
+    {"handle": "A3", "source_layer": "Деревья", "layer": "Подоснова|Деревья", "instance_chain": ["B1","MINSERT:B2:R1:C2"], "status": "native", "error_status": null, "coordinates": [2,3,4]}
+  ],
+  "summary": {"regions": 1, "area_proposals": 0, "area_proposal_candidates": 0, "area_proposal_rejected": 0, "paths": 1, "points": 1, "resolved": 1, "unresolved": 0, "loops": 2, "region_sampled_points": 10, "block_references": 1, "traversed_block_references": 1, "cyclic_block_references": 0, "xref_block_references": 1, "unloaded_xref_block_references": 0, "unresolved_xref_block_references": 0, "xref_dependency_records": 1, "expanded_minsert_cells": 0, "unexpanded_minsert_blocks": 0, "unreadable_block_records": 0, "unreadable_entities": 0, "visited_entities": 6, "source_instances": 6, "native": 3, "context": 2, "unresolved_instances": 1},
+  "limitations": ["REGION, HATCH area, finite curves and points are emitted; other non-context entities remain explicit unresolved coverage", "resolved XREF files are hashed and unresolved references fail admission", "nonzero DBMOD means the saved source differs from the live capture", "adaptive chord checks require independent admission verification"]
+}

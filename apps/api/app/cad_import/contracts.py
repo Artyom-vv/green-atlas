@@ -1,9 +1,13 @@
+"""Контракты прежней конвертации CAD: идентичность инструмента, результаты проверки и
+доказательства целостности.
+"""
+
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.cad_import.boundary_contracts import DrawingBoundaryCatalog
+from app.cad_import.boundary.contracts import DrawingBoundaryCatalog
 
 
 class ConverterIdentity(BaseModel):
@@ -36,7 +40,7 @@ class CadConversion(BaseModel):
     inspection: DrawingInspection
     peak_memory_bytes: int = 0
     diagnostics: list[str] = Field(default_factory=list)
-    # Successful conversion alone never certifies preservation of CAD semantics.
+    # Успех конвертации сам по себе не подтверждает сохранение предметного смысла CAD.
     integrity: Literal["unverified", "requires_review"] = "unverified"
 
 
@@ -48,4 +52,16 @@ class ConvertedDrawing(BaseModel):
 
 
 class CadConversionError(ValueError):
-    """A converter failed before a usable, auditable output was published."""
+    """Обработка CAD завершилась до публикации проверяемого результата"""
+
+
+class CadConversionMemoryExceeded(CadConversionError):
+    """Дерево изолированной обработки CAD превысило лимит памяти"""
+
+    def __init__(self, limit_bytes: int, peak_memory_bytes: int) -> None:
+        self.limit_bytes = limit_bytes
+        self.peak_memory_bytes = peak_memory_bytes
+        super().__init__(
+            "Превышен бюджет памяти преобразования CAD: "
+            f"лимит {limit_bytes} байт, измеренный пик {peak_memory_bytes} байт"
+        )

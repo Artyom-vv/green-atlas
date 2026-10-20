@@ -9,7 +9,7 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'apps/api'))
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.dxf_import.capacity import SourceGeometryCapacity
 from app.geometry.geojson_size import coordinate_count
 

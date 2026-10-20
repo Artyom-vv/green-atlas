@@ -7,9 +7,9 @@ from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon, box, mapping, shape
 from shapely.geometry.base import BaseGeometry
 
-from app.geometry import viewport_simplification as module
 from app.geometry.contracts import GeometrySnapshot
-from app.geometry.query_adapters import IndexedGeometryQuery
+from app.geometry.viewport import viewport_simplification as module
+from app.geometry.viewport.query_adapters import IndexedGeometryQuery
 from app.projects.contracts import Project
 
 

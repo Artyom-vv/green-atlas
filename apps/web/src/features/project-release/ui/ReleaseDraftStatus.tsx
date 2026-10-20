@@ -28,13 +28,13 @@ export const ReleaseDraftStatus: FC<ReleaseDraftStatusProps> = ({
       <InlineMessage tone="warning">
         <div className="grid gap-2">
           <p className="m-0">
-            План или геометрия изменились. Заметки сохранены для проверки.
+            План или геометрия изменились. Заметки сохранены для проверки
           </p>
           {draftContext && (
             <p className="m-0">
               Черновик: план {draftContext.planVersion}, геометрия{' '}
               {draftContext.geometryVersion}. Сейчас: план {planVersion},
-              геометрия {geometryVersion}.
+              геометрия {geometryVersion}
             </p>
           )}
           <FormActions className="justify-start">
@@ -51,8 +51,8 @@ export const ReleaseDraftStatus: FC<ReleaseDraftStatusProps> = ({
     )}
     {submissionUnknown && (
       <InlineMessage tone="warning">
-        Исход предыдущей сборки неизвестен. Заметки сохранены. Повторная сборка
-        создаст новый пакет.
+        Исход предыдущей сборки неизвестен. Заметки сохранены. Для новой сборки
+        сбросьте настройки
       </InlineMessage>
     )}
     {Boolean(draftNotice) && (

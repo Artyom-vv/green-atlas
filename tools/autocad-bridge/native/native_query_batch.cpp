@@ -36,7 +36,8 @@ ObjectMeasurements measureObject(AcDbDatabase& database, const ObjectTarget& tar
     std::unique_ptr<AffineAreaQuery> area;
     std::unique_ptr<CurveQuery> curve;
     try {
-        ga::xref::resolve(database, target.route, instance);
+        ga::xref::resolve(database,
+            target.faceId?ga::faces::archiveFaceAnchor(target.route):target.route,instance);
         result.entityType = AcString(instance.entity->isA()->name()).utf8Str();
         AcString layer; instance.entity->layer(layer); result.layer = layer.utf8Str();
         if(target.faceId) {

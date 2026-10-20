@@ -3,7 +3,6 @@ export interface WorkspaceRecommendationToolProps extends Pick<
   WorkspaceReadyModel,
   | 'applyChanges'
   | 'automaticPreview'
-  | 'buildingTargets'
   | 'changeMapMode'
   | 'editor'
   | 'growthHorizon'
@@ -12,12 +11,10 @@ export interface WorkspaceRecommendationToolProps extends Pick<
   | 'previewAutomatic'
   | 'project'
   | 'recommendationForm'
-  | 'recommendationOpen'
   | 'recommendationPreview'
   | 'sceneOpen'
   | 'selectPatternZones'
   | 'selectedPatternZoneIds'
-  | 'setBuildingScreenActive'
   | 'setGrowthHorizon'
   | 'setRecommendationOpen'
   | 'speciesNames'
@@ -27,7 +24,6 @@ export const workspaceRecommendationPropsFor = (
 ): WorkspaceRecommendationToolProps => ({
   applyChanges: model.applyChanges,
   automaticPreview: model.automaticPreview,
-  buildingTargets: model.buildingTargets,
   changeMapMode: model.changeMapMode,
   editor: model.editor,
   growthHorizon: model.growthHorizon,
@@ -36,12 +32,10 @@ export const workspaceRecommendationPropsFor = (
   previewAutomatic: model.previewAutomatic,
   project: model.project,
   recommendationForm: model.recommendationForm,
-  recommendationOpen: model.recommendationOpen,
   recommendationPreview: model.recommendationPreview,
   sceneOpen: model.sceneOpen,
   selectPatternZones: model.selectPatternZones,
   selectedPatternZoneIds: model.selectedPatternZoneIds,
-  setBuildingScreenActive: model.setBuildingScreenActive,
   setGrowthHorizon: model.setGrowthHorizon,
   setRecommendationOpen: model.setRecommendationOpen,
   speciesNames: model.speciesNames,

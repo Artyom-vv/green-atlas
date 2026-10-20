@@ -23,8 +23,7 @@ from shapely.ops import unary_union
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps/api"))
 
-from app.dxf_import.adapters import _hatch_polygon_geometry  # noqa: E402
-from app.dxf_import.polygons import hatch_geometry  # noqa: E402
+from app.dxf_import.legacy.entities.polygons import hatch_geometry  # noqa: E402
 
 
 DXF_ROOT = ROOT / ".runtime/kustanayskaya-mac-ready-20260917/dxf"
@@ -159,7 +158,7 @@ def main() -> None:
     layer_counts = Counter()
     layer_areas = defaultdict(float)
     for entity in project.modelspace().query("HATCH"):
-        geometry = hatch_geometry(entity, 1.0, _hatch_polygon_geometry)
+        geometry = hatch_geometry(entity, 1.0)
         if geometry is None:
             rejected.append({"handle": entity.dxf.handle, "layer": entity.dxf.layer})
             continue

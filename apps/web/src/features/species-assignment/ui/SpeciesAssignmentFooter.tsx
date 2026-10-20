@@ -20,8 +20,8 @@ export const SpeciesAssignmentFooter: FC<SpeciesAssignmentFooterProps> = ({
 }) => {
   const form = useFormContext<SpeciesAssignmentFormValues>();
   return (
-    <FormActions layout="equal" minItemWidth="10rem">
-      <Button variant="secondary" disabled={previewing} onClick={onCancel}>
+    <FormActions>
+      <Button variant="ghost" disabled={previewing} onClick={onCancel}>
         Отмена
       </Button>
       {showingDetails && (

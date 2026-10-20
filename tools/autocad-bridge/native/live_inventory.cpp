@@ -30,13 +30,16 @@ void writeInventory(AcDbDatabase& host, const ga::bridge::DrawingGeometry& drawi
     ga::nativeQuery::AreaCandidates candidates;
     std::set<std::string> seen;
     bool first=true;
+    std::size_t processed = 0;
+    ga::bridge::reportOperationProgress("inventory", 0);
     for(const auto& row:drawing.coverage) {
         if(ga::bridge::operationCancelled()) throw std::runtime_error("live_inventory_cancelled");
+        if (++processed % 10000 == 0) ga::bridge::reportOperationProgress("inventory", processed);
         const auto route=routeOf(row);
         if(!seen.insert(route).second) throw std::runtime_error("live_inventory_duplicate_instance");
         const bool context=row.status=="context";
         out<<(first?"":",")<<"{\"route\":"<<q(route)<<",\"layer\":"<<q(row.layer)
-            <<",\"entity_type\":"<<q(row.entityType)<<",\"context\":"<<(context?"true":"false")
+            <<",\"entity_type\":"<<q(row.entityType)
             <<",\"bounds\":";
         first=false;
         std::string error;
@@ -58,8 +61,16 @@ void writeInventory(AcDbDatabase& host, const ga::bridge::DrawingGeometry& drawi
                     throw std::runtime_error("native_extents_invalid");
                 out<<'['<<lo.x<<','<<lo.y<<','<<hi.x<<','<<hi.y<<']';
             }
-        } catch(const std::exception& failure) { out<<"null"; error=failure.what(); }
-        out<<",\"curve\":"<<(curve?"true":"false")<<",\"error\":"<<q(error)<<'}';
+        } catch(const ga::xref::NonCalculationContext& failure) {
+            // Статус задаёт захват: отсутствующая ссылка остаётся адресной ошибкой,
+            // а расчётная геометрия внутри оформления означает сбой согласованности.
+            if(row.status!="unresolved")
+                throw std::runtime_error("live_inventory_annotation_status_mismatch: "+route);
+            out<<"null"; error=failure.what();
+        }
+        catch(const std::exception& failure) { out<<"null"; error=failure.what(); }
+        out<<",\"context\":"<<(context?"true":"false")
+            <<",\"curve\":"<<(curve?"true":"false")<<",\"error\":"<<q(error)<<'}';
     }
     out<<"],\"groups\":[";
     first=true;

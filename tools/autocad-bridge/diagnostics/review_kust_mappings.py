@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 import httpx
-from app.native_query.live_runtime import LiveBinding, binding_path
+from app.native_query.live.live_runtime import LiveBinding, binding_path
 from prepare_kust_live_demo import KUST_DXF_SHA, decision
 
 OVERRIDES = {

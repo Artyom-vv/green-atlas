@@ -1,4 +1,5 @@
 import { MapToolbar } from '@/widgets/map/ui/MapToolbar';
+import { CanvasControlSlot } from '@/shared/ui/CanvasControls';
 import type { FC } from 'react';
 import type { WorkspaceReadyModel } from '../../model/useWorkspaceModel';
 
@@ -53,13 +54,22 @@ export const CanvasTools: FC<CanvasToolsProps> = ({
 }) => (
   <>
     {projectHasPlan && (
-      <div className="absolute top-4 left-4 z-40">
+      <CanvasControlSlot position="topLeft">
         <MapToolbar
           mapMode={sceneOpen ? '3d' : '2d'}
           tool={mapPanActive ? 'pan' : sceneOpen ? 'select' : tool}
           onTool={(next) => {
-            if (sceneOpen && (next === 'select' || next === 'pan')) {
-              setMapPanActive(next === 'pan');
+            if (next === 'pan') {
+              setMapPanActive(!mapPanActive);
+              return;
+            }
+            if (mapPanActive && next === tool) {
+              setMapPanActive(false);
+              return;
+            }
+            setMapPanActive(false);
+            if (sceneOpen && next === 'select') {
+              setMapPanActive(false);
               return;
             }
             if (sceneOpen) changeMapMode('2d');
@@ -71,7 +81,7 @@ export const CanvasTools: FC<CanvasToolsProps> = ({
           }
           onDelete={() => setDeleteSelectionOpen(true)}
         />
-      </div>
+      </CanvasControlSlot>
     )}
   </>
 );

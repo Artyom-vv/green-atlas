@@ -9,6 +9,7 @@ describe('RecommendationReviewPanel', () => {
     render(
       <RecommendationReviewPanel
         proposal={{
+          planning_horizon_year: 20,
           profile: 'balanced',
           arrangement: 'area',
           evidence: {

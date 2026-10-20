@@ -12,8 +12,8 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
 from app.contracts import GeometrySnapshot, PlantingZoneAssignment, Project
-from app.geometry.constraint_index import ConstraintIndex
-from app.geometry.domain import PositionChecker
+from app.geometry.checking.constraint_index import ConstraintIndex
+from app.geometry.checking.domain import PositionChecker
 
 
 class GlobalUnionChecker(PositionChecker):
@@ -196,7 +196,7 @@ def test_no_geometry_and_untyped_sources_keep_their_existing_statuses(scope) -> 
 def test_index_excludes_remote_objects_before_union(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import app.geometry.constraint_index as module
+    import app.geometry.checking.constraint_index as module
 
     sizes: list[int] = []
     original = module.disjoint_subset_union_all
@@ -229,8 +229,10 @@ def test_disjoint_subset_union_preserves_overlaps_lines_and_points() -> None:
         box(100, 100, 101, 101),
     ]
     index = ConstraintIndex(
-        [(feature("existing_green", geometry, str(item)), geometry)
-         for item, geometry in enumerate(geometries)]
+        [
+            (feature("existing_green", geometry, str(item)), geometry)
+            for item, geometry in enumerate(geometries)
+        ]
     )
 
     result = index.union(box(-1, -1, 102, 102))
@@ -239,9 +241,7 @@ def test_disjoint_subset_union_preserves_overlaps_lines_and_points() -> None:
     assert result.equals(unary_union(geometries))
 
     buffered = index.buffered_union(box(-1, -1, 102, 102), 1.5)
-    baseline = unary_union(geometries).intersection(
-        box(-1, -1, 102, 102)
-    ).buffer(1.5)
+    baseline = unary_union(geometries).intersection(box(-1, -1, 102, 102)).buffer(1.5)
     assert buffered is not None
     assert buffered.symmetric_difference(baseline).area < 1e-8
     assert buffered.hausdorff_distance(baseline) < 1e-8

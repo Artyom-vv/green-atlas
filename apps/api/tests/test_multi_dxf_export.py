@@ -4,7 +4,7 @@ from io import StringIO
 import ezdxf
 import pytest
 
-from app.dxf_import.encoding import decode_text_dxf
+from app.dxf_import.legacy.encoding import decode_text_dxf
 from app.exporting.adapters import DxfRoundTripWriter
 from app.planning.contracts import Plan
 from app.projects.contracts import Project

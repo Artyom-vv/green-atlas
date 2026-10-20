@@ -26,6 +26,7 @@ export interface SceneReviewOptions {
   active?: boolean;
   loading?: boolean;
   error?: string;
+  onRetryScene?: () => void;
   onHorizon: (horizon: number) => void;
   onSelect: (objectId: string) => void;
   onMoveTarget?: (coordinate: [number, number]) => void;

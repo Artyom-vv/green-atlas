@@ -1,4 +1,9 @@
-import type { Layer, LayerKind, LayerMapping, LayerRecognition } from '@green/api-client';
+import type {
+  Layer,
+  LayerKind,
+  LayerMapping,
+  LayerRecognition,
+} from '@green/api-client';
 import { Button, Combobox, Disclosure, Select } from '@green/ui';
 import {
   changeLayerRole,
@@ -15,44 +20,66 @@ interface Props {
   onChange: (next: LayerMapping) => void;
 }
 
-export function LayerRoleFields({ layer, mapping, recognition, onChange }: Props) {
+export function LayerRoleFields({
+  layer,
+  mapping,
+  recognition,
+  onChange,
+}: Props) {
   const categories = recognition?.categories ?? [];
-  const proposal = recognition?.proposals.find((item) => item.layer_id === layer.id);
-  const suggested = categories.find((item) => item.category === proposal?.category);
-  const selected = categories.find((item) => item.category === mapping.category);
-  const descriptive = selected?.kind === null
-    ? selected
-    : suggested?.kind === null
-      ? suggested
-      : undefined;
+  const proposal = recognition?.proposals.find(
+    (item) => item.layer_id === layer.id,
+  );
+  const suggested = categories.find(
+    (item) => item.category === proposal?.category,
+  );
+  const selected = categories.find(
+    (item) => item.category === mapping.category,
+  );
+  const descriptive =
+    selected?.kind === null
+      ? selected
+      : suggested?.kind === null
+        ? suggested
+        : undefined;
   const pending = mapping.confirmed === false;
   const legacyBoundaryChoice =
     layer.suggested_kind === 'site_border' && !layer.boundary_candidate;
   const suggestedRole =
-    suggested?.kind && suggested.kind !== 'site_border' && proposal?.confidence !== 'low'
+    suggested?.kind &&
+    suggested.kind !== 'site_border' &&
+    proposal?.confidence !== 'low'
       ? suggested.kind
       : proposal?.calculation_role &&
           proposal.calculation_role !== 'ignore' &&
           proposal?.calculation_role !== 'site_border' &&
           proposal?.confidence !== 'low'
         ? proposal?.calculation_role
-        : !suggested && mapping.kind !== 'ignore' && mapping.kind !== 'site_border'
+        : !suggested &&
+            mapping.kind !== 'ignore' &&
+            mapping.kind !== 'site_border'
           ? mapping.kind
           : null;
-  const roleChoices = Array.from(new Set([
-    ...(suggestedRole ? [suggestedRole] : []),
-    ...(proposal?.review_roles ?? []),
-  ])).filter((kind): kind is LayerKind =>
-    kind !== 'site_border' && kind !== 'ignore',
-  ).slice(0, 3);
+  const roleChoices = Array.from(
+    new Set([
+      ...(suggestedRole ? [suggestedRole] : []),
+      ...(proposal?.review_roles ?? []),
+    ]),
+  )
+    .filter(
+      (kind): kind is LayerKind => kind !== 'site_border' && kind !== 'ignore',
+    )
+    .slice(0, 3);
   const chooseRole = (kind: LayerKind, category?: typeof mapping.category) => {
     if (kind === 'site_border' && !legacyBoundaryChoice) return;
-    const candidate = category === undefined
-      ? (descriptive ?? selected ?? suggested)
-      : categories.find((item) => item.category === category);
-    const matchingCategory = candidate?.kind === null || candidate?.kind === kind
-      ? candidate.category
-      : null;
+    const candidate =
+      category === undefined
+        ? (descriptive ?? selected ?? suggested)
+        : categories.find((item) => item.category === category);
+    const matchingCategory =
+      candidate?.kind === null || candidate?.kind === kind
+        ? candidate.category
+        : null;
     onChange(changeLayerRole(mapping, kind, matchingCategory));
   };
   const currentLabel = LAYER_KIND_LABELS[mapping.kind];
@@ -64,15 +91,17 @@ export function LayerRoleFields({ layer, mapping, recognition, onChange }: Props
           <div className="font-medium text-neutral-800">
             {descriptive
               ? 'Как учитывать весь слой при размещении посадок?'
-              : proposal?.review_question ??
-              (suggested?.kind === 'site_border'
-                ? 'Какой контур задаёт территорию расчёта?'
-                : suggested
-                  ? `Как учитывать слой «${suggested.label}»?`
-                  : 'Что находится на этом слое?')}
+              : (proposal?.review_question ??
+                (suggested?.kind === 'site_border'
+                  ? 'Какой контур задаёт территорию расчёта?'
+                  : suggested
+                    ? `Как учитывать слой «${suggested.label}»?`
+                    : 'Что находится на этом слое?'))}
           </div>
           {suggested && (
-            <div className="text-neutral-600">На чертеже: {selected?.label ?? suggested.label}</div>
+            <div className="text-neutral-600">
+              На чертеже: {selected?.label ?? suggested.label}
+            </div>
           )}
           {descriptive && (
             <p role="status" className="m-0 text-xs leading-5 text-amber-800">
@@ -83,7 +112,7 @@ export function LayerRoleFields({ layer, mapping, recognition, onChange }: Props
           )}
           {suggested?.kind === 'site_border' ? (
             <p className="m-0 text-neutral-600">
-              Выберите контур в разделе «Территория»
+              Выберите контур в разделе «Геометрия»
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -128,7 +157,9 @@ export function LayerRoleFields({ layer, mapping, recognition, onChange }: Props
       >
         <div className="grid gap-3 border-0 border-t border-solid border-neutral-200 pt-3">
           <label className="grid gap-1">
-            <span className="text-xs font-medium text-neutral-700">Как учитывать все объекты слоя</span>
+            <span className="text-xs font-medium text-neutral-700">
+              Как учитывать все объекты слоя
+            </span>
             <Select
               aria-label={`Участие в расчёте ${layer.source_name}`}
               value={pending ? 'unassigned' : mapping.kind}
@@ -137,12 +168,20 @@ export function LayerRoleFields({ layer, mapping, recognition, onChange }: Props
                 if (kind) chooseRole(kind);
               }}
             >
-              <option value="unassigned" disabled>Назначение не определено</option>
+              <option value="unassigned" disabled>
+                Назначение не определено
+              </option>
               {(mapping.kind === 'site_border' || legacyBoundaryChoice) && (
-                <option value="site_border" disabled={!legacyBoundaryChoice}>Граница участка</option>
+                <option value="site_border" disabled={!legacyBoundaryChoice}>
+                  Граница участка
+                </option>
               )}
-              {LAYER_KIND_OPTIONS.filter((item) => item.value !== 'site_border').map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
+              {LAYER_KIND_OPTIONS.filter(
+                (item) => item.value !== 'site_border',
+              ).map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
               ))}
             </Select>
             <span className="text-xs leading-5 text-neutral-600">
@@ -153,7 +192,9 @@ export function LayerRoleFields({ layer, mapping, recognition, onChange }: Props
           {categories.length > 0 ? (
             <Disclosure variant="plain" title="Исправить распознанный тип">
               <div className="grid gap-1">
-                <span className="text-xs font-medium text-neutral-700">Что показано на чертеже</span>
+                <span className="text-xs font-medium text-neutral-700">
+                  Что показано на чертеже
+                </span>
                 <Combobox
                   aria-label={`Найти тип объектов ${layer.source_name}`}
                   placeholder="Найти тип в классификаторе"
@@ -168,15 +209,22 @@ export function LayerRoleFields({ layer, mapping, recognition, onChange }: Props
                         : 'Только описание, не завершает проверку',
                     }))}
                   onChange={(value) => {
-                    const item = categories.find((candidate) => candidate.category === value);
+                    const item = categories.find(
+                      (candidate) => candidate.category === value,
+                    );
                     if (!item) return;
                     if (item.kind === null)
-                      onChange({ ...mapping, category: item.category, confirmed: false });
+                      onChange({
+                        ...mapping,
+                        category: item.category,
+                        confirmed: false,
+                      });
                     else chooseRole(item.kind, item.category);
                   }}
                 />
                 <span className="text-xs leading-5 text-neutral-600">
-                  Описание помогает понять слой, но без расчётной роли не снимает проверку
+                  Описание помогает понять слой, но без расчётной роли не
+                  снимает проверку
                 </span>
               </div>
             </Disclosure>

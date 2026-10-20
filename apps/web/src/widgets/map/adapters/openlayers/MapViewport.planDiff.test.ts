@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import VectorSource from 'ol/source/Vector';
 import Circle from 'ol/geom/Circle';
 import type { PlanObject } from '@green/api-client';
-import { syncPlanFeatures } from '@/widgets/map/adapters/openlayers/planFeatures';
+import { syncPlanFeatures } from '@/widgets/map/adapters/openlayers/overlays/planFeatures';
 
 const object = (id: string, x: number): PlanObject => ({
   id,

@@ -7,7 +7,15 @@ import {
   useState,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Plan, Project } from '@green/api-client';
+import {
+  isUnsentLocalRequest,
+  type Plan,
+  type Project,
+} from '@green/api-client';
+import {
+  acknowledgeProjectWrite,
+  validateAcknowledgedProjectRead,
+} from '@/entities/project/model/acknowledgedRead';
 import { deleteSelection, readDeletionProject } from '../api/deleteSelection';
 import {
   captureDeletion,
@@ -47,6 +55,7 @@ interface DeleteAttempt {
   writeError?: unknown;
   notified: boolean;
   reading: boolean;
+  sent: boolean;
   onCommitted: DeleteSelectionOptions['onCommitted'];
   refresh: DeleteSelectionOptions['refresh'];
 }
@@ -109,7 +118,11 @@ export function useDeleteSelection(options: DeleteSelectionOptions) {
       };
       publishState({ ...state, phase: 'refreshing' });
       try {
-        const actual = await readDeletionProject(projectId);
+        const actual = validateAcknowledgedProjectRead(
+          client,
+          projectId,
+          await readDeletionProject(projectId),
+        );
         validateDeletionRead(actual, attempt.context, attempt.receipt);
         const cached = client.getQueryData<Project>([
           'workspace-project',
@@ -169,6 +182,7 @@ export function useDeleteSelection(options: DeleteSelectionOptions) {
         submittedAt: Date.now(),
         notified: false,
         reading: false,
+        sent: false,
         onCommitted: captured.onCommitted,
         refresh: captured.refresh,
       };
@@ -190,6 +204,7 @@ export function useDeleteSelection(options: DeleteSelectionOptions) {
         phase: 'writing',
         submittedAt: attempt.submittedAt,
       });
+      attempt.sent = true;
       void deleteSelection(context).then(
         async (receipt) => {
           if (
@@ -199,10 +214,16 @@ export function useDeleteSelection(options: DeleteSelectionOptions) {
             attempt.writeError = new Error(
               'Не удалось подтвердить удаление. Проверяем актуальный проект.',
             );
-          else attempt.receipt = receipt;
+          else {
+            attempt.receipt = receipt;
+            acknowledgeProjectWrite(client, context.projectId, {
+              planVersion: receipt.version,
+            });
+          }
           await synchronize(attempt);
         },
         async (error) => {
+          if (isUnsentLocalRequest(error)) attempt.sent = false;
           attempt.writeError = error;
           await synchronize(attempt);
         },
@@ -237,6 +258,18 @@ export function useDeleteSelection(options: DeleteSelectionOptions) {
   const isPending =
     visible.phase === 'writing' || visible.phase === 'refreshing';
   return {
+    writeOutcome:
+      visible.phase === 'writing'
+        ? ('writing' as const)
+        : visible.phase === 'idle'
+          ? ('idle' as const)
+          : attempts.current.get(options.projectId)?.receipt
+            ? ('confirmed' as const)
+            : attempts.current.get(options.projectId)?.sent
+              ? ('unknown' as const)
+              : ('idle' as const),
+    readRecovery:
+      visible.phase === 'refreshing' || visible.phase === 'recovery',
     ...visible,
     mutate,
     reset,
@@ -245,8 +278,9 @@ export function useDeleteSelection(options: DeleteSelectionOptions) {
     recovery:
       visible.phase === 'recovery'
         ? {
-            message:
-              'Удаление отправлено. Перечитайте проект, прежде чем продолжить работу.',
+            message: attempts.current.get(options.projectId)?.sent
+              ? 'Удаление отправлено. Перечитайте проект, прежде чем продолжить работу.'
+              : 'Удаление не отправлено. Перечитайте проект, прежде чем продолжить работу.',
             loading: false,
             onRetry: retryRefresh,
           }

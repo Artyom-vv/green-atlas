@@ -1,1 +1,1 @@
-"""Server-side, allowlisted CAD package inspection."""
+"""Серверная проверка сохранённых CAD-комплектов в явно разрешённых каталогах."""

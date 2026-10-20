@@ -15,7 +15,7 @@ from ezdxf.lldxf.tagwriter import TagCollector
 from ezdxf.lldxf.tagger import ascii_tags_loader
 import httpx
 from ezdxf.entities.acis import Body
-from app.dxf_import.acis_lookup import indexed_acis_lookup
+from app.dxf_import.legacy.entities.acis_lookup import indexed_acis_lookup
 
 
 def inventory(path):

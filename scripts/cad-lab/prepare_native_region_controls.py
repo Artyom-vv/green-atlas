@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 import ezdxf
-from app.dxf_import.acis_lookup import indexed_acis_lookup
+from app.dxf_import.legacy.entities.acis_lookup import indexed_acis_lookup
 
 
 def prepare(source: Path, output: Path, handles: list[str], combined: bool = False):

@@ -117,7 +117,7 @@ it('shows individual plantings by species and limits a large list without hiding
     screen.getAllByRole('button', { name: /^Выбрать посадку №/ }),
   ).toHaveLength(50);
   expect(screen.getByText('Показано 50 из 61 посадок')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Все посадки (61)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Все посадки' }));
   expect(props.onManagePlantings).toHaveBeenCalledOnce();
 });
 
@@ -127,9 +127,7 @@ it('respects planting and zone-selection restrictions independently', () => {
   expect(
     screen.getByRole('button', { name: 'Выбрать посадку № 1: Липа' }),
   ).toBeDisabled();
-  expect(
-    screen.getByRole('button', { name: 'Все посадки (6)' }),
-  ).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Все посадки' })).toBeDisabled();
   expect(
     screen.getByRole('button', { name: 'Управление рабочими участками' }),
   ).toBeDisabled();
@@ -160,6 +158,23 @@ it('opens source settings without changing either selection', () => {
   expect(props.onZonesChange).not.toHaveBeenCalled();
 });
 
+it('uses group totals for an empty project and retains its management actions', () => {
+  const props = treeProps({ zones: [], objects: [] });
+  render(<WorkspaceExplorer {...props} />);
+  expect(
+    screen.getByRole('button', { name: 'Рабочие участки 0' }),
+  ).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Посадки 0' })).toBeVisible();
+  expect(screen.queryByText('Рабочие участки ещё не созданы')).toBeNull();
+  expect(screen.queryByText('Посадок пока нет')).toBeNull();
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Управление рабочими участками' }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Все посадки' }));
+  expect(props.onManageZones).toHaveBeenCalledOnce();
+  expect(props.onManagePlantings).toHaveBeenCalledOnce();
+});
+
 it('keeps explorer navigation and layer input when its dock is collapsed and resized', () => {
   const props = treeProps({
     layers: (
@@ -180,7 +195,6 @@ it('keeps explorer navigation and layer input when its dock is collapsed and res
       rightOpen={false}
       inspector={null}
       tool={null}
-      assistant={null}
       results={{ checks: null, schedule: null, history: null }}
     />,
   );

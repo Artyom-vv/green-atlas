@@ -1,8 +1,17 @@
+/** Прогноз посадок: общий диапазон лет и интерполяция данных каталога для просмотра. */
 import type { GrowthEnvelopeForecast } from '@green/api-client';
 
 export const GROWTH_HORIZON_MIN = 0;
 export const GROWTH_HORIZON_MAX = 40;
 export const GROWTH_HORIZON_STEP = 1;
+
+const yearFormat = new Intl.NumberFormat('ru-RU', {
+  style: 'unit',
+  unit: 'year',
+  unitDisplay: 'long',
+});
+export const growthHorizonLabel = (year: number) =>
+  year === 0 ? 'Сейчас' : yearFormat.format(year);
 
 export function normalizeGrowthHorizon(
   value: number | undefined,
@@ -14,14 +23,27 @@ export function normalizeGrowthHorizon(
   );
 }
 
+/** Рабочий охват использует верхнюю границу кроны и нижнюю границу корней. */
+export function workingEnvelopeRadius(
+  kind: 'canopy' | 'roots',
+  forecast?: Partial<
+    Pick<GrowthEnvelopeForecast, 'radius_min_m' | 'radius_max_m'>
+  >,
+): number | undefined {
+  const radius =
+    kind === 'roots' ? forecast?.radius_min_m : forecast?.radius_max_m;
+  return radius !== undefined && Number.isFinite(radius) && radius >= 0
+    ? radius
+    : undefined;
+}
+
 export function forecastAt(
   items: GrowthEnvelopeForecast[] | undefined,
   year: number,
 ): GrowthEnvelopeForecast | undefined {
   if (!items?.length || !Number.isFinite(year)) return undefined;
   const sorted = [...items].sort((a, b) => a.horizon_year - b.horizon_year);
-  // A nearest-anchor fallback would make the UI look precise when the
-  // catalogue has no evidence for that horizon. Keep the gap explicit.
+  // За пределами известных лет каталог не даёт основания для интерполяции.
   if (
     year < sorted[0].horizon_year ||
     year > sorted[sorted.length - 1].horizon_year

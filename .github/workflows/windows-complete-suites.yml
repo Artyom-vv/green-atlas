@@ -1,0 +1,131 @@
+name: Complete Windows API and Web suites
+
+on:
+  push:
+    branches: [codex/windows-complete-suites]
+    paths: [.github/workflows/windows-complete-suites.yml, apps/api/**, apps/web/**, packages/**]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-complete-suites-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    if: github.repository == 'Artyom-vv/green-atlas-dev'
+    name: API (${{ matrix.shard }})
+    runs-on: windows-2022
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Prepare locked API dependencies
+        run: |
+          . ./scripts/windows-env.ps1
+          $inputs = Get-Content tools/autocad-bridge/windows-ci-inputs.json -Raw | ConvertFrom-Json
+          $python = (Get-Command python).Source
+          & $python -m pip install --disable-pip-version-check ('uv==' + $inputs.uv)
+          if ($LASTEXITCODE -ne 0) { throw 'uv installation failed' }
+          $env:UV_PYTHON_DOWNLOADS = 'never'
+          . ./scripts/windows-env.ps1
+          & $python -m uv sync --project apps/api --locked --group dev --python $python
+          if ($LASTEXITCODE -ne 0) { throw 'Locked API dependencies failed' }
+          . ./scripts/windows-env.ps1
+          & $python -m uv pip install --python apps/api/.venv/Scripts/python.exe -r tools/autocad-bridge/desktop/build-requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned build-test dependencies failed' }
+      - name: Run every assigned API module
+        timeout-minutes: 25
+        run: |
+          . ./scripts/windows-env.ps1
+          $env:PYTHONUTF8 = '1'
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'apps/api'
+          $output = Join-Path $env:GITHUB_WORKSPACE '.runtime/complete-windows-api'
+          New-Item -ItemType Directory -Path $output | Out-Null
+          $all = @(Get-ChildItem apps/api/tests -Recurse -File | Where-Object { $_.Name -like 'test_*.py' -or $_.Name -like '*_test.py' } | Sort-Object FullName)
+          $selected = @(for ($index = 0; $index -lt $all.Count; $index++) {
+            if ($index % 4 -eq ${{ matrix.shard }} - 1) { [IO.Path]::GetRelativePath($env:GITHUB_WORKSPACE, $all[$index].FullName).Replace([char]92, [char]47) }
+          })
+          if (-not $selected.Count) { throw 'Empty API shard' }
+          $selection = [ordered]@{ source_commit = $env:GITHUB_SHA; shard = ${{ matrix.shard }}; shard_count = 4; total_modules = $all.Count; selected_modules = $selected }
+          $selection | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $output 'selection.json') -Encoding utf8
+          Write-Host ('GA_ALL_API_SELECTION ' + ($selection | ConvertTo-Json -Compress -Depth 4))
+          . ./scripts/windows-env.ps1
+          & ./apps/api/.venv/Scripts/python.exe -m pytest -o addopts= -q -rs -p no:cacheprovider --timeout=90 --tb=short --basetemp (Join-Path $output 'pytest') --junitxml (Join-Path $output 'results.xml') @selected
+          if ($LASTEXITCODE -ne 0) { throw 'Complete Windows API shard failed' }
+      - name: Preserve selected modules and JUnit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: complete-windows-api-${{ github.sha }}-${{ matrix.shard }}
+          path: |
+            .runtime/complete-windows-api/selection.json
+            .runtime/complete-windows-api/results.xml
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: warn
+
+  web:
+    if: github.repository == 'Artyom-vv/green-atlas-dev'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          architecture: x64
+      - name: Prepare locked workspace dependencies
+        run: |
+          . ./scripts/windows-env.ps1
+          $product = Get-Content tools/autocad-bridge/windows-product-inputs.json -Raw | ConvertFrom-Json
+          $nodeTools = Join-Path $env:GITHUB_WORKSPACE '.runtime/tools/node'
+          & npm install --prefix $nodeTools --no-audit --no-fund ('pnpm@' + $product.pnpm)
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned pnpm installation failed' }
+          $bin = Join-Path $nodeTools 'node_modules/.bin'
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PATH = $bin + [IO.Path]::PathSeparator + $env:PATH
+          . ./scripts/windows-env.ps1
+          & pnpm install --frozen-lockfile --store-dir (Join-Path $env:GITHUB_WORKSPACE '.runtime/cache/pnpm-store')
+          if ($LASTEXITCODE -ne 0) { throw 'Locked workspace dependencies failed' }
+      - name: Run complete API client and Web suites
+        timeout-minutes: 15
+        run: |
+          . ./scripts/windows-env.ps1
+          & pnpm --filter @green/api-client test
+          if ($LASTEXITCODE -ne 0) { throw 'API client suite failed' }
+          . ./scripts/windows-env.ps1
+          $output = Join-Path $env:GITHUB_WORKSPACE '.runtime/complete-windows-web'
+          New-Item -ItemType Directory -Path $output | Out-Null
+          $junit = Join-Path $output 'results.xml'
+          & pnpm --filter @green/web exec vitest run --reporter=default --reporter=junit "--outputFile=$junit"
+          if ($LASTEXITCODE -ne 0) { throw 'Complete Windows Web suite failed' }
+      - name: Preserve Web JUnit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: complete-windows-web-${{ github.sha }}
+          path: .runtime/complete-windows-web/
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: warn

@@ -1,5 +1,6 @@
 """Integration seams with a deterministic measurement stub, not CAD acceptance."""
 
+from itertools import count
 from types import SimpleNamespace
 
 import pytest
@@ -7,13 +8,14 @@ from test_native_live_client import session
 
 from app.composition import create_runtime
 from app.dxf_import.contracts import NativeAreaProposalReview, SourceFile
-from app.dxf_import.layer_contracts import Layer, LayerKind
+from app.dxf_import.layers.contracts import Layer, LayerKind
 from app.geometry.contracts import GeometrySnapshot
-from app.geometry.utility_contracts import UtilityContext
+from app.geometry.networks.utility_contracts import UtilityContext
 from app.native_query.contracts import NativeObjectMeasurement, NativePointMeasurement
-from app.native_query.live_inventory import LiveInventory, query_objects
-from app.native_query.live_provider import LiveNativeGeometryEngine
-from app.planning.change_contracts import PlanChangeSetApplyRequest, PlanChangeSetDraft
+from app.native_query.live.live_inventory import LiveInventory, query_objects
+from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+from app.operations.progress import OperationCancelled
+from app.planning.changes.contracts import PlanChangeSetApplyRequest, PlanChangeSetDraft
 from app.planning.contracts import PlacementCheckRequest, Plan
 from app.planting_zones.contracts import PlantingZoneAssignment
 from app.projects.contracts import Project
@@ -82,7 +84,9 @@ class StubNative:
                     layer={"AA": "Граница", "BB": "Здания", "CC": "Дорога"}[
                         target.route
                     ],
-                    capability="area" if target.capability == "closed_area" else target.capability,
+                    capability="area"
+                    if target.capability == "closed_area"
+                    else target.capability,
                     interior_known=target.capability in {"area", "closed_area"},
                     preparation_error="",
                     prepare_ms=1,
@@ -150,21 +154,38 @@ def setup(tmp_path):
 
 
 def test_configured_review_horizon_matches_manual_and_area_checks(setup):
-    from app.native_query.domain_cells import Cell, certify_cell
+    from app.native_query.search.domain_cells import Cell, certify_cell
 
     engine, _, project = setup
     project.layers[1].mapping_confirmed = False
     engine.prepare_positions(project, [(11, 0), (13, 0)], reach_m=5)
-    assert engine.placement_advisory_detail(project, 11, 0, .5).code == "NATIVE_LOCAL_UNKNOWN"
-    assert engine.placement_advisory_detail(project, 13, 0, .5).code == "SOURCE_GEOMETRY_PARTIAL"
+    assert (
+        engine.placement_advisory_detail(project, 11, 0, 0.5).code
+        == "NATIVE_LOCAL_UNKNOWN"
+    )
+    assert (
+        engine.placement_advisory_detail(project, 13, 0, 0.5).code
+        == "SOURCE_GEOMETRY_PARTIAL"
+    )
     for x, state in ((11, "unknown"), (13, "available")):
-        verdict = certify_cell(Cell(x, 0, 0), engine._cache[(x, 0)][1],
-                               engine._layers, set(), 1, "shrub", .5, 0, 0, 5)
+        verdict = certify_cell(
+            Cell(x, 0, 0),
+            engine._cache[(x, 0)][1],
+            engine._layers,
+            set(),
+            1,
+            "shrub",
+            0.5,
+            0,
+            0,
+            5,
+        )
         assert verdict.state == state
 
 
 def test_manual_bulk_same_building_road_and_clear_points(setup):
     from test_hybrid_search import populate
+
     engine, client, project = setup
     populate(project)
     points = [(5.0, 0.0), (23.0, 0.0), (50.0, 0.0)]
@@ -183,6 +204,7 @@ def test_manual_bulk_same_building_road_and_clear_points(setup):
     assert len(client.calls) == 1
     domain = rectangle(-90, -80, 90, 80)
     from shapely.geometry import Point, shape
+
     safe = engine.automatic_safe_geometry(project, domain, 0.5, "shrub")
     assert shape(safe).covers(Point(50, 0))
     assert not shape(safe).covers(Point(5, 0))
@@ -195,13 +217,21 @@ def test_reviewed_closure_switches_native_request_and_invalidates_cached_answers
     engine.prepare_positions(project, point)
 
     def building_capability():
-        return next(target.capability for target in client.calls[-1].targets if target.route == "BB")
+        return next(
+            target.capability
+            for target in client.calls[-1].targets
+            if target.route == "BB"
+        )
 
     assert building_capability() == "area"
     review = NativeAreaProposalReview(
-        id="area-proposal/BB", source={"handle": "BB", "instance_chain": []},
-        layer="Здания", source_path_content_sha256="a" * 64,
-        proposal_sha256="b" * 64, closure_gap_m=0.01, area_m2=200,
+        id="area-proposal/BB",
+        source={"handle": "BB", "instance_chain": []},
+        layer="Здания",
+        source_path_content_sha256="a" * 64,
+        proposal_sha256="b" * 64,
+        closure_gap_m=0.01,
+        area_m2=200,
         decision="accepted",
     )
     project.source_file.native_area_proposals.append(review)
@@ -245,7 +275,7 @@ def test_missing_shrub_rule_does_not_invalidate_confirmed_tree_rule(setup):
     )
     shrub = engine.placement_advisory_detail(project, 28, 0, 0.5, "shrub")
     assert shrub.code == "SOURCE_GEOMETRY_PARTIAL"
-    assert engine.position_violation(project, 26, 0, .5, "shrub").required == 2
+    assert engine.position_violation(project, 26, 0, 0.5, "shrub").required == 2
     assert engine.future_growth_advisory_detail(project, 28, 0, 1, 1, "tree") is None
     assert engine.future_growth_advisory_detail(project, 28, 0, 1, 1, "shrub") is None
 
@@ -268,7 +298,7 @@ def test_unconfirmed_network_is_measured_with_project_distance(setup, kind):
     project.layers[2].mapped_kind = LayerKind.UTILITY
     advisory = engine.placement_advisory_detail(project, 28, 0, 0.5, kind)
     assert advisory.code == "SOURCE_GEOMETRY_PARTIAL"
-    assert engine.position_violation(project, 26, 0, .5, kind).required == 2
+    assert engine.position_violation(project, 26, 0, 0.5, kind).required == 2
     assert project.layers[2].utility_context is None
 
 
@@ -527,3 +557,489 @@ def test_existing_service_preview_save_reopen_and_stale_apply(tmp_path, setup):
         ] == [(50, 0), (60, 0)]
     finally:
         reloaded.close()
+
+
+def test_mixed_zero_role_survives_cold_snapshot_and_preserves_unknown_neighbor(
+    setup: tuple[LiveNativeGeometryEngine, StubNative, Project],
+    tmp_path,
+) -> None:
+    from unittest.mock import Mock
+
+    from test_hybrid_search import populate
+
+    from app.dxf_import.layers.categories import LayerCategory
+    from app.dxf_import.review.contracts import SourceObjectDecision
+    from app.native_query.measurement.prepared_provider import PreparedGeometryEngine
+    from app.native_query.preparation.prepared_snapshot import (
+        PreparedStore,
+        prepare_snapshot,
+    )
+
+    live, client, project = setup
+    populate(project)
+    assert project.source_file is not None and project.geometry is not None
+    zero = project.layers[1]
+    zero.source_name = "0"
+    zero.category = LayerCategory.MIXED_SOURCE
+    zero.mapped_kind, zero.mapping_confirmed, zero.object_count = None, False, 2
+    project.geometry.feature_collection["features"][1]["properties"].update(
+        source_layer="0",
+        entity_type="HATCH",
+    )
+    inventory = live.inventory.objects
+    live.inventory = live.inventory.model_copy(
+        update={
+            "objects": (
+                inventory[0],
+                inventory[1].model_copy(
+                    update={"layer": "0", "curve": False, "entity_type": "AcDbHatch"}
+                ),
+                inventory[2],
+                inventory[1].model_copy(
+                    update={
+                        "route": "DD",
+                        "layer": "0",
+                        "curve": False,
+                        "entity_type": "AcDbBlockReference",
+                        "bounds": (50, -1, 52, 1),
+                        "error": "unreadable native INSERT",
+                    }
+                ),
+            )
+        }
+    )
+    project.source_file.object_decisions = [
+        SourceObjectDecision(
+            source={"handle": "BB", "instance_chain": []},
+            geometry_sha256="a" * 64,
+            interpretation="area",
+            kind="building",
+        )
+    ]
+    original = project.model_dump()
+    snapshot = prepare_snapshot(live, project)
+    store = PreparedStore(tmp_path / "object-roles")
+    store.save(snapshot)
+    stored = store.load(snapshot.key)
+    assert stored is not None
+    local = PreparedGeometryEngine(stored, project)
+    client.inspect = Mock(
+        side_effect=AssertionError("Локальная проверка не обращается в CAD")
+    )
+    occupied = local.position_violation(project, 5, 0, 0.5, "shrub")
+    assert occupied is not None and occupied.code == "NATIVE_OCCUPIED"
+    assert occupied.source_layer == "0" and occupied.source_feature_ids == ("BB",)
+    unknown = local.placement_advisory_detail(project, 51, 0, 0.5, "shrub")
+    assert unknown is not None and unknown.code == "NATIVE_LOCAL_UNKNOWN"
+    assert unknown.source_layer == "0" and unknown.source_feature_ids == ("DD",)
+    coverage = local.source_coverage(project)
+    assert coverage.prepared_key == snapshot.key
+    assert set(coverage.layers) == {layer.source_name for layer in project.layers}
+    assert (
+        coverage.layers["0"].physical_count == 1
+        and coverage.layers["0"].unresolved_count == 1
+    )
+    assert coverage.layers["0"].unresolved[0].routes == ["DD"]
+    evidence = local.explain_position(project, 5, 0, 0.5, "shrub")
+    assert any(
+        cause.source_layer == "0" and cause.source_feature_ids == ["BB"]
+        for cause in evidence.causes
+    )
+    assert project.model_dump() == original
+    client.inspect.assert_not_called()
+    reference = project.source_file.object_decisions[0].model_copy(
+        update={"interpretation": "reference", "kind": None}
+    )
+    project.source_file.object_decisions = [reference]
+    client.inspect = Mock()
+    contextual = PreparedGeometryEngine(prepare_snapshot(live, project), project)
+    assert not any(item.routes == ("BB",) for item in contextual._objects)
+    assert contextual.source_coverage(project).layers["0"].context_count == 1
+    assert any(item.routes == ("DD",) for item in contextual._objects)
+
+
+@pytest.mark.parametrize(
+    "recipe,readable,used,expected_use",
+    [
+        (False, True, False, "unresolved"),
+        (True, False, False, "unresolved"),
+        (True, True, False, "context"),
+        (True, True, True, "topology"),
+    ],
+)
+def test_boundary_participation_requires_recipe_and_actual_native_evidence(
+    setup: tuple[LiveNativeGeometryEngine, StubNative, Project],
+    recipe: bool,
+    readable: bool,
+    used: bool,
+    expected_use: str,
+) -> None:
+    from test_hybrid_search import feature, populate
+
+    from app.dxf_import.layers.categories import LayerCategory
+    from app.native_query.measurement.prepared_provider import PreparedGeometryEngine
+    from app.native_query.preparation.face_contracts import TopologyRecipe
+    from app.native_query.preparation.prepared_snapshot import prepare_snapshot
+
+    live, _, project = setup
+    populate(project)
+    assert project.source_file is not None and project.geometry is not None
+    name = "Граница растительности и грунта"
+    project.layers.append(
+        Layer(
+            id="boundary-support",
+            source_name=name,
+            suggested_kind=LayerKind.IGNORE,
+            mapped_kind=LayerKind.IGNORE,
+            mapping_confirmed=False,
+            category=LayerCategory.SURFACE_BOUNDARY,
+            color="#777777",
+            object_count=1,
+        )
+    )
+    live.inventory = live.inventory.model_copy(
+        update={
+            "objects": (
+                *live.inventory.objects,
+                live.inventory.objects[1].model_copy(
+                    update={
+                        "route": "DD",
+                        "layer": name,
+                        "bounds": (-80, -80, 80, 80),
+                        "error": "" if readable else "unreadable native curve",
+                    }
+                ),
+            )
+        }
+    )
+    project.geometry.feature_collection["features"].append(
+        feature(
+            "DD",
+            name,
+            {"type": "LineString", "coordinates": [[-80, -80], [80, 80]]},
+        )
+    )
+    if recipe:
+        project.source_file.preparation_recipe = TopologyRecipe(
+            source_sha256=project.source_file.content_sha256,
+            companion_layers=(name,),
+        )
+    if used:
+        data = live.inventory.model_dump(by_alias=True)
+        data.update(
+            face_policy="native-planar-faces/2",
+            companion_layers=(name,),
+            faces=[
+                {
+                    "id": 1,
+                    "anchor": "BB",
+                    "layer": "Здания",
+                    "routes": ["BB", "DD"],
+                    "physical_routes": ["BB"],
+                    "area": 200,
+                    "bounds": [0, -10, 10, 10],
+                    "display": [
+                        [0, -10, 0],
+                        [10, -10, 0],
+                        [10, 10, 0],
+                        [0, 10, 0],
+                        [0, -10, 0],
+                    ],
+                    "sampling_tolerance_units": 0,
+                }
+            ],
+        )
+        live.inventory = LiveInventory.model_validate(data)
+    snapshot = prepare_snapshot(live, project)
+    record = next(
+        record for record in snapshot.records if record.item.routes == ("DD",)
+    )
+    assert record.participation is not None and record.participation.use == expected_use
+    local = PreparedGeometryEngine(snapshot, project)
+    assert any(item.routes == ("DD",) for item in local._source_objects)
+    assert any(item.routes == ("DD",) for item in local._objects) == (
+        expected_use == "unresolved"
+    )
+    advice = local.placement_advisory_detail(project, 50, 0, 0.5, "shrub")
+    assert advice is not None and advice.code == (
+        "NATIVE_LOCAL_UNKNOWN"
+        if expected_use == "unresolved"
+        else "SOURCE_GEOMETRY_PARTIAL"
+    )
+    coverage = local.source_coverage(project).layers[name]
+    assert coverage.topology_count == int(used)
+    assert coverage.context_count == int(expected_use == "context")
+    assert coverage.unresolved_count == int(expected_use == "unresolved")
+    assert coverage.physical_count == 0
+    assert (
+        not project.layers[-1].mapping_confirmed
+        and project.layers[-1].mapped_kind == "ignore"
+    )
+
+
+@pytest.mark.parametrize("flag", ["prepared_topology", "prepared_boundary"])
+def test_boundary_use_proof_requires_current_prepared_key(flag: str) -> None:
+    from pydantic import ValidationError
+
+    from app.native_query.policy.source_participation import classify_source_use
+
+    args = {flag: True}
+    with pytest.raises(ValidationError):
+        classify_source_use(
+            None,
+            source_sha256="a" * 64,
+            prepared_key=None,
+            source_layer="Граница улицы",
+            **args,
+        )
+    use = classify_source_use(
+        None,
+        source_sha256="a" * 64,
+        prepared_key="b" * 64,
+        source_layer="Граница улицы",
+        **args,
+    )
+    assert use.current("a" * 64, "b" * 64)
+    assert not use.current("c" * 64, "b" * 64)
+    assert not use.current("a" * 64, "c" * 64)
+
+
+def test_object_role_materializer_never_declares_open_line_a_closed_area() -> None:
+    from app.dxf_import.review.contracts import SourceObjectDecision
+    from app.native_query.live.live_inventory import QueryObject
+    from app.native_query.policy.source_participation import (
+        classify_source_use,
+        materialize_source_roles,
+        source_object_key,
+    )
+
+    source = Layer(
+        id="zero",
+        source_name="0",
+        suggested_kind="ignore",
+        mapped_kind=None,
+        mapping_confirmed=False,
+        object_count=2,
+        color="#333333",
+    )
+    item = QueryObject(
+        routes=("CA/A1",), layer="0", curve=True, error="", bounds=(0, 0, 10, 0)
+    )
+    decision = SourceObjectDecision(
+        source={"handle": "A1", "instance_chain": ["CA"]},
+        geometry_sha256="a" * 64,
+        interpretation="linear",
+        kind="building",
+    )
+    use = classify_source_use(
+        source, source_sha256="a" * 64, prepared_key="b" * 64, decision=decision
+    )
+    layers = {"0": source}
+    linear = item.model_copy(update={"reviewed_linear": True})
+    sources, calculation = materialize_source_roles(
+        (linear,), layers, {source_object_key(linear): use}
+    )
+    assert sources == calculation and calculation[0].routes == ("CA/A1",)
+    assert calculation[0].target(area=True).capability == "curve"
+    assert layers[calculation[0].layer].mapped_kind == "building"
+    assert layers[calculation[0].layer].source_name == "0"
+    assert source.mapped_kind is None and not source.mapping_confirmed
+
+
+def test_site_border_keeps_manual_and_automatic_checks_when_used_as_companion(
+    setup: tuple[LiveNativeGeometryEngine, StubNative, Project],
+    tmp_path,
+) -> None:
+    from shapely.geometry import Point, shape
+    from test_hybrid_search import populate
+
+    from app.native_query.measurement.prepared_provider import PreparedGeometryEngine
+    from app.native_query.policy.source_participation import SourceUse
+    from app.native_query.preparation.face_contracts import TopologyRecipe
+    from app.native_query.preparation.prepared_snapshot import (
+        PreparedStore,
+        prepare_snapshot,
+    )
+
+    live, _, project = setup
+    populate(project)
+    assert project.source_file is not None
+    project.source_file.preparation_recipe = TopologyRecipe(
+        source_sha256=project.source_file.content_sha256,
+        companion_layers=("Граница",),
+    )
+    snapshot = prepare_snapshot(live, project)
+    site = next(record for record in snapshot.records if record.item.routes == ("AA",))
+    assert (
+        site.participation is not None and site.participation.use == SourceUse.PHYSICAL
+    )
+    assert site.participation.kind == LayerKind.SITE_BORDER
+    store = PreparedStore(tmp_path / "site-companion")
+    store.save(snapshot)
+    stored = store.load(snapshot.key)
+    assert stored is not None
+    local = PreparedGeometryEngine(stored, project)
+    rejected = local.position_violation(project, 105, 0, 0.5, "shrub")
+    assert rejected is not None and rejected.code == "NATIVE_OUTSIDE_SITE"
+    domain = local.automatic_safe_geometry(
+        project, rectangle(-110, -5, 110, 5), 0.5, "shrub"
+    )
+    assert shape(domain).covers(Point(50, 0))
+    assert not shape(domain).covers(Point(105, 0))
+
+
+@pytest.mark.parametrize("individual_decision", [False, True])
+def test_source_participation_shares_full_values_without_losing_routes_or_proof(
+    setup: tuple[LiveNativeGeometryEngine, StubNative, Project],
+    individual_decision: bool,
+) -> None:
+    """Общий DTO экономит память, а отдельное решение сохраняет своё основание."""
+    from app.dxf_import.review.contracts import SourceObjectDecision
+    from app.native_query.policy.source_participation import (
+        SourceUseProof,
+        source_object_key,
+    )
+    from app.native_query.preparation.preparation_identity import preparation_key
+
+    live, client, project = setup
+    assert project.source_file is not None
+    data = live.inventory.model_dump(mode="json", by_alias=True)
+    data["objects"].append(source_row("DD", "Здания", [50, -10, 60, 10]))
+    live.inventory = LiveInventory.model_validate(data)
+    project.layers[1].object_count = 2
+    if individual_decision:
+        project.source_file.object_decisions = [
+            SourceObjectDecision(
+                source={"handle": "DD", "instance_chain": []},
+                geometry_sha256="a" * 64,
+                interpretation="area",
+                kind="building",
+            )
+        ]
+    before = project.model_dump(mode="json")
+    live.assert_current(project)
+    items = {item.routes: item for item in live._source_objects}
+    assert set(items) == {("AA",), ("BB",), ("CC",), ("DD",)}
+    assert set(live._source_participations) == {
+        source_object_key(item) for item in items.values()
+    }
+    key = preparation_key(project, live.session, live.linear_layers)
+    first = live.source_participation(items[("BB",)], key)
+    second = live.source_participation(items[("DD",)], key)
+    assert first.use == second.use == "physical"
+    assert first.kind == second.kind == LayerKind.BUILDING
+    assert first.source_layer == second.source_layer == "Здания"
+    assert first.current(live.session.snapshot_sha256, key)
+    assert second.current(live.session.snapshot_sha256, key)
+    if individual_decision:
+        assert second is not first
+        assert first.proof == SourceUseProof.CONFIRMED_LAYER
+        assert second.proof == SourceUseProof.OBJECT_DECISION
+    else:
+        assert second is first
+    road = live.source_participation(items[("CC",)], key)
+    assert road is not first and road.kind == LayerKind.ROAD
+    assert project.model_dump(mode="json") == before
+    assert not client.calls
+
+
+def test_source_participation_pool_does_not_bypass_invalid_role(setup) -> None:
+    """Недопустимая роль не превращается в ранее сохранённое свидетельство."""
+    from pydantic import ValidationError
+
+    live, _, project = setup
+    project.layers[1].mapped_kind = "unknown_role"
+    with pytest.warns(UserWarning, match="Pydantic serializer warnings"):
+        with pytest.raises(ValidationError):
+            live.assert_current(project)
+    assert live._source_participations == {}
+    assert live._basis_key is None
+
+
+def test_basis_progress_reports_real_scans_and_roles_once(setup, monkeypatch):
+    import app.operations.progress as operation_progress
+
+    live, _, project = setup
+    clock = count()
+    monkeypatch.setattr(operation_progress, "monotonic", lambda: next(clock))
+    events = []
+    live.assert_current(project, progress=events.append)
+    stages = [value.stage for value in events]
+    assert stages.index("Восстанавливаем области чертежа") < stages.index(
+        "Собираем объекты чертежа"
+    )
+    scan = [value for value in events if value.stage == "Проверяем объекты захвата"]
+    roles = [value for value in events if value.stage == "Проверяем роли объектов"]
+    assert [value.processed for value in scan] == list(range(4))
+    assert all(value.total == len(live.inventory.objects) for value in scan)
+    assert [value.processed for value in roles] == list(range(4))
+    assert all(value.total == len(live._source_objects) for value in roles)
+    applied = [value for value in events if value.stage == "Применяем роли объектов"]
+    assert [value.processed for value in applied] == list(range(4))
+    assert all(value.total == len(live._source_objects) for value in applied)
+    assert events[-1].stage == "Применяем роли объектов"
+    before = tuple(live._source_objects)
+    events.clear()
+    live.assert_current(project, progress=events.append)
+    assert not events
+    assert live._source_objects == before
+
+
+def test_cancelled_role_progress_does_not_publish_partial_basis(setup, monkeypatch):
+    import app.operations.progress as operation_progress
+
+    live, _, project = setup
+    clock = count()
+    monkeypatch.setattr(operation_progress, "monotonic", lambda: next(clock))
+    original = project.model_dump(mode="json")
+
+    def stop(value):
+        if value.stage == "Проверяем роли объектов" and value.processed == 1:
+            raise OperationCancelled("Остановлено пользователем")
+
+    with pytest.raises(OperationCancelled):
+        live.assert_current(project, progress=stop)
+    assert live._basis_key is None
+    assert not live._source_objects
+    assert not live._source_participations
+    assert project.model_dump(mode="json") == original
+    live.assert_current(project)
+    assert len(live._source_objects) == 3
+
+
+def test_source_preparation_defers_spatial_index_and_new_roles_invalidate_it(
+    setup, monkeypatch
+):
+    import app.native_query.measurement.live_provider as provider
+
+    live, client, project = setup
+    built = []
+    real_index = provider.NativeBoundsIndex
+
+    def build(objects, layers):
+        result = real_index(objects, layers)
+        built.append(result)
+        return result
+
+    monkeypatch.setattr(provider, "NativeBoundsIndex", build)
+    live.assert_current(project)
+    assert not built
+    assert live._bounds_index_cache is None
+
+    live.prepare_positions(project, [(11.0, 0.0)])
+    assert len(built) == 1
+    assert {target.route for call in client.calls for target in call.targets} == {
+        "AA",
+        "BB",
+    }
+    live.prepare_positions(project, [(12.0, 0.0)])
+    assert len(built) == 1
+
+    project.layers[1].mapped_kind = LayerKind.IGNORE
+    live.assert_current(project)
+    assert live._bounds_index_cache is None
+    assert len(built) == 1
+    client.calls.clear()
+    live.prepare_positions(project, [(12.0, 0.0)])
+    assert len(built) == 2
+    assert all(target.route != "BB" for call in client.calls for target in call.targets)

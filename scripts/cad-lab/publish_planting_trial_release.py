@@ -17,12 +17,12 @@ from pathlib import Path
 
 import ezdxf
 from app.composition import create_runtime
-from app.dxf_import.adapters import EzdxfReader
+from app.dxf_import.legacy.reader import EzdxfReader
 from app.dxf_import.contracts import SourceFile
-from app.dxf_import.encoding import decode_text_dxf
+from app.dxf_import.legacy.encoding import decode_text_dxf
 from app.exporting.contracts import ReleaseCreateRequest
-from app.planning.change_contracts import PlanChangeSetApplyRequest
-from app.planning.pattern_contracts import FillPatternRequest, PatternPreview
+from app.planning.changes.contracts import PlanChangeSetApplyRequest
+from app.planning.patterns.contracts import FillPatternRequest, PatternPreview
 
 
 def run(source: Path, trial: Path, output: Path, scene_horizon: int) -> None:

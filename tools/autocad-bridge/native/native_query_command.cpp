@@ -1,3 +1,4 @@
+#include "filesystem_utf8.h"
 #include "native_query_command.h"
 #include "native_query_batch.h"
 #include "native_area_group.h"
@@ -42,10 +43,10 @@ struct Request {
 };
 Request read(const std::string& path) {
     if(ga::bridge::fileSize(path)>kMaxRequestBytes) throw std::runtime_error("native query request too large");
-    std::ifstream in(path); Request r;
+    std::ifstream in(ga::bridge::nativePath(path)); Request r;
     if(line(in)!=kProtocol) throw std::runtime_error("native query protocol mismatch");
     r.output=line(in); r.id=line(in); r.sha=line(in);
-    if(r.output.front()!='/'||std::ifstream(r.output).good()||!hex(r.id,32)||!hex(r.sha,64))
+    if(!ga::bridge::nativePath(r.output).is_absolute()||std::ifstream(ga::bridge::nativePath(r.output)).good()||!hex(r.id,32)||!hex(r.sha,64))
         throw std::runtime_error("native query output/identity invalid");
     numbers(line(in),r.units);
     std::size_t objectCount=0,pointCount=0;

@@ -1,1 +1,3 @@
-"""AutoCAD native measurement boundary; no CAD parser or fallback geometry."""
+"""Граница native-измерений AutoCAD и локальной подготовки снимка без второго
+CAD-парсера.
+"""

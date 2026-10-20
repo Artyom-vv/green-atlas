@@ -42,16 +42,46 @@
   --color-error: #c83b32;
   --color-warning-soft: #fff4e6;
   --color-error-soft: #fff0ef;
+  --color-map-building: #66758a;
+  --color-map-road: #8b939d;
+  --color-map-utility: #4279b8;
+  --color-map-existing-green: #4b9276;
+  --color-map-lawn: #77ac85;
+  --color-map-restricted: #997549;
   --z-index-menu: 120;
   --z-index-dialog: 100;
   --z-index-tooltip: 140;
   --font-sans: 'Onest', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
   --spacing: 4px;
+  --spacing-section-row: 56px;
+  --spacing-overlay-gutter: 24px;
+  --spacing-overlay-available-height: calc(
+    100dvh - var(--spacing-overlay-gutter) * 2
+  );
+  --spacing-dialog-default: 520px;
+  --spacing-dialog-form: 620px;
+  --spacing-dialog-wide: 960px;
+  --spacing-dialog-compact-height: min(
+    560px,
+    var(--spacing-overlay-available-height)
+  );
+  --spacing-dialog-review-height: min(
+    760px,
+    var(--spacing-overlay-available-height)
+  );
+  --spacing-popover-compact: 288px;
+  --spacing-popover-default: 320px;
+  --spacing-canvas-inset: 16px;
+  --spacing-canvas-gap: 8px;
+  --spacing-canvas-rail: 42px;
+  --spacing-preparation-preview: 288px;
+  --spacing-preparation-context-height: min(52dvh, 32rem);
   --radius-dock: 0px;
   --radius-control: 4px;
   --radius-card: 6px;
   --radius-dialog: 8px;
+  --animate-surface-enter: surface-enter 160ms ease-out;
 }
 
 :root {
@@ -88,7 +118,7 @@
   --warning-soft: var(--color-warning-soft);
   --error: var(--color-error);
   --error-soft: var(--color-error-soft);
-  --focus: var(--color-blue-400);
+  --focus: var(--color-blue-600);
 }
 
 @keyframes progress-indeterminate {
@@ -97,6 +127,18 @@
   }
   to {
     transform: translateX(360%);
+  }
+}
+
+/* Короткое появление действий сохраняет контекст без задержки взаимодействия. */
+@keyframes surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -115,42 +157,46 @@
   [hidden] {
     display: none !important;
   }
+  /* Области прокрутки сохраняют ширину содержимого при появлении полосы. */
+  :where(
+    .overflow-auto,
+    .overflow-y-auto,
+    .overflow-scroll,
+    .overflow-y-scroll
+  ) {
+    scrollbar-gutter: stable;
+  }
   html,
   * {
     scrollbar-color: var(--color-neutral-400) transparent;
     scrollbar-width: thin;
   }
-  *::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  *::-webkit-scrollbar-thumb {
-    min-height: 36px;
-    border: 2px solid transparent;
-    border-radius: var(--radius-control);
-    background: var(--color-neutral-400);
-    background-clip: padding-box;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-neutral-500);
-  }
-  *::-webkit-scrollbar-button {
-    display: none;
-    width: 0;
-    height: 0;
-  }
-  *::-webkit-scrollbar-corner {
-    background: transparent;
-  }
-  /* Non-auto standard values override WebKit styling in current Chromium.
-     Keep the standard thin scrollbar as the fallback for other engines. */
-  @supports selector(::-webkit-scrollbar) {
-    * {
-      scrollbar-color: auto;
-      scrollbar-width: auto;
+  /* В современных движках шириной полосы и её резервом управляет браузер. */
+  @supports not (scrollbar-width: thin) {
+    *::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      min-height: 36px;
+      border: 2px solid transparent;
+      border-radius: var(--radius-control);
+      background: var(--color-neutral-400);
+      background-clip: padding-box;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background-color: var(--color-neutral-500);
+    }
+    *::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+    *::-webkit-scrollbar-corner {
+      background: transparent;
     }
   }
   button:focus-visible,
@@ -160,5 +206,12 @@
   [role='button']:focus-visible {
     outline: 2px solid var(--selection);
     outline-offset: 1px;
+  }
+  /* Keep the native slider gesture intact, including WebKit's range input.
+     The library removes data-dragging on pointer release or unmount. */
+  #root:has([data-growth-horizon-slider][data-dragging]),
+  #root:has([data-growth-horizon-slider][data-dragging]) * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
   }
 }

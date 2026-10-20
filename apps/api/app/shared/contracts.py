@@ -1,3 +1,7 @@
+"""Общий публичный формат API-ошибки с адресными ошибками полей и дополнительными
+сведениями.
+"""
+
 from __future__ import annotations
 
 from typing import Any

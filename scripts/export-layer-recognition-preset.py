@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/api"))
-from app.dxf_import.layer_contracts import Layer
+from app.dxf_import.layers.contracts import Layer
 from app.layer_recognition.providers import MODEL
 from app.layer_recognition.service import LayerRecognitionService
 

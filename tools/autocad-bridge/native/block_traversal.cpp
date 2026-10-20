@@ -50,12 +50,8 @@ void collectAttachedAttributes(AcDbBlockReference* blockReference,
         attributeRecord.handle = entityHandle(attribute);
         attributeRecord.entityType = utf8(attribute->isA()->name());
         attributeRecord.sourceLayer = utf8(attribute->layer());
-        attributeRecord.layer = attributeRecord.sourceLayer == "0"
-            ? effectiveLayer
-            : (layerNamespace.empty() ||
-               attributeRecord.sourceLayer.rfind(layerNamespace + "|", 0) == 0
-                ? attributeRecord.sourceLayer
-                : layerNamespace + "|" + attributeRecord.sourceLayer);
+        attributeRecord.layer = effectiveEntityLayer(
+            attributeRecord.sourceLayer, effectiveLayer, layerNamespace);
         attributeRecord.instanceChain = instanceChain;
         attributeRecord.status = "context";
         attributeRecord.method = "autodesk-non-calculation-context";
@@ -82,8 +78,10 @@ void collectBlockInstance(AcDbBlockReference* blockReference,
                             std::vector<NativePoint>& points,
                             std::vector<EntityCoverage>& coverage,
                             ExternalDatabaseCache& externalDatabases,
-                            RegionTraversalDiagnostics& diagnostics) {
+                            RegionTraversalDiagnostics& diagnostics,
+                            const bool annotationContext) {
     AcDbEntity* entity = blockReference;
+    const bool nestedAnnotationContext = annotationContext || isNonCalculationContext(entity);
 
     ++diagnostics.blockReferences;
     const AcDbObjectId nestedRecordId = blockReference->blockTableRecord();
@@ -183,7 +181,9 @@ void collectBlockInstance(AcDbBlockReference* blockReference,
                     std::to_string(static_cast<std::size_t>(mInsert->rows()) *
                                    static_cast<std::size_t>(mInsert->columns())) +
                     " cell instances for descendant provenance"
-                : "container instance traversed for descendant provenance")));
+                : (nestedAnnotationContext
+                    ? "container belongs to a non-calculation annotation owner"
+                    : "container instance traversed for descendant provenance"))));
     record.xrefDependencyId = xrefDependencyId;
     coverage.push_back(std::move(record));
 
@@ -218,7 +218,7 @@ void collectBlockInstance(AcDbBlockReference* blockReference,
                                        tolerance, activeRecords,
                                        regions, areaProposals, paths, points, coverage,
                                        externalDatabases,
-                                       diagnostics);
+                                       diagnostics, nestedAnnotationContext);
             }
         }
     } else {
@@ -231,7 +231,7 @@ void collectBlockInstance(AcDbBlockReference* blockReference,
                                tolerance, activeRecords,
                                regions, areaProposals, paths, points, coverage,
                                externalDatabases,
-                               diagnostics);
+                               diagnostics, nestedAnnotationContext);
     }
     return;
 

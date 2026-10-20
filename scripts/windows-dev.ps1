@@ -4,8 +4,7 @@ param(
     [string]$Action = 'Status',
     [ValidateRange(1024, 65535)][int]$ApiPort = 8000,
     [ValidateRange(1024, 65535)][int]$WebPort = 5173,
-    [string]$DatabasePath,
-    [switch]$EnableAgent
+    [string]$DatabasePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,7 +61,6 @@ switch ($Action) {
         $node = (Get-Command node.exe -ErrorAction Stop).Source
         $settings = @{
             GREEN_ATLAS_DB_PATH = $DatabasePath
-            GREEN_ATLAS_LOCAL_MODEL = $(if ($EnableAgent) { 'qwen3.5:4b' } else { '' })
             VITE_API_URL = "http://127.0.0.1:$ApiPort"
         }
         $previous = @{}
@@ -90,7 +88,7 @@ switch ($Action) {
             $launched += $web
             @{
                 api = (Save-Process $api); web = (Save-Process $web)
-                database = $DatabasePath; agentEnabled = [bool]$EnableAgent
+                database = $DatabasePath
             } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $statePath -Encoding utf8
             for ($attempt = 0; $attempt -lt 30; $attempt++) {
                 if ($api.HasExited -or $web.HasExited) { throw "A server exited; inspect logs in $stateRoot" }
@@ -137,7 +135,7 @@ switch ($Action) {
             }
         }
         @{
-            managed = $true; database = $state.database; agentEnabled = $state.agentEnabled
+            managed = $true; database = $state.database
             services = $services; listeners = $listeners
         } | ConvertTo-Json -Depth 5
     }

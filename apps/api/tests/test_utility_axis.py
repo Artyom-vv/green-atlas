@@ -6,21 +6,22 @@ from io import StringIO
 
 import ezdxf
 import pytest
+from application_factory import save_legacy_dxf_fixture
 from pydantic import ValidationError
 from shapely.geometry import Point, box
 from test_utility_context import import_service
 
-from app.dxf_import.adapters import EzdxfReader
-from app.dxf_import.axis_provenance import straight_axis_provenance
-from app.dxf_import.layer_contracts import LayerMapping
-from app.geometry.adapters import ShapelyGeometryEngine
-from app.geometry.axis_bindings import validate_axis_bindings
-from app.geometry.axis_contracts import UtilityAxisBinding
-from app.geometry.axis_geometry import geometry_fingerprint
-from app.geometry.domain import PositionChecker
-from app.geometry.network_trace import network_rule_entries
-from app.geometry.rule_trace import position_rule_trace
-from app.geometry.utility_contracts import UtilityContext
+from app.dxf_import.layers.contracts import LayerMapping
+from app.dxf_import.legacy.entities.axis_provenance import straight_axis_provenance
+from app.dxf_import.legacy.reader import EzdxfReader
+from app.geometry.checking.adapters import ShapelyGeometryEngine
+from app.geometry.checking.domain import PositionChecker
+from app.geometry.checking.rule_trace import position_rule_trace
+from app.geometry.networks.axis_bindings import validate_axis_bindings
+from app.geometry.networks.axis_contracts import UtilityAxisBinding
+from app.geometry.networks.axis_geometry import geometry_fingerprint
+from app.geometry.networks.network_trace import network_rule_entries
+from app.geometry.networks.utility_contracts import UtilityContext
 from app.planning.contracts import Plan, PlanObject
 from app.projects.contracts import Project
 from app.validation.networks import release_network_issues
@@ -71,7 +72,7 @@ def axis_project(**source_options):
     source = dxf_source(**source_options)
     service, target, invalidated = import_service(Project(name="Axis source"))
     service.dxf_reader = EzdxfReader()
-    project = service.import_dxf(target.id, "source.dxf", source)
+    project = save_legacy_dxf_fixture(service, target.id, "source.dxf", source)
     invalidated.clear()
     return service, project, source, invalidated
 

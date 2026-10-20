@@ -1,5 +1,4 @@
 import type { DataPassport, DataPassportEntry } from '@green/api-client';
-import { Text } from '@green/ui';
 import { EntryDetails } from './EntryDetails';
 
 export function PassportIncluded({
@@ -11,10 +10,7 @@ export function PassportIncluded({
 }) {
   if (!entries.length) return null;
   return (
-    <section aria-label="Слои подготовленной карты" className="grid gap-2">
-      <Text as="h3" variant="label">
-        Слои подготовленной карты
-      </Text>
+    <section aria-label="Слои подготовленной карты" className="grid min-w-0">
       {entries.map((entry) => (
         <EntryDetails key={entry.kind} entry={entry} passport={passport} />
       ))}

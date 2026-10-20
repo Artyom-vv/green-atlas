@@ -17,15 +17,15 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 from app.data_passport import build_data_passport
-from app.native_query.live_client import LiveQueryClient, LiveSession
-from app.native_query.live_provider import LiveNativeGeometryEngine
-from app.native_query.prepared_provider import PreparedGeometryEngine
-from app.native_query.prepared_snapshot import PreparedStore
-from app.planning.changes import ChangeSetApplication
-from app.planning.evaluation import PlanEvaluation
-from app.planning.pattern_application import PatternApplication
-from app.planning.pattern_contracts import FillPatternRequest
-from app.planning.patterns import ShapelyCandidateGenerator
+from app.native_query.live.live_client import LiveQueryClient, LiveSession
+from app.native_query.measurement.live_provider import LiveNativeGeometryEngine
+from app.native_query.measurement.prepared_provider import PreparedGeometryEngine
+from app.native_query.preparation.prepared_snapshot import PreparedStore
+from app.planning.changes.commands import ChangeSetApplication
+from app.planning.changes.evaluation import PlanEvaluation
+from app.planning.patterns.application import PatternApplication
+from app.planning.patterns.contracts import FillPatternRequest
+from app.planning.patterns.generators import ShapelyCandidateGenerator
 from app.planning.rules import pattern_growth_radii
 from app.projects.contracts import Project
 from app.species.catalog import CATALOG
@@ -63,7 +63,7 @@ def main():
         project.source_file.native_session = current
     engine_started = monotonic()
     if args.prepared:
-        from app.native_query.prepared_snapshot import preparation_key
+        from app.native_query.preparation.prepared_snapshot import preparation_key
         store = PreparedStore(Path(str(args.database) + ".prepared-geometry"))
         snapshot = store.load(preparation_key(project, session))
         if snapshot is None:

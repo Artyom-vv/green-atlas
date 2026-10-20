@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RecommendationPanel } from './RecommendationPanel';
 import { useRecommendationForm } from '../model/useRecommendationForm';
@@ -50,159 +44,6 @@ describe('RecommendationPanel', () => {
       zone_ids: ['west'],
     });
   });
-  it('asks one spatial question for buildings, not priority or quantity, and keeps the task on back', async () => {
-    const onScreenPreview = vi.fn();
-    const onScreenMode = vi.fn();
-    const onInterpret = vi.fn().mockResolvedValue({
-      arrangement: 'building_screen',
-      profile: null,
-      max_sites: null,
-      unsupported: [],
-      questions: [],
-    });
-    render(
-      <RecommendationPanel
-        guided
-        zones={zones}
-        onPreview={vi.fn()}
-        onCancel={vi.fn()}
-        onInterpret={onInterpret}
-        onScreenMode={onScreenMode}
-        onScreenPreview={onScreenPreview}
-        screenTargets={{
-          geometry: { type: 'Polygon', coordinates: [] },
-          has_roads: true,
-        }}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
-    fireEvent.change(screen.getByLabelText('Задача озеленения'), {
-      target: { value: 'Группы деревьев вдоль зданий' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Разобрать задачу' }));
-    await screen.findByText('С какой стороны прикрыть здания?');
-    expect(screen.queryByLabelText('Приоритет')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Максимум посадок')).not.toBeInTheDocument();
-    expect(onScreenMode).toHaveBeenCalledWith(true);
-    fireEvent.click(screen.getByRole('radio', { name: 'Со стороны проездов' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Показать на карте' }));
-    expect(onScreenPreview).toHaveBeenCalledWith({
-      zone_ids: ['west'],
-      screen_side: 'roads',
-      max_sites: null,
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
-    expect(screen.getByLabelText('Задача озеленения')).toHaveValue(
-      'Группы деревьев вдоль зданий',
-    );
-    expect(onScreenMode).toHaveBeenLastCalledWith(false);
-  });
-  it('reviews interpreted parameters before calling the placement engine', async () => {
-    const onPreview = vi.fn();
-    const onInterpret = vi.fn().mockResolvedValue({
-      profile: 'shade',
-      max_sites: 25,
-      unsupported: [],
-      questions: [],
-    });
-    render(
-      <RecommendationPanel
-        guided
-        zones={zones}
-        onPreview={onPreview}
-        onCancel={vi.fn()}
-        onInterpret={onInterpret}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
-    fireEvent.change(screen.getByLabelText('Задача озеленения'), {
-      target: { value: 'Больше тени, максимум 25 посадок' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Разобрать задачу' }));
-    await screen.findByText('Проверьте параметры');
-    expect(onPreview).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Приоритет')).toHaveValue('shade');
-    expect(screen.getByLabelText('Максимум посадок')).toHaveValue(25);
-    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
-    expect(onPreview).toHaveBeenCalledWith({
-      profile: 'shade',
-      max_sites: 25,
-      zone_ids: ['west'],
-    });
-  });
-  it('does not silently drop unsupported requirements or invent missing parameters', async () => {
-    const onPreview = vi.fn();
-    const onInterpret = vi.fn().mockResolvedValue({
-      profile: null,
-      max_sites: null,
-      unsupported: ['Точная порода: липа'],
-      questions: [],
-    });
-    render(
-      <RecommendationPanel
-        guided
-        zones={zones}
-        onPreview={onPreview}
-        onCancel={vi.fn()}
-        onInterpret={onInterpret}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
-    fireEvent.change(screen.getByLabelText('Задача озеленения'), {
-      target: { value: 'Посади липы' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Разобрать задачу' }));
-    await screen.findByText('Точная порода: липа');
-    expect(
-      screen.queryByRole('button', { name: 'Проверить места' }),
-    ).not.toBeInTheDocument();
-    expect(onPreview).not.toHaveBeenCalled();
-  });
-  it('ignores a late response after the user switches to manual entry', async () => {
-    let resolve!: (value: {
-      arrangement: 'area';
-      profile: 'shade';
-      max_sites: number;
-      unsupported: string[];
-      questions: string[];
-    }) => void;
-    const onInterpret = vi.fn(
-      () =>
-        new Promise<{
-          arrangement: 'area';
-          profile: 'shade';
-          max_sites: number;
-          unsupported: string[];
-          questions: string[];
-        }>((done) => {
-          resolve = done;
-        }),
-    );
-    render(
-      <RecommendationPanel
-        zones={zones}
-        onPreview={vi.fn()}
-        onCancel={vi.fn()}
-        onInterpret={onInterpret}
-      />,
-    );
-    fireEvent.change(screen.getByLabelText('Задача озеленения'), {
-      target: { value: 'Больше тени' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Разобрать задачу' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Настроить вручную' }));
-    resolve({
-      arrangement: 'area',
-      profile: 'shade',
-      max_sites: 12,
-      unsupported: [],
-      questions: [],
-    });
-    await waitFor(() =>
-      expect(screen.getByLabelText('Приоритет')).toHaveValue('balanced'),
-    );
-    expect(screen.queryByText('Проверьте параметры')).not.toBeInTheDocument();
-  });
   it('builds one proposal for several selected zones', () => {
     const onPreview = vi.fn();
     render(
@@ -234,5 +75,91 @@ describe('RecommendationPanel', () => {
         max_sites: 40,
       }),
     );
+  });
+
+  it('retains manual parameters when going back to the selected zones, then previews exactly once', () => {
+    const onPreview = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <RecommendationPanel
+        guided
+        zones={zones}
+        onPreview={onPreview}
+        onCancel={onCancel}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
+    fireEvent.change(screen.getByLabelText('Приоритет'), {
+      target: { value: 'shade' },
+    });
+    fireEvent.change(screen.getByLabelText('Максимум посадок'), {
+      target: { value: '25' },
+    });
+    expect(onPreview).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+    expect(screen.getByRole('checkbox', { name: 'Запад' })).toBeChecked();
+    expect(onCancel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
+    expect(screen.getByLabelText('Приоритет')).toHaveValue('shade');
+    expect(screen.getByLabelText('Максимум посадок')).toHaveValue(25);
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
+    expect(onPreview).toHaveBeenCalledExactlyOnceWith({
+      profile: 'shade',
+      max_sites: 25,
+      zone_ids: ['west'],
+    });
+  });
+
+  it('uses the controlled zone selection and waits for a selected zone before advancing', () => {
+    const onZonesChange = vi.fn();
+    const props = {
+      guided: true,
+      zones,
+      onPreview: vi.fn(),
+      onCancel: vi.fn(),
+      onSelectedZoneIdsChange: onZonesChange,
+    };
+    const view = render(
+      <RecommendationPanel {...props} selectedZoneIds={[]} />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Выбрать задачу' }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Запад' }));
+    expect(onZonesChange).toHaveBeenCalledExactlyOnceWith(['west']);
+    expect(
+      screen.getByRole('button', { name: 'Выбрать задачу' }),
+    ).toBeDisabled();
+    view.rerender(
+      <RecommendationPanel {...props} selectedZoneIds={['west']} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить места' }));
+    expect(props.onPreview).toHaveBeenCalledExactlyOnceWith({
+      profile: 'balanced',
+      max_sites: 40,
+      zone_ids: ['west'],
+    });
+  });
+
+  it('cancels the spatial calculation without leaving the tool or starting another preview', () => {
+    const onPreview = vi.fn();
+    const onCancel = vi.fn();
+    const onCancelCalculation = vi.fn();
+    render(
+      <RecommendationPanel
+        zones={zones}
+        loading
+        calculating
+        onPreview={onPreview}
+        onCancel={onCancel}
+        onCancelCalculation={onCancelCalculation}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить расчёт' }));
+    expect(onCancelCalculation).toHaveBeenCalledOnce();
+    expect(onPreview).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Проверяем' })).toBeDisabled();
   });
 });

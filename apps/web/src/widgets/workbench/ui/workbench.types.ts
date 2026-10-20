@@ -11,8 +11,8 @@ export interface IDEWorkspaceShellProps extends IdeWorkspaceLayoutOptions {
   resources: ReactNode;
   inspector: ReactNode;
   tool: ReactNode;
-  assistant: ReactNode;
   results: Record<IdeWorkspaceResultsTab, ReactNode>;
+  resultsActions?: Partial<Record<IdeWorkspaceResultsTab, ReactNode>>;
   footer?: ReactNode;
   rightTab?: IdeWorkspaceRightTab;
   onRightTabChange?: (tab: IdeWorkspaceRightTab) => void;

@@ -1,3 +1,7 @@
+"""Совместимый DXF-выпуск с сохранением исходных сущностей и SAT/SAB; посадки
+записываются на отдельные слои.
+"""
+
 from collections import Counter
 from hashlib import sha256
 from io import BytesIO, StringIO
@@ -12,15 +16,15 @@ from ezdxf.lldxf import const
 from ezdxf.lldxf.tagger import binary_tags_loader
 from ezdxf.sections.acdsdata import new_acds_data_section
 
-from app.dxf_import.acis_lookup import indexed_acis_lookup
-from app.dxf_import.encoding import decode_text_dxf
+from app.dxf_import.legacy.encoding import decode_text_dxf
+from app.dxf_import.legacy.entities.acis_lookup import indexed_acis_lookup
 from app.dxf_import.units import meters_per_dxf_unit
 from app.exporting.contracts import ExportArtifact
 from app.projects.contracts import Project
 
 
 def _check_acis_export(document: Drawing) -> None:
-    """ezdxf silently skips modeler entities without their SAT/SAB payload."""
+    """ezdxf исключает модельные сущности без SAT/SAB; проверка сохраняет явный отказ."""
     missing: Counter[str] = Counter()
     with indexed_acis_lookup(document):
         for entity in document.entitydb.values():
@@ -48,13 +52,13 @@ PLANTING_LAYER_BASES = {
 def _read_document(content: bytes) -> Any:
     if content.startswith(b"AutoCAD Binary DXF"):
         return Drawing.load(binary_tags_loader(content))
-    # Read Windows/CAD line endings like a text file so source entities are
-    # retained when the original upload is reopened for export.
+    # Читаем переводы строк Windows/CAD как текстовый файл, сохраняя исходные
+    # сущности при повторном открытии для выпуска.
     return ezdxf.read(StringIO(decode_text_dxf(content), newline=None))
 
 
 def _new_layer_name(document: Any, base_name: str) -> str:
-    """Create a result layer without merging planting into source context."""
+    """Создавать отдельный слой результата без смешения посадок с исходным контекстом."""
 
     candidate = base_name
     index = 2
@@ -68,9 +72,7 @@ def _ensure_acis_section(document: Drawing) -> None:
     if document.dxfversion < const.DXF2013 or document.acdsdata.is_valid:
         return
     if document.acdsdata.entities:
-        raise ValueError(
-            "DXF-выпуск остановлен: секция ACDSDATA повреждена"
-        )
+        raise ValueError("DXF-выпуск остановлен: секция ACDSDATA повреждена")
     document.acdsdata = new_acds_data_section(document)
 
 
@@ -107,9 +109,7 @@ def _mark_reachable_entities(
             if not block_name:
                 continue
             if block_name in ancestry:
-                raise ValueError(
-                    "DXF-выпуск остановлен: цикл вложенных CAD-блоков"
-                )
+                raise ValueError("DXF-выпуск остановлен: цикл вложенных CAD-блоков")
             block = document.blocks.get(block_name)
             if block is not None:
                 mark(block, ancestry | {block_name})
@@ -166,9 +166,7 @@ def _merge_independent_drawings(
                 f"Нельзя выпустить единый DXF: {drawing_path} "
                 "содержит неразрешённые XREF"
             )
-        if any(
-            isinstance(entity, Body) for entity in child.entitydb.values()
-        ):
+        if any(isinstance(entity, Body) for entity in child.entitydb.values()):
             if primary.dxfversion < const.DXF2013:
                 raise ValueError(
                     f"Нельзя перенести ACIS из {drawing_path} в DXF старше R2013"
@@ -181,9 +179,7 @@ def _merge_independent_drawings(
             appid = f"GREEN_ATLAS_SOURCE_{digest[:8].upper()}_{suffix}"
             suffix += 1
         child.appids.add(appid)
-        expected = _mark_reachable_entities(
-            child, appid, drawing_path, digest
-        )
+        expected = _mark_reachable_entities(child, appid, drawing_path, digest)
         loader = xref.Loader(
             child, primary, conflict_policy=xref.ConflictPolicy.XREF_PREFIX
         )
@@ -233,9 +229,7 @@ class DxfRoundTripWriter:
             document = _read_document(source_content)
         except Exception as error:
             raise ValueError("Не удалось повторно открыть исходный DXF") from error
-        document = _merge_independent_drawings(
-            document, source_components or {}
-        )
+        document = _merge_independent_drawings(document, source_components or {})
         _check_acis_export(document)
         planting_layers = {
             kind: _new_layer_name(document, base_name)
@@ -265,7 +259,7 @@ class DxfRoundTripWriter:
                 (1000, f"locked={'true' if object_.locked else 'false'}"),
             ]
             if project.source_review is not None:
-                # Keep the review state when a recipient gets only the DXF.
+                # Состояние просмотра остаётся доступным получателю отдельного DXF.
                 xdata.append((1000, "source_review=pending"))
             if object_.species_revision_id:
                 xdata.append(
@@ -278,10 +272,8 @@ class DxfRoundTripWriter:
             if object_.planting_zone_id:
                 xdata.append((1000, f"planting_zone_id={object_.planting_zone_id}"))
             entity.set_xdata(GREEN_ATLAS_APP_ID, xdata)
-        # A binary DXF is a valid source format, not an import-only special
-        # case. Preserve that representation on export as well: callers that
-        # use binary DXF because of size or an established CAD exchange must
-        # not silently receive a text file after adding the planting layers.
+        # Бинарный DXF является полноценным исходным форматом. Сохраняем представление
+        # при выпуске, чтобы добавление посадок не меняло выбранный CAD-формат обмена.
         if source_content.startswith(b"AutoCAD Binary DXF"):
             stream = BytesIO()
             document.write(stream, fmt="bin")
@@ -289,11 +281,9 @@ class DxfRoundTripWriter:
         else:
             stream = StringIO()
             document.write(stream)
-            # R2000/R2004 DXF can legitimately use a legacy code page (for
-            # example CP1251 for Russian layer names and labels). ``write``
-            # gives us Unicode text; encoding it unconditionally as UTF-8
-            # leaves the original $DWGCODEPAGE lying to CAD consumers. Let
-            # ezdxf select the format-required output encoding instead.
+            # DXF R2000/R2004 может использовать CP1251 или другую старую кодовую страницу.
+            # write возвращает Unicode; безусловный UTF-8 противоречил бы $DWGCODEPAGE.
+            # Выходную кодировку выбирает ezdxf по требованиям формата.
             content = stream.getvalue().encode(
                 document.output_encoding, errors="dxfreplace"
             )

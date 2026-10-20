@@ -27,6 +27,7 @@ const EMPTY_ISSUES: ValidationIssue[] = [];
 export function useSceneRenderer(
   options: SceneReviewOptions,
   ref?: Ref<SceneReviewHandle>,
+  nativeModels = false,
 ) {
   const {
     snapshot,
@@ -65,6 +66,7 @@ export function useSceneRenderer(
     const canvas = canvasRef.current;
     if (!canvas) return;
     const session = createSceneSession(canvas, {
+      nativeModels,
       initialViewState: latest.current.options.initialViewState,
       onSelect: (objectId) => latest.current.options.onSelect(objectId),
       onMoveTarget: (coordinate) =>
@@ -138,6 +140,16 @@ export function useSceneRenderer(
     if (active && initialViewState)
       controllerRef.current?.importPlanViewState(initialViewState);
   }, [active, initialViewState]);
+
+  useLayoutEffect(() => {
+    if (!active || !modelsReady) return;
+    // WebKit can retain the hidden canvas's initial drawing buffer. Refresh
+    // after visible layout instead of relying only on ResizeObserver delivery.
+    const frame = requestAnimationFrame(() =>
+      controllerRef.current?.refreshViewport(),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [active, modelsReady]);
 
   return {
     canvasRef,

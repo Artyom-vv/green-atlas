@@ -1,6 +1,11 @@
 import type { FC } from 'react';
 import type { WorkspaceReadyModel } from '../model/useWorkspaceModel';
 import {
+  CanvasGrowthScenario,
+  CanvasGrowthScenarioPropsFor,
+  type CanvasGrowthScenarioProps,
+} from './canvas/CanvasGrowthScenario';
+import {
   CanvasActivity,
   CanvasActivityPropsFor,
   type CanvasActivityProps,
@@ -36,11 +41,6 @@ import {
   type CanvasScopeProps,
 } from './canvas/CanvasScope';
 import {
-  CanvasSelectionActions,
-  CanvasSelectionActionsPropsFor,
-  type CanvasSelectionActionsProps,
-} from './canvas/CanvasSelectionActions';
-import {
   CanvasTools,
   CanvasToolsPropsFor,
   type CanvasToolsProps,
@@ -70,9 +70,9 @@ export interface WorkspaceCanvasProps
     CanvasPreviewActionsProps,
     CanvasRecoveryProps,
     CanvasScopeProps,
-    CanvasSelectionActionsProps,
     CanvasToolsProps,
     CanvasViewControlsProps,
+    CanvasGrowthScenarioProps,
     PlanViewportProps,
     WorkspaceSceneProps {}
 
@@ -86,29 +86,40 @@ export const WorkspaceCanvasPropsFor = (
   ...CanvasPreviewActionsPropsFor(model),
   ...CanvasRecoveryPropsFor(model),
   ...CanvasScopePropsFor(model),
-  ...CanvasSelectionActionsPropsFor(model),
   ...CanvasToolsPropsFor(model),
   ...CanvasViewControlsPropsFor(model),
+  ...CanvasGrowthScenarioPropsFor(model),
   ...PlanViewportPropsFor(model),
   ...WorkspaceScenePropsFor(model),
 });
 
 export const WorkspaceCanvas: FC<WorkspaceCanvasProps> = (props) => (
   <section
-    className="relative size-full min-h-0 min-w-0 overflow-hidden bg-neutral-100"
+    className="@container/canvas relative size-full min-h-0 min-w-0 overflow-hidden bg-neutral-100"
     onMouseLeave={() => props.setMapHoverTarget(undefined)}
   >
-    <CanvasScope {...CanvasScopePropsFor(props)} />
     <PlanViewport {...PlanViewportPropsFor(props)} />
-    <CanvasInspection {...CanvasInspectionPropsFor(props)} />
-    <CanvasDraftActions {...CanvasDraftActionsPropsFor(props)} />
-    <CanvasTools {...CanvasToolsPropsFor(props)} />
-    <CanvasSelectionActions {...CanvasSelectionActionsPropsFor(props)} />
+    {!props.planComparison.active && (
+      <>
+        <CanvasScope {...CanvasScopePropsFor(props)} />
+        <CanvasInspection {...CanvasInspectionPropsFor(props)} />
+        <CanvasDraftActions {...CanvasDraftActionsPropsFor(props)} />
+        <CanvasTools {...CanvasToolsPropsFor(props)} />
+        <CanvasPreviewActions {...CanvasPreviewActionsPropsFor(props)} />
+      </>
+    )}
     <CanvasNavigation {...CanvasNavigationPropsFor(props)} />
     <CanvasActivity {...CanvasActivityPropsFor(props)} />
-    <WorkspaceScene {...WorkspaceScenePropsFor(props)} />
-    <CanvasViewControls {...CanvasViewControlsPropsFor(props)} />
-    <CanvasPreviewActions {...CanvasPreviewActionsPropsFor(props)} />
+    <WorkspaceScene
+      {...WorkspaceScenePropsFor(props)}
+      viewControls={
+        <CanvasViewControls {...CanvasViewControlsPropsFor(props)} embedded />
+      }
+    />
+    {!props.sceneOpen && (
+      <CanvasViewControls {...CanvasViewControlsPropsFor(props)} />
+    )}
     <CanvasRecovery {...CanvasRecoveryPropsFor(props)} />
+    <CanvasGrowthScenario {...CanvasGrowthScenarioPropsFor(props)} />
   </section>
 );

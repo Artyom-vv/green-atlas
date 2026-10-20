@@ -1,4 +1,5 @@
 export { Button, type ButtonProps } from './Button';
+export * from './Autocomplete';
 export type { ButtonVariant } from './buttonVariants';
 export * from './Checkbox';
 export * from './Combobox';
@@ -10,5 +11,7 @@ export * from './NumberStepper';
 export * from './Radio';
 export { Select, type SelectProps } from './Select';
 export * from './SegmentedControl';
+export * from './Tabs';
+export { Slider } from '@base-ui/react/slider';
 export { TextArea, type TextAreaProps } from './TextArea';
 export { TextInput, type TextInputProps } from './TextInput';

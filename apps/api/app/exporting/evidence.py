@@ -1,5 +1,10 @@
-"""An unavailable check is explicit; draft export must not trigger CAD recovery."""
+"""Явное представление недоступной проверки; черновой выпуск не запускает восстановление
+CAD.
+"""
 
+from typing import Literal
+
+from app.projects.contracts import Project
 from app.regulations.profiles import LCT_REQUIREMENT_PROFILE
 from app.regulations.registry import REGISTRY_REVISION
 from app.regulations.trace_contracts import (
@@ -12,12 +17,17 @@ UNAVAILABLE_CHECKS = "Подготовленная расчётная геоме
 
 
 class UnavailableReleaseEvidence:
-    def source_coverage(self, project):
+    def source_coverage(self, project: Project) -> None:
         return None
 
     def position_rule_trace(
-        self, project, x, y, plant_kind, mature_crown_diameter_m=None
-    ):
+        self,
+        project: Project,
+        x: float,
+        y: float,
+        plant_kind: Literal["tree", "shrub"] = "tree",
+        mature_crown_diameter_m: float | None = None,
+    ) -> PlantingRuleTrace:
         return PlantingRuleTrace(
             basis=RuleTraceBasis(
                 project_id=project.id,

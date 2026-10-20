@@ -11,6 +11,9 @@ ExportResult exportRegionTopologyFromPath(const std::string& sourcePath);
 using CaptureObserver = std::function<void(const DrawingGeometry&)>;
 bool captureLiveSnapshotForService(const std::string& destination, std::string& error,
                                    const CaptureObserver& observer = {});
+bool captureLiveSnapshotForService(const std::string& destination, std::string& error,
+                                   const CaptureObserver& observer,
+                                   std::string* transferFacts);
 #ifdef GA_GEOMETRY_SELFTEST
 void geometrySelftest();
 #endif

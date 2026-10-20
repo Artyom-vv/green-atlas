@@ -1,0 +1,26 @@
+{
+  "schema": "green-atlas.public-release-source/1",
+  "version": "0.1.130",
+  "published_at": "2026-10-20",
+  "original_product_commit": "ad5a98f850e3850502fb8bf9bc910d95e8fb98ca",
+  "original_source_seal_sha256": "297787106b6acb80c7ac8747ba4c87449242506b3a55f73566ceaf24936db830",
+  "installer": {
+    "name": "GreenAtlas-0.1.130-Windows-x64-Setup-2.exe",
+    "bytes": 297843153,
+    "sha256": "4de60ea3a69b9559314b7517d978c022de05fc268738f2baed4d1d6305df20b6",
+    "url": "https://github.com/Artyom-vv/green-atlas/releases/download/v0.1.130-windows/GreenAtlas-0.1.130-Windows-x64-Setup-2.exe"
+  },
+  "source_snapshot": {
+    "code_files": 2555,
+    "code_file_manifest_sha256": "7f2187674b07215d719fbc4015923987f21b0048be211ec4dc84021a470a6de1",
+    "code_matches_original_snapshot": true,
+    "publication_changes": "Submission navigation, screenshots and public installation links; product code unchanged"
+  },
+  "qualification": {
+    "candidate": true,
+    "package_qualification_passed": true,
+    "windows_install_execution_qualified": true,
+    "product_qualified": false,
+    "real_AutoCAD_and_Blender_on_Windows_tested": false
+  }
+}

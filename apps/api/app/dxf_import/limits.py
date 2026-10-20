@@ -1,8 +1,13 @@
+"""Лимиты размера и проверка имени прежнего DXF-входа; они отделены от бюджета
+подготовки native-снимков.
+"""
+
+from app.native_query.capture.capture_contracts import MAX_CAPTURE_DISPLAY_BYTES
+
 MAX_DXF_CONTENT_BYTES = 50 * 1024 * 1024
-# Native instance coverage is intentionally complete. Real LCT drawings already
-# produce 264 MiB snapshots (Kustanay) and a dense street can exceed 500 MiB;
-# rejecting those files would silently restore the toy-DXF-only path.
-MAX_CAD_SNAPSHOT_BYTES = 768 * 1024 * 1024
+# Native-учёт экземпляров должен оставаться полным. Реальные чертежи ЛЦТ дают
+# снимки 264 МиБ и более 500 МиБ; их отказ вернул бы поддержку только малых DXF.
+MAX_CAD_SNAPSHOT_BYTES = MAX_CAPTURE_DISPLAY_BYTES
 
 
 def dxf_size_error(limit: int | None = None) -> str:

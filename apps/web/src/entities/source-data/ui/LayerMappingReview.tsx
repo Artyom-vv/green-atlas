@@ -124,7 +124,7 @@ export const LayerMappingReview: FC<LayerMappingReviewProps> = ({
                     : `${group.length} ${layerWord(group.length)}`}
                 </div>
               </div>
-              <div className="min-w-0 max-w-md text-sm text-neutral-600">
+              <div className="max-w-md min-w-0 text-sm text-neutral-600">
                 {kind === 'site_border' ||
                 categoryFor(kind)?.kind === 'site_border' ? (
                   <span className="text-neutral-600">
@@ -168,7 +168,7 @@ export const LayerMappingReview: FC<LayerMappingReviewProps> = ({
               </div>
             </div>
             {categoryFor(kind)?.kind == null && categoryFor(kind) && (
-              <p className="mb-0 mt-2 max-w-2xl text-xs leading-5 text-neutral-600">
+              <p className="mt-2 mb-0 max-w-2xl text-xs leading-5 text-neutral-600">
                 Тип распознан, но влияние на посадки не следует из названия
                 слоя. Ошибочное ограничение может скрыть пригодную площадь.
               </p>

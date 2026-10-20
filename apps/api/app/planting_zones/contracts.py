@@ -1,9 +1,13 @@
+"""Рабочие зоны оператора, запрос сохранения и геометрические пересечения предпросмотра."""
+
 from __future__ import annotations
 
 from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+from app.planting_zones.config import MAX_ZONE_COUNT
 
 
 class PlantingZoneAssignment(BaseModel):
@@ -13,7 +17,7 @@ class PlantingZoneAssignment(BaseModel):
 
 
 class PlantingZonesRequest(BaseModel):
-    zones: list[PlantingZoneAssignment] = Field(min_length=1, max_length=40)
+    zones: list[PlantingZoneAssignment] = Field(min_length=1, max_length=MAX_ZONE_COUNT)
 
 
 class PlantingZoneOverlap(BaseModel):

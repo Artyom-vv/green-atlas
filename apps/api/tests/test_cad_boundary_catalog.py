@@ -3,11 +3,11 @@ from pathlib import Path
 
 import ezdxf
 
-from app.cad_import.boundary_catalog import MAX_BOUNDARY_CANDIDATES, boundary_catalog
-from app.cad_import.cache import file_sha256
+from app.cad_import.archive.cache import file_sha256
+from app.cad_import.boundary.catalog import MAX_BOUNDARY_CANDIDATES, boundary_catalog
 from app.cad_import.contracts import ConverterIdentity
-from app.cad_import.conversion import LibreDwgConverter
-from app.cad_import.inspection import inspect_drawing
+from app.cad_import.legacy.conversion import LibreDwgConverter
+from app.cad_import.legacy.inspection import inspect_drawing
 
 
 def contour(layout, *, closed=True):
@@ -57,7 +57,7 @@ def test_inspection_cache_tracks_content_and_refreshes_legacy_catalog(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(
-        "app.cad_import.conversion.converter_identity",
+        "app.cad_import.legacy.conversion.converter_identity",
         lambda _: ConverterIdentity(
             name="libredwg", version="fixture", executable_sha256="a" * 64
         ),

@@ -17,17 +17,14 @@ import {
   useRecommendationNavigation,
   type RecommendationNavigationOptions,
 } from '../model/useRecommendationNavigation';
-import { BuildingScreenParameters } from './BuildingScreenParameters';
 import { GoalParameters } from './GoalParameters';
 import { RecommendationFooter } from './RecommendationFooter';
-import { TaskEntry } from './TaskEntry';
 export interface RecommendationPanelProps extends RecommendationNavigationOptions {
   form?: UseFormReturn<RecommendationFormValues>;
   loading?: boolean;
   calculating?: boolean;
   onCancelCalculation?: () => void;
   error?: string;
-  onChooseComposition?: () => void;
 }
 const OwnedRecommendationPanel: FC<RecommendationPanelProps> = (props) => {
   const form = useRecommendationForm();
@@ -55,14 +52,7 @@ const RecommendationForm: FC<RecommendationPanelProps> = (props) => {
     calculating = false,
     onCancelCalculation,
     error,
-    onChooseComposition,
   } = props;
-  const chooseComposition = onChooseComposition
-    ? () => {
-        flow.task.cancel();
-        onChooseComposition();
-      }
-    : undefined;
   return (
     <PlacementToolSurface
       title="Подобрать по цели"
@@ -81,9 +71,6 @@ const RecommendationForm: FC<RecommendationPanelProps> = (props) => {
         <RecommendationFooter
           guided={guided}
           step={flow.step}
-          textEntry={flow.textEntry}
-          buildingScreen={flow.buildingScreen}
-          interpreting={flow.task.interpreting}
           loading={loading}
           calculating={calculating}
           canContinue={flow.canContinue}
@@ -103,25 +90,7 @@ const RecommendationForm: FC<RecommendationPanelProps> = (props) => {
         />
       </div>
       <div hidden={guided && flow.step !== 1}>
-        {flow.textEntry ? (
-          <TaskEntry
-            inputRef={flow.taskInput}
-            interpreting={flow.task.interpreting}
-            feedback={flow.task.feedback}
-            requiresComposition={flow.task.requiresComposition}
-            onManualEntry={flow.task.manualEntry}
-            onChooseComposition={chooseComposition}
-          />
-        ) : flow.buildingScreen ? (
-          <BuildingScreenParameters
-            targets={props.screenTargets}
-            loading={props.screenLoading}
-            disabled={loading}
-            error={props.screenError}
-          />
-        ) : (
-          <GoalParameters disabled={loading} interpreted={flow.interpreted} />
-        )}
+        <GoalParameters disabled={loading} />
       </div>
       {error && <InlineMessage tone="error">{error}</InlineMessage>}
     </PlacementToolSurface>

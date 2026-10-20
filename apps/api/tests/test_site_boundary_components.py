@@ -3,7 +3,7 @@
 from shapely.geometry import LineString, box, mapping
 
 from app.contracts import GeometrySnapshot, Project
-from app.geometry.domain import PositionChecker
+from app.geometry.checking.domain import PositionChecker
 
 
 def source_feature(kind, geometry):

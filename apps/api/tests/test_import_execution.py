@@ -5,8 +5,8 @@ from threading import Event
 import pytest
 from fastapi import UploadFile
 
-from app.dxf_import.http_execution import execute_import
-from app.projects.adapters import InMemoryProjectRepository
+from app.dxf_import.native.http_execution import execute_import
+from app.projects.adapters import SqliteProjectRepository
 from app.projects.concurrency import (
     ProjectVersionConflict,
     expected_project_version,
@@ -56,7 +56,7 @@ def test_import_yields_http_loop_and_preserves_if_match() -> None:
 
 
 def test_change_during_import_cannot_replace_source() -> None:
-    repository = InMemoryProjectRepository()
+    repository = SqliteProjectRepository(":memory:")
     project = repository.create(Project(name="original"))
     repository.save_source(project.id, b"original source")
 

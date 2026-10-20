@@ -1,4 +1,6 @@
-"""Server source capacity; independent from viewport detail and browser caches."""
+"""Бюджет обработки исходной геометрии; ограничения карты и браузера не определяют
+полноту импорта.
+"""
 
 from dataclasses import dataclass
 
@@ -9,12 +11,11 @@ class SourceCapacityExceeded(ValueError):
 
 @dataclass(frozen=True)
 class SourceGeometryCapacity:
-    # Keep a bounded admission guard, but leave headroom for the official
-    # AutoCAD/XREF capture. The measured Kustanayskaya capture is just over
-    # two million coordinates; rejecting it for a 47-coordinate difference
-    # makes a complete native import impossible.
-    # They are not a RAM guarantee: Python graphs, parsing and SQLite copies
-    # require a separate bounded worker and measured memory admission.
+    # Допуск остаётся ограниченным, но допускает полный официальный AutoCAD/XREF-захват.
+    # Проверенный пример содержит чуть больше двух миллионов координат; небольшой
+    # избыток не должен исключать полноценный native-импорт. Эти лимиты не гарантируют
+    # объём RAM: Python-графы, разбор и копии SQLite требуют отдельного ограниченного
+    # работника и измеренного допуска памяти.
     max_features: int | None = 100_000
     max_coordinates: int | None = 3_000_000
     max_feature_coordinates: int | None = 250_000
@@ -32,7 +33,7 @@ class SourceGeometryCapacity:
 
     @classmethod
     def process_bounded(cls) -> "SourceGeometryCapacity":
-        """Only for a worker supervised by a memory/time process-tree budget."""
+        """Допуск только для работника с надзором времени и памяти дерева процессов."""
         return cls(None, None, None)
 
     def check(

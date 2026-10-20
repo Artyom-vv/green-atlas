@@ -164,7 +164,7 @@ describe('GroupInspector', () => {
     });
     expect(
       problemSection.compareDocumentPosition(
-        screen.getByRole('region', { name: 'Прогноз роста' }),
+        screen.getByRole('region', { name: 'Просмотр роста' }),
       ) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(

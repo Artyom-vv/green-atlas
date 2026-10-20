@@ -1,4 +1,6 @@
-"""Shared scene vocabulary for domain projections and public DTO fields."""
+"""Общий словарь происхождения и готовности данных сцены для расчётных проекций и
+публичных DTO.
+"""
 
 from typing import Literal
 

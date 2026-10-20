@@ -4,8 +4,8 @@ import pytest
 from shapely.geometry.base import BaseGeometry
 
 from app.geometry.contracts import GeometrySnapshot
-from app.geometry.query_adapters import IndexedGeometryQuery
-from app.geometry.viewport_representation import viewport_representation
+from app.geometry.viewport.query_adapters import IndexedGeometryQuery
+from app.geometry.viewport.viewport_representation import viewport_representation
 from app.projects.contracts import Project
 
 

@@ -1,5 +1,181 @@
 # Native AutoCAD diagnostics (not an alternative product importer)
 
+## Live capture invalidation qualification, 2 October
+
+`live_capture_probe.cpp` registers the explicit GUI command
+`GALIVECAPTUREPROBE`. Build it with `capture_session_run.build(...,
+architecture="arm64")` for a native ARM64 editor. It calls the selected
+uninstalled production library's `openSession`/`closeSession`, without that
+library's entry point, menus, archive/save or application launch. A request
+contains four lines: built library path, private output directory, copied
+source file, and a new 32-character hexadecimal token. An optional fifth line
+selects an explicit mode; omitted means `capture` and preserves the ordinary
+read-only qualification request.
+
+The library must be under this checkout's `.runtime/autocad-bridge/macos`;
+the output must be an owned 0700 directory under `output`; the active source
+must match a file inside that output directory's `input`. Copy/hash the whole
+dependency package before opening it. Never invoke this on a user's original
+document or run it concurrently with another CAD qualification.
+
+Live capture publishes a bounded `<snapshot>.session-diagnostics.json` with
+the capture phase, document/working database predicates, read-only DBMOD,
+reactor event counts and the first 32 native object identities. The probe
+temporarily enables `GA_LIVE_CAPTURE_DIAGNOSTICS=1` for one first-event stack
+(24 frames), then restores its prior value. The entire diagnostic is capped
+at 64 KiB. Diagnostics never clear invalidation or make a failed capture
+acceptable; the existing live wire error remains unchanged during this
+causal qualification. Inspect the sidecar before inferring a cause from
+`live_source_changed_or_inactive`.
+
+Later session validation also republishes a failure in its actual context.
+Archive phases distinguish admission, document locking, admission while
+holding the lock, and package cloning. A failed check is written before
+unlocking the document so working database changes cannot be hidden by
+cleanup. Logging changes neither the validation predicates nor their errors.
+
+For genuine edit controls, use separate new owned directories. The explicit
+`seed-control` mode creates only `root/input/host-control.dwg` in an independent
+native database: metres, one LINE from `(0,0,0)` to `(10,0,0)`, no XREF. It saves
+this newly generated fixture, never the active document, and writes a marker
+with its SHA. Existing source files/markers are refused. Open that fixture,
+then invoke `append-point-control` or `move-line-control`: the former appends
+a POINT at `(17,23,0)`; the latter moves the LINE endpoint to `(12,0,0)`.
+
+Both edit modes require the native-seeded filename, marker, unchanged disk
+SHA, exact in-memory fixture structure and matching active document. They
+first require a successful baseline session inspection, verify the actual
+physical edit and unchanged context, and require the production inspector
+to reject it with `live_source_changed_or_inactive`. A missing/failed baseline,
+wrong rejection or unexpected geometry is a failure. `control-receipt.json`
+records verified entity counts/coordinates, DBMOD before/after, source hash
+and rejection. The actual edit remains unsaved: close this owned fixture with
+discard. Do not erase the test entity or reset DBMOD. This control is never
+permitted on Olympic Village, Kustanayskaya or an arbitrary copied drawing.
+
+The explicit `delivery-parity` mode runs the production
+`native/delivery_command.cpp` rather than duplicating its sequence in a probe.
+Its active document guards, working database scope, cancellation checks,
+capture/copy/hash/archive checks and ticket validation remain in that source.
+The selected uninstalled library implements confirmation, stage display,
+live capture, archival, source issue review and the actual ticket writer.
+Use a NEW owned output/input directory and matching active source copy.
+
+Only three boundaries change: staging goes to `root/staging`, connector launch
+is intercepted after the real `transfer.gatransfer` has been validated, and
+the final error dialog becomes a diagnostic file after a failure. No desktop
+or API is launched and no user project is published. `delivery-receipt.json`
+records the selected binary hash, unchanged source hash, actual snapshot and
+sidecar paths, UI stage/review counts and whether the native producer completed.
+The production success message precedes an explicit
+`PRIVATE_DELIVERY_COMPLETE` message indicating the intercepted launch.
+
+This qualifies the native producer, including its real preparation modal and
+stage windows. The stage implementation explicitly avoids pumping the event
+loop; its display alone does not establish that it triggered database edits.
+The selected library's entry point and idle callbacks are not installed.
+Pending live/MCP request files or an active private MCP operation are refused
+at entry, but already installed callbacks belong to their existing instance:
+they are not qualified by the private preparation guard. Coordinate this GUI
+run with all other CAD work and preserve diagnostics if a new request arrives.
+A successful private producer does not explain a historical intermittent
+failure or certify desktop handoff, calculations, release or the full product.
+
+Archive diagnostics report the capture/current caller's `myLockMode()` and
+whether archive ownership was borrowed or acquired. Registered modal commands
+borrow their existing stable write lock; they neither reacquire nor unlock it.
+Application-context archival still acquires its own lock and retains the
+following validation. If acquisition changes a watched database, refusal is
+required. Such a later archive cannot assume a lock change preserves a prior
+capture; no long-lived lock or automatic recapture is added by this fix.
+
+`test_document_lock_policy.cpp` is an executable check against SDK modes:
+write, protected automatic write and exclusive write can be borrowed;
+read, none, unprotected automatic write and unknown modes cannot. The explicit
+`archive-write-control` GUI mode additionally requires the native-seeded tiny
+fixture. It verifies actual modal ownership, runs the real capture/archive,
+counts source document lock notifications and requires zero lock changes and
+unchanged command ownership, geometry and disk hash. Its receipt also records
+DBMOD without resetting it. Clone notifications remain valid invalidations;
+this control does not demand a still-valid token after archival. Pair it with
+the genuine point/line edit controls and actual street producer parity.
+
+`live_topology_probe.cpp` runs SDK controls for
+`ga::capture::validateLiveInstanceTopology` through a selected private library,
+without its entry point or a product file importer. Build with
+`capture_session_run.build(..., architecture="arm64")`, then reuse
+`core_intake_run.run_stage(..., action="topology", drawing=None,
+fixture="native-topology", database_mode="isolated", architecture="arm64")`.
+The NEW owned 0700 root must be named `output/live-topology-controls-...`.
+Coordinate all CAD jobs before invoking the Core harness.
+
+The command seeds and reopens only its own synthetic files. Direct SDK reads
+verify classes, handles, route lengths and line coordinates before checking
+real preflight outcomes: ordinary INSERT passes; a 3 by 2 MINSERT refuses with
+`array_instance`; a 64-element leaf route passes and a 65-element route refuses
+with `instance_depth_limit`. For XREF, a loaded/resolved native database first
+passes with its backing file present. Moving that owned file to an unsearched
+name preserves loaded status and geometry but removes verified disk provenance;
+preflight must refuse the actual reference with
+`loaded_xref_disk_provenance_unavailable`. The file is restored and its hash
+is checked. No alternate CAD reader or source save is used during validation.
+
+`topology-controls.json` records the physical oracles and actual refusal
+route/class/reason. Passing requires source hashes, native geometry and working
+database/field evaluation restoration. Core must complete and exit zero:
+artifacts from an abnormal exit do not qualify the controls. This proves these
+specific producer guards, not complete fixture or street capture coverage.
+
+## Core file intake experiment, 1 October
+
+Authorized feasibility scenario: `core_intake_run.py --source FILE.dwg
+--package-root DIRECTORY --production-library BUILT_NATIVE_BINARY
+--output output/core-intake-.../NEW_RUN`.
+
+`--architecture x86_64|arm64` selects both the diagnostic bundle build and
+the Core process architecture on Mac. The default remains `x86_64` for
+earlier experiments. Use an explicit matching architecture when comparing
+against a running editor; process architecture alone does not explain a
+different capture result. On 2 October the Kustanayskaya private archival
+refusal 83 reproduced on ARM64 as well as x86_64. This option is diagnostic
+only; it does not select or install a product import route.
+
+The default `--database-mode isolated` reads a private saved drawing in an
+explicitly owned database and restores working context and field evaluation
+before confirming completion. `--database-mode active` retains the earlier
+OPEN control for comparison; its abnormal shutdown is a failure, including
+exit 254 after artifacts were written. No live GUI is contacted.
+`--split-jobs` is an explicit control that separates capture from archival;
+its saved-file identity comparison must pass. It did not resolve the measured
+Kustanayskaya archival refusal and therefore is not the default path.
+
+The directory tree and duplicate basenames are preserved. Only listed CAD,
+font and reference asset extensions are copied; executable add-ins/scripts
+are excluded. Symlinks, oversize packages and loaded XREFs outside the private
+package are refused. There is no guessed relinking, repair, alternate parser
+or automatic loading of intentionally unloaded references. This is not a
+complete sandbox or a guarantee of all DWG/dependency types.
+
+Without `--source`, `--fixture complete|missing|unloaded` creates private
+controls. Every accepted capture must exit zero, preserve source hashes and
+reopen its native archive in another Core after staging sources are hidden.
+The comparison checks all instance mappings/classes/layers/transforms and
+line/polyline vertices; it does not compare every HATCH/custom-object payload.
+An exit-zero runner can return `needs_source_review`; inspect `receipt.json`,
+never treat process success as calculation completeness.
+
+`core_intake_project_check.py` runs a verified complete synthetic capture
+through the real handoff, preparation, local planting, release and cold reopen
+in a NEW `output/core-intake-...` QA database. Run with `PYTHONPATH=apps/api`.
+Its existing transfer/5 envelope with an unavailable PID is explicitly a QA
+adapter. It does not define a product Core provenance contract or install an
+import UI. No experimental captures enter the user's project library.
+
+`test_core_intake.py` covers missing/unloaded/proxy/unit refusals, unreadable
+object identities, nested duplicate filenames, symlinks and output placement.
+Ruff/mypy are run explicitly on these research modules rather than expanding
+the backend baseline or excluding failures.
+
 Current priority: **direct native queries**, not capture-converter development.
 Newest: whole-window native predicate (локальный отчёт).
 `run_xref_native.py --window-case <manifest>` inventories every available leaf

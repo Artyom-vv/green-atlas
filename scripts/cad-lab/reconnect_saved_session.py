@@ -12,8 +12,8 @@ import os
 import sqlite3
 from pathlib import Path
 
-from app.native_query.live_client import LiveQueryClient, LiveSession
-from app.native_query.live_inventory import load_inventory
+from app.native_query.live.live_client import LiveQueryClient, LiveSession
+from app.native_query.live.live_inventory import load_inventory
 
 IDENTITY = ("source_sha256", "snapshot_sha256", "inventory_sha256", "units_code",
             "watched_databases", "unavailable_xrefs", "plugin_version")

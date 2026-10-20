@@ -1,5 +1,17 @@
 import type { PlanObject, ValidationIssue } from '@green/api-client';
 
+// Общие сведения о составе исходника показываются в его паспорте один раз,
+// а не повторяются для каждой посадки. Ошибки с такими кодами не скрываются.
+const GENERAL_DATA_NOTICES = new Set([
+  'SOURCE_GEOMETRY_PARTIAL',
+  'GEOMETRY_RULE_ASSUMPTION',
+  'NO_NETWORK_FEATURES',
+  'NETWORK_CONTEXT_UNKNOWN',
+  'NETWORK_SOURCE_INCOMPLETE',
+]);
+export const isGeneralDataNotice = (code: string | null | undefined) =>
+  Boolean(code && GENERAL_DATA_NOTICES.has(code));
+
 export interface WorkspaceIssueGroup {
   key: string;
   items: ValidationIssue[];
@@ -35,7 +47,8 @@ const priority = (issues: ValidationIssue[]) =>
       ? 2
       : 1;
 
-/** Assignment groups share kind and lock state; rule details retain individual evidence. */
+/** Группы назначения объединяют вид и блокировку; детали правил сохраняют
+ * отдельные основания каждой проверки. */
 export function groupWorkspaceIssues(
   issues: ValidationIssue[],
   objects: PlanObject[],
@@ -43,6 +56,7 @@ export function groupWorkspaceIssues(
   const byId = new Map(objects.map((object) => [object.id, object]));
   const groups = new Map<string, ValidationIssue[]>();
   for (const issue of issues) {
+    if (issue.severity !== 'error' && isGeneralDataNotice(issue.code)) continue;
     const object = byId.get(issue.object_id ?? undefined);
     const key =
       issue.code === 'SPECIES_UNASSIGNED'

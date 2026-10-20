@@ -1,6 +1,9 @@
-"""Pure scene assembly from a project snapshot and a species lookup."""
+"""Чистая сборка сцены из снимка проекта и каталога видов с проверкой горизонта и
+готовности свидетельств.
+"""
 
 from collections.abc import Callable
+from hashlib import sha256
 
 from app.projects.contracts import Project
 from app.scene.config import MAX_HORIZON_YEAR, MIN_HORIZON_YEAR
@@ -24,10 +27,14 @@ def validate_horizon(horizon_year: int) -> None:
 
 
 def build_scene(
-    project: Project, horizon_year: int, *, species: Callable[[str], SpeciesRevision]
+    project: Project,
+    horizon_year: int,
+    *,
+    species: Callable[[str], SpeciesRevision],
+    origin_xy: tuple[float, float] | None = None,
 ) -> SceneSnapshot:
     validate_horizon(horizon_year)
-    origin_x, origin_y = scene_origin(project)
+    origin_x, origin_y = origin_xy or scene_origin(project)
     scene_objects = scene_plants(
         project, horizon_year, origin_x, origin_y, species=species
     )
@@ -47,9 +54,8 @@ def build_scene(
         if primitive.terrain_mapping_status == "confirmed"
         and primitive.primitive_type == "surface_mesh"
     ]
-    # ``confirmed`` above means only that the DXF document explicitly
-    # mapped these faces to terrain. Measurement confidence is separate
-    # and must come from the source declaration, never its display name.
+    # confirmed означает только явное назначение этих граней рельефом в DXF.
+    # Уверенность измерения задаёт декларация исходника, а не имя отображения.
     terrain_is_estimated = any(
         primitive.terrain_confidence == "estimated" for primitive in confirmed_terrain
     )
@@ -126,7 +132,12 @@ def build_scene(
                 "остальные остаются плоскими."
             ),
         )
-    return SceneSnapshot(
+    snapshot = SceneSnapshot(
+        project_id=project.id,
+        geometry_version=project.geometry_version,
+        source_sha256=project.source_file.content_sha256
+        if project.source_file
+        else None,
         plan_version=project.plan.version if project.plan else 1,
         horizon_year=horizon_year,
         coordinate_origin=[round(origin_x, 6), round(origin_y, 6)],
@@ -165,3 +176,7 @@ def build_scene(
         context_features=context.features,
         vertical_primitives=context.primitives,
     )
+    snapshot.content_sha256 = sha256(
+        snapshot.model_dump_json(exclude={"content_sha256"}).encode()
+    ).hexdigest()
+    return snapshot
